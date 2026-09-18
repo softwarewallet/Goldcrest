@@ -866,12 +866,34 @@ async function startServer() {
   }
 
   const host = process.env.HOST || '0.0.0.0';
-  app.listen(PORT, host, () => {
+  const server = app.listen(PORT, host, () => {
     console.log(`Goldcrest server listening on http://${host}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
     void captureLiveBrokerReconciliation();
     const reconciliationTimer = setInterval(() => void captureLiveBrokerReconciliation(), 5 * 60_000);
     reconciliationTimer.unref?.();
   });
+
+  const shutdown = (signal: string) => {
+    console.log(`Goldcrest received ${signal}; closing HTTP server gracefully.`);
+    server.close(() => {
+      try {
+        // Persist the authoritative SQLite state before process exit.
+        const { persistDatabase } = require('./src/database/db');
+        persistDatabase();
+      } catch (err: any) {
+        console.error('SQLite shutdown persistence failed:', err?.message || err);
+      }
+      process.exit(0);
+    });
+
+    setTimeout(() => {
+      console.error('Goldcrest graceful shutdown timed out; forcing exit.');
+      process.exit(1);
+    }, 15_000).unref();
+  };
+
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer();
