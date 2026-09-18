@@ -287,9 +287,15 @@ app.get(['/api/forex/sessions'], (req: Request, res: Response) => {
 
 // Helper to get live-anchored candles
 async function getLiveAnchoredCandles(pair: string, tf: ForexTimeframe = '15M', limit: number = 80) {
-  // Production invariant: analytical endpoints must never fabricate candles.
-  // cTrader historical candle retrieval is not implemented in the current adapter contract.
-  throw new Error(`Authoritative cTrader historical market data unavailable for ${pair} ${tf}.`);
+  const adapter = brokerRegistry.getAdapter('CTRADER');
+  if (!adapter.getHistoricalCandles) {
+    throw new Error('Authoritative cTrader historical market-data capability is unavailable.');
+  }
+  const candles = await adapter.getHistoricalCandles(pair, tf, limit);
+  if (!Array.isArray(candles) || candles.length === 0) {
+    throw new Error(`No authoritative cTrader historical candles returned for ${pair} ${tf}.`);
+  }
+  return candles;
 }
 
 app.get(['/api/forex/analysis/:pair', '/api/forex/analysis/:part1/:part2'], async (req: Request, res: Response) => {
