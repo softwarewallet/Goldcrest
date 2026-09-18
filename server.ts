@@ -558,10 +558,16 @@ app.delete('/api/notes/:id', operatorAuthRequired, async (req: Request, res: Res
 // 5. Indian Equity Endpoints
 app.get('/api/india/underlyings', async (req: Request, res: Response) => {
   try {
-    const underlyings = await indiaProvider.fetchUnderlyingsOverview();
-    res.json(underlyings);
-  } catch (err) {
-    res.json([]);
+    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE') as any;
+    if (typeof adapter.fetchIndianUnderlyingsFrom5Paisa !== 'function') {
+      throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa underlying market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
+    }
+    res.json(await adapter.fetchIndianUnderlyingsFrom5Paisa());
+  } catch (err: any) {
+    res.status(503).json({
+      error: err?.code || 'LIVE_MARKET_DATA_UNAVAILABLE',
+      message: err?.message || 'Authoritative 5paisa underlying data is unavailable.'
+    });
   }
 });
 
@@ -585,14 +591,21 @@ app.get('/api/india/candles/:symbol', async (req: Request, res: Response) => {
 app.get('/api/india/analysis/:symbol', async (req: Request, res: Response) => {
   const symbol = req.params.symbol.toUpperCase();
   try {
-    const underlyings = await indiaProvider.fetchUnderlyingsOverview();
-    const found = underlyings.find(u => u.symbol === symbol);
+    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE') as any;
+    if (typeof adapter.fetchIndianUnderlyingsFrom5Paisa !== 'function') {
+      throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa underlying market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
+    }
+    const underlyings = await adapter.fetchIndianUnderlyingsFrom5Paisa();
+    const found = underlyings.find((u: any) => u.symbol === symbol);
     if (!found) {
-      return res.status(404).json({ error: `Underlying ${symbol} not found (5paisa connection unavailable or unlisted)` });
+      return res.status(404).json({ error: `Underlying ${symbol} not found in authoritative 5paisa market data.` });
     }
     res.json(found);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch analysis' });
+  } catch (err: any) {
+    res.status(503).json({
+      error: err?.code || 'LIVE_MARKET_DATA_UNAVAILABLE',
+      message: err?.message || 'Authoritative 5paisa analysis data is unavailable.'
+    });
   }
 });
 
@@ -634,26 +647,28 @@ app.get('/api/options/chain/:symbol', async (req: Request, res: Response) => {
   const expiry = req.query.expiry as string | undefined;
   const depth = req.query.depth ? parseInt(req.query.depth as string, 10) : 7;
   try {
-    const chain = await optionsProvider.fetchChain(symbol, expiry, depth);
+    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE') as any;
+    if (typeof adapter.fetchOptionChainFrom5Paisa !== 'function') {
+      throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa option-chain capability is unavailable.', 'FIVE_PAISA', 'LIVE');
+    }
+    const chain = await adapter.fetchOptionChainFrom5Paisa(symbol, expiry, depth);
+    if (!chain) {
+      return res.status(503).json({
+        underlying: symbol,
+        expiry: expiry || '',
+        rows: [],
+        isBlank: true,
+        error: 'Authoritative 5paisa option-chain data is unavailable.'
+      });
+    }
     res.json(chain);
-  } catch (err) {
-    res.json({
+  } catch (err: any) {
+    res.status(503).json({
       underlying: symbol,
-      spotPrice: 0,
-      atmStrike: 0,
       expiry: expiry || '',
-      availableExpiries: [],
-      totalCallOI: 0,
-      totalPutOI: 0,
-      pcr: 0,
-      callResistanceStrike: 0,
-      putSupportStrike: 0,
-      highOIStrikeCall: 0,
-      highOIStrikePut: 0,
       rows: [],
       isBlank: true,
-      error: '5paisa API Connection Required. Authenticate 5paisa in Broker Settings.',
-      timestamp: Date.now()
+      error: err?.message || 'Authoritative 5paisa option-chain data is unavailable.'
     });
   }
 });
