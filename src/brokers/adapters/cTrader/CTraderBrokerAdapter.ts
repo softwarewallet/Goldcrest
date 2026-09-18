@@ -385,9 +385,23 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       matched = liveAccounts.find(
         a => String(a.traderLogin) === String(accountId) || String(a.ctidTraderAccountId) === String(accountId)
       );
-    }
-    if (!matched) {
+      if (!matched) {
+        throw new BrokerError(
+          'ACCOUNT_NOT_FOUND',
+          `Configured cTrader LIVE account ID ${accountId} was not found among authenticated accounts.`,
+          'CTRADER',
+          this.environment
+        );
+      }
+    } else if (liveAccounts.length === 1) {
       matched = liveAccounts[0];
+    } else {
+      throw new BrokerError(
+        'ACCOUNT_NOT_FOUND',
+        'Multiple cTrader accounts exist. A specific LIVE account ID is required.',
+        'CTRADER',
+        this.environment
+      );
     }
     return matched;
   }
