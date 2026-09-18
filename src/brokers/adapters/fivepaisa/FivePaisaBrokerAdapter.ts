@@ -476,11 +476,54 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   async getOrderHistory(): Promise<NormalizedOrder[]> {
     await this.ensureActiveSession();
     if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
-    const url = `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/OrderBook`;
-    const data = await this.postUserApi(url, '5POB', { ClientCode: this.config.clientCode || this.config.userId });
-    const orders: any[] = data?.body?.OrderBookDetail || [];
-    if (!Array.isArray(orders)) throw new BrokerError('BROKER_UNAVAILABLE', '5paisa returned an invalid order-book response.', 'FIVE_PAISA', this.environment);
-    return orders.map(o => this.normalizeBrokerOrder(o));
+
+    // The order book is current order state. Historical execution records come
+    // from 5paisa's TradeBook endpoint (5PTrdBkV1).
+    const url = this.getApiHost() + '/VendorsAPI/Service1.svc/V1/TradeBook';
+    const data = await this.postUserApi(url, '5PTrdBkV1', {
+      ClientCode: this.config.clientCode || this.config.userId
+    });
+    const trades: any[] =
+      data?.body?.TradeBookDetail ||
+      data?.body?.TradeBook ||
+      data?.body?.TradeBookDetailList ||
+      [];
+    if (!Array.isArray(trades)) {
+      throw new BrokerError('BROKER_UNAVAILABLE', '5paisa returned an invalid trade-book response.', 'FIVE_PAISA', this.environment);
+    }
+
+    return trades.map((trade: any) => this.normalizeBrokerTrade(trade));
+  }
+
+  private normalizeBrokerTrade(trade: any): NormalizedOrder {
+    const price = Number(trade.TradePrice ?? trade.AveragePrice ?? trade.Price ?? trade.Rate ?? 0);
+    const quantity = Math.abs(Number(trade.TradedQty ?? trade.TradeQty ?? trade.Quantity ?? trade.Qty ?? 0));
+    const side = String(trade.BuySell ?? trade.OrderType ?? '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY';
+    const exchangeType = String(trade.ExchType ?? trade.ExchangeType ?? '').toUpperCase();
+    const symbol = String(trade.ScripName ?? trade.ScripData ?? trade.ScripCode ?? '');
+    const timestampRaw = trade.TradeTime ?? trade.OrderDateTime ?? trade.ExchangeTime;
+    const parsedTimestamp = typeof timestampRaw === 'number'
+      ? timestampRaw
+      : Date.parse(String(timestampRaw || ''));
+    return {
+      id: String(trade.TradeID ?? trade.TradeId ?? trade.ExchTradeID ?? trade.ExchOrderID ?? ('5P_TRADE_' + Date.now())),
+      broker: 'FIVE_PAISA',
+      environment: this.environment,
+      market: symbol.includes('CE') || symbol.includes('PE')
+        ? 'INDIAN_OPTIONS'
+        : exchangeType === 'D' ? 'INDIAN_FUTURES' : 'INDIAN_EQUITY',
+      symbol,
+      side,
+      orderType: 'MARKET',
+      quantity,
+      price: price > 0 ? price : undefined,
+      status: 'FILLED',
+      filledQuantity: quantity,
+      averageFillPrice: price > 0 ? price : undefined,
+      commission: Number(trade.Brokerage ?? trade.BrokerageAmount ?? 0) || undefined,
+      timestamp: Number.isFinite(parsedTimestamp) && parsedTimestamp > 0 ? parsedTimestamp : Date.now(),
+      brokerOrderId: String(trade.ExchOrderID ?? trade.OrderID ?? trade.RemoteOrderID ?? '')
+    };
   }
 
   private async postUserApi(url: string, requestCode: string, body: Record<string, unknown>): Promise<any> {
