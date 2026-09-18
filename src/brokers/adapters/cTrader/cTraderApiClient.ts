@@ -221,22 +221,38 @@ export async function fetchLiveCTraderAccountDetails(
             return reject(new Error('Trader data missing from cTrader Open API response'));
           }
 
-          const moneyDigits = traderData.moneyDigits !== undefined ? traderData.moneyDigits : 2;
-          const rawBalance = typeof traderData.balance === 'number' ? traderData.balance : 0;
+          const moneyDigits = traderData.moneyDigits !== undefined ? Number(traderData.moneyDigits) : 2;
+          const rawBalance = Number(traderData.balance);
+          if (!Number.isFinite(rawBalance)) {
+            return reject(new Error('cTrader trader details did not include a valid account balance.'));
+          }
           const realBalance = rawBalance / Math.pow(10, moneyDigits);
 
+          // cTrader trader details expose the authoritative used-margin value; the
+          // reconcile response provides the account's current unrealized P/L. Derive
+          // equity and free/available margin from those broker values rather than
+          // presenting balance as synthetic equity.
+          const reconcilePositions = Array.isArray(msg.payload?.position) ? msg.payload.position : [];
+          const unrealizedPnl = reconcilePositions.reduce((sum: number, position: any) => {
+            const value = Number(position?.unrealizedPnL ?? position?.tradeData?.unrealizedPnL ?? 0);
+            return sum + (Number.isFinite(value) ? value / Math.pow(10, moneyDigits) : 0);
+          }, 0);
+          const equity = realBalance + unrealizedPnl;
+          const rawUsedMargin = Number(traderData.totalMarginUsed ?? traderData.marginUsed ?? 0);
+          const usedMargin = Number.isFinite(rawUsedMargin) ? rawUsedMargin / Math.pow(10, moneyDigits) : 0;
+          const freeMargin = equity - usedMargin;
           const currency = assetMap[traderData.depositAssetId] || 'USD';
 
           resolve({
             ctidTraderAccountId: rawAccount.ctidTraderAccountId,
             traderLogin: rawAccount.traderLogin,
             balance: realBalance,
-            equity: realBalance,
-            availableMargin: realBalance,
-            usedMargin: 0,
-            freeMargin: realBalance,
+            equity,
+            availableMargin: freeMargin,
+            usedMargin,
+            freeMargin,
             currency,
-            brokerName: traderData.brokerName || rawAccount.brokerTitleShort || 'IC Markets SC',
+            brokerName: traderData.brokerName || rawAccount.brokerTitleShort || 'cTrader',
             isLive: rawAccount.isLive,
             leverageInCents: traderData.leverageInCents,
             moneyDigits
