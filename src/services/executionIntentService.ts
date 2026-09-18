@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { executeQuery, executeRun } from '../database/db';
 
 export type ExecutionIntentState = 'PENDING' | 'COMPLETED' | 'FAILED';
@@ -37,14 +38,15 @@ export async function claimExecutionIntent(
     };
   }
   const now = Date.now();
+  const claimToken = crypto.randomUUID();
   await executeRun(
-    'INSERT OR IGNORE INTO execution_intents (idempotency_key, broker, market, symbol, side, state, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [idempotencyKey, metadata.broker, metadata.market, metadata.symbol, metadata.side, 'PENDING', JSON.stringify(metadata.payload ?? null), now, now]
+    'INSERT OR IGNORE INTO execution_intents (idempotency_key, claim_token, broker, market, symbol, side, state, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [idempotencyKey, claimToken, metadata.broker, metadata.market, metadata.symbol, metadata.side, 'PENDING', JSON.stringify(metadata.payload ?? null), now, now]
   );
   const rows = await executeQuery<any>('SELECT * FROM execution_intents WHERE idempotency_key = ?', [idempotencyKey]);
   const row = rows[0];
   if (!row) throw new Error('EXECUTION_INTENT_NOT_PERSISTED');
-  const claimed = Number(row.created_at) === now;
+  const claimed = row.claim_token === claimToken;
   return { claimed, existing: {
     idempotencyKey: row.idempotency_key, broker: row.broker, market: row.market,
     symbol: row.symbol, side: row.side, state: row.state,
