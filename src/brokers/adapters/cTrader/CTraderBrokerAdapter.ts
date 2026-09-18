@@ -19,7 +19,10 @@ import { BrokerError, normalizeBrokerError } from '../../errors';
 import { maskIdentifier } from '../../auditLog';
 import {
   fetchLiveCTraderAccounts,
-  fetchLiveCTraderAccountDetails
+  fetchLiveCTraderAccountDetails,
+  fetchCTraderSymbols,
+  fetchLiveCTraderQuote,
+  fetchCTraderTrendbars
 } from './cTraderApiClient';
 
 export interface CTraderConfig {
@@ -377,24 +380,61 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getQuote(symbol: string): Promise<NormalizedQuote> {
-    if (!symbol.includes('/') && !symbol.includes('XAU') && !symbol.includes('XAG')) {
-      throw new BrokerError('INVALID_SYMBOL', `Symbol ${symbol} is not a valid cTrader Forex/Metal instrument`, 'CTRADER', this.environment);
-    }
-    throw new BrokerError(
-      'UNAVAILABLE',
-      `Authoritative cTrader quote unavailable for ${symbol}; no synthetic fallback is permitted.`,
-      'CTRADER',
-      this.environment
+    this.syncConfig();
+    this.validateCredentials();
+    const account = await this.getAccount();
+    const symbols = await fetchCTraderSymbols(
+      Number(account.accountId),
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      this.isLive
     );
+    const normalized = symbol.replace('/', '').toUpperCase();
+    const match = symbols.find(s => s.symbolName.replace('/', '').toUpperCase() === normalized);
+    if (!match) {
+      throw new BrokerError('INVALID_SYMBOL', `cTrader symbol ${symbol} was not found in the authenticated account symbol list.`, 'CTRADER', this.environment);
+    }
+    const quote = await fetchLiveCTraderQuote(
+      Number(account.accountId),
+      match.symbolId,
+      match.symbolName,
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      this.isLive
+    );
+    if (quote.bid === undefined || quote.ask === undefined || quote.bid <= 0 || quote.ask <= 0 || quote.ask < quote.bid) {
+      throw new BrokerError('STALE_DATA', `cTrader did not provide a valid bid/ask for ${symbol}.`, 'CTRADER', this.environment);
+    }
+    return {
+      symbol,
+      bid: Number(quote.bid.toFixed(match.digits)),
+      ask: Number(quote.ask.toFixed(match.digits)),
+      spread: Number((quote.ask - quote.bid).toFixed(match.digits)),
+      timestamp: quote.timestamp,
+      source: 'CTRADER_OPEN_API',
+      environment: this.environment,
+      status: 'FRESH'
+    };
   }
 
   async getInstruments(): Promise<BrokerInstrument[]> {
     this.validateCredentials();
     
-    // Simulate network delay for API fetch using configured credentials
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    return FOREX_PAIRS.map(p => ({
+    const account = await this.getAccount();
+    const symbols = await fetchCTraderSymbols(
+      Number(account.accountId),
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      this.isLive
+    );
+    const allowed = new Set(FOREX_PAIRS.map(p => p.symbol.replace('/', '').toUpperCase()));
+    return symbols.filter(s => allowed.has(s.symbolName.replace('/', '').toUpperCase())).map(s => {
+      const p = FOREX_PAIRS.find(x => x.symbol.replace('/', '').toUpperCase() === s.symbolName.replace('/', '').toUpperCase());
+      if (!p) throw new BrokerError('INVALID_SYMBOL', `Unsupported cTrader symbol ${s.symbolName}`, 'CTRADER', this.environment);
+      return {
       symbol: p.symbol,
       market: 'FOREX',
       pipSize: p.pipSize,
@@ -402,22 +442,17 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       maxQuantity: 10000000,
       stepQuantity: 1000,
       digits: p.digits,
-      supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP']
-    }));
+      supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP'],
+      baseCurrency: p.symbol.split('/')[0],
+      quoteCurrency: p.symbol.split('/')[1]
+    };
+    });
   }
 
   async getInstrument(symbol: string): Promise<BrokerInstrument | null> {
-    if (!symbol.includes('/') && !symbol.includes('XAU')) return null;
-    return {
-      symbol,
-      market: 'FOREX',
-      pipSize: symbol.includes('JPY') ? 0.01 : 0.0001,
-      minQuantity: 1000,
-      maxQuantity: 10000000,
-      stepQuantity: 1000,
-      digits: symbol.includes('JPY') ? 3 : 5,
-      supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP'] // Note: STOP_LIMIT not supported by cTrader Open API
-    };
+    const instruments = await this.getInstruments();
+    const normalized = symbol.replace('/', '').toUpperCase();
+    return instruments.find(i => i.symbol.replace('/', '').toUpperCase() === normalized) || null;
   }
 
   async placeOrder(order: OrderRequest): Promise<NormalizedOrder> {
