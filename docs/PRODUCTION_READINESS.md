@@ -27,30 +27,44 @@
 
 ## Remaining production blockers
 
-### 1. cTrader authoritative market-data adapter
-The current cTrader adapter still needs a production implementation for:
-- live bid/ask subscription;
+### 1. cTrader authoritative market-data and state certification
+Implemented in the adapter:
+- live bid/ask retrieval through cTrader Open API spot subscription;
 - historical trendbars;
-- authoritative symbol-id mapping;
-- stale-quote detection and reconnect handling.
+- authoritative symbol-id discovery from the authenticated account;
+- broker reconciliation retrieval for current positions and orders;
+- no synthetic quote/candle fallback.
 
-Until that is implemented, Forex analytical endpoints that require historical/quote data fail closed instead of displaying fabricated values.
+Remaining certification items:
+- verify cTrader price scaling across all supported symbol digit configurations;
+- add persistent quote/subscription caching with explicit stale thresholds for production throughput;
+- implement true historical order/deal retrieval rather than treating reconcile state as history;
+- certify account equity/margin semantics against broker responses.
 
 ### 2. API authentication / authorization
-The server currently does not have a complete user/admin authentication layer. Before exposing Goldcrest to an untrusted network, protect:
-- broker credential/configuration mutation;
-- kill-switch resume;
-- broker cancel/close operations;
-- account-selection/configuration changes;
-- audit/operational endpoints.
+Implemented for sensitive operator APIs with GOLDCREST_OPERATOR_API_KEY, including broker operations, governance, configuration, notes, reconciliation and database statistics. The key comparison uses a timing-safe comparison.
 
-A reverse proxy or application-level authentication layer should be used; rate limiting alone is not authorization.
+Remaining item:
+- provide a secure browser/session authentication flow so the frontend can call protected operator APIs without embedding a long-lived operator secret in the public JavaScript bundle.
 
-### 3. SQLite deployment topology
+### 3. 5paisa authoritative market-data and instrument certification
+Implemented:
+- live underlying feed routing;
+- historical candles;
+- option-chain routing with fail-closed behavior;
+- authoritative positions and open-order retrieval;
+- ScripMaster-backed instrument lookup.
+
+Remaining certification items:
+- expand and validate the full equity/futures/options instrument universe;
+- implement true order/trade history rather than reusing the current order book;
+- validate derivative contract mapping (expiry/strike/CE/PE) against the broker master.
+
+### 4. SQLite deployment topology
 SQLite is appropriate for the current single-instance architecture. A multi-instance deployment should not be introduced without changing the persistence/concurrency strategy.
 
-### 4. Broker reconciliation
-Before any operational use, live positions/orders should be reconciled from broker APIs after startup, reconnect, and periodically. Local in-memory state must never be treated as broker truth.
+### 5. Broker reconciliation
+A SQLite reconciliation-snapshot table and broker snapshot API are now present. cTrader and 5paisa live state should be captured after startup/reconnect and on an operational schedule, with broker state remaining authoritative and local state never treated as broker truth.
 
 ## Required release gates
 
