@@ -44,6 +44,9 @@ const MSG_GET_TRENDBARS_RES = 2138;
 const MSG_SUBSCRIBE_LIVE_TRENDBAR_REQ = 2135;
 const MSG_GET_ACCOUNTS_REQ = 2149;
 const MSG_GET_ACCOUNTS_RES = 2150;
+const MSG_NEW_ORDER_REQ = 2106;
+const MSG_EXECUTION_EVENT = 2126;
+const MSG_ORDER_ERROR_EVENT = 2132;
 const MSG_ERROR_RES = 2142;
 
 /**
@@ -382,6 +385,156 @@ async function withAuthenticatedAccount<T>(
   }
 
   throw lastError || new Error('cTrader API: failed to authenticate account on available cTrader endpoints.');
+}
+
+export interface CTraderOrderSubmission {
+  orderId: number;
+  positionId?: number;
+  status: 'ACCEPTED' | 'FILLED' | 'REJECTED';
+  executionPrice?: number;
+  executedVolume?: number;
+  raw: any;
+}
+
+export async function submitLiveCTraderOrder(
+  ctidTraderAccountId: number,
+  symbolId: number,
+  orderType: 'MARKET' | 'LIMIT' | 'STOP',
+  side: 'BUY' | 'SELL',
+  quantity: number,
+  price: number | undefined,
+  stopLoss: number | undefined,
+  takeProfit: number | undefined,
+  clientOrderId: string,
+  clientId: string,
+  clientSecret: string,
+  accessToken: string,
+  isLive: boolean
+): Promise<CTraderOrderSubmission> {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    throw new Error('cTrader order volume must be positive.');
+  }
+
+  const orderTypeMap: Record<string, number> = { MARKET: 1, LIMIT: 2, STOP: 3 };
+  const tradeSideMap: Record<string, number> = { BUY: 1, SELL: 2 };
+  const mappedType = orderTypeMap[orderType];
+  const mappedSide = tradeSideMap[side];
+  if (!mappedType || !mappedSide) throw new Error(`Unsupported cTrader order parameters: ${orderType}/${side}`);
+
+  // cTrader volume is represented in 0.01 of a unit.
+  const volume = Math.round(quantity * 100);
+  if (!Number.isSafeInteger(volume) || volume <= 0) {
+    throw new Error('cTrader order volume is outside the supported integer range.');
+  }
+
+  return withAuthenticatedAccount(
+    ctidTraderAccountId,
+    clientId,
+    clientSecret,
+    accessToken,
+    isLive,
+    async ws => {
+      const requestClientId = clientOrderId.slice(0, 50);
+      const payload: Record<string, unknown> = {
+        ctidTraderAccountId,
+        symbolId,
+        orderType: mappedType,
+        tradeSide: mappedSide,
+        volume,
+        clientOrderId: requestClientId
+      };
+
+      if (orderType === 'LIMIT' && price !== undefined) payload.limitPrice = price;
+      if (orderType === 'STOP' && price !== undefined) payload.stopPrice = price;
+      if (stopLoss !== undefined && stopLoss > 0) payload.stopLoss = stopLoss;
+      if (takeProfit !== undefined && takeProfit > 0) payload.takeProfit = takeProfit;
+
+      return new Promise<CTraderOrderSubmission>((resolve, reject) => {
+        let accepted: CTraderOrderSubmission | null = null;
+        const timer = setTimeout(() => {
+          ws.removeEventListener('message', handler);
+          if (accepted) resolve(accepted);
+          else reject(new Error('cTrader order submission timed out without broker acknowledgement.'));
+        }, 15000);
+
+        const finish = (value: CTraderOrderSubmission) => {
+          clearTimeout(timer);
+          ws.removeEventListener('message', handler);
+          resolve(value);
+        };
+
+        const fail = (message: string) => {
+          clearTimeout(timer);
+          ws.removeEventListener('message', handler);
+          reject(new Error(message));
+        };
+
+        const handler = (event: MessageEvent) => {
+          try {
+            const msg = JSON.parse(event.data.toString());
+
+            if (msg.payloadType === MSG_ORDER_ERROR_EVENT || msg.payloadType === MSG_ERROR_RES) {
+              const p = msg.payload || {};
+              const related = !p.orderId || !accepted || Number(p.orderId) === accepted.orderId;
+              if (related) fail(p.description || p.errorCode || 'cTrader rejected the live order.');
+              return;
+            }
+
+            if (msg.payloadType !== MSG_EXECUTION_EVENT) return;
+
+            const p = msg.payload || {};
+            const order = p.order || {};
+            const deal = p.deal || {};
+            const orderId = Number(order.orderId ?? p.orderId ?? 0);
+            const clientIdMatches = !order.clientOrderId || order.clientOrderId === requestClientId;
+            if (!clientIdMatches) return;
+
+            const executionType = Number(p.executionType ?? 0);
+            const orderStatus = Number(order.orderStatus ?? 0);
+            const executionPrice = Number(
+              deal.executionPrice ?? order.executionPrice ?? p.executionPrice
+            );
+            const executedVolumeRaw = Number(
+              deal.filledVolume ?? order.executedVolume ?? p.executedVolume ?? 0
+            );
+
+            const normalized: CTraderOrderSubmission = {
+              orderId,
+              positionId: order.positionId !== undefined ? Number(order.positionId) : undefined,
+              status: executionType === 7 || orderStatus === 3
+                ? 'REJECTED'
+                : (executionType === 3 || orderStatus === 2 || Number(deal.dealStatus) === 2)
+                  ? 'FILLED'
+                  : 'ACCEPTED',
+              executionPrice: Number.isFinite(executionPrice) && executionPrice > 0 ? executionPrice : undefined,
+              executedVolume: executedVolumeRaw > 0 ? executedVolumeRaw / 100 : undefined,
+              raw: msg
+            };
+
+            if (!normalized.orderId) return;
+
+            if (normalized.status === 'REJECTED') {
+              fail('cTrader broker rejected the live order.');
+            } else if (normalized.status === 'FILLED') {
+              finish(normalized);
+            } else {
+              accepted = normalized;
+              // Keep the connection open briefly for the subsequent fill event.
+            }
+          } catch {
+            // Ignore unrelated/non-JSON WebSocket frames.
+          }
+        };
+
+        ws.addEventListener('message', handler);
+        ws.send(JSON.stringify({
+          clientMsgId: requestClientId,
+          payloadType: MSG_NEW_ORDER_REQ,
+          payload
+        }));
+      });
+    }
+  );
 }
 
 export async function fetchCTraderSymbols(
