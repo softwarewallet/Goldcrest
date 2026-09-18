@@ -411,7 +411,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     this.validateCredentials();
     const account = await this.getAccount();
     const symbols = await fetchCTraderSymbols(
-      Number(account.accountId),
+      this.ctidTraderAccountId!,
       this.config.clientId!,
       this.config.clientSecret!,
       this.config.accessToken!,
@@ -423,7 +423,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       throw new BrokerError('INVALID_SYMBOL', `cTrader symbol ${symbol} was not found in the authenticated account symbol list.`, 'CTRADER', this.environment);
     }
     const quote = await fetchLiveCTraderQuote(
-      Number(account.accountId),
+      this.ctidTraderAccountId!,
       match.symbolId,
       match.symbolName,
       this.config.clientId!,
@@ -451,7 +451,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     
     const account = await this.getAccount();
     const symbols = await fetchCTraderSymbols(
-      Number(account.accountId),
+      this.ctidTraderAccountId!,
       this.config.clientId!,
       this.config.clientSecret!,
       this.config.accessToken!,
