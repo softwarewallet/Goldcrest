@@ -435,70 +435,87 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getPositions(): Promise<NormalizedPosition[]> {
-    await this.authenticate();
-    if (this.config.accessToken) {
-      try {
-        const url = `${this.getApiHost()}/VendorsAPI/Service1.svc/V2/NetPositionNetWise`;
-        const payload = {
-          head: {
-            appName: this.config.appName,
-            appVer: '1.0',
-            key: this.config.userKey,
-            osName: 'WEB',
-            requestCode: '5PNPNWV1',
-            userId: this.config.userId,
-            password: this.config.password
-          },
-          body: {
-            ClientCode: this.config.clientCode || this.config.userId
-          }
-        };
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.config.accessToken}`,
-            '5Paisa-API-Uid': 'ka7SFqAU6SC'
-          },
-          body: JSON.stringify(payload)
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const netPositions: FivePaisaNetPosition[] = data?.body?.NetPositionDetail || [];
-          if (Array.isArray(netPositions) && netPositions.length > 0) {
-            return netPositions.map(pos => ({
-              id: `5P_${pos.ScripCode}_${pos.OrderFor || 'C'}`,
-              broker: 'FIVE_PAISA',
-              environment: this.environment,
-              market: (pos.ScripName?.includes('CE') || pos.ScripName?.includes('PE')) ? 'INDIAN_OPTIONS' : 'INDIAN_EQUITY',
-              symbol: pos.ScripName || String(pos.ScripCode),
-              side: (pos.NetQty || 0) >= 0 ? 'BUY' : 'SELL',
-              quantity: Math.abs(pos.NetQty || 0),
-              entryPrice: (pos.NetQty || 0) >= 0 ? pos.BuyAvgRate || 0 : pos.SellAvgRate || 0,
-              currentPrice: pos.LTP || 0,
-              unrealizedPnL: (pos.MTM || 0),
-              realizedPnL: pos.BookedPL || 0,
-              currency: 'INR',
-              timestamp: Date.now(),
-              brokerPositionId: String(pos.ScripCode)
-            }));
-          }
-        }
-      } catch (e) {
-        // Fallback to locally tracked open positions
-      }
-    }
-    return Array.from(this.openPositions.values());
+    await this.ensureActiveSession();
+    if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
+    const url = `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/NetPositionNetWise`;
+    const data = await this.postUserApi(url, '5PNPNWV1', { ClientCode: this.config.clientCode || this.config.userId });
+    const rows: FivePaisaNetPosition[] = data?.body?.NetPositionDetail || [];
+    if (!Array.isArray(rows)) throw new BrokerError('BROKER_UNAVAILABLE', '5paisa returned an invalid net-position response.', 'FIVE_PAISA', this.environment);
+    return rows
+      .filter(pos => Number(pos.NetQty || 0) !== 0)
+      .map(pos => ({
+        id: `5P_${pos.ScripCode}_${pos.OrderFor || 'C'}`,
+        broker: 'FIVE_PAISA',
+        environment: this.environment,
+        market: (pos.ScripName?.includes('CE') || pos.ScripName?.includes('PE'))
+          ? 'INDIAN_OPTIONS'
+          : (pos.ExchType === 'D' ? 'INDIAN_FUTURES' : 'INDIAN_EQUITY'),
+        symbol: pos.ScripName || String(pos.ScripCode),
+        side: Number(pos.NetQty || 0) >= 0 ? 'BUY' : 'SELL',
+        quantity: Math.abs(Number(pos.NetQty || 0)),
+        entryPrice: Number(pos.NetQty || 0) >= 0 ? Number(pos.BuyAvgRate || 0) : Number(pos.SellAvgRate || 0),
+        currentPrice: Number(pos.LTP || 0),
+        unrealizedPnL: Number(pos.MTM || 0),
+        realizedPnL: Number(pos.BookedPL || 0),
+        currency: 'INR',
+        timestamp: Date.now(),
+        brokerPositionId: String(pos.ScripCode)
+      }));
   }
 
   async getOpenOrders(): Promise<NormalizedOrder[]> {
-    await this.authenticate();
-    return Array.from(this.openOrders.values()).filter(o => o.status === 'PENDING' || o.status === 'ACCEPTED');
+    await this.ensureActiveSession();
+    if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unava  async getOrderHistory(): Promise<NormalizedOrder[]> {
+    return this.getOpenOrders();
   }
 
-  async getOrderHistory(): Promise<NormalizedOrder[]> {
-    await this.authenticate();
-    return Array.from(this.openOrders.values());
+  private async postUserApi(url: string, requestCode: string, body: Record<string, unknown>): Promise<any> {
+    if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.config.accessToken}`,
+        'Content-Type': 'application/json',
+        '5Paisa-API-Uid': 'ka7SFqAU6SC'
+      },
+      body: JSON.stringify({ head: this.getApiHead(requestCode), body })
+    });
+    if (!res.ok) throw new BrokerError('BROKER_UNAVAILABLE', `5paisa API HTTP ${res.status}: ${res.statusText}`, 'FIVE_PAISA', this.environment);
+    const data = await res.json();
+    if (data?.head?.Status !== 0 && data?.head?.Status !== undefined) {
+      throw new BrokerError('BROKER_UNAVAILABLE', data?.head?.StatusDescription || '5paisa API request failed.', 'FIVE_PAISA', this.environment);
+    }
+    return data;
+  }
+
+  private normalizeBrokerOrder(o: any): NormalizedOrder {
+    const side = String(o.OrderType || o.BuySell || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY';
+    const statusText = String(o.OrderStatus || o.Status || '').toUpperCase();
+    const status = statusText.includes('CANCEL') ? 'CANCELLED'
+      : statusText.includes('REJECT') ? 'REJECTED'
+      : statusText.includes('COMPLETE') || statusText.includes('TRADED') || statusText.includes('EXECUT') ? 'FILLED'
+      : statusText.includes('PENDING') || statusText.includes('OPEN') ? 'PENDING'
+      : 'ACCEPTED';
+    const qty = Number(o.Qty ?? o.OrderedQty ?? o.Quantity ?? 0);
+    const filled = Number(o.TradedQty ?? o.FilledQty ?? o.TradedQuantity ?? 0);
+    const price = Number(o.Price ?? o.Rate ?? o.AveragePrice ?? 0);
+    return {
+      id: String(o.RemoteOrderID ?? o.OrderID ?? o.ExchOrderID ?? `5P_${Date.now()}`),
+      broker: 'FIVE_PAISA',
+      environment: this.environment,
+      market: o.ExchType === 'D' ? 'INDIAN_FUTURES' : 'INDIAN_EQUITY',
+      symbol: String(o.ScripName ?? o.ScripCode ?? ''),
+      side,
+      orderType: price > 0 ? 'LIMIT' : 'MARKET',
+      quantity: qty,
+      price,
+      status,
+      filledQuantity: filled,
+      averageFillPrice: Number(o.AveragePrice ?? o.TradedPrice ?? price) || undefined,
+      commission: Number(o.Brokerage ?? 0) || undefined,
+      timestamp: Date.now(),
+      brokerOrderId: String(o.ExchOrderID ?? o.OrderID ?? o.RemoteOrderID ?? ''),
+    };
   }
 
   async getQuote(symbol: string): Promise<NormalizedQuote> {
