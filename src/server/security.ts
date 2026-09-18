@@ -6,9 +6,7 @@ const requestCounts = new Map<string, { count: number; resetAt: number }>();
 let lastCleanup = 0;
 
 function getClientKey(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  const forwardedIp = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0];
-  return (forwardedIp || req.socket.remoteAddress || 'unknown').trim();
+  return (req.ip || req.socket.remoteAddress || 'unknown').trim();
 }
 
 export function securityHeaders(req: Request, res: Response, next: NextFunction): void {
