@@ -392,6 +392,14 @@ function initSchema(db: Database) {
       updated_at INTEGER NOT NULL
     );
 
+    -- 30. ML Persistence Bridge
+    CREATE TABLE IF NOT EXISTS ml_storage_records (
+      id TEXT PRIMARY KEY,
+      record_type TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      timestamp INTEGER NOT NULL
+    );
+
     -- 29. Risk Configs & System Settings
     CREATE TABLE IF NOT EXISTS risk_configs (
       id TEXT PRIMARY KEY,
