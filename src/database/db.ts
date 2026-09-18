@@ -397,6 +397,18 @@ function initSchema(db: Database) {
       updated_at INTEGER NOT NULL
     );
 
+    -- Broker reconciliation snapshots
+    CREATE TABLE IF NOT EXISTS broker_reconciliation_snapshots (
+      id TEXT PRIMARY KEY,
+      broker TEXT NOT NULL,
+      environment TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      account_json TEXT,
+      positions_json TEXT NOT NULL,
+      orders_json TEXT NOT NULL,
+      status TEXT NOT NULL
+    );
+
     -- 30. ML Persistence Bridge
     CREATE TABLE IF NOT EXISTS ml_storage_records (
       id TEXT PRIMARY KEY,
