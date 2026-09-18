@@ -39,27 +39,57 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
   const [totpSuccess, setTotpSuccess] = useState<string | null>(null);
 
   const fetchBalances = async () => {
-    const results = await Promise.all(BROKERS.map(async (broker) => {
-      setLoading(prev => ({ ...prev, [broker]: true }));
-      try {
-        const response = await fetch(`/api/brokers/account?broker=${broker}&environment=${environment}`);
-        const data = await response.json();
+    setLoading({ CTRADER: true, FIVE_PAISA: true, PAPER: false });
+    try {
+      // Use the canonical multi-broker status endpoint. It performs the broker
+      // account reads server-side and returns the broker-specific error instead
+      // of making the UI interpret an HTTP transport response as account data.
+      const response = await fetch('/api/brokers/status', {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store'
+      });
+      const data = await response.json().catch(() => ({}));
 
-        if (!response.ok) {
-          throw new Error(data.error || 'Account data unavailable');
-        }
-
-        setAccounts(prev => ({ ...prev, [broker]: data }));
-        setErrors(prev => ({ ...prev, [broker]: null }));
-        setLastUpdated(prev => ({ ...prev, [broker]: Date.now() }));
-      } catch (err: any) {
-        setErrors(prev => ({ ...prev, [broker]: err.message || 'Connection unavailable' }));
-      } finally {
-        setLoading(prev => ({ ...prev, [broker]: false }));
+      if (!response.ok) {
+        throw new Error(data?.error || `Broker status request failed (HTTP ${response.status})`);
       }
-    }));
 
-    await Promise.all(results);
+      const brokerResults = Array.isArray(data?.brokers) ? data.brokers : [];
+      const nextAccounts: Record<BrokerType, BrokerAccountInfo | null> = {
+        CTRADER: null,
+        FIVE_PAISA: null,
+        PAPER: null
+      };
+      const nextErrors: Record<BrokerType, string | null> = {
+        CTRADER: null,
+        FIVE_PAISA: null,
+        PAPER: null
+      };
+      const now = Date.now();
+
+      for (const broker of BROKERS) {
+        const result = brokerResults.find((item: any) => item?.broker === broker);
+        if (result?.account && result?.connected) {
+          nextAccounts[broker] = result.account as BrokerAccountInfo;
+          nextErrors[broker] = null;
+        } else {
+          nextErrors[broker] = result?.error || 'Live account data unavailable';
+        }
+      }
+
+      setAccounts(nextAccounts);
+      setErrors(nextErrors);
+      setLastUpdated(prev => ({
+        ...prev,
+        CTRADER: nextAccounts.CTRADER ? now : prev.CTRADER,
+        FIVE_PAISA: nextAccounts.FIVE_PAISA ? now : prev.FIVE_PAISA
+      }));
+    } catch (err: any) {
+      const message = err?.message || 'Broker status unavailable';
+      setErrors({ CTRADER: message, FIVE_PAISA: message, PAPER: null });
+    } finally {
+      setLoading({ CTRADER: false, FIVE_PAISA: false, PAPER: false });
+    }
   };
 
   useEffect(() => {
