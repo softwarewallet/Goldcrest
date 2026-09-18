@@ -163,6 +163,7 @@ export function operatorAuthRequired(req: Request, res: Response, next: NextFunc
 
   // Cookie-backed browser sessions are same-origin only to prevent cross-site state changes.
   if (!authenticatedByHeader && authenticatedBySession && req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {
+    console.error(`[CRITICAL] CSRF Rejection: Method ${req.method} from origin ${req.header('Origin')}`);
     res.status(403).json({ error: 'CSRF_ORIGIN_REJECTED', message: 'Cross-origin state-changing requests are not permitted.' });
     return;
   }
