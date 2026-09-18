@@ -381,7 +381,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       throw new BrokerError('INVALID_SYMBOL', `Symbol ${symbol} is not a valid cTrader Forex/Metal instrument`, 'CTRADER', this.environment);
     }
     throw new BrokerError(
-      'MARKET_DATA_UNAVAILABLE',
+      'UNAVAILABLE',
       `Authoritative cTrader quote unavailable for ${symbol}; no synthetic fallback is permitted.`,
       'CTRADER',
       this.environment
@@ -439,7 +439,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     const orderId = `ctrader_${this.environment.toLowerCase()}_${Date.now()}`;
     const fillPrice = order.price;
     if (order.orderType === 'MARKET' && (!Number.isFinite(fillPrice) || Number(fillPrice) <= 0)) {
-      throw new BrokerError('MARKET_DATA_UNAVAILABLE', 'A market order requires an authoritative current price; no synthetic fill price is permitted.', 'CTRADER', this.environment);
+      throw new BrokerError('UNAVAILABLE', 'A market order requires an authoritative current price; no synthetic fill price is permitted.', 'CTRADER', this.environment);
     }
 
     const normalized: NormalizedOrder = {
