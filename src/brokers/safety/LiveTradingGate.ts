@@ -2,6 +2,7 @@ import { BrokerAdapter, LiveTradingGateResult, OrderRequest, NormalizedQuote } f
 import { brokerRegistry } from '../registry';
 import { killSwitch } from './KillSwitch';
 import { tradeValidator } from './TradeValidator';
+import { getSystemConfig } from '../../services/configService';
 
 export interface LiveGateEvaluationParams {
   order: OrderRequest;
@@ -126,6 +127,33 @@ export class LiveTradingGate {
       failedReasons.push('Condition 14 Failed: Malformed order parameters.');
     }
 
+    // Check 16: Per-broker maximum trade value. The limit is a hard pre-flight
+    // boundary and is evaluated before any live dispatch path.
+    const config = getSystemConfig();
+    const isForex = params.order.market === 'FOREX';
+    const maxTradeValue = isForex ? config.maxTradeValueForexUsd : config.maxTradeValueIndianInr;
+    const referencePrice = params.order.price && params.order.price > 0
+      ? params.order.price
+      : (params.order.side === 'BUY' ? params.currentQuote.ask : params.currentQuote.bid);
+    const instrumentForValue = instrument;
+    const quoteCurrency = instrumentForValue?.quoteCurrency || (isForex ? params.order.symbol.replace(/[^A-Z]/g, '').slice(-3) : 'INR');
+    const tradeValue = referencePrice > 0 && params.order.quantity > 0
+      ? params.order.quantity * referencePrice
+      : NaN;
+    let maximumTradeValueCheckPassed = Number.isFinite(maxTradeValue) && maxTradeValue > 0 && Number.isFinite(tradeValue) && tradeValue > 0;
+
+    if (maximumTradeValueCheckPassed && isForex && quoteCurrency !== 'USD') {
+      // The configured Forex limit is explicitly USD-denominated. Do not compare
+      // JPY/EUR/GBP/etc. notionals directly against a USD threshold.
+      maximumTradeValueCheckPassed = false;
+      failedReasons.push(`Condition 16 Failed: Forex pair ${params.order.symbol} has quote currency ${quoteCurrency}; USD trade-value conversion is unavailable, so the limit cannot be safely verified.`);
+    } else if (maximumTradeValueCheckPassed && tradeValue > maxTradeValue) {
+      maximumTradeValueCheckPassed = false;
+      failedReasons.push(`Condition 16 Failed: Trade value ${tradeValue.toFixed(2)} ${isForex ? 'USD' : 'INR'} exceeds configured maximum of ${maxTradeValue.toFixed(2)} ${isForex ? 'USD' : 'INR'} for ${isForex ? 'cTrader' : '5paisa'}.`);
+    } else if (!maximumTradeValueCheckPassed) {
+      failedReasons.push('Condition 16 Failed: Trade value could not be safely calculated or the configured maximum is invalid.');
+    }
+
     // Check 15: Explicit live-trading permission enabled in server env
     const explicitLivePermissionEnabled = process.env.LIVE_TRADING_ENABLED === 'true';
     if (!explicitLivePermissionEnabled) {
@@ -151,7 +179,8 @@ export class LiveTradingGate {
         maxExposureNotExceeded,
         duplicatePositionCheckPassed,
         orderParametersValidated,
-        explicitLivePermissionEnabled
+        explicitLivePermissionEnabled,
+        maximumTradeValueCheckPassed
       },
       failedReasons
     };
