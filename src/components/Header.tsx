@@ -88,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center space-x-3 truncate">
           <span>ACTIVE AREA: <strong className="text-slate-200 uppercase">{activeTab}</strong></span>
           <span className="text-slate-700">|</span>
-          <span>BROKER: <strong className="text-slate-200">{selectedBroker}</strong></span>
+          <span>BROKERS: <strong className="text-slate-200">cTrader + 5paisa</strong></span>
           <span className="text-slate-700">|</span>
           <span>ENVIRONMENT: <strong className={isLive ? 'text-rose-400 font-bold' : environment === 'DEMO' ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>{environment}</strong></span>
           <span className="text-slate-700">|</span>
@@ -146,8 +146,8 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* New Prominent Balance Display Integration */}
-          <BalanceDisplay broker={selectedBroker} environment={environment} />
+          {/* Dual LIVE broker balances: cTrader (Forex) + 5paisa (Indian markets) */}
+          <BalanceDisplay environment="LIVE" />
 
           <div className="hidden xl:flex items-center space-x-2 pl-4 border-l border-slate-800 text-xs font-mono">
             {/* Forex Sessions Badge */}
@@ -221,7 +221,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* Right Controls: Emergency Stop, Refresh, Settings, Cloud */}
+        {/* Right Controls: Emergency Stop, Refresh, Settings, Local DB */}
         <div className="flex items-center space-x-2">
           {/* Global Kill Switch Button */}
           <button
@@ -260,14 +260,14 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           <button
-            id="btn_firebase_cloud"
+            id="btn_local_sqlite"
             onClick={onOpenDiagnostics}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-mono font-medium bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-700/80 transition shadow-sm"
-            title="Firebase Project: goldcrestfinman-trading (Firestore Active)"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-mono font-medium bg-cyan-950/60 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-700/80 transition shadow-sm"
+            title="Goldcrest local SQLite storage"
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <Cloud className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden md:inline font-bold">goldcrestfinman-trading</span>
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+            <Database className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden md:inline font-bold">SQLite</span>
           </button>
         </div>
       </div>
