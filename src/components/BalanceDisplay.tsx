@@ -40,56 +40,95 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
 
   const fetchBalances = async () => {
     setLoading({ CTRADER: true, FIVE_PAISA: true, PAPER: false });
-    try {
-      // Use the canonical multi-broker status endpoint. It performs the broker
-      // account reads server-side and returns the broker-specific error instead
-      // of making the UI interpret an HTTP transport response as account data.
-      const response = await fetch('/api/brokers/status', {
-        headers: { Accept: 'application/json' },
-        cache: 'no-store'
-      });
+
+    const loadBrokerAccount = async (broker: BrokerType): Promise<BrokerAccountInfo> => {
+      const response = await fetch(
+        `/api/brokers/account?broker=${encodeURIComponent(broker)}&environment=LIVE`,
+        {
+          headers: { Accept: 'application/json' },
+          cache: 'no-store'
+        }
+      );
+
       const data = await response.json().catch(() => ({}));
 
+      // Parse the broker account payload directly. A valid HTTP 200 must never
+      // be converted into a transport-level error such as "Server returned HTTP 200".
       if (!response.ok) {
-        throw new Error(data?.error || `Broker status request failed (HTTP ${response.status})`);
+        const message =
+          data?.error ||
+          data?.message ||
+          `Broker account request failed (HTTP ${response.status})`;
+        throw new Error(String(message));
       }
 
-      const brokerResults = Array.isArray(data?.brokers) ? data.brokers : [];
-      const nextAccounts: Record<BrokerType, BrokerAccountInfo | null> = {
-        CTRADER: null,
-        FIVE_PAISA: null,
-        PAPER: null
-      };
-      const nextErrors: Record<BrokerType, string | null> = {
-        CTRADER: null,
-        FIVE_PAISA: null,
-        PAPER: null
-      };
-      const now = Date.now();
+      if (data?.error) {
+        throw new Error(String(data.error));
+      }
 
-      for (const broker of BROKERS) {
-        const result = brokerResults.find((item: any) => item?.broker === broker);
-        if (result?.account && result?.connected) {
-          nextAccounts[broker] = result.account as BrokerAccountInfo;
-          nextErrors[broker] = null;
-        } else {
-          nextErrors[broker] = result?.error || 'Live account data unavailable';
+      const account =
+        data?.account ||
+        (Array.isArray(data?.accounts)
+          ? data.accounts.find((item: any) => item?.broker === broker)
+          : undefined) ||
+        (data?.broker === broker ? data : undefined);
+
+      if (!account) {
+        throw new Error(`${broker} returned HTTP 200 without account data.`);
+      }
+
+      if (account.broker && account.broker !== broker) {
+        throw new Error(`Unexpected broker account returned: ${account.broker}`);
+      }
+
+      if (!Number.isFinite(Number(account.balance))) {
+        throw new Error(`${broker} returned an invalid live balance.`);
+      }
+
+      return account as BrokerAccountInfo;
+    };
+
+    const results = await Promise.all(
+      BROKERS.map(async (broker) => {
+        try {
+          const account = await loadBrokerAccount(broker);
+          return { broker, account, error: null as string | null };
+        } catch (err: any) {
+          return {
+            broker,
+            account: null,
+            error: err?.message || `${broker} live account data unavailable`
+          };
         }
-      }
+      })
+    );
 
-      setAccounts(nextAccounts);
-      setErrors(nextErrors);
-      setLastUpdated(prev => ({
-        ...prev,
-        CTRADER: nextAccounts.CTRADER ? now : prev.CTRADER,
-        FIVE_PAISA: nextAccounts.FIVE_PAISA ? now : prev.FIVE_PAISA
-      }));
-    } catch (err: any) {
-      const message = err?.message || 'Broker status unavailable';
-      setErrors({ CTRADER: message, FIVE_PAISA: message, PAPER: null });
-    } finally {
-      setLoading({ CTRADER: false, FIVE_PAISA: false, PAPER: false });
+    const nextAccounts: Record<BrokerType, BrokerAccountInfo | null> = {
+      CTRADER: null,
+      FIVE_PAISA: null,
+      PAPER: null
+    };
+    const nextErrors: Record<BrokerType, string | null> = {
+      CTRADER: null,
+      FIVE_PAISA: null,
+      PAPER: null
+    };
+    const now = Date.now();
+
+    for (const result of results) {
+      nextAccounts[result.broker] = result.account;
+      nextErrors[result.broker] = result.error;
     }
+
+    setAccounts(nextAccounts);
+    setErrors(nextErrors);
+    setLastUpdated(prev => ({
+      ...prev,
+      CTRADER: nextAccounts.CTRADER ? now : prev.CTRADER,
+      FIVE_PAISA: nextAccounts.FIVE_PAISA ? now : prev.FIVE_PAISA
+    }));
+
+    setLoading({ CTRADER: false, FIVE_PAISA: false, PAPER: false });
   };
 
   useEffect(() => {
