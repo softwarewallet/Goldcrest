@@ -509,10 +509,8 @@ function seedInitialData(db: Database) {
     ('default_risk', 1.0, 3.0, 5, 'LIVE_ONLY');
   `);
 
-  // Portfolio
-  db.run(`INSERT OR IGNORE INTO portfolio (id, balance, equity, margin_used, free_margin, currency) VALUES 
-    ('paper_account', 100000.00, 100000.00, 0.0, 100000.00, 'USD');
-  `);
+  // No synthetic/PAPER portfolio is seeded. LIVE broker APIs are the only source of live account state.
+  db.run(`DELETE FROM portfolio WHERE id = 'paper_account';`);
 
   // Economic events
   db.run(`INSERT OR IGNORE INTO economic_events (id, title, currency, impact, timestamp, blocks_entry) VALUES 
