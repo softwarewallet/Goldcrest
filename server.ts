@@ -788,6 +788,24 @@ app.all('/api/*', (req: Request, res: Response) => {
 // -------------------------------------------------------------
 // VITE MIDDLEWARE & SERVER STARTUP
 // -------------------------------------------------------------
+async function captureLiveBrokerReconciliation(): Promise<void> {
+  if (!databaseReady) return;
+  try {
+    const results = await Promise.allSettled([
+      reconciliationService.captureBrokerSnapshot('CTRADER'),
+      reconciliationService.captureBrokerSnapshot('FIVE_PAISA')
+    ]);
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        const broker = index === 0 ? 'CTRADER' : 'FIVE_PAISA';
+        console.warn(`Goldcrest reconciliation failed for ${broker}: `, result.reason?.message || result.reason);
+      }
+    });
+  } catch (err: any) {
+    console.warn('Goldcrest reconciliation cycle failed:', err?.message || err);
+  }
+}
+
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -806,6 +824,9 @@ async function startServer() {
   const host = process.env.HOST || '0.0.0.0';
   app.listen(PORT, host, () => {
     console.log(`Goldcrest server listening on http://${host}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
+    void captureLiveBrokerReconciliation();
+    const reconciliationTimer = setInterval(() => void captureLiveBrokerReconciliation(), 5 * 60_000);
+    reconciliationTimer.unref?.();
   });
 }
 
