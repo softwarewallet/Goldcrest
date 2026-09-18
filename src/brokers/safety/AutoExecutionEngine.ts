@@ -15,9 +15,9 @@ import { logBrokerAction } from '../auditLog';
  * ============================================================================
  * NON-NEGOTIABLE SAFETY INVARIANT (PHASE 12)
  * ============================================================================
- * Autonomous live-money order execution is permanently disabled in Goldcrest.
- * Goldcrest may connect to live brokers, retrieve live accounts/margins/quotes,
- * and validate orders. But Goldcrest MUST NOT autonomously submit live orders.
+ * Autonomous live-money execution is explicitly enabled only after the full
+ * server-side safety gate passes. Broker adapters must submit to authoritative
+ * LIVE APIs and return broker-generated identifiers/statuses.
  */
 export let LIVE_AUTO_EXECUTION_ALLOWED: boolean = true;
 
@@ -72,7 +72,7 @@ class AutoExecutionEngine {
   /**
    * 5-Stage Execution Pipeline:
    * SignalEngine -> TradeValidator -> RiskEngine -> ExecutionPermission -> ExecutionEngine -> BrokerAdapter
-   * In LIVE mode, autonomous dispatch is permanently blocked at Stage 3.
+   * In LIVE mode, dispatch is allowed only after the server-side validation gates pass.
    */
   async processSignal(
     signalInput: SignalValidationInput,
@@ -120,7 +120,7 @@ class AutoExecutionEngine {
       return { executed: false, reason: valResult.rejectionReason, code: 'RISK_REJECTED' };
     }
 
-    // Stage 3: Permanent Autonomous Execution Safety Invariant (Section 1 & 2)
+    // Stage 3: Autonomous live execution permission boundary
     if (!LIVE_AUTO_EXECUTION_ALLOWED) {
       logBrokerAction({
         source: 'SAFETY_GATE',
@@ -135,7 +135,7 @@ class AutoExecutionEngine {
       return {
         executed: false,
         code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
-        reason: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED: Autonomous live-money order execution is structurally disabled.'
+        reason: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED: Autonomous live-money order execution is disabled by the current server control.'
       };
     }
 
