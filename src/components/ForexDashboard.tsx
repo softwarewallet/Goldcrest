@@ -238,7 +238,7 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
   return (
     <div id="forex_dashboard_view" className="space-y-4">
       {/* Top Banner & Stats with DEMO Badge */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3" style={{ marginBottom: '5px' }}>
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-slate-400 text-xs font-mono uppercase">Forex Instruments</span>
@@ -316,7 +316,7 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
           </div>
 
           {/* Table Container */}
-          <div className="overflow-x-auto flex-1 max-h-[620px]">
+          <div className="overflow-x-auto flex-1">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-950 text-slate-400 font-mono text-[11px] uppercase sticky top-0 border-b border-slate-800">
                 <tr>

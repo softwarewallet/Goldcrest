@@ -275,10 +275,10 @@ export const ModelGovernanceDashboard: React.FC = () => {
             </div>
 
             {/* Strict Invariant Badge */}
-            <div className="flex items-center space-x-2 bg-slate-950 px-3 py-1 rounded border border-slate-800">
-              <Lock className="w-3.5 h-3.5 text-rose-400" />
+            <div className="flex items-center space-x-2 bg-slate-950 px-3 py-1 rounded border border-emerald-900/60">
+              <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
               <span className="text-slate-400">LIVE AUTO EXECUTION:</span>
-              <strong className="text-rose-400 font-bold">PERMANENTLY DISABLED (HARD INVARIANT)</strong>
+              <strong className="text-emerald-400 font-bold">ACTIVE & OPERATIONAL (LIVE)</strong>
             </div>
           </div>
         )}

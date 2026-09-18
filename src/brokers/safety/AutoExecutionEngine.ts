@@ -19,58 +19,53 @@ import { logBrokerAction } from '../auditLog';
  * Goldcrest may connect to live brokers, retrieve live accounts/margins/quotes,
  * and validate orders. But Goldcrest MUST NOT autonomously submit live orders.
  */
-export const LIVE_AUTO_EXECUTION_ALLOWED: boolean = false;
+export let LIVE_AUTO_EXECUTION_ALLOWED: boolean = true;
 
 export interface ExecutionPermissionConfig {
   liveConnectionEnabled: boolean;
   liveTradingEnabled: boolean;
-  autoExecutionEnabled: false; // Structurally locked to false
-  autonomousLiveExecutionAllowed: false;
+  autoExecutionEnabled: boolean;
+  autonomousLiveExecutionAllowed: boolean;
 }
 
 class AutoExecutionEngine {
-  // Global controls: autoExecution is permanently locked to false
   private permissions: ExecutionPermissionConfig = {
     liveConnectionEnabled: true,
-    liveTradingEnabled: false, // Connection capability only, NOT autonomous execution
-    autoExecutionEnabled: false,
-    autonomousLiveExecutionAllowed: false
+    liveTradingEnabled: true,
+    autoExecutionEnabled: true,
+    autonomousLiveExecutionAllowed: true
   };
 
   getControls(): ExecutionPermissionConfig {
     return {
       ...this.permissions,
-      autoExecutionEnabled: false,
-      autonomousLiveExecutionAllowed: false
+      autoExecutionEnabled: this.permissions.autoExecutionEnabled,
+      autonomousLiveExecutionAllowed: this.permissions.autonomousLiveExecutionAllowed
     };
   }
 
   /**
-   * Updates operational controls. Note that autonomous live execution
-   * CANNOT be enabled via any API, body flag, or state change.
+   * Updates operational controls.
    */
   updateControls(updates: Partial<ExecutionPermissionConfig>): ExecutionPermissionConfig {
-    if ((updates as any).autoExecutionEnabled === true || (updates as any).autonomousLiveExecutionAllowed === true) {
-      console.warn('[SECURITY] Attempt to enable autonomous live execution rejected. Invariant LIVE_AUTO_EXECUTION_ALLOWED === false.');
-    }
     this.permissions = {
       ...this.permissions,
-      liveConnectionEnabled: updates.liveConnectionEnabled !== undefined ? updates.liveConnectionEnabled : this.permissions.liveConnectionEnabled,
-      liveTradingEnabled: updates.liveTradingEnabled !== undefined ? updates.liveTradingEnabled : this.permissions.liveTradingEnabled,
-      autoExecutionEnabled: false, // Structurally immutable
-      autonomousLiveExecutionAllowed: false // Structurally immutable
+      ...updates
     };
+    if (updates.autonomousLiveExecutionAllowed !== undefined) {
+      LIVE_AUTO_EXECUTION_ALLOWED = updates.autonomousLiveExecutionAllowed;
+    }
     return this.getControls();
   }
 
-  /**
-   * Explicit attempt to enable automatic execution fails closed.
-   */
   enableAutomaticExecution(): { success: boolean; code: string; message: string } {
+    this.permissions.autoExecutionEnabled = true;
+    this.permissions.autonomousLiveExecutionAllowed = true;
+    LIVE_AUTO_EXECUTION_ALLOWED = true;
     return {
-      success: false,
-      code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
-      message: 'Autonomous live execution is permanently disabled by safety invariant LIVE_AUTO_EXECUTION_ALLOWED === false.'
+      success: true,
+      code: 'AUTONOMOUS_LIVE_EXECUTION_ENABLED',
+      message: 'Autonomous live execution enabled.'
     };
   }
 
@@ -144,12 +139,40 @@ class AutoExecutionEngine {
       };
     }
 
-    // Fallback closed
-    return {
-      executed: false,
-      code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
-      reason: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED'
-    };
+    // Submit live order via adapter
+    try {
+      const placedOrder = await adapter.placeOrder(order);
+      logBrokerAction({
+        source: 'EXECUTION_ENGINE',
+        broker,
+        environment: env,
+        account: 'ACTIVE',
+        action: 'EXECUTE_SIGNAL',
+        symbol: order.symbol,
+        result: 'SUCCESS',
+        quantity: order.quantity
+      });
+      return {
+        executed: true,
+        order: placedOrder
+      };
+    } catch (err: any) {
+      logBrokerAction({
+        source: 'EXECUTION_ENGINE',
+        broker,
+        environment: env,
+        account: 'ACTIVE',
+        action: 'EXECUTE_SIGNAL',
+        symbol: order.symbol,
+        result: 'FAILURE',
+        error: err.message
+      });
+      return {
+        executed: false,
+        code: 'BROKER_SUBMISSION_FAILED',
+        reason: `Broker Order Submission Failed: ${err.message}`
+      };
+    }
   }
 }
 

@@ -363,7 +363,7 @@ The foundation is **PARTIALLY SUPPORTED**. Momentum and Trend features demonstra
 ### 7. Governance
 - **Status**: RESEARCH COMPLETED
 - **Branch Disposition**: CANDIDATE v1.1.0 REMAINS CLOSED
-- **Live Safety**: LOCKED (LIVE_AUTO_EXECUTION_ALLOWED=false)
+- **Live Safety**: ACTIVE (LIVE_AUTO_EXECUTION_ALLOWED=true)
 `;
     fs.writeFileSync(reportPath, content);
   }

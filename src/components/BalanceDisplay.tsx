@@ -217,13 +217,25 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
 
     return (
       <div key={broker} id={`balance_display_${broker.toLowerCase()}`} className="flex flex-col bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg p-2.5 min-w-[210px] shadow-sm font-mono">
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center space-x-1.5">
+        <div className="flex items-start justify-between mb-1">
+          <div className="flex items-center space-x-1.5 mt-0.5">
             <span className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-amber-400 animate-pulse' : account?.connectionStatus === 'CONNECTED' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
             <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">{label}</span>
             <span className="text-[8px] px-1 rounded bg-slate-800 text-slate-500 border border-slate-700">{market}</span>
           </div>
-          <Wallet className="w-3.5 h-3.5 text-emerald-500" />
+          <div className="flex items-center space-x-1.5 ml-2">
+            <Wallet className="w-3.5 h-3.5 text-emerald-500" />
+            <button
+              type="button"
+              id={`btn_refresh_balance_${broker.toLowerCase()}`}
+              onClick={fetchBalances}
+              disabled={isLoading}
+              className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-emerald-400 disabled:opacity-50 transition cursor-pointer"
+              title="Refresh Balance"
+            >
+              <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
 
         {account ? (
@@ -269,16 +281,6 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
             )}
           </div>
         )}
-
-        <button
-          id={`btn_refresh_balance_${broker.toLowerCase()}`}
-          onClick={fetchBalances}
-          disabled={isLoading}
-          className="mt-1 text-[9px] flex items-center justify-end space-x-1 text-emerald-500 hover:text-emerald-400 disabled:opacity-50"
-        >
-          <RefreshCw className={`w-2.5 h-2.5 ${isLoading ? 'animate-spin' : ''}`} />
-          <span>REFRESH</span>
-        </button>
       </div>
     );
   };

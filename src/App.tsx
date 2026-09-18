@@ -17,7 +17,7 @@ import { getForexSessionState, getIndianSessionState } from './markets/common/se
 import { BrokerType, TradingEnvironment, OrderRequest } from './brokers/types';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('control_center');
+  const [activeTab, setActiveTab] = useState<string>('market');
   const [forexPairs, setForexPairs] = useState<any[]>([]);
   const [forexSessions, setForexSessions] = useState<ForexSessionState>(() => getForexSessionState(new Date()));
   const [indianUnderlyings, setIndianUnderlyings] = useState<any[]>([]);
@@ -286,7 +286,7 @@ export default function App() {
       />
 
       {/* Main Terminal Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 md:p-6 space-y-4">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 space-y-4" style={{ paddingTop: '5px', paddingBottom: '5px' }}>
         {loadingInitial ? (
           <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 font-mono">
             <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>

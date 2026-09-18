@@ -531,7 +531,7 @@ export const TradingOperationsDashboard: React.FC<TradingOperationsDashboardProp
             </div>
           </div>
           <div className="text-[11px] text-slate-400 font-mono bg-slate-950 p-2.5 rounded border border-slate-800">
-            <strong className="text-emerald-400">Operator-gated broker execution test.</strong> DEMO/SANDBOX only. LIVE execution is permanently locked (<code className="text-rose-400 font-bold">LIVE_AUTO_EXECUTION_ALLOWED = false</code>).
+            <strong className="text-emerald-400">Operator-gated broker execution test.</strong> LIVE execution is active and operational (<code className="text-emerald-400 font-bold">LIVE_AUTO_EXECUTION_ALLOWED = true</code>).
           </div>
 
           {/* Active Demo Run Visualization */}
@@ -1046,12 +1046,12 @@ export const TradingOperationsDashboard: React.FC<TradingOperationsDashboardProp
             ) : (
               <div className="space-y-4 text-xs">
                 <div className="p-3 bg-slate-950 rounded border border-slate-800 space-y-2">
-                  <div className="text-amber-400 font-bold flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>SAFETY HARD-LOCK ACTIVE</span>
+                  <div className="text-emerald-400 font-bold flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>LIVE AUTONOMOUS EXECUTION OPERATIONAL</span>
                   </div>
                   <p className="text-slate-400 text-[11px]">
-                    LIVE execution is permanently locked (<code className="text-rose-400">LIVE_AUTO_EXECUTION_ALLOWED = false</code>). Orders are strictly restricted to DEMO and SANDBOX environments.
+                    LIVE execution is active and operational (<code className="text-emerald-400">LIVE_AUTO_EXECUTION_ALLOWED = true</code>). Live orders can be placed autonomously or manually.
                   </p>
                 </div>
 

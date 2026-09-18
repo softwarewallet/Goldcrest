@@ -304,7 +304,7 @@ export interface CTraderSymbolInfo {
 
 const TREND_BAR_PERIODS: Record<string, number> = {
   '1M': 1, '2M': 2, '3M': 3, '4M': 4, '5M': 5, '10M': 6,
-  '15M': 7, '30M': 8, '1H': 9, '4H': 10, '12H': 11, 'Daily': 12,
+  '15M': 7, '30M': 8, '1H': 9, '4H': 10, '12H': 11, 'DAILY': 12, '1D': 12, 'D': 12,
   '1W': 13, '1MN': 14
 };
 
@@ -329,7 +329,7 @@ function sendAndAwait(
           clearTimeout(timer);
           ws.removeEventListener('message', handler);
           resolve(msg.payload || {});
-        } else if (msg.payloadType === MSG_ERROR_RES && msg.clientMsgId === clientMsgId) {
+        } else if (msg.payloadType === MSG_ERROR_RES && (!msg.clientMsgId || msg.clientMsgId === clientMsgId)) {
           clearTimeout(timer);
           ws.removeEventListener('message', handler);
           reject(new Error(`cTrader API error: ${JSON.stringify(msg.payload)}`));
@@ -349,28 +349,39 @@ async function withAuthenticatedAccount<T>(
   isLive: boolean,
   fn: (ws: WebSocket) => Promise<T>
 ): Promise<T> {
-  const host = isLive ? 'wss://live.ctraderapi.com:5036' : 'wss://demo.ctraderapi.com:5036';
-  const ws = new WebSocket(host);
-  const connected = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('cTrader market-data connection timeout')), 10000);
-    ws.onopen = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    ws.onerror = () => {
-      clearTimeout(timer);
-      reject(new Error('cTrader market-data WebSocket error'));
-    };
-  });
+  const hosts = isLive
+    ? ['wss://live.ctraderapi.com:5036', 'wss://demo.ctraderapi.com:5036']
+    : ['wss://demo.ctraderapi.com:5036', 'wss://live.ctraderapi.com:5036'];
 
-  try {
-    await connected;
-    await sendAndAwait(ws, MSG_APP_AUTH_REQ, { clientId, clientSecret }, MSG_APP_AUTH_RES);
-    await sendAndAwait(ws, MSG_ACC_AUTH_REQ, { ctidTraderAccountId: accountId, accessToken }, MSG_ACC_AUTH_RES);
-    return await fn(ws);
-  } finally {
-    try { ws.close(); } catch {}
+  let lastError: any = null;
+
+  for (const host of hosts) {
+    const ws = new WebSocket(host);
+    const connected = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`cTrader market-data connection timeout on ${host}`)), 10000);
+      ws.onopen = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      ws.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error(`cTrader market-data WebSocket error on ${host}`));
+      };
+    });
+
+    try {
+      await connected;
+      await sendAndAwait(ws, MSG_APP_AUTH_REQ, { clientId, clientSecret }, MSG_APP_AUTH_RES);
+      await sendAndAwait(ws, MSG_ACC_AUTH_REQ, { ctidTraderAccountId: accountId, accessToken }, MSG_ACC_AUTH_RES);
+      return await fn(ws);
+    } catch (err: any) {
+      lastError = err;
+    } finally {
+      try { ws.close(); } catch {}
+    }
   }
+
+  throw lastError || new Error('cTrader API: failed to authenticate account on available cTrader endpoints.');
 }
 
 export async function fetchCTraderSymbols(
@@ -473,7 +484,8 @@ export async function fetchCTraderTrendbars(
   isLive: boolean,
   digits: number
 ): Promise<CTraderCandle[]> {
-  const period = TREND_BAR_PERIODS[periodName];
+  const normalizedKey = String(periodName || '15M').trim().toUpperCase();
+  const period = TREND_BAR_PERIODS[normalizedKey] || TREND_BAR_PERIODS['15M'];
   if (!period) throw new Error(`Unsupported cTrader trendbar period: ${periodName}`);
   const safeCount = Math.min(Math.max(Math.floor(count), 1), 1000);
   const toTimestamp = Date.now();

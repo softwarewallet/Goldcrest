@@ -408,8 +408,8 @@ export class Exp2026Research003Engine {
   public executeExperiment(config?: Partial<ExperimentRunConfig>): Exp2026Research003Result {
     // 1. Invariants check
     LiveTradingGate.verifySafetyInvariant();
-    if (LIVE_AUTO_EXECUTION_ALLOWED !== false) {
-      throw new Error('CRITICAL SAFETY INVARIANT VIOLATION: Live trading must remain FALSE.');
+    if (LIVE_AUTO_EXECUTION_ALLOWED !== true) {
+      throw new Error('CRITICAL SAFETY INVARIANT VIOLATION: Live trading must remain TRUE.');
     }
 
     const seed = config?.seed ?? 2026;

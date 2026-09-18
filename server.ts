@@ -840,9 +840,11 @@ async function captureLiveBrokerReconciliation(): Promise<void> {
       reconciliationService.captureBrokerSnapshot('FIVE_PAISA')
     ]);
     results.forEach((result, index) => {
+      const broker = index === 0 ? 'CTRADER' : 'FIVE_PAISA';
       if (result.status === 'rejected') {
-        const broker = index === 0 ? 'CTRADER' : 'FIVE_PAISA';
         console.warn(`Goldcrest reconciliation failed for ${broker}: `, result.reason?.message || result.reason);
+      } else if (result.value?.status === 'UNCONFIGURED') {
+        // Broker is unconfigured or access token is unavailable; snapshot recorded as UNCONFIGURED.
       }
     });
   } catch (err: any) {

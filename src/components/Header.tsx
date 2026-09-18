@@ -54,8 +54,8 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   // Primary unified application areas with direct Control Center, P&L and Operations navigation
   const tabs = [
-    { id: 'control_center', label: 'CONTROL CENTER', icon: Activity },
     { id: 'market', label: 'MARKET', icon: TrendingUp },
+    { id: 'control_center', label: 'CONTROL CENTER', icon: Activity },
     { id: 'signals', label: 'SIGNALS', icon: Target },
     { id: 'trading', label: 'TRADING', icon: Layers },
     { id: 'pnl', label: 'P&L & ACCOUNTING', icon: DollarSign },
@@ -92,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="text-slate-700">|</span>
           <span>ENVIRONMENT: <strong className={isLive ? 'text-rose-400 font-bold' : environment === 'DEMO' ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>{environment}</strong></span>
           <span className="text-slate-700">|</span>
-          <span>EXECUTION: <strong className="text-slate-200">OFF (MANUAL ONLY)</strong></span>
+          <span>EXECUTION: <strong className="text-emerald-400">AUTO (LIVE)</strong></span>
           <span className="text-slate-700">|</span>
           <span>DATA: <strong className="text-emerald-400">FRESH ({environment})</strong></span>
           <span className="text-slate-700">|</span>
@@ -136,12 +136,10 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div>
               <h1 className="text-base font-bold tracking-tight text-white leading-tight">
-                AI Trading Analyst
+                Goldcrest Finman - AI Trading
               </h1>
               <div className="text-[11px] text-slate-400 font-mono flex items-center space-x-2">
                 <span className="text-emerald-400 font-bold">PRODUCTION TERMINAL</span>
-                <span className="text-slate-600">•</span>
-                <span>cTrader & 5paisa Live</span>
               </div>
             </div>
           </div>
@@ -207,18 +205,6 @@ export const Header: React.FC<HeaderProps> = ({
               );
             })()}
           </div>
-        </div>
-
-        {/* Center: Environment Selector */}
-        <div id="trading_environment_selector" className="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs font-mono">
-          <span className="text-slate-500 px-2 text-[10px] uppercase tracking-wider font-semibold">TRADING ENV:</span>
-          <button
-            id="btn_env_live"
-            onClick={() => onRequestEnvironmentChange('LIVE')}
-            className="px-4 py-1 rounded font-bold transition text-xs bg-rose-600 text-white shadow-md shadow-rose-950"
-          >
-            LIVE BROKER ACCOUNT
-          </button>
         </div>
 
         {/* Right Controls: Emergency Stop, Refresh, Settings, Local DB */}

@@ -36,7 +36,7 @@ export const MarketHub: React.FC<MarketHubProps> = ({
   return (
     <div id="unified_market_hub" className="space-y-4">
       {/* Secondary Market Sub-Navigation Tabs */}
-      <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-2 px-3 shadow-md">
+      <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-2 px-3 shadow-md" style={{ marginBottom: '5px' }}>
         <div className="flex items-center space-x-1.5 overflow-x-auto text-xs font-mono">
           <span className="text-slate-500 font-semibold px-2 uppercase text-[10px] hidden sm:inline">
             MARKET VIEW:

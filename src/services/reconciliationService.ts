@@ -87,27 +87,54 @@ export class ReconciliationService {
 
   public async captureBrokerSnapshot(broker: 'CTRADER' | 'FIVE_PAISA'): Promise<any> {
     const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
-    const [account, positions, orders] = await Promise.all([
-      adapter.getAccount(),
-      adapter.getPositions(),
-      adapter.getOpenOrders()
-    ]);
-    const timestamp = Date.now();
-    const snapshot = {
-      id: `BROKER-SNAPSHOT-${broker}-${timestamp}`,
-      broker,
-      environment: 'LIVE',
-      timestamp,
-      account,
-      positions,
-      orders,
-      status: 'CAPTURED'
-    };
-    await executeRun(
-      'INSERT INTO broker_reconciliation_snapshots (id, broker, environment, timestamp, account_json, positions_json, orders_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [snapshot.id, broker, 'LIVE', timestamp, JSON.stringify(account), JSON.stringify(positions), JSON.stringify(orders), snapshot.status]
-    );
-    return snapshot;
+    if (!adapter) return null;
+
+    try {
+      const [account, positions, orders] = await Promise.all([
+        adapter.getAccount(),
+        adapter.getPositions(),
+        adapter.getOpenOrders()
+      ]);
+      const timestamp = Date.now();
+      const snapshot = {
+        id: `BROKER-SNAPSHOT-${broker}-${timestamp}`,
+        broker,
+        environment: 'LIVE',
+        timestamp,
+        account,
+        positions,
+        orders,
+        status: 'CAPTURED'
+      };
+      await executeRun(
+        'INSERT INTO broker_reconciliation_snapshots (id, broker, environment, timestamp, account_json, positions_json, orders_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [snapshot.id, broker, 'LIVE', timestamp, JSON.stringify(account), JSON.stringify(positions), JSON.stringify(orders), snapshot.status]
+      );
+      return snapshot;
+    } catch (err: any) {
+      const isUnconfigured = err?.code === 'AUTHENTICATION_FAILED' ||
+                             err?.message?.includes('access token is unavailable') ||
+                             err?.message?.includes('credentials missing') ||
+                             err?.message?.includes('ACCOUNT_NOT_FOUND');
+      const timestamp = Date.now();
+      const status = isUnconfigured ? 'UNCONFIGURED' : 'FAILED';
+      const snapshot = {
+        id: `BROKER-SNAPSHOT-${broker}-${timestamp}`,
+        broker,
+        environment: 'LIVE',
+        timestamp,
+        account: null,
+        positions: [],
+        orders: [],
+        status,
+        reason: err?.message || String(err)
+      };
+      await executeRun(
+        'INSERT INTO broker_reconciliation_snapshots (id, broker, environment, timestamp, account_json, positions_json, orders_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [snapshot.id, broker, 'LIVE', timestamp, JSON.stringify(null), JSON.stringify([]), JSON.stringify([]), snapshot.status]
+      );
+      return snapshot;
+    }
   }
 
   public async loadBrokerSnapshots(limit=50): Promise<any[]> {
