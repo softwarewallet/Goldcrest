@@ -540,7 +540,16 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
         },
         body: JSON.stringify({
           head: { Key: this.config.userKey },
-          body: { ScripCode: symbol }
+          body: {
+            Count: '1',
+            MarketFeedData: [{
+              Exch: symbol.startsWith('BSE:') ? 'B' : 'N',
+              ExchType: 'C',
+              ScripData: symbol.replace(/^NSE:|^BSE:/, '').endsWith('_EQ')
+                ? symbol.replace(/^NSE:|^BSE:/, '')
+                : `${symbol.replace(/^NSE:|^BSE:/, '')}_EQ`
+            }]
+          }
         })
       });
 
@@ -580,23 +589,46 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getInstruments(): Promise<BrokerInstrument[]> {
-    this.validateCredentials();
-    
-    // Simulate network delay for API fetch using configured credentials
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Return mock data that simulates an API response from 5paisa
-    const mockSymbols = ['NIFTY', 'BANKNIFTY', 'RELIANCE', 'HDFCBANK', 'TCS', 'INFY'];
-    return mockSymbols.map(symbol => ({
-      symbol,
-      market: 'INDIAN_EQUITY',
-      pipSize: 0.05,
-      minQuantity: 1,
-      maxQuantity: 1000000,
-      stepQuantity: 1,
-      digits: 2,
-      supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT']
-    }));
+    await this.ensureActiveSession();
+    if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
+    const res = await fetch(`${this.getApiHost()}/VendorsAPI/Service1.svc/ScripMaster/segment/All`);
+    if (!res.ok) throw new BrokerError('BROKER_UNAVAILABLE', `5paisa ScripMaster HTTP ${res.status}: ${res.statusText}`, 'FIVE_PAISA', this.environment);
+    const csv = await res.text();
+    const lines = csv.split(/\\r?\\n/).filter(Boolean);
+    if (lines.length < 2) throw new BrokerError('BROKER_UNAVAILABLE', '5paisa ScripMaster returned no instruments.', 'FIVE_PAISA', this.environment);
+    const headers = lines[0].split(',').map(v => v.trim());
+    const idx = (name: string) => headers.findIndex(h => h.toLowerCase() === name.toLowerCase());
+    const iSymbol = idx('ScripData');
+    const iCode = idx('ScripCode');
+    const iExch = idx('Exch');
+    const iType = idx('ExchType');
+    const iLot = idx('LotSize');
+    if (iSymbol < 0 || iCode < 0 || iExch < 0 || iType < 0) {
+      throw new BrokerError('BROKER_UNAVAILABLE', '5paisa ScripMaster schema is missing required fields.', 'FIVE_PAISA', this.environment);
+    }
+    const target = new Set(['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY','SENSEX','RELIANCE','HDFCBANK','TCS','INFY']);
+    const parse = (line: string) => line.split(',');
+    return lines.slice(1).map(parse).filter(cols => target.has(String(cols[iSymbol] || '').replace(/_EQ$/,'').toUpperCase()))
+      .map(cols => {
+        const symbol = String(cols[iSymbol]).replace(/_EQ$/,'');
+        const market = String(cols[iType]).toUpperCase() === 'D'
+          ? (/_CE$|_PE$/.test(symbol) ? 'INDIAN_OPTIONS' : 'INDIAN_FUTURES')
+          : 'INDIAN_EQUITY';
+        const lot = Math.max(1, Number(cols[iLot] || 1));
+        return {
+          symbol,
+          market,
+          pipSize: 0.05,
+          minQuantity: lot,
+          maxQuantity: lot * 100,
+          stepQuantity: lot,
+          digits: 2,
+          supportedOrderTypes: ['MARKET','LIMIT','STOP','STOP_LIMIT'],
+          baseCurrency: 'INR',
+          quoteCurrency: 'INR',
+          brokerInstrumentId: String(cols[iCode])
+        } as BrokerInstrument;
+      });
   }
 
   async getInstrument(symbol: string): Promise<BrokerInstrument | null> {
