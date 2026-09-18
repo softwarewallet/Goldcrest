@@ -292,8 +292,8 @@ const TREND_BAR_PERIODS: Record<string, number> = {
   '1W': 13, '1MN': 14
 };
 
-function priceFromRelative(value: number): number {
-  return value / 100000;
+function priceFromRelative(value: number, digits = 5): number {
+  return value / Math.pow(10, digits);
 }
 
 function sendAndAwait(
@@ -381,7 +381,7 @@ export async function fetchCTraderSymbols(
   });
 }
 
-export async function fetchLiveCTraderQuote(
+export async function fetchCTraderReconcileState(\n  ctidTraderAccountId: number,\n  clientId: string,\n  clientSecret: string,\n  accessToken: string,\n  isLive: boolean\n): Promise<{ positions: any[]; orders: any[] }> {\n  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {\n    const payload = await sendAndAwait(ws, MSG_RECONCILE_REQ, { ctidTraderAccountId }, MSG_RECONCILE_RES, 15000);\n    return {\n      positions: Array.isArray(payload.position) ? payload.position : [],\n      orders: Array.isArray(payload.order) ? payload.order : []\n    };\n  });\n}\n\nexport async function fetchLiveCTraderQuote(
   ctidTraderAccountId: number,
   symbolId: number,
   symbol: string,
@@ -408,8 +408,8 @@ export async function fetchLiveCTraderQuote(
             resolve({
               symbol,
               symbolId,
-              bid: p.bid === undefined ? undefined : priceFromRelative(Number(p.bid)),
-              ask: p.ask === undefined ? undefined : priceFromRelative(Number(p.ask)),
+              bid: p.bid === undefined ? undefined : priceFromRelative(Number(p.bid), 5),
+              ask: p.ask === undefined ? undefined : priceFromRelative(Number(p.ask), 5),
               timestamp: p.timestamp ? Number(p.timestamp) : Date.now(),
               status: 'FRESH'
             });
@@ -458,10 +458,10 @@ export async function fetchCTraderTrendbars(
 
     const trendbars = Array.isArray(payload.trendbar) ? payload.trendbar : [];
     return trendbars.map((bar: any) => {
-      const low = priceFromRelative(Number(bar.low || 0));
-      const open = priceFromRelative(Number(bar.low || 0) + Number(bar.deltaOpen || 0));
-      const close = priceFromRelative(Number(bar.low || 0) + Number(bar.deltaClose || 0));
-      const high = priceFromRelative(Number(bar.low || 0) + Number(bar.deltaHigh || 0));
+      const low = priceFromRelative(Number(bar.low || 0), digits);
+      const open = priceFromRelative(Number(bar.low || 0) + Number(bar.deltaOpen || 0), digits);
+      const close = priceFromRelative(Number(bar.low || 0) + Number(bar.deltaClose || 0), digits);
+      const high = priceFromRelative(Number(bar.low || 0) + Number(bar.deltaHigh || 0), digits);
       return {
         open: Number(open.toFixed(digits)),
         high: Number(high.toFixed(digits)),
