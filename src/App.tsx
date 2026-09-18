@@ -31,11 +31,11 @@ export default function App() {
   const [loadingInitial, setLoadingInitial] = useState<boolean>(true);
 
   // Broker Environment & Safety State
-  const [environment, setEnvironment] = useState<TradingEnvironment>('PAPER');
-  const [selectedBroker, setSelectedBroker] = useState<BrokerType>('PAPER');
+  const [environment, setEnvironment] = useState<TradingEnvironment>('LIVE');
+  const [selectedBroker, setSelectedBroker] = useState<BrokerType>('CTRADER');
   const [maskedAccount, setMaskedAccount] = useState<string>('****');
   const [currency, setCurrency] = useState<string>('USD');
-  const [balance, setBalance] = useState<number>(100000);
+  const [balance, setBalance] = useState<number>(0);
   const [isEmergencyHalted, setIsEmergencyHalted] = useState<boolean>(false);
 
   // Modals for environment switch and order confirmation
@@ -48,14 +48,14 @@ export default function App() {
       const res = await fetch('/api/brokers/status');
       if (res.ok) {
         const data = await res.json();
-        setEnvironment(data.environment || 'PAPER');
-        setSelectedBroker(data.selectedBroker || 'PAPER');
+        setEnvironment(data.environment || 'LIVE');
+        setSelectedBroker(data.selectedBroker || 'CTRADER');
         setIsEmergencyHalted(data.emergencyStop?.isHalted || false);
 
         if (data.activeAccount) {
           setMaskedAccount(data.activeAccount.accountId || '****');
           setCurrency(data.activeAccount.currency || 'USD');
-          setBalance(data.activeAccount.balance || 100000);
+          setBalance(data.activeAccount.balance || 0);
         } else {
           const cred = data.credentials?.find((c: any) => c.broker === data.selectedBroker && c.environment === data.environment);
           if (cred) {
@@ -64,7 +64,7 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.warn('Broker status endpoint temporarily unavailable, using default PAPER state:', err);
+      console.warn('Broker status endpoint temporarily unavailable, using LIVE-only state:', err);
     }
   }, []);
 
@@ -291,7 +291,7 @@ export default function App() {
           <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 font-mono">
             <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
             <div className="text-sm text-slate-300">Initializing Quantitative Terminal Engine...</div>
-            <div className="text-xs text-slate-500">Loading Broker Adapters (cTrader / 5paisa / Paper), SQLite storage, and Risk Gates</div>
+            <div className="text-xs text-slate-500">Loading Broker Adapters (cTrader + 5paisa), SQLite storage, and Risk Gates</div>
           </div>
         ) : (
           <>
