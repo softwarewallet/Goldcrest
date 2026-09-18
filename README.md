@@ -9,7 +9,7 @@ Goldcrest is an AI-assisted trading analysis platform with broker connectivity, 
 - **Autonomous live-money execution:** permanently disabled.
 - **Authoritative data only:** fabricated balances, quotes, OHLC, volume, and synthetic `FRESH` market-data fallbacks are not permitted.
 - **Research program:** closed. No further research experiment is part of the active production workflow unless explicitly reopened.
-- **Firestore:** client access is restricted to authenticated owner-scoped user data; sensitive operational, audit, reconciliation, system, and ML collections are server-only.
+- **Persistence:** SQLite is the sole application persistence layer. Firestore/Firebase application storage has been removed.
 
 ## Safety Invariant
 
@@ -34,3 +34,11 @@ See `RUNBOOK.md` for disaster-recovery procedures, database restoration, broker-
 ## Disclaimer
 
 Trading in Forex and derivatives involves substantial risk of loss. Model outputs, signals, probabilities and technical analysis are estimates for informational and analytical purposes only and are not financial advice, guarantees, or assurances of future performance.
+
+## Multi-Broker Routing
+
+Both LIVE broker adapters remain active simultaneously. Goldcrest routes automatically by market: **FOREX → cTrader** and **Indian equity/futures/options → 5paisa**. No broker selection is required for normal operation. The header displays separate LIVE balance cards for cTrader and 5paisa.
+
+## Persistence
+
+Goldcrest uses the local SQLite database at `data/trading_analyst.sqlite` as the authoritative application persistence layer for settings, signals, trades, positions, orders, reconciliation traces, notes, and ML records. Broker APIs remain authoritative for live account and market state. Firestore/Firebase is not required for application operation.
