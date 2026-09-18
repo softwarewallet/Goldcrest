@@ -379,6 +379,33 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     return [];
   }
 
+  async getHistoricalCandles(symbol: string, timeframe: string, limit: number) {
+    this.syncConfig();
+    this.validateCredentials();
+    if (!this.ctidTraderAccountId) await this.getAccount();
+    const instruments = await fetchCTraderSymbols(
+      this.ctidTraderAccountId!,
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      this.isLive
+    );
+    const normalized = symbol.replace('/', '').toUpperCase();
+    const match = instruments.find(s => s.symbolName.replace('/', '').toUpperCase() === normalized);
+    if (!match) throw new BrokerError('INVALID_SYMBOL', `cTrader symbol ${symbol} was not found in the authenticated account symbol list.`, 'CTRADER', this.environment);
+    return fetchCTraderTrendbars(
+      this.ctidTraderAccountId!,
+      match.symbolId,
+      timeframe,
+      limit,
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      this.isLive,
+      match.digits
+    );
+  }
+
   async getQuote(symbol: string): Promise<NormalizedQuote> {
     this.syncConfig();
     this.validateCredentials();
