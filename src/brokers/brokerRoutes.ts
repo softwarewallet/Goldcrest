@@ -7,6 +7,7 @@ import { getAuditLogs, logBrokerAction, maskIdentifier } from './auditLog';
 import { BrokerType, TradingEnvironment, OrderRequest } from './types';
 import { normalizeBrokerError } from './errors';
 import { reconciliationService } from '../services/reconciliationService';
+import { claimExecutionIntent, completeExecutionIntent } from '../services/executionIntentService';
 
 export const brokerRouter = Router();
 
@@ -335,9 +336,47 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
     }
 
 
+    const idempotencyKey = String(
+      req.header('X-Idempotency-Key') ||
+      orderReq.signalId ||
+      ''
+    ).trim();
+
+    if (!idempotencyKey) {
+      return res.status(400).json({
+        error: 'Autonomous live orders require X-Idempotency-Key or signalId.',
+        code: 'IDEMPOTENCY_KEY_REQUIRED'
+      });
+    }
+
+    const intent = await claimExecutionIntent(idempotencyKey, {
+      broker,
+      market: orderReq.market,
+      symbol: orderReq.symbol,
+      side: orderReq.side,
+      payload: orderReq
+    });
+
+    if (!intent.claimed) {
+      if (intent.existing?.state === 'COMPLETED') {
+        return res.json({
+          status: 'DUPLICATE_REPLAY',
+          broker,
+          market: orderReq.market,
+          order: intent.existing.result
+        });
+      }
+      return res.status(409).json({
+        error: 'An autonomous execution with this idempotency key is already pending or has failed.',
+        code: 'EXECUTION_INTENT_ALREADY_EXISTS',
+        state: intent.existing?.state
+      });
+    }
+
     const placedOrder = await adapter.placeOrder(orderReq);
+    await completeExecutionIntent(idempotencyKey, placedOrder);
     return res.json({
-      status: 'EXECUTED',
+      status: placedOrder.status === 'FILLED' ? 'EXECUTED' : 'ACCEPTED',
       broker,
       market: orderReq.market,
       order: placedOrder
