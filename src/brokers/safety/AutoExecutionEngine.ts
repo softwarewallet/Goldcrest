@@ -121,7 +121,31 @@ class AutoExecutionEngine {
       return { executed: false, reason: valResult.rejectionReason, code: 'RISK_REJECTED' };
     }
 
-    // Stage 3: Autonomous live execution permission boundary
+    // Stage 3: Full live safety gate. This must execute immediately before dispatch.
+    const gateResult = await liveTradingGate.evaluate(adapter, {
+      ...gateParams,
+      order
+    });
+    if (!gateResult.passed) {
+      logBrokerAction({
+        source: 'SAFETY_GATE',
+        broker,
+        environment: env,
+        account: 'ACTIVE',
+        action: 'EXECUTE_SIGNAL',
+        symbol: order.symbol,
+        result: 'BLOCKED',
+        error: gateResult.failedReasons.join(', '),
+        riskValidation: { passed: false, checks: gateResult.checks, reason: gateResult.failedReasons.join(', ') }
+      });
+      return {
+        executed: false,
+        code: 'SAFETY_GATE_REJECTED',
+        reason: gateResult.failedReasons.join(', ')
+      };
+    }
+
+    // Stage 4: Autonomous live execution permission boundary
     if (!LIVE_AUTO_EXECUTION_ALLOWED) {
       logBrokerAction({
         source: 'SAFETY_GATE',
