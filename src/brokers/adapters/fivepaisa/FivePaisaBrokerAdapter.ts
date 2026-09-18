@@ -718,8 +718,11 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     }
     const target = new Set(['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY','SENSEX','RELIANCE','HDFCBANK','TCS','INFY']);
     const parse = (line: string) => line.split(',');
-    return lines.slice(1).map(parse).filter(cols => target.has(String(cols[iSymbol] || '').replace(/_EQ$/,'').toUpperCase()))
-      .map(cols => {
+    return lines.slice(1).map(parse).filter(cols => {
+      const rawSymbol = String(cols[iSymbol] || '').replace(/_EQ$/,'').toUpperCase();
+      const baseSymbol = rawSymbol.split(/[ _]/)[0];
+      return target.has(rawSymbol) || target.has(baseSymbol);
+    }).map(cols => {
         const symbol = String(cols[iSymbol]).replace(/_EQ$/,'');
         const market = String(cols[iType]).toUpperCase() === 'D'
           ? (/_CE$|_PE$/.test(symbol) ? 'INDIAN_OPTIONS' : 'INDIAN_FUTURES')
