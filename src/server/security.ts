@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 
 const RATE_WINDOW_MS = 60_000;
@@ -83,6 +83,66 @@ export function blockLegacyTradingModes(req: Request, res: Response, next: NextF
 }
 
 
+const OPERATOR_SESSION_COOKIE = 'goldcrest_operator_session';
+const OPERATOR_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+
+function operatorKeyConfigured(): boolean {
+  return Boolean(process.env.GOLDCREST_OPERATOR_API_KEY?.trim());
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const expected = Buffer.from(a, 'utf8');
+  const actual = Buffer.from(b, 'utf8');
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+function makeOperatorSession(configuredKey: string, expiresAt: number): string {
+  const payload = String(expiresAt);
+  const signature = createHmac('sha256', configuredKey).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function isValidOperatorSession(token: string | undefined, configuredKey: string): boolean {
+  if (!token) return false;
+  const dot = token.indexOf('.');
+  if (dot <= 0) return false;
+  const expiresAt = Number(token.slice(0, dot));
+  const signature = token.slice(dot + 1);
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now() || !signature) return false;
+  const expected = createHmac('sha256', configuredKey).update(String(expiresAt)).digest('base64url');
+  return safeEqual(signature, expected);
+}
+
+function getCookie(req: Request, name: string): string | undefined {
+  const header = req.header('Cookie');
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const [key, ...value] = part.trim().split('=');
+    if (key === name) return decodeURIComponent(value.join('='));
+  }
+  return undefined;
+}
+
+function sameOrigin(req: Request): boolean {
+  const origin = req.header('Origin');
+  if (!origin) return true;
+  const expected = `${req.protocol}://${req.get('host')}`;
+  return origin === expected;
+}
+
+function credentialsValid(configuredKey: string, supplied: string | undefined): boolean {
+  if (!supplied || supplied.length !== configuredKey.length) return false;
+  return safeEqual(supplied, configuredKey);
+}
+
+export function operatorAuthConfigured(): boolean {
+  return operatorKeyConfigured();
+}
+
+export function issueOperatorSession(configuredKey: string): string {
+  return makeOperatorSession(configuredKey, Date.now() + OPERATOR_SESSION_TTL_MS);
+}
+
 export function operatorAuthRequired(req: Request, res: Response, next: NextFunction): void {
   const configuredKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
   if (!configuredKey) {
@@ -93,18 +153,35 @@ export function operatorAuthRequired(req: Request, res: Response, next: NextFunc
     return;
   }
 
-  const supplied = req.header('X-Goldcrest-Operator-Key') || req.header('Authorization')?.replace(/^Bearer\s+/i, '');
-  if (!supplied || supplied.length !== configuredKey.length) {
+  const headerCredential = req.header('X-Goldcrest-Operator-Key') || req.header('Authorization')?.replace(/^Bearer\s+/i, '');
+  const sessionCredential = getCookie(req, OPERATOR_SESSION_COOKIE);
+  const authenticatedByHeader = credentialsValid(configuredKey, headerCredential);
+  const authenticatedBySession = isValidOperatorSession(sessionCredential, configuredKey);
+
+  if (!authenticatedByHeader && !authenticatedBySession) {
     res.status(401).json({ error: 'UNAUTHORIZED', message: 'Valid operator credentials are required.' });
     return;
   }
 
-  const expected = Buffer.from(configuredKey, 'utf8');
-  const actual = Buffer.from(supplied, 'utf8');
-  if (!timingSafeEqual(expected, actual)) {
-    res.status(401).json({ error: 'UNAUTHORIZED', message: 'Valid operator credentials are required.' });
+  // Cookie-backed browser sessions are same-origin only to prevent cross-site state changes.
+  if (!authenticatedByHeader && authenticatedBySession && req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {
+    res.status(403).json({ error: 'CSRF_ORIGIN_REJECTED', message: 'Cross-origin state-changing requests are not permitted.' });
     return;
   }
 
   next();
+}
+
+export function setOperatorSessionCookie(res: Response, token: string): void {
+  const secure = process.env.NODE_ENV === 'production';
+  res.setHeader('Set-Cookie', `${OPERATOR_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(OPERATOR_SESSION_TTL_MS / 1000)}${secure ? '; Secure' : ''}`);
+}
+
+export function clearOperatorSessionCookie(res: Response): void {
+  res.setHeader('Set-Cookie', `${OPERATOR_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+}
+
+export function isOperatorSessionValid(req: Request): boolean {
+  const configuredKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
+  return Boolean(configuredKey && isValidOperatorSession(getCookie(req, OPERATOR_SESSION_COOKIE), configuredKey));
 }
