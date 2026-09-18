@@ -12,6 +12,8 @@ export interface SystemConfig {
   maxOpenPositions: number;
   eventProximityThresholdMinutes: number;
   strikeDepth: number;
+  maxTradeValueForexUsd: number;
+  maxTradeValueIndianInr: number;
   financialDisclaimer: string;
 }
 
@@ -26,6 +28,8 @@ let activeConfig: SystemConfig = {
   maxOpenPositions: 5,
   eventProximityThresholdMinutes: 20,
   strikeDepth: 7,
+  maxTradeValueForexUsd: 200,
+  maxTradeValueIndianInr: 20000,
   financialDisclaimer:
     'Trading in Forex and derivatives involves substantial risk of loss. Model outputs, signals, probabilities and technical analysis are estimates for informational and analytical purposes only and are not financial advice, guarantees, or assurances of future performance.'
 };
