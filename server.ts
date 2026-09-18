@@ -91,7 +91,7 @@ app.post('/api/operator/logout', (_req: Request, res: Response) => {
 });
 
 app.use('/api/brokers', operatorAuthRequired, brokerRouter);
-app.use('/api/ml', mlRouter);
+app.use('/api/ml', operatorAuthRequired, mlRouter);
 app.use('/api/governance', operatorAuthRequired, governanceRouter);
 
 
