@@ -518,6 +518,58 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     };
   }
 
+  async getHistoricalCandles(symbol: string, timeframe = '15m', limit = 60) {
+    await this.ensureActiveSession();
+    if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
+    const allowed = new Set(['1m','5m','10m','15m','30m','60m','1d']);
+    if (!allowed.has(timeframe)) throw new BrokerError('INVALID_SYMBOL', `Unsupported 5paisa timeframe ${timeframe}.`, 'FIVE_PAISA', this.environment);
+    const master = await this.getScripMasterRows();
+    const normalized = symbol.replace(/^NSE:|^BSE:/, '').toUpperCase();
+    const row = master.find((r: any) => String(r.ScripData || '').replace(/_EQ$/,'').toUpperCase() === normalized);
+    if (!row) throw new BrokerError('INVALID_SYMBOL', `5paisa ScripMaster has no authoritative instrument for ${symbol}.`, 'FIVE_PAISA', this.environment);
+    const minutes = timeframe === '1d' ? 1440 : Number(timeframe.replace('m',''));
+    const days = Math.max(2, Math.ceil((Math.max(1, limit) * minutes) / 375) + 1);
+    const end = new Date();
+    const from = new Date(end.getTime() - days * 86400000);
+    const fmt = (d: Date) => d.toISOString().slice(0,10);
+    const url = `https://openapi.5paisa.com/historical/${row.Exch}/${row.ExchType}/${row.ScripCode}/${timeframe}?from=${fmt(from)}&end=${fmt(end)}`;
+    const res = await fetch(url, {
+      headers: {
+        'Ocp-Apim-Subscription-Key': 'c89fab8d895a426d9e00db380b433027',
+        'x-clientcode': this.config.clientCode || this.config.userId || '',
+        'x-auth-token': this.config.accessToken
+      }
+    });
+    if (!res.ok) throw new BrokerError('BROKER_UNAVAILABLE', `5paisa historical API HTTP ${res.status}: ${res.statusText}`, 'FIVE_PAISA', this.environment);
+    const body = await res.json();
+    const candles = body?.data?.candles;
+    if (!Array.isArray(candles)) throw new BrokerError('BROKER_UNAVAILABLE', '5paisa historical API returned no candle data.', 'FIVE_PAISA', this.environment);
+    return candles.slice(-Math.max(1, limit)).map((c: any[]) => ({
+      timestamp: typeof c[0] === 'number' ? c[0] : Date.parse(String(c[0])),
+      open: Number(c[1]),
+      high: Number(c[2]),
+      low: Number(c[3]),
+      close: Number(c[4]),
+      volume: Number(c[5] || 0)
+    })).filter((c: any) => Number.isFinite(c.timestamp) && c.open > 0 && c.high >= c.low && c.close > 0);
+  }
+
+  private async getScripMasterRows(): Promise<any[]> {
+    const res = await fetch(`${this.getApiHost()}/VendorsAPI/Service1.svc/ScripMaster/segment/All`);
+    if (!res.ok) throw new BrokerError('BROKER_UNAVAILABLE', `5paisa ScripMaster HTTP ${res.status}: ${res.statusText}`, 'FIVE_PAISA', this.environment);
+    const csv = await res.text();
+    const lines = csv.split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(v => v.trim());
+    const idx = (name: string) => headers.findIndex(h => h.toLowerCase() === name.toLowerCase());
+    const fields = ['ScripData','ScripCode','Exch','ExchType','LotSize'];
+    const indexes = Object.fromEntries(fields.map(name => [name, idx(name)]));
+    return lines.slice(1).map(line => {
+      const cols = line.split(',');
+      return Object.fromEntries(fields.map(name => [name, indexes[name] >= 0 ? cols[indexes[name]] : undefined]));
+    });
+  }
+
   async getQuote(symbol: string): Promise<NormalizedQuote> {
     this.validateCredentials();
 
