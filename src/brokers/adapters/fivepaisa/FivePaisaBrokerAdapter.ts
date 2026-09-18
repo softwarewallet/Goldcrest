@@ -1146,9 +1146,9 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
           const ceOI = Number(ceData.OpenInterest || ceData.OI || 0);
           const ceChangeOI = Number(ceData.ChgOI || 0);
           const ceVolume = Number(ceData.TotalQty || ceData.Volume || 0);
-          const ceBid = Number(ceData.BidRate || (ceLtp > 0 ? ceLtp - 0.2 : 0));
-          const ceAsk = Number(ceData.OffRate || (ceLtp > 0 ? ceLtp + 0.2 : 0));
-          const ceIV = Number(ceData.IV || 14.2);
+          const ceBid = Number(ceData.BidRate || 0);
+          const ceAsk = Number(ceData.OffRate || 0);
+          const ceIV = Number(ceData.IV || 0);
 
           const peLtp = Number(peData.LastRate || peData.LTP || 0);
           const peChange = Number(peData.Chg || 0);
@@ -1156,9 +1156,13 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
           const peOI = Number(peData.OpenInterest || peData.OI || 0);
           const peChangeOI = Number(peData.ChgOI || 0);
           const peVolume = Number(peData.TotalQty || peData.Volume || 0);
-          const peBid = Number(peData.BidRate || (peLtp > 0 ? peLtp - 0.2 : 0));
-          const peAsk = Number(peData.OffRate || (peLtp > 0 ? peLtp + 0.2 : 0));
-          const peIV = Number(peData.IV || 14.5);
+          const peBid = Number(peData.BidRate || 0);
+          const peAsk = Number(peData.OffRate || 0);
+          const peIV = Number(peData.IV || 0);
+
+          if (ceLtp <= 0 || ceBid <= 0 || ceAsk <= 0 || ceIV <= 0 || peLtp <= 0 || peBid <= 0 || peAsk <= 0 || peIV <= 0) {
+            return null;
+          }
 
           totalCallOI += ceOI;
           totalPutOI += peOI;
@@ -1286,12 +1290,6 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
     if (scripMap[symbol]) return scripMap[symbol];
 
-    // Synthetic deterministically hashed scrip code for dynamic options contracts
-    let hash = 0;
-    for (let i = 0; i < symbol.length; i++) {
-      hash = (hash << 5) - hash + symbol.charCodeAt(i);
-      hash |= 0;
-    }
-    return Math.abs(hash % 900000) + 100000;
+    throw new BrokerError('INVALID_SYMBOL', `No authoritative 5paisa scrip code is configured for ${symbol}.`);
   }
 }
