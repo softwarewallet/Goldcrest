@@ -412,6 +412,7 @@ function initSchema(db: Database) {
     -- 30. Autonomous Execution Idempotency
     CREATE TABLE IF NOT EXISTS execution_intents (
       idempotency_key TEXT PRIMARY KEY,
+      claim_token TEXT NOT NULL,
       broker TEXT NOT NULL,
       market TEXT NOT NULL,
       symbol TEXT NOT NULL,
@@ -461,6 +462,13 @@ function initSchema(db: Database) {
     'ALTER TABLE signals ADD COLUMN data_status TEXT;',
     'ALTER TABLE signals ADD COLUMN strategy_version TEXT;'
   ];
+  try {
+    db.run('ALTER TABLE execution_intents ADD COLUMN claim_token TEXT;');
+  } catch {
+    // Column already exists.
+  }
+  db.run("UPDATE execution_intents SET claim_token = idempotency_key WHERE claim_token IS NULL OR claim_token = ''");
+
   for (const alter of safeAddColumns) {
     try {
       db.run(alter);
