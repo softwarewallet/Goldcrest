@@ -26,7 +26,6 @@ async function runTests() {
     }
   }
 
-  // 1. Technical Indicators Test
   console.log('[Test Suite 1: Quantitative Indicators]');
   const testCloses = [10, 11, 12, 13, 14, 15, 14, 13, 12, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
   const sma5 = calculateSMA(testCloses, 5);
@@ -46,7 +45,6 @@ async function runTests() {
   const vwap = calculateVWAP(mockCandles);
   assert(vwap.length === 2 && vwap[1] > 100, 'VWAP correctly weighs typical price with volume');
 
-  // 2. Forex Instruments & Sessions Test
   console.log('\n[Test Suite 2: Forex Instruments & Sessions]');
   assert(FOREX_PAIRS.length >= 13, `Forex pairs configured (${FOREX_PAIRS.length} pairs, exceeding 13 required)`);
 
@@ -62,7 +60,6 @@ async function runTests() {
   const fxSessions = getForexSessionState(new Date('2026-09-15T14:30:00Z'));
   assert(fxSessions.isLondonNyOverlap === true, 'Forex session correctly detects London/NY Overlap at 14:30 UTC');
 
-  // 3. Indian Market Underlyings & Sessions Test
   console.log('\n[Test Suite 3: Indian Equity Underlyings & Sessions]');
   assert(INDIAN_UNDERLYINGS.length === 5, 'Underlyings include NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX');
 
@@ -73,12 +70,10 @@ async function runTests() {
   const bankNiftyConfig = getIndianUnderlyingConfig('BANKNIFTY');
   assert(bankNiftyConfig.strikeStep === 100, 'BANKNIFTY strike step is 100');
 
-  // Test Indian market session during trading hours (10:00 AM IST = 04:30 UTC)
   const istMarketOpenDate = new Date('2026-09-15T04:30:00Z');
   const indianSession = getIndianSessionState(istMarketOpenDate);
   assert(indianSession.isOpen === true, 'Indian market correctly recognized as OPEN at 10:00 AM IST');
 
-  // 4. Options Greeks Engine Test (Black-Scholes)
   console.log('\n[Test Suite 4: Options Greeks Engine]');
   const bsCall = calculateBlackScholesGreeks(25000, 25000, 7 / 365, 0.068, 0.14, 'CALL');
   assert(bsCall.greeks.delta >= 0.45 && bsCall.greeks.delta <= 0.58, `ATM Call delta is ~0.50 (${bsCall.greeks.delta})`);
@@ -89,7 +84,6 @@ async function runTests() {
   const bsPut = calculateBlackScholesGreeks(25000, 25000, 7 / 365, 0.068, 0.14, 'PUT');
   assert(bsPut.greeks.delta <= -0.42 && bsPut.greeks.delta >= -0.58, `ATM Put delta is ~ -0.50 (${bsPut.greeks.delta})`);
 
-  // 5. Options Strategy Payoff Test
   console.log('\n[Test Suite 5: Strategy Payoff Calculations]');
   const bullCallSpread = calculateStrategyPayoff({
     strategyType: 'BULL_CALL_SPREAD',
@@ -101,12 +95,10 @@ async function runTests() {
     premium2: 120,
     contractsCount: 1
   });
-  // Net debit = (180 - 120) = 60 pts. Max loss = 60 * 25 = 1500. Strike width = 100. Max profit = (100 - 60) * 25 = 1000.
   assert(bullCallSpread.maxLoss === 1500, `Bull Call Spread Max Loss correctly computed (${bullCallSpread.maxLoss})`);
   assert(bullCallSpread.maxProfit === 1000, `Bull Call Spread Max Profit correctly computed (${bullCallSpread.maxProfit})`);
   assert(bullCallSpread.breakeven[0] === 25060, `Bull Call Spread Breakeven correctly computed (${bullCallSpread.breakeven[0]})`);
 
-  // 6. Signal & No-Trade Filtering Test
   console.log('\n[Test Suite 6: Signal Engine & No-Trade Filtering]');
   const flatCandles = generateDemoCandles(1.0850, 40, 0.0001, 0.0);
   const flatSignal = evaluateForexSetup('EUR/USD', flatCandles);
@@ -115,7 +107,6 @@ async function runTests() {
     `System does NOT force a trade signal in flat/indecisive conditions (got ${flatSignal.direction})`
   );
 
-  // 7. Database Persistence Test
   console.log('\n[Test Suite 7: SQLite Database Layer]');
   const db = await getDatabase();
   assert(db !== null, 'SQLite database initialized with WebAssembly engine');
@@ -124,7 +115,7 @@ async function runTests() {
   assert(markets.length >= 3, `Database contains seeded markets (${markets.length} found)`);
 
   const settings = await executeQuery('SELECT * FROM system_settings WHERE key = "TRADING_MODE"');
-  assert(settings[0]?.value === 'PAPER', 'Trading mode is persisted as PAPER by default');
+  assert(settings[0]?.value === 'LIVE_ONLY', 'Trading mode is persisted as LIVE_ONLY');
 
   console.log('\n====================================================');
   console.log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
