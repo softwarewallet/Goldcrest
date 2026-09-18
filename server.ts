@@ -211,68 +211,31 @@ app.get('/api/markets', (req: Request, res: Response) => {
 // 4. Forex Endpoints (Phase 2A Full Analysis Engine)
 app.get('/api/forex/pairs', async (req: Request, res: Response) => {
   try {
-    const adapter = brokerRegistry.getAdapter('CTRADER');
+    const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
     const instruments = await adapter.getInstruments();
-    
-    // Map the broker instruments to the expected format, pulling quotes from adapter.getQuote() or forexProviderV2
     const pairsWithQuotes = await Promise.all(instruments.map(async inst => {
-      let quote;
-      try {
-        const brokerQuote = await adapter.getQuote(inst.symbol);
-        const changePips = (brokerQuote.ask - brokerQuote.bid) * 10;
-        quote = {
-          bid: brokerQuote.bid,
-          ask: brokerQuote.ask,
-          spreadPips: Number((brokerQuote.spread * (inst.symbol.includes('JPY') ? 100 : 10000)).toFixed(1)),
-          changePips24h: Number(changePips.toFixed(1)),
-          changePercent24h: 0.15,
-          high24h: brokerQuote.ask * 1.002,
-          low24h: brokerQuote.bid * 0.998,
-          dataStatus: brokerQuote.status || 'FRESH'
-        };
-      } catch (e) {
-        try {
-          const fallbackQ = forexProviderV2.getQuote(inst.symbol);
-          quote = {
-            bid: fallbackQ.bid,
-            ask: fallbackQ.ask,
-            spreadPips: fallbackQ.spreadPips,
-            changePips24h: fallbackQ.changePips24h,
-            changePercent24h: fallbackQ.changePercent24h,
-            high24h: fallbackQ.high24h,
-            low24h: fallbackQ.low24h,
-            dataStatus: fallbackQ.dataStatus
-          };
-        } catch (err2) {
-          quote = {
-            bid: 1.0,
-            ask: 1.0001,
-            spreadPips: 1,
-            changePips24h: 0,
-            changePercent24h: 0,
-            high24h: 1.0,
-            low24h: 1.0,
-            dataStatus: 'STALE'
-          };
-        }
-      }
+      const quote = await adapter.getQuote(inst.symbol);
       return {
         ...inst,
         baseCurrency: inst.symbol.split('/')[0],
         quoteCurrency: inst.symbol.split('/')[1] || '',
         bid: quote.bid,
         ask: quote.ask,
-        spreadPips: quote.spreadPips,
-        changePips24h: quote.changePips24h,
-        changePercent24h: quote.changePercent24h,
-        high24h: quote.high24h,
-        low24h: quote.low24h,
-        dataStatus: quote.dataStatus
+        spreadPips: Number((quote.spread * (inst.symbol.includes('JPY') ? 100 : 10000)).toFixed(1)),
+        changePips24h: undefined,
+        changePercent24h: undefined,
+        high24h: undefined,
+        low24h: undefined,
+        dataStatus: quote.status,
+        dataSource: quote.source
       };
     }));
     return res.json(pairsWithQuotes);
-  } catch (err) {
-    return res.status(503).json({ error: 'LIVE_MARKET_DATA_UNAVAILABLE', message: 'Authoritative cTrader market data is unavailable.' });
+  } catch (err: any) {
+    return res.status(503).json({
+      error: err?.code || 'LIVE_MARKET_DATA_UNAVAILABLE',
+      message: err?.message || 'Authoritative cTrader market data is unavailable.'
+    });
   }
 });
 
@@ -795,7 +758,7 @@ Provide a concise, professional JSON response matching this schema:
     res.json({
       summary: `Quantitative analysis for ${payload.instrument || payload.underlying || 'instrument'} derived from indicator stack and market structure.`,
       supportingFactors: [`Quantitative alignment verified`],
-      conflictingFactors: [`Model-derived estimate under demo market parameters`],
+      conflictingFactors: [`Market conditions can change rapidly; the supplied quantitative data is probabilistic.`],
       riskNote: 'Risk is bounded by strict Stop Loss rules. Probabilistic estimate only.',
       isAiGenerated: false
     });
