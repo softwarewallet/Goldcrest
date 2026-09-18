@@ -6,100 +6,59 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128;
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // Default catch-all
+    // Deny by default. Sensitive operational, audit, model, reconciliation,
+    // and system collections are server-only through the Admin SDK/backend.
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // User profiles
     match /users/{userId} {
-      allow read, write: if true;
+      allow read, write: if isOwner(userId);
     }
 
-    // Paper portfolios
+    // User-scoped application data. Documents must carry an ownerId equal to
+    // the authenticated user's UID for both reads and writes.
     match /paper_portfolios/{portfolioId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() &&
+        resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
     }
 
-    // Paper trades
     match /paper_trades/{tradeId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() &&
+        resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
     }
 
-    // Paper tracked signals
     match /paper_signals_tracked/{trackingId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() &&
+        resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
     }
 
-    // Trade traces root
-    match /trade_traces/{tradeTraceId} {
-      allow read, write: if true;
-
-      // Subcollection for trade trace lifecycle nodes
-      match /nodes/{nodeId} {
-        allow read, write: if true;
-      }
-    }
-
-    // Reconciliation records
-    match /reconciliation_records/{reconciliationId} {
-      allow read, write: if true;
-    }
-
-    // Audit events
-    match /audit_events/{eventId} {
-      allow read, write: if true;
-    }
-
-    // Historical Report Snapshots
-    match /historical_report_snapshots/{snapshotId} {
-      allow read, write: if true;
-    }
-
-    // Watchlists & Notes
     match /watchlists/{watchlistId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() &&
+        resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
     }
 
     match /trade_notes/{noteId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() &&
+        resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
     }
 
-    match /system_settings/{settingId} {
-      allow read, write: if true;
-    }
-
-    // ML Storage Collections
-    match /ml_feature_snapshots/{snapshotId} {
-      allow read, write: if true;
-    }
-
-    match /ml_outcome_labels/{labelId} {
-      allow read, write: if true;
-    }
-
-    match /ml_prediction_records/{predId} {
-      allow read, write: if true;
-    }
-
-    match /ml_models/{modelId} {
-      allow read, write: if true;
-    }
-
-    match /ml_backtest_results/{btId} {
-      allow read, write: if true;
-    }
+    // All other collections, including trade traces, reconciliation,
+    // audit events, system settings, historical snapshots, and ML storage,
+    // remain server-only. The Admin SDK is not governed by these client rules.
   }
 }
