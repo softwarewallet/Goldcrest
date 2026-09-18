@@ -216,7 +216,7 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
     const market = broker === 'CTRADER' ? 'FOREX' : 'INDIAN MARKETS';
 
     return (
-      <div key={broker} id={`balance_display_${broker.toLowerCase()}`} className="flex flex-col bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg p-2.5 min-w-[210px] shadow-sm font-mono">
+      <div key={broker} id={`balance_display_${broker.toLowerCase()}`} className="flex flex-col bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg py-[5px] px-2.5 min-w-[210px] shadow-sm font-mono">
         <div className="flex items-start justify-between mb-1">
           <div className="flex items-center space-x-1.5 mt-0.5">
             <span className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-amber-400 animate-pulse' : account?.connectionStatus === 'CONNECTED' ? 'bg-emerald-400' : 'bg-rose-400'}`} />

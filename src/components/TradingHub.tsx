@@ -367,81 +367,6 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
   return (
     <div id="unified_trading_hub" className="space-y-6">
-      {/* 1. HEADER HERO BAR */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <Activity className="w-6 h-6 animate-pulse" />
-            </div>
-            <div>
-              <div className="font-bold text-white text-base">Trading Execution & Portfolio Engine</div>
-              <p className="text-slate-400 text-xs mt-0.5">
-                Connected to active live gateways with direct automated broker routing
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
-            <span className="px-3 py-1 rounded-lg border bg-rose-950/80 text-rose-300 border-rose-800 font-bold">
-              {environment === 'LIVE' ? 'LIVE BROKER ACCOUNT' : 'LIVE DEMO GATE'}
-            </span>
-            <span className="px-3 py-1 rounded-lg border bg-emerald-950/80 text-emerald-300 border-emerald-800 font-bold flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> AUTONOMOUS EXECUTION: ENABLED
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. CORE SAFETY STATE INFO */}
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
-            <h3 className="text-sm font-bold text-white font-mono">Automatic Broker Routing</h3>
-          </div>
-          <div className="space-y-2 font-mono text-xs">
-            {[
-              ['FOREX', 'cTrader LIVE (Active)'],
-              ['INDIAN_EQUITY', '5paisa LIVE (Active)'],
-              ['INDIAN_FUTURES', '5paisa LIVE (Active)'],
-              ['INDIAN_OPTIONS', '5paisa LIVE (Active)']
-            ].map(([marketName, brokerLabel]) => (
-              <div key={marketName} className="flex items-center justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
-                <span className="text-slate-300">{marketName}</span>
-                <span className="text-emerald-400 font-bold flex items-center gap-1">
-                  {brokerLabel}
-                  <ArrowRight className="w-3 h-3" />
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <ShieldCheck className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-sm font-bold text-white font-mono">Execution Safety State</h3>
-          </div>
-          <div className="space-y-2 font-mono text-xs">
-            <div className="flex justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
-              <span className="text-slate-400">LIVE Account Connectivity</span>
-              <span className="text-emerald-400 font-bold">ALLOWED & STABLE</span>
-            </div>
-            <div className="flex justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
-              <span className="text-slate-400">Autonomous Live Submission</span>
-              <span className="text-emerald-400 font-bold">ACTIVE & OPERATIONAL</span>
-            </div>
-            <div className="flex justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
-              <span className="text-slate-400">Emergency Stop Status</span>
-              <span className={isEmergencyHalted ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
-                {isEmergencyHalted ? 'EMERGENCY HALTED' : 'STANDBY READY'}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* 3. MAIN INTERACTIVE CONTROLS */}
       <div className="grid lg:grid-cols-2 gap-6">
         {/* COLUMN A: AI AUTONOMOUS EXECUTION CONTROLLER */}
@@ -990,6 +915,81 @@ export const TradingHub: React.FC<TradingHubProps> = ({
             <p className="text-xs text-slate-400 mt-1 leading-relaxed">
               Every dispatched trade (automated or manual) undergoes structural pre-flight safety analysis by the Goldcrest Live Trading Safety Gate. Confirm active live connections in Settings.
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 1. HEADER HERO BAR */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+              <Activity className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <div className="font-bold text-white text-base">Trading Execution & Portfolio Engine</div>
+              <p className="text-slate-400 text-xs mt-0.5">
+                Connected to active live gateways with direct automated broker routing
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+            <span className="px-3 py-1 rounded-lg border bg-rose-950/80 text-rose-300 border-rose-800 font-bold">
+              {environment === 'LIVE' ? 'LIVE BROKER ACCOUNT' : 'LIVE DEMO GATE'}
+            </span>
+            <span className="px-3 py-1 rounded-lg border bg-emerald-950/80 text-emerald-300 border-emerald-800 font-bold flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> AUTONOMOUS EXECUTION: ENABLED
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. CORE SAFETY STATE INFO */}
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <h3 className="text-sm font-bold text-white font-mono">Automatic Broker Routing</h3>
+          </div>
+          <div className="space-y-2 font-mono text-xs">
+            {[
+              ['FOREX', 'cTrader LIVE (Active)'],
+              ['INDIAN_EQUITY', '5paisa LIVE (Active)'],
+              ['INDIAN_FUTURES', '5paisa LIVE (Active)'],
+              ['INDIAN_OPTIONS', '5paisa LIVE (Active)']
+            ].map(([marketName, brokerLabel]) => (
+              <div key={marketName} className="flex items-center justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
+                <span className="text-slate-300">{marketName}</span>
+                <span className="text-emerald-400 font-bold flex items-center gap-1">
+                  {brokerLabel}
+                  <ArrowRight className="w-3 h-3" />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <ShieldCheck className="w-4 h-4 text-cyan-400" />
+            <h3 className="text-sm font-bold text-white font-mono">Execution Safety State</h3>
+          </div>
+          <div className="space-y-2 font-mono text-xs">
+            <div className="flex justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
+              <span className="text-slate-400">LIVE Account Connectivity</span>
+              <span className="text-emerald-400 font-bold">ALLOWED & STABLE</span>
+            </div>
+            <div className="flex justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
+              <span className="text-slate-400">Autonomous Live Submission</span>
+              <span className="text-emerald-400 font-bold">ACTIVE & OPERATIONAL</span>
+            </div>
+            <div className="flex justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
+              <span className="text-slate-400">Emergency Stop Status</span>
+              <span className={isEmergencyHalted ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                {isEmergencyHalted ? 'EMERGENCY HALTED' : 'STANDBY READY'}
+              </span>
+            </div>
           </div>
         </div>
       </div>

@@ -127,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Main Navigation & Brand Bar */}
-      <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+      <div className="px-4 py-[1px] flex flex-wrap items-center justify-between gap-3">
         {/* Brand & Market Session Info */}
         <div className="flex items-center space-x-6">
           <div className="flex items-center space-x-3">
@@ -245,16 +245,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">DB</span>
           </button>
 
-          <button
-            id="btn_local_sqlite"
-            onClick={onOpenDiagnostics}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-mono font-medium bg-cyan-950/60 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-700/80 transition shadow-sm"
-            title="Goldcrest local SQLite storage"
-          >
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-            <Database className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden md:inline font-bold">SQLite</span>
-          </button>
+
         </div>
       </div>
 
