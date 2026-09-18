@@ -27,6 +27,7 @@ import { ForexTimeframe } from './src/markets/forex/types';
 
 // Phase 2B Broker Integration
 import { brokerRouter } from './src/brokers/brokerRoutes';
+import { LIVE_AUTO_EXECUTION_ALLOWED } from './src/brokers/safety/AutoExecutionEngine';
 
 // Phase 3 Machine Learning Engine
 import { mlRouter } from './src/ml/mlRoutes';
@@ -34,14 +35,16 @@ import { mlRouter } from './src/ml/mlRoutes';
 // Phase 5 Governance Engine
 import { governanceRouter } from './src/governance/governanceRoutes';
 
-// Phase 6 Controlled Demo Execution Engine
+// Legacy demo execution is retired; LIVE_ONLY production mode is enforced by the server safety layer.
 import { brokerRegistry } from './src/brokers/registry';
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+let databaseReady = false;
 
+app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 app.disable('x-powered-by');
 app.use(securityHeaders);
 app.use(requestId);
@@ -85,6 +88,7 @@ getDatabase().then(async () => {
   if (persistedLimits.MAX_TRADE_VALUE_FOREX_USD !== undefined) persistedUpdates.maxTradeValueForexUsd = persistedLimits.MAX_TRADE_VALUE_FOREX_USD;
   if (persistedLimits.MAX_TRADE_VALUE_INDIAN_INR !== undefined) persistedUpdates.maxTradeValueIndianInr = persistedLimits.MAX_TRADE_VALUE_INDIAN_INR;
   if (Object.keys(persistedUpdates).length) updateSystemConfig(persistedUpdates);
+  databaseReady = true;
   console.log('SQLite database initialized successfully');
 }).catch(err => {
   console.error('Failed to initialize SQLite database:', err);
@@ -105,7 +109,18 @@ function getGenAI(): GoogleGenAI | null {
 
 // 1. System Status & Health
 app.get('/api/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', service: 'goldcrest', timestamp: Date.now() });
+});
+
+app.get('/api/health/ready', (req: Request, res: Response) => {
+  const ready = databaseReady && LIVE_AUTO_EXECUTION_ALLOWED === false && getSystemConfig().tradingMode === 'LIVE_ONLY';
+  res.status(ready ? 200 : 503).json({
+    status: ready ? 'ready' : 'not_ready',
+    database: databaseReady ? 'READY' : 'INITIALIZING',
+    tradingMode: getSystemConfig().tradingMode,
+    autonomousLiveExecutionAllowed: LIVE_AUTO_EXECUTION_ALLOWED,
+    timestamp: Date.now()
+  });
 });
 
 app.get('/api/status', (req: Request, res: Response) => {
@@ -795,8 +810,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`AI Trading Analyst server running on http://0.0.0.0:${PORT}`);
+  const host = process.env.HOST || '0.0.0.0';
+  app.listen(PORT, host, () => {
+    console.log(`Goldcrest server listening on http://${host}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
   });
 }
 
