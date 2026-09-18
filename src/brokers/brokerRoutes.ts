@@ -1,40 +1,64 @@
 import { Router, Request, Response } from 'express';
 import { brokerRegistry } from './registry';
 import { killSwitch } from './safety/KillSwitch';
-import { tradeValidator } from './safety/TradeValidator';
 import { liveTradingGate } from './safety/LiveTradingGate';
 import { autoExecutionEngine, LIVE_AUTO_EXECUTION_ALLOWED } from './safety/AutoExecutionEngine';
 import { getAuditLogs, logBrokerAction, maskIdentifier } from './auditLog';
-import { BrokerType, TradingEnvironment, OrderRequest, OrderType } from './types';
-import { BrokerError, normalizeBrokerError } from './errors';
+import { BrokerType, TradingEnvironment, OrderRequest } from './types';
+import { normalizeBrokerError } from './errors';
 
 export const brokerRouter = Router();
 
-// 1. Broker Status & System Configuration
-brokerRouter.get('/status', async (req: Request, res: Response) => {
+const LIVE_BROKERS: BrokerType[] = ['CTRADER', 'FIVE_PAISA'];
+
+function resolveMarketBroker(market: string): BrokerType {
+  if (market === 'FOREX') return 'CTRADER';
+  if (market === 'INDIAN_EQUITY' || market === 'INDIAN_FUTURES' || market === 'INDIAN_OPTIONS') {
+    return 'FIVE_PAISA';
+  }
+  throw new Error(`Unsupported market: ${market}. No compatible live broker is configured.`);
+}
+
+// Both LIVE broker connections remain active simultaneously. No user broker
+// selection is required; market compatibility determines the adapter.
+brokerRouter.get('/status', async (_req: Request, res: Response) => {
   try {
     const environment = brokerRegistry.getEnvironment();
-    const selectedBroker = brokerRegistry.getSelectedBroker();
-    const credStatuses = brokerRegistry.getCredentialStatuses();
     const controls = autoExecutionEngine.getControls();
     const haltDetails = killSwitch.getHaltDetails();
 
-    let activeAccount = null;
-    try {
-      const adapter = brokerRegistry.getAdapter(selectedBroker, environment);
-      activeAccount = await adapter.getAccount();
-    } catch {
-      // Return null if account details are not yet retrieved or authenticated
-      activeAccount = null;
-    }
+    const brokerStatus = await Promise.all(LIVE_BROKERS.map(async (broker) => {
+      try {
+        const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
+        const account = await adapter.getAccount();
+        return { broker, environment: 'LIVE', connected: true, account, error: null };
+      } catch (err: any) {
+        const normalized = normalizeBrokerError(err, broker, 'LIVE');
+        return {
+          broker,
+          environment: 'LIVE',
+          connected: false,
+          account: null,
+          error: normalized.message,
+          code: normalized.code
+        };
+      }
+    }));
 
     res.json({
       environment,
-      selectedBroker,
-      credentials: credStatuses,
+      routingMode: 'AUTOMATIC_BY_MARKET',
+      selectedBroker: null,
+      brokerRouting: {
+        FOREX: 'CTRADER',
+        INDIAN_EQUITY: 'FIVE_PAISA',
+        INDIAN_FUTURES: 'FIVE_PAISA',
+        INDIAN_OPTIONS: 'FIVE_PAISA'
+      },
+      brokers: brokerStatus,
+      credentials: brokerRegistry.getCredentialStatuses(),
       controls,
       emergencyStop: haltDetails,
-      activeAccount,
       timestamp: Date.now()
     });
   } catch (err: any) {
@@ -42,94 +66,81 @@ brokerRouter.get('/status', async (req: Request, res: Response) => {
   }
 });
 
-// 2. Connection Testing (Requirement 14)
 brokerRouter.post('/test-connection', async (req: Request, res: Response) => {
-  const { broker, environment = 'LIVE' } = req.body as { broker: BrokerType; environment: TradingEnvironment };
+  const requestedBroker = req.body?.broker as BrokerType | undefined;
 
-  if (!broker) {
-    return res.status(400).json({ error: 'Missing broker parameter' });
+  if (requestedBroker && !LIVE_BROKERS.includes(requestedBroker)) {
+    return res.status(400).json({ error: 'Allowed live brokers: CTRADER, FIVE_PAISA' });
   }
 
-  try {
-    const result = await brokerRegistry.testBrokerConnection(broker, environment);
-    res.json(result);
-  } catch (err: any) {
-    const normalized = normalizeBrokerError(err, broker, environment);
-    res.json({
-      broker,
-      environment,
-      connected: false,
-      account: '****',
-      error: normalized.message,
-      timestamp: Date.now()
-    });
-  }
+  const brokers = requestedBroker ? [requestedBroker] : LIVE_BROKERS;
+  const results = await Promise.all(brokers.map(async (broker) => {
+    try {
+      return await brokerRegistry.testBrokerConnection(broker, 'LIVE');
+    } catch (err: any) {
+      const normalized = normalizeBrokerError(err, broker, 'LIVE');
+      return {
+        broker,
+        environment: 'LIVE',
+        connected: false,
+        account: '****',
+        error: normalized.message,
+        timestamp: Date.now()
+      };
+    }
+  }));
+
+  res.json({ routingMode: 'AUTOMATIC_BY_MARKET', results });
 });
 
-// 2b. Account Discovery (Phase Platform Update)
+// Account discovery is broker-explicit for administrative diagnostics.
+// Normal trading/dashboard flows use /status and aggregate both brokers.
 brokerRouter.get('/accounts', async (req: Request, res: Response) => {
-  const broker = (req.query.broker as BrokerType) || brokerRegistry.getSelectedBroker();
-  const environment = (req.query.environment as TradingEnvironment) || brokerRegistry.getEnvironment();
+  const requestedBroker = req.query.broker as BrokerType | undefined;
+  const brokers = requestedBroker ? [requestedBroker] : LIVE_BROKERS;
 
   try {
-    const adapter = brokerRegistry.getAdapter(broker, environment);
-    if (adapter.getAccounts) {
-      const accounts = await adapter.getAccounts();
-      res.json(accounts);
-    } else {
-      const account = await adapter.getAccount();
-      res.json([account]);
-    }
+    const results = await Promise.all(brokers.map(async (broker) => {
+      const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
+      if (adapter.getAccounts) return adapter.getAccounts();
+      return [await adapter.getAccount()];
+    }));
+    res.json(results.flat());
   } catch (err: any) {
-    const normalized = normalizeBrokerError(err, broker, environment);
+    const broker = requestedBroker || 'CTRADER';
+    const normalized = normalizeBrokerError(err, broker, 'LIVE');
     res.status(500).json({ error: normalized.message, code: normalized.code });
   }
 });
 
-// 3. Environment Switching with Explicit Confirmation (Requirement 9 & 30)
-brokerRouter.post('/environment', (req: Request, res: Response) => {
-  const { environment, confirmed } = req.body as { environment: TradingEnvironment; confirmed?: boolean };
-
-  if (environment !== 'LIVE') {
-    return res.status(400).json({ error: 'Invalid environment. Goldcrest operates in LIVE_ONLY mode.' });
-  }
-
+brokerRouter.post('/environment', (_req: Request, res: Response) => {
   const currentEnv = brokerRegistry.getEnvironment();
   brokerRegistry.setEnvironment('LIVE');
-  logBrokerAction({
-    source: 'USER_INTERFACE',
-    broker: brokerRegistry.getSelectedBroker(),
-    environment: 'LIVE',
-    account: 'CONFIG',
-    action: 'ENVIRONMENT_SWITCH',
-    result: 'SUCCESS',
-    error: `Operating in LIVE environment`
-  });
-
   res.json({
     success: true,
     previousEnvironment: currentEnv,
-    activeEnvironment: 'LIVE'
+    activeEnvironment: 'LIVE',
+    routingMode: 'AUTOMATIC_BY_MARKET'
   });
 });
 
-// 4. Broker Selection with Compatibility Check (Requirement 10)
+// Legacy endpoint retained for compatibility. It no longer controls which
+// broker is active; both live brokers remain active.
 brokerRouter.post('/select', (req: Request, res: Response) => {
   const { broker } = req.body as { broker: BrokerType };
 
-  if (!['CTRADER', 'FIVE_PAISA'].includes(broker)) {
+  if (!LIVE_BROKERS.includes(broker)) {
     return res.status(400).json({ error: 'Invalid broker. Allowed: CTRADER, FIVE_PAISA' });
   }
 
-  brokerRegistry.setSelectedBroker(broker);
   res.json({
     success: true,
-    selectedBroker: broker,
-    environment: brokerRegistry.getEnvironment()
+    selectedBroker: null,
+    routingMode: 'AUTOMATIC_BY_MARKET',
+    message: 'Manual broker selection is disabled. Goldcrest automatically routes each market to its compatible live broker.'
   });
 });
 
-// 5. Update Live Credentials with Explicit Warning & Confirmation (Requirement 12)
 brokerRouter.post('/credentials/live', (req: Request, res: Response) => {
   const { broker, credentials, userConfirmedAcknowledge } = req.body;
 
@@ -139,8 +150,12 @@ brokerRouter.post('/credentials/live', (req: Request, res: Response) => {
     });
   }
 
-  if (!broker || !credentials) {
-    return res.status(400).json({ error: 'Missing broker or credentials' });
+  if (!LIVE_BROKERS.includes(broker)) {
+    return res.status(400).json({ error: 'Missing or invalid broker. Allowed: CTRADER, FIVE_PAISA' });
+  }
+
+  if (!credentials) {
+    return res.status(400).json({ error: 'Missing credentials' });
   }
 
   brokerRegistry.updateLiveCredentials(broker, credentials);
@@ -155,58 +170,78 @@ brokerRouter.post('/credentials/live', (req: Request, res: Response) => {
 
   res.json({
     success: true,
-    message: `${broker} LIVE credentials configured. Real-money live order submission remains permanently locked.`,
+    message: `${broker} LIVE credentials configured. Real-money autonomous order submission remains permanently locked.`,
     maskedAccountId: maskIdentifier(credentials.accountId || credentials.clientId)
   });
 });
 
-// 7. Normalized Account Details (Requirement 15)
 brokerRouter.get('/account', async (req: Request, res: Response) => {
-  const broker = (req.query.broker as BrokerType) || brokerRegistry.getSelectedBroker();
-  const environment = (req.query.environment as TradingEnvironment) || brokerRegistry.getEnvironment();
+  const requestedBroker = req.query.broker as BrokerType | undefined;
 
   try {
-    const adapter = brokerRegistry.getAdapter(broker, environment);
-    const account = await adapter.getAccount();
-    res.json(account);
+    if (requestedBroker) {
+      const account = await brokerRegistry.getAdapter(requestedBroker, 'LIVE').getAccount();
+      return res.json(account);
+    }
+
+    const accounts = await Promise.all(LIVE_BROKERS.map(async (broker) => {
+      try {
+        return await brokerRegistry.getAdapter(broker, 'LIVE').getAccount();
+      } catch {
+        return null;
+      }
+    }));
+
+    res.json({
+      routingMode: 'AUTOMATIC_BY_MARKET',
+      accounts: accounts.filter(Boolean)
+    });
   } catch (err: any) {
-    const normalized = normalizeBrokerError(err, broker, environment);
+    const broker = requestedBroker || 'CTRADER';
+    const normalized = normalizeBrokerError(err, broker, 'LIVE');
     res.status(500).json({ error: normalized.message, code: normalized.code });
   }
 });
 
-// 8. Normalized Positions (Requirement 16)
-brokerRouter.get('/positions', async (req: Request, res: Response) => {
-  try {
-    const adapter = brokerRegistry.getAdapter();
-    const positions = await adapter.getPositions();
-    res.json(positions);
-  } catch (err: any) {
-    const normalized = normalizeBrokerError(err, brokerRegistry.getSelectedBroker(), brokerRegistry.getEnvironment());
-    res.status(500).json({ error: normalized.message, code: normalized.code });
-  }
+brokerRouter.get('/positions', async (_req: Request, res: Response) => {
+  const results = await Promise.all(LIVE_BROKERS.map(async (broker) => {
+    try {
+      return await brokerRegistry.getAdapter(broker, 'LIVE').getPositions();
+    } catch {
+      return [];
+    }
+  }));
+  res.json(results.flat());
 });
 
-// 9. Normalized Orders (Requirement 17)
-brokerRouter.get('/orders', async (req: Request, res: Response) => {
-  try {
-    const adapter = brokerRegistry.getAdapter();
-    const orders = await adapter.getOpenOrders();
-    res.json(orders);
-  } catch (err: any) {
-    const normalized = normalizeBrokerError(err, brokerRegistry.getSelectedBroker(), brokerRegistry.getEnvironment());
-    res.status(500).json({ error: normalized.message, code: normalized.code });
-  }
+brokerRouter.get('/orders', async (_req: Request, res: Response) => {
+  const results = await Promise.all(LIVE_BROKERS.map(async (broker) => {
+    try {
+      return await brokerRegistry.getAdapter(broker, 'LIVE').getOpenOrders();
+    } catch {
+      return [];
+    }
+  }));
+  res.json(results.flat());
 });
 
-// 10. Place Order Interface with Multi-Gate Verification & Invariant Enforcement (Section 1, 2, 3)
 brokerRouter.post('/order', async (req: Request, res: Response) => {
   const orderReq = req.body as OrderRequest;
-  const env = req.body.environment || brokerRegistry.getEnvironment();
-  const broker = req.body.broker || brokerRegistry.getSelectedBroker();
+  const env: TradingEnvironment = 'LIVE';
 
   try {
-    // 1. Emergency Halt Check
+    if (!orderReq?.market || !orderReq?.symbol) {
+      return res.status(400).json({ error: 'Missing market or symbol', code: 'INVALID_SYMBOL' });
+    }
+
+    const broker = resolveMarketBroker(orderReq.market);
+    const adapter = brokerRegistry.getAdapterForMarket(orderReq.market);
+
+    const compat = brokerRegistry.validateMarketCompatibility(orderReq.market, broker);
+    if (!compat.compatible) {
+      return res.status(400).json({ error: compat.reason, code: 'INVALID_SYMBOL' });
+    }
+
     if (killSwitch.isHalted()) {
       return res.status(403).json({
         error: 'TRADING HALTED: Emergency Kill Switch is currently active. New orders are blocked.',
@@ -214,59 +249,48 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       });
     }
 
-    // 2. Compatibility check
-    const compat = brokerRegistry.validateMarketCompatibility(orderReq.market, broker);
-    if (!compat.compatible) {
-      return res.status(400).json({ error: compat.reason, code: 'INVALID_SYMBOL' });
-    }
+    const gateResult = await liveTradingGate.evaluate(adapter, {
+      order: orderReq,
+      signalAgeMs: 15000,
+      currentQuote: await adapter.getQuote(orderReq.symbol),
+      isMarketOpen: true,
+      dailyRealizedLoss: 0,
+      dailyLossLimit: 5000,
+      totalAccountExposure: 10000,
+      maxAllowedExposure: 50000,
+      activePositionsCount: (await adapter.getPositions()).length,
+      maxOpenPositions: 5
+    });
 
-    const adapter = brokerRegistry.getAdapter(broker, env);
-
-    // 3. Live Trading Gate (Strict 15-Point Pre-Flight Check)
-    if (env === 'LIVE') {
-      const gateResult = await liveTradingGate.evaluate(adapter, {
-        order: orderReq,
-        signalAgeMs: 15000,
-        currentQuote: await adapter.getQuote(orderReq.symbol),
-        isMarketOpen: true,
-        dailyRealizedLoss: 0,
-        dailyLossLimit: 5000,
-        totalAccountExposure: 10000,
-        maxAllowedExposure: 50000,
-        activePositionsCount: (await adapter.getPositions()).length,
-        maxOpenPositions: 5
+    if (!gateResult.passed) {
+      logBrokerAction({
+        source: 'ORDER_VALIDATION',
+        broker,
+        environment: env,
+        account: 'LIVE_ACCOUNT',
+        action: 'VALIDATE_ORDER',
+        symbol: orderReq.symbol,
+        quantity: orderReq.quantity,
+        result: 'BLOCKED',
+        error: gateResult.failedReasons.join(', ')
       });
 
-      if (!gateResult.passed) {
-        logBrokerAction({
-          source: 'ORDER_VALIDATION',
-          broker,
-          environment: 'LIVE',
-          account: 'LIVE_ACCOUNT',
-          action: 'VALIDATE_ORDER',
-          symbol: orderReq.symbol,
-          quantity: orderReq.quantity,
-          result: 'BLOCKED',
-          error: gateResult.failedReasons.join(', ')
-        });
-
-        return res.status(403).json({
-          error: 'Live Safety Gate Rejected Order',
-          code: 'SAFETY_GATE_REJECTED',
-          details: gateResult.failedReasons
-        });
-      }
+      return res.status(403).json({
+        error: 'Live Safety Gate Rejected Order',
+        code: 'SAFETY_GATE_REJECTED',
+        details: gateResult.failedReasons
+      });
     }
 
-    // Pre-flight validation path
     if (req.body.validateOnly) {
       return res.json({
         status: 'VALIDATED',
-        message: 'Order pre-flight checks passed successfully (Autonomous live execution is disabled).'
+        broker,
+        market: orderReq.market,
+        message: 'Order pre-flight checks passed. Autonomous live execution remains disabled.'
       });
     }
 
-    // Stage 5 Execution Boundary: Blocked by Safety Invariant LIVE_AUTO_EXECUTION_ALLOWED === false
     if (!LIVE_AUTO_EXECUTION_ALLOWED) {
       logBrokerAction({
         source: 'DISPATCH_BOUNDARY',
@@ -277,125 +301,106 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
         symbol: orderReq.symbol,
         quantity: orderReq.quantity,
         result: 'BLOCKED',
-        error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED: Autonomous live-money order submission is permanently disabled.'
+        error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED'
       });
 
       return res.status(403).json({
         error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
         code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
-        reason: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
-        message: 'Autonomous live-money order submission is permanently disabled by system safety invariant LIVE_AUTO_EXECUTION_ALLOWED === false.'
+        reason: 'Autonomous live-money order submission is permanently disabled by system safety invariant LIVE_AUTO_EXECUTION_ALLOWED === false.'
       });
     }
 
-    // Fallback closed
     return res.status(403).json({
       error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
       code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED'
     });
   } catch (err: any) {
+    const broker = (() => {
+      try { return resolveMarketBroker(orderReq?.market); } catch { return 'CTRADER' as BrokerType; }
+    })();
     const normalized = normalizeBrokerError(err, broker, env);
-    res.status(400).json({
-      error: normalized.message,
-      code: normalized.code
-    });
+    res.status(400).json({ error: normalized.message, code: normalized.code });
   }
 });
 
-// 11. Cancel Order
 brokerRouter.post('/order/:id/cancel', async (req: Request, res: Response) => {
   try {
-    const adapter = brokerRegistry.getAdapter();
-    const success = await adapter.cancelOrder(req.params.id);
-    res.json({ success });
+    const broker = req.body?.broker as BrokerType | undefined;
+    if (!broker || !LIVE_BROKERS.includes(broker)) {
+      return res.status(400).json({ error: 'Broker is required for cancel operation: CTRADER or FIVE_PAISA' });
+    }
+    const success = await brokerRegistry.getAdapter(broker, 'LIVE').cancelOrder(req.params.id);
+    res.json({ success, broker });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 12. Close Position
 brokerRouter.post('/position/:id/close', async (req: Request, res: Response) => {
   try {
-    const adapter = brokerRegistry.getAdapter();
-    const success = await adapter.closePosition(req.params.id, req.body?.quantity);
-    res.json({ success });
+    const broker = req.body?.broker as BrokerType | undefined;
+    if (!broker || !LIVE_BROKERS.includes(broker)) {
+      return res.status(400).json({ error: 'Broker is required for close operation: CTRADER or FIVE_PAISA' });
+    }
+    const success = await brokerRegistry.getAdapter(broker, 'LIVE').closePosition(req.params.id, req.body?.quantity);
+    res.json({ success, broker });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 13. Emergency Stop / Kill Switch (Requirement 24)
 brokerRouter.post('/kill-switch', async (req: Request, res: Response) => {
   const { action, reason } = req.body;
   if (action === 'HALT') {
     const result = await killSwitch.triggerEmergencyHalt(reason || 'Operator triggered Emergency Stop');
-    return res.json({
-      status: 'TRADING HALTED',
-      isHalted: true,
-      cancelledOrders: result.cancelledCount
-    });
-  } else if (action === 'RESUME') {
-    killSwitch.resumeTrading();
-    return res.json({
-      status: 'TRADING ACTIVE',
-      isHalted: false
-    });
-  } else {
-    return res.status(400).json({ error: 'Action must be HALT or RESUME' });
+    return res.json({ status: 'TRADING HALTED', isHalted: true, cancelledOrders: result.cancelledCount });
   }
+  if (action === 'RESUME') {
+    killSwitch.resumeTrading();
+    return res.json({ status: 'TRADING ACTIVE', isHalted: false });
+  }
+  return res.status(400).json({ error: 'Action must be HALT or RESUME' });
 });
 
-// 14. Live Controls (Requirement 23)
 brokerRouter.post('/controls', (req: Request, res: Response) => {
   const updated = autoExecutionEngine.updateControls(req.body);
   res.json({ success: true, controls: updated });
 });
 
-// 15. Audit Logs (Requirement 33)
 brokerRouter.get('/audit-logs', (req: Request, res: Response) => {
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
-  const logs = getAuditLogs(limit);
-  res.json(logs);
+  res.json(getAuditLogs(limit));
 });
 
-// 16. 5paisa Session Authentication via TOTP & PIN
 brokerRouter.post('/fivepaisa/totp-login', async (req: Request, res: Response) => {
-  const { environment = 'LIVE', totp, pin } = req.body;
+  const { totp, pin } = req.body;
   try {
-    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', environment as TradingEnvironment) as any;
+    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE') as any;
     if (typeof adapter.loginWithTotp !== 'function') {
       return res.status(400).json({ error: 'Selected adapter does not support TOTP login.' });
     }
     await adapter.loginWithTotp(totp, pin);
     const account = await adapter.getAccount();
-    res.json({
-      success: true,
-      message: 'Successfully authenticated with 5paisa OpenAPI via TOTP.',
-      account
-    });
+    res.json({ success: true, message: 'Successfully authenticated with 5paisa OpenAPI via TOTP.', account });
   } catch (err: any) {
     res.status(400).json({ error: err.message || '5paisa TOTP authentication failed' });
   }
 });
 
-// 17. 5paisa Exchange Request Token for Access Token
 brokerRouter.post('/fivepaisa/exchange-token', async (req: Request, res: Response) => {
-  const { environment = 'LIVE', requestToken } = req.body;
+  const { requestToken } = req.body;
   if (!requestToken) {
     return res.status(400).json({ error: 'Missing requestToken parameter.' });
   }
   try {
-    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', environment as TradingEnvironment) as any;
+    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE') as any;
     if (typeof adapter.exchangeRequestToken !== 'function') {
       return res.status(400).json({ error: 'Selected adapter does not support token exchange.' });
     }
     await adapter.exchangeRequestToken(requestToken);
     const account = await adapter.getAccount();
-    res.json({
-      success: true,
-      message: 'Successfully exchanged RequestToken for 5paisa AccessToken.',
-      account
-    });
+    res.json({ success: true, message: 'Successfully exchanged RequestToken for 5paisa AccessToken.', account });
   } catch (err: any) {
     res.status(400).json({ error: err.message || '5paisa token exchange failed' });
   }
