@@ -77,10 +77,10 @@ getDatabase().then(async () => {
     const value = Number(row.value);
     if (Number.isFinite(value) && value > 0) persistedLimits[String(row.key)] = value;
   }
-  updateSystemConfig({
-    maxTradeValueForexUsd: persistedLimits.MAX_TRADE_VALUE_FOREX_USD,
-    maxTradeValueIndianInr: persistedLimits.MAX_TRADE_VALUE_INDIAN_INR
-  });
+  const persistedUpdates: any = {};
+  if (persistedLimits.MAX_TRADE_VALUE_FOREX_USD !== undefined) persistedUpdates.maxTradeValueForexUsd = persistedLimits.MAX_TRADE_VALUE_FOREX_USD;
+  if (persistedLimits.MAX_TRADE_VALUE_INDIAN_INR !== undefined) persistedUpdates.maxTradeValueIndianInr = persistedLimits.MAX_TRADE_VALUE_INDIAN_INR;
+  if (Object.keys(persistedUpdates).length) updateSystemConfig(persistedUpdates);
   console.log('SQLite database initialized successfully');
 }).catch(err => {
   console.error('Failed to initialize SQLite database:', err);
