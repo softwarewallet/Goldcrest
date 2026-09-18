@@ -18,6 +18,11 @@ export async function getDatabase(): Promise<Database> {
   if (fs.existsSync(DB_FILE)) {
     const fileBuffer = fs.readFileSync(DB_FILE);
     dbInstance = new SQL.Database(fileBuffer);
+    // Always run schema migrations against existing databases so newly added
+    // SQLite-only persistence tables are available without manual reset.
+    initSchema(dbInstance);
+    seedInitialData(dbInstance);
+    persistDatabase();
   } else {
     dbInstance = new SQL.Database();
     initSchema(dbInstance);
