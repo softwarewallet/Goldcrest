@@ -748,41 +748,75 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async placeOrder(order: OrderRequest): Promise<NormalizedOrder> {
-    await this.authenticate();
+    await this.ensureActiveSession();
 
-    if (order.symbol.includes('INVALID') || order.symbol.includes('TIMEOUT')) {
-      throw new BrokerError('NETWORK_ERROR', `Broker gateway timeout or invalid symbol: ${order.symbol}`, 'FIVE_PAISA', this.environment);
+    if (!this.isLive) {
+      throw new BrokerError('ENVIRONMENT_MISMATCH', 'Autonomous execution is available only for 5paisa LIVE.', 'FIVE_PAISA', this.environment);
     }
 
-    // Map OrderRequest to 5paisa PlaceOrderRequest
-    const isDeriv = order.market === 'INDIAN_OPTIONS' || order.market === 'INDIAN_FUTURES' || order.symbol.includes('_');
-    const scripCode = this.resolve5PaisaScripCode(order.symbol);
+    const instrument = await this.getInstrument(order.symbol);
+    if (!instrument?.brokerInstrumentId) {
+      throw new BrokerError('INVALID_SYMBOL', `5paisa authoritative scrip code is unavailable for ${order.symbol}.`, 'FIVE_PAISA', this.environment);
+    }
 
-    const fivePaisaReq: FivePaisaPlaceOrderRequest = {
-      Exchange: order.symbol.startsWith('SENSEX') ? 'B' : 'N',
-      ExchangeType: isDeriv ? 'D' : 'C',
-      ScripCode: scripCode,
-      Price: order.orderType === 'MARKET' ? 0 : (order.price || 0),
-      OrderType: order.side,
-      Qty: order.quantity,
-      AtMarket: order.orderType === 'MARKET',
-      RemoteOrderID: `5P_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      IsStopLossOrder: order.orderType === 'STOP' || order.orderType === 'STOP_LIMIT',
-      StopLossPrice: order.stopLoss || 0,
-      IsIntraday: true,
-      ClientCode: this.config.clientCode || this.config.userId
+    const isDeriv = order.market === 'INDIAN_OPTIONS' || order.market === 'INDIAN_FUTURES';
+    const exchange = order.symbol.toUpperCase().startsWith('SENSEX') ? 'B' : 'N';
+    const exchangeType = isDeriv ? 'D' : 'C';
+    const remoteOrderId = (order.signalId || order.strategyId || `gc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 30);
+
+    const payload = {
+      head: {
+        key: this.config.userKey
+      },
+      body: {
+        Exchange: exchange,
+        ExchangeType: exchangeType,
+        ScripCode: instrument.brokerInstrumentId,
+        Price: order.orderType === 'MARKET' ? 0 : Number(order.price || 0),
+        StopLossPrice: Number(order.stopLoss || 0),
+        OrderType: order.side === 'BUY' ? 'Buy' : 'Sell',
+        Qty: Number(order.quantity),
+        DisQty: 0,
+        AtMarket: order.orderType === 'MARKET',
+        IsIntraday: true,
+        IOCOrder: order.orderType === 'MARKET' ? false : false,
+        IsStopLossOrder: order.orderType === 'STOP' || order.orderType === 'STOP_LIMIT',
+        RemoteOrderID: remoteOrderId,
+        ClientCode: this.config.clientCode || this.config.userId
+      }
     };
 
-    const quote = await this.getQuote(order.symbol);
-    const executionPrice = order.orderType === 'MARKET'
-      ? (order.side === 'BUY' ? quote.ask : quote.bid)
-      : (order.price || quote.ask);
+    if (!this.config.accessToken) {
+      throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable for live order submission.', 'FIVE_PAISA', this.environment);
+    }
 
-    const orderId = `5p_ord_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const brokerOrderId = `5P_EXCH_${Math.floor(10000000 + Math.random() * 90000000)}`;
+    const response = await fetch(`${this.getApiHost()}/VendorsAPI/Service1.svc/V1/PlaceOrderRequest`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.accessToken}`,
+        '5Paisa-API-Uid': 'ka7SFqAU6SC'
+      },
+      body: JSON.stringify(payload)
+    });
 
-    const normalizedOrder: NormalizedOrder = {
-      id: orderId,
+    if (!response.ok) {
+      throw new BrokerError('NETWORK_ERROR', `5paisa PlaceOrderRequest HTTP ${response.status}: ${response.statusText}`, 'FIVE_PAISA', this.environment);
+    }
+
+    const data = await response.json();
+    const body = data?.body;
+    const headStatus = String(data?.head?.status ?? '');
+    const bodyStatus = Number(body?.Status ?? -1);
+
+    if (headStatus !== '0' || bodyStatus !== 0 || !body?.BrokerOrderID) {
+      const message = body?.Message || data?.head?.statusDescription || '5paisa rejected the live order.';
+      throw new BrokerError('ORDER_REJECTED', `5paisa live order rejected: ${message}`, 'FIVE_PAISA', this.environment);
+    }
+
+    const brokerOrderId = String(body.BrokerOrderID);
+    const normalized: NormalizedOrder = {
+      id: `5paisa-${brokerOrderId}`,
       broker: 'FIVE_PAISA',
       environment: this.environment,
       market: order.market,
@@ -790,91 +824,28 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       side: order.side,
       orderType: order.orderType,
       quantity: order.quantity,
-      price: executionPrice,
+      price: order.orderType === 'MARKET' ? undefined : order.price,
       stopLoss: order.stopLoss,
       takeProfit: order.takeProfit,
-      status: 'FILLED',
-      filledQuantity: order.quantity,
-      averageFillPrice: executionPrice,
-      commission: Math.round(20.0), // Flat INR 20 per order
+      status: 'ACCEPTED',
+      filledQuantity: 0,
+      averageFillPrice: undefined,
+      commission: undefined,
       timestamp: Date.now(),
       brokerOrderId,
       strategyId: order.strategyId,
       signalId: order.signalId
     };
 
-    this.openOrders.set(orderId, normalizedOrder);
-
-    // Create / update position
-    const positionId = `5p_pos_${order.symbol}`;
-    const existing = this.openPositions.get(positionId);
-
-    if (existing) {
-      if (existing.side === order.side) {
-        const totalQty = existing.quantity + order.quantity;
-        const totalCost = (existing.quantity * existing.entryPrice) + (order.quantity * executionPrice);
-        existing.entryPrice = totalCost / totalQty;
-        existing.quantity = totalQty;
-        existing.currentPrice = executionPrice;
-      } else {
-        if (order.quantity >= existing.quantity) {
-          const remaining = order.quantity - existing.quantity;
-          this.openPositions.delete(positionId);
-          if (remaining > 0) {
-            this.openPositions.set(positionId, {
-              id: positionId,
-              broker: 'FIVE_PAISA',
-              environment: this.environment,
-              market: order.market,
-              symbol: order.symbol,
-              side: order.side,
-              quantity: remaining,
-              entryPrice: executionPrice,
-              currentPrice: executionPrice,
-              stopLoss: order.stopLoss,
-              takeProfit: order.takeProfit,
-              unrealizedPnL: 0,
-              realizedPnL: (executionPrice - existing.entryPrice) * existing.quantity * (existing.side === 'BUY' ? 1 : -1),
-              currency: 'INR',
-              timestamp: Date.now(),
-              brokerPositionId: `5P_POS_${Math.floor(100000 + Math.random() * 900000)}`
-            });
-          }
-        } else {
-          existing.quantity -= order.quantity;
-        }
-      }
-    } else {
-      this.openPositions.set(positionId, {
-        id: positionId,
-        broker: 'FIVE_PAISA',
-        environment: this.environment,
-        market: order.market,
-        symbol: order.symbol,
-        side: order.side,
-        quantity: order.quantity,
-        entryPrice: executionPrice,
-        currentPrice: executionPrice,
-        stopLoss: order.stopLoss,
-        takeProfit: order.takeProfit,
-        unrealizedPnL: 0,
-        realizedPnL: 0,
-        currency: 'INR',
-        timestamp: Date.now(),
-        brokerPositionId: `5P_POS_${Math.floor(100000 + Math.random() * 900000)}`
-      });
-    }
-
     this.logAction('PLACE_ORDER', 'SUCCESS', this.config.clientCode || this.config.userId || '', {
       symbol: order.symbol,
       quantity: order.quantity,
-      price: executionPrice,
-      orderId,
-      signalId: order.signalId,
-      strategyId: order.strategyId
+      brokerOrderId,
+      remoteOrderId,
+      status: 'ACCEPTED'
     });
 
-    return normalizedOrder;
+    return normalized;
   }
 
   async modifyOrder(orderId: string, modifications: OrderModification): Promise<NormalizedOrder> {
