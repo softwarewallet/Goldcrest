@@ -125,26 +125,6 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       return res;
     } catch (err: any) {
       const latency = Date.now() - start;
-      if (this.config.clientId || this.config.clientSecret || this.config.accessToken || this.config.accountId) {
-        const res: ConnectionTestResult = {
-          broker: 'CTRADER',
-          environment: this.environment,
-          connected: true,
-          account: this.config.accountId || '10114397',
-          accountType: this.isLive ? 'LIVE' : 'DEMO',
-          balance: 10000,
-          equity: 10000,
-          availableMargin: 10000,
-          currency: 'USD',
-          timestamp: Date.now(),
-          latency
-        };
-        this.status = 'CONNECTED';
-        this.lastConnectionTest = res;
-        this.logAction('TEST_CONNECTION', 'SUCCESS', this.config.accountId || '');
-        return res;
-      }
-
       this.status = 'AUTHENTICATION_FAILED';
       this.lastError = err.message;
 
@@ -232,23 +212,13 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
             isLiveAccount: details.isLive
           });
         } catch (detailErr: any) {
-          results.push({
-            accountId: String(raw.traderLogin),
-            accountType: raw.isLive ? 'LIVE' : 'DEMO',
-            balance: 0,
-            equity: 0,
-            availableMargin: 0,
-            usedMargin: 0,
-            freeMargin: 0,
-            currency: 'USD',
-            broker: 'CTRADER',
-            environment: this.environment,
-            connectionStatus: 'CONNECTED',
-            server: raw.brokerTitleShort || 'cTrader',
-            permissions: ['READ'],
-            lastUpdate: Date.now(),
-            isLiveAccount: raw.isLive
-          });
+          throw new BrokerError(
+            'ACCOUNT_DATA_UNAVAILABLE',
+            `cTrader account ${String(raw.traderLogin)} detail retrieval failed: ${detailErr?.message || String(detailErr)}`,
+            'CTRADER',
+            this.environment,
+            detailErr
+          );
         }
       }
 
@@ -407,60 +377,15 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getQuote(symbol: string): Promise<NormalizedQuote> {
-    // Check if symbol is a valid Forex / Metals instrument supported by cTrader
     if (!symbol.includes('/') && !symbol.includes('XAU') && !symbol.includes('XAG')) {
       throw new BrokerError('INVALID_SYMBOL', `Symbol ${symbol} is not a valid cTrader Forex/Metal instrument`, 'CTRADER', this.environment);
     }
-
-    if (this.environment === 'LIVE') {
-      this.validateCredentials();
-      try {
-        const base = symbol.split('/')[0] || 'EUR';
-        const quote = symbol.split('/')[1] || 'USD';
-        
-        let fetchSymbol = `${base}${quote}=X`;
-        // Mapping for metals if needed (Yahoo Finance uses GC=F for Gold Futures)
-        if (base === 'XAU') fetchSymbol = 'GC=F';
-        if (base === 'XAG') fetchSymbol = 'SI=F';
-
-        const yfRes = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${fetchSymbol}?interval=1m&range=1d`, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-          }
-        });
-        if (yfRes.ok) {
-          const yfData = await yfRes.json();
-          const rate = yfData?.chart?.result?.[0]?.meta?.regularMarketPrice;
-          
-          if (rate) {
-            const spread = symbol.includes('JPY') ? 0.015 : 0.00012;
-            return {
-              symbol,
-              bid: Number(rate),
-              ask: Number(rate + spread),
-              spread,
-              timestamp: Date.now(),
-              source: 'CTRADER_LIVE_ACCOUNT_STREAM',
-              environment: 'LIVE',
-              status: 'FRESH'
-            };
-          }
-        }
-      } catch (err) {
-        // Fallback to gateway quote
-      }
-    }
-
-    return {
-      symbol,
-      bid: 1.0850,
-      ask: 1.08512,
-      spread: 0.00012,
-      timestamp: Date.now(),
-      source: `CTRADER_${this.environment}_GATEWAY`,
-      environment: this.environment,
-      status: 'FRESH'
-    };
+    throw new BrokerError(
+      'MARKET_DATA_UNAVAILABLE',
+      `Authoritative cTrader quote unavailable for ${symbol}; no synthetic fallback is permitted.`,
+      'CTRADER',
+      this.environment
+    );
   }
 
   async getInstruments(): Promise<BrokerInstrument[]> {
@@ -512,7 +437,10 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     }
 
     const orderId = `ctrader_${this.environment.toLowerCase()}_${Date.now()}`;
-    const fillPrice = order.price || 1.0850;
+    const fillPrice = order.price;
+    if (order.orderType === 'MARKET' && (!Number.isFinite(fillPrice) || Number(fillPrice) <= 0)) {
+      throw new BrokerError('MARKET_DATA_UNAVAILABLE', 'A market order requires an authoritative current price; no synthetic fill price is permitted.', 'CTRADER', this.environment);
+    }
 
     const normalized: NormalizedOrder = {
       id: orderId,
@@ -529,7 +457,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       status: order.orderType === 'MARKET' ? 'FILLED' : 'ACCEPTED',
       filledQuantity: order.orderType === 'MARKET' ? order.quantity : 0,
       averageFillPrice: order.orderType === 'MARKET' ? fillPrice : undefined,
-      commission: 2.0,
+      commission: undefined,
       timestamp: Date.now(),
       brokerOrderId: `ct_ord_${orderId}`,
       strategyId: order.strategyId,
