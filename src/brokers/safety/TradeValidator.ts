@@ -169,6 +169,27 @@ export class TradeValidator {
       }
     }
 
+    // 6. Quantity and Order Parameters
+    if (order.quantity <= 0) {
+      checks.orderParametersPassed = false;
+      return {
+        valid: false,
+        rejectionReason: 'INVALID_QUANTITY: Order quantity must be greater than zero.',
+        checks
+      };
+    }
+
+    if (instrument) {
+      if (order.quantity < instrument.minQuantity) {
+        checks.orderParametersPassed = false;
+        return {
+          valid: false,
+          rejectionReason: `INVALID_QUANTITY: Quantity ${order.quantity} is below instrument minimum (${instrument.minQuantity}).`,
+          checks
+        };
+      }
+    }
+
     // 6. Per-broker maximum trade value hard limit.
     // This check runs in TradeValidator because the signal-driven execution
     // pipeline must enforce the same limit even when it does not invoke the
@@ -205,27 +226,6 @@ export class TradeValidator {
         rejectionReason: 'MAX_TRADE_VALUE_INVALID: Maximum trade value could not be safely calculated or configured limit is invalid.',
         checks: { ...checks, maximumTradeValuePassed }
       };
-    }
-
-    // 6. Quantity and Order Parameters
-    if (order.quantity <= 0) {
-      checks.orderParametersPassed = false;
-      return {
-        valid: false,
-        rejectionReason: 'INVALID_QUANTITY: Order quantity must be greater than zero.',
-        checks
-      };
-    }
-
-    if (instrument) {
-      if (order.quantity < instrument.minQuantity) {
-        checks.orderParametersPassed = false;
-        return {
-          valid: false,
-          rejectionReason: `INVALID_QUANTITY: Quantity ${order.quantity} is below instrument minimum (${instrument.minQuantity}).`,
-          checks
-        };
-      }
     }
 
     return {
