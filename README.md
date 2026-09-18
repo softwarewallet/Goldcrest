@@ -42,3 +42,10 @@ Both LIVE broker adapters remain active simultaneously. Goldcrest routes automat
 ## Persistence
 
 Goldcrest uses the local SQLite database at `data/trading_analyst.sqlite` as the authoritative application persistence layer for settings, signals, trades, positions, orders, reconciliation traces, notes, and ML records. Broker APIs remain authoritative for live account and market state. Firestore/Firebase is not required for application operation.
+
+
+## Operator API authentication
+
+Operational broker, governance, configuration, notes, and database-statistics endpoints require the `GOLDCREST_OPERATOR_API_KEY` environment variable. Clients authenticate with the `X-Goldcrest-Operator-Key` header or an `Authorization: Bearer <key>` header. The key is never stored in SQLite or returned by the API.
+
+If the operator key is not configured, protected endpoints fail closed with `OPERATOR_AUTH_NOT_CONFIGURED`.
