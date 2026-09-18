@@ -1,0 +1,4 @@
+{$GOLDCREST_DOMAIN} {
+    encode gzip
+    reverse_proxy goldcrest:3000
+}
