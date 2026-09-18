@@ -10,13 +10,16 @@ export class FivePaisaLiveAdapter extends FivePaisaBrokerAdapter {
 
   constructor(customConfig?: Partial<FivePaisaConfig>) {
     const config: FivePaisaConfig = {
-      appName: customConfig?.appName || process.env.FIVE_PAISA_LIVE_APP_NAME,
-      appSource: customConfig?.appSource || process.env.FIVE_PAISA_LIVE_APP_SOURCE || '1',
-      userId: customConfig?.userId || process.env.FIVE_PAISA_LIVE_USER_ID,
-      password: customConfig?.password || process.env.FIVE_PAISA_LIVE_PASSWORD,
-      userKey: customConfig?.userKey || process.env.FIVE_PAISA_LIVE_USER_KEY,
-      encryptionKey: customConfig?.encryptionKey || process.env.FIVE_PAISA_LIVE_ENCRYPTION_KEY,
-      clientCode: customConfig?.clientCode || process.env.FIVE_PAISA_LIVE_CLIENT_CODE,
+      appName: customConfig?.appName || process.env.FIVEPAISA_LIVE_APP_NAME || process.env.FIVE_PAISA_LIVE_APP_NAME,
+      appSource: customConfig?.appSource || process.env.FIVEPAISA_LIVE_APP_SOURCE || process.env.FIVE_PAISA_LIVE_APP_SOURCE || '1',
+      userId: customConfig?.userId || process.env.FIVEPAISA_LIVE_USER_ID || process.env.FIVE_PAISA_LIVE_USER_ID,
+      password: customConfig?.password || process.env.FIVEPAISA_LIVE_PASSWORD || process.env.FIVE_PAISA_LIVE_PASSWORD,
+      userKey: customConfig?.userKey || process.env.FIVEPAISA_LIVE_USER_KEY || process.env.FIVE_PAISA_LIVE_USER_KEY,
+      encryptionKey: customConfig?.encryptionKey || process.env.FIVEPAISA_LIVE_ENCRYPTION_KEY || process.env.FIVE_PAISA_LIVE_ENCRYPTION_KEY,
+      clientCode: customConfig?.clientCode || process.env.FIVEPAISA_LIVE_CLIENT_CODE || process.env.FIVE_PAISA_LIVE_CLIENT_CODE,
+      accessToken: customConfig?.accessToken || process.env.FIVEPAISA_LIVE_ACCESS_TOKEN || process.env.FIVE_PAISA_LIVE_ACCESS_TOKEN,
+      totpSecret: customConfig?.totpSecret || process.env.FIVEPAISA_LIVE_TOTP_SECRET || process.env.FIVE_PAISA_LIVE_TOTP_SECRET,
+      pin: customConfig?.pin || process.env.FIVEPAISA_LIVE_PIN || process.env.FIVE_PAISA_LIVE_PIN,
       environment: 'LIVE',
       apiHost: customConfig?.apiHost || 'https://Openapi.5paisa.com'
     };
@@ -30,8 +33,12 @@ export class FivePaisaLiveAdapter extends FivePaisaBrokerAdapter {
       this.config.userKey &&
       this.config.encryptionKey
     );
+    const hasAccessToken = Boolean(this.config.accessToken && this.config.accessToken.trim() !== '');
+    const hasTotpSecret = Boolean(this.config.totpSecret && this.config.totpSecret.trim() !== '');
     return {
       configured,
+      hasAccessToken,
+      hasTotpSecret,
       maskedClientId: maskIdentifier(this.config.clientCode || this.config.userId),
       maskedUserId: maskIdentifier(this.config.userId),
       maskedAppName: this.config.appName ? 'Saved: ' + this.config.appName : undefined,
@@ -39,7 +46,10 @@ export class FivePaisaLiveAdapter extends FivePaisaBrokerAdapter {
       maskedPassword: this.config.password ? '•••••••• (Saved)' : undefined,
       maskedUserKey: this.config.userKey ? '•••••••• (Saved)' : undefined,
       maskedEncryptionKey: this.config.encryptionKey ? '•••••••• (Saved)' : undefined,
-      maskedClientCode: this.config.clientCode ? maskIdentifier(this.config.clientCode) : undefined
+      maskedClientCode: this.config.clientCode ? maskIdentifier(this.config.clientCode) : undefined,
+      maskedAccessToken: this.config.accessToken ? '•••••••• (Active Token)' : undefined,
+      maskedTotpSecret: this.config.totpSecret ? '•••••••• (TOTP Configured)' : undefined,
+      maskedPin: this.config.pin ? '•••• (PIN Configured)' : undefined
     };
   }
 

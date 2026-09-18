@@ -439,9 +439,13 @@ app.post('/api/forex/paper/update', async (req: Request, res: Response) => {
 });
 
 // 5. Indian Equity Endpoints
-app.get('/api/india/underlyings', (req: Request, res: Response) => {
-  const underlyings = indiaProvider.getUnderlyingsOverview();
-  res.json(underlyings);
+app.get('/api/india/underlyings', async (req: Request, res: Response) => {
+  try {
+    const underlyings = await indiaProvider.fetchUnderlyingsOverview();
+    res.json(underlyings);
+  } catch (err) {
+    res.json([]);
+  }
 });
 
 app.get('/api/india/sessions', (req: Request, res: Response) => {
@@ -449,53 +453,87 @@ app.get('/api/india/sessions', (req: Request, res: Response) => {
   res.json(session);
 });
 
-app.get('/api/india/candles/:symbol', (req: Request, res: Response) => {
+app.get('/api/india/candles/:symbol', async (req: Request, res: Response) => {
   const symbol = req.params.symbol.toUpperCase();
-  const candles = indiaProvider.getCandles(symbol, 60);
-  res.json(candles);
+  try {
+    const candles = await indiaProvider.fetchCandles(symbol, 60);
+    res.json(candles);
+  } catch (err) {
+    res.json([]);
+  }
 });
 
-app.get('/api/india/analysis/:symbol', (req: Request, res: Response) => {
+app.get('/api/india/analysis/:symbol', async (req: Request, res: Response) => {
   const symbol = req.params.symbol.toUpperCase();
-  const underlyings = indiaProvider.getUnderlyingsOverview();
-  const found = underlyings.find(u => u.symbol === symbol);
-  if (!found) {
-    return res.status(404).json({ error: `Underlying ${symbol} not found` });
+  try {
+    const underlyings = await indiaProvider.fetchUnderlyingsOverview();
+    const found = underlyings.find(u => u.symbol === symbol);
+    if (!found) {
+      return res.status(404).json({ error: `Underlying ${symbol} not found (5paisa connection unavailable or unlisted)` });
+    }
+    res.json(found);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch analysis' });
   }
-  res.json(found);
 });
 
 // Universal candles endpoint supporting both Forex (EUR/USD, EUR%2FUSD) and Indian underlyings (NIFTY, etc.)
-app.get(['/api/candles/:symbol', '/api/candles/:part1/:part2'], (req: Request, res: Response) => {
-  let symbol = req.params.symbol;
-  if (!symbol && req.params.part1 && req.params.part2) {
-    symbol = `${req.params.part1}/${req.params.part2}`;
-  }
-  if (!symbol) {
-    return res.status(400).json({ error: 'Symbol parameter is required' });
-  }
-  symbol = decodeURIComponent(symbol).toUpperCase().trim();
+app.get(['/api/candles/:symbol', '/api/candles/:part1/:part2'], async (req: Request, res: Response) => {
+  try {
+    let symbol = req.params.symbol;
+    if (!symbol && req.params.part1 && req.params.part2) {
+      symbol = `${req.params.part1}/${req.params.part2}`;
+    }
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol parameter is required' });
+    }
+    symbol = decodeURIComponent(symbol).toUpperCase().trim();
 
-  const isForex = symbol.includes('/') || FOREX_PAIRS.some(p => p.symbol.toUpperCase() === symbol);
-  if (isForex) {
-    const candles = forexProvider.getCandles(symbol, 80);
-    return res.json(candles);
-  } else {
-    const candles = indiaProvider.getCandles(symbol, 60);
-    return res.json(candles);
+    const isForex = symbol.includes('/') || FOREX_PAIRS.some(p => p.symbol.toUpperCase() === symbol);
+    if (isForex) {
+      const candles = forexProvider.getCandles(symbol, 80);
+      return res.json(candles || []);
+    } else {
+      const candles = await indiaProvider.fetchCandles(symbol, 60);
+      return res.json(candles || []);
+    }
+  } catch (err: any) {
+    console.error(`Error in /api/candles endpoint:`, err);
+    return res.json([]);
   }
 });
 
 // 6. Options Endpoints
-app.get('/api/options/chain/:symbol', (req: Request, res: Response) => {
+app.get('/api/options/chain/:symbol', async (req: Request, res: Response) => {
   const symbol = req.params.symbol.toUpperCase();
   const expiry = req.query.expiry as string | undefined;
   const depth = req.query.depth ? parseInt(req.query.depth as string, 10) : 7;
-  const chain = optionsProvider.getChain(symbol, expiry, depth);
-  res.json(chain);
+  try {
+    const chain = await optionsProvider.fetchChain(symbol, expiry, depth);
+    res.json(chain);
+  } catch (err) {
+    res.json({
+      underlying: symbol,
+      spotPrice: 0,
+      atmStrike: 0,
+      expiry: expiry || '',
+      availableExpiries: [],
+      totalCallOI: 0,
+      totalPutOI: 0,
+      pcr: 0,
+      callResistanceStrike: 0,
+      putSupportStrike: 0,
+      highOIStrikeCall: 0,
+      highOIStrikePut: 0,
+      rows: [],
+      isBlank: true,
+      error: '5paisa API Connection Required. Authenticate 5paisa in Broker Settings.',
+      timestamp: Date.now()
+    });
+  }
 });
 
-app.get('/api/options/scanner/:symbol', (req: Request, res: Response) => {
+app.get('/api/options/scanner/:symbol', async (req: Request, res: Response) => {
   const symbol = req.params.symbol ? req.params.symbol.toUpperCase() : 'NIFTY';
   const result = scannerService.getOptionsScanner(symbol);
   res.json(result);

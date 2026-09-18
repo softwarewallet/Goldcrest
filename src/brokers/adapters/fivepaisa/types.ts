@@ -6,6 +6,8 @@ export interface FivePaisaConfig {
   userKey?: string;
   encryptionKey?: string;
   accessToken?: string;
+  totpSecret?: string;
+  pin?: string;
   clientCode?: string;
   environment: 'DEMO' | 'LIVE';
   apiHost?: string;

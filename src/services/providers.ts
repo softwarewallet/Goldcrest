@@ -4,6 +4,8 @@ import { evaluateForexSetup } from '../markets/forex/forexEngine';
 import { INDIAN_UNDERLYINGS } from '../markets/india_equity/underlyings';
 import { evaluateIndianUnderlying, IndianUnderlyingAnalysis } from '../markets/india_equity/indiaEngine';
 import { buildOptionChain } from '../markets/india_options/optionsChain';
+import { brokerRegistry } from '../brokers/registry';
+import { FivePaisaBrokerAdapter } from '../brokers/adapters/fivepaisa/FivePaisaBrokerAdapter';
 
 export interface MarketDataProvider {
   status: DataSourceStatus;
@@ -118,41 +120,201 @@ export class ForexDemoProvider implements MarketDataProvider {
 }
 
 export class IndianMarketDemoProvider implements MarketDataProvider {
-  status: DataSourceStatus = 'DEMO';
-  isDemo: boolean = true;
+  status: DataSourceStatus = 'LIVE';
+  isDemo: boolean = false;
 
-  private spotPrices: Record<string, number> = {
-    'NIFTY': 25420.50,
-    'BANKNIFTY': 52380.00,
-    'FINNIFTY': 24150.25,
-    'MIDCPNIFTY': 13240.80,
-    'SENSEX': 82950.00
-  };
+  private cachedUnderlyings: IndianUnderlyingAnalysis[] = [];
+  private lastFetchTime: number = 0;
 
-  getCandles(symbol: string, count: number = 60): Candle[] {
-    const clean = symbol.toUpperCase().replace(/\s+/g, '');
-    const base = this.spotPrices[clean] ?? 25000;
-    return generateDemoCandles(base, count, 0.0025, 0.0005);
+  private get5PaisaAdapter(): FivePaisaBrokerAdapter | null {
+    try {
+      const adapter = brokerRegistry.getFivePaisaAdapter();
+      if (adapter && typeof adapter.hasActiveSession === 'function' && adapter.hasActiveSession()) {
+        return adapter;
+      }
+    } catch {
+      // Ignore
+    }
+    return null;
+  }
+
+  async fetchUnderlyingsOverview(): Promise<IndianUnderlyingAnalysis[]> {
+    const adapter = this.get5PaisaAdapter();
+    if (!adapter) {
+      this.cachedUnderlyings = [];
+      return []; // Return blank data when 5paisa API connection is unavailable
+    }
+
+    try {
+      const liveData = await adapter.fetchIndianUnderlyingsFrom5Paisa();
+      if (liveData && liveData.length > 0) {
+        this.cachedUnderlyings = liveData;
+        this.lastFetchTime = Date.now();
+        this.status = 'LIVE';
+        return liveData;
+      }
+    } catch (e) {
+      console.error('Error fetching live Indian underlyings from 5paisa:', e);
+    }
+
+    this.cachedUnderlyings = [];
+    return [];
   }
 
   getUnderlyingsOverview(): IndianUnderlyingAnalysis[] {
-    return INDIAN_UNDERLYINGS.map(u => {
-      const spot = this.spotPrices[u.symbol] ?? 25000;
-      const candles = this.getCandles(u.symbol, 50);
-      return evaluateIndianUnderlying(u.symbol, candles, spot, 13.8, 1.12);
-    });
+    const adapter = this.get5PaisaAdapter();
+    if (!adapter) {
+      return []; // Strictly return blank data when 5paisa API is unavailable
+    }
+
+    // Trigger async background refresh if stale
+    if (Date.now() - this.lastFetchTime > 5000) {
+      this.fetchUnderlyingsOverview().catch(() => {});
+    }
+
+    return this.cachedUnderlyings;
+  }
+
+  async fetchCandles(symbol: string, count: number = 60): Promise<Candle[]> {
+    const adapter = this.get5PaisaAdapter();
+    if (!adapter) {
+      return []; // Strictly return blank candles when 5paisa API is unavailable
+    }
+
+    try {
+      const liveCandles = await adapter.fetchHistoricalCandlesFrom5Paisa(symbol, count);
+      if (liveCandles && liveCandles.length > 0) {
+        return liveCandles;
+      }
+    } catch (e) {
+      console.error(`Error fetching 5paisa candles for ${symbol}:`, e);
+    }
+
+    return [];
+  }
+
+  getCandles(symbol: string, count: number = 60): Candle[] {
+    const adapter = this.get5PaisaAdapter();
+    if (!adapter) {
+      return []; // Return blank data when 5paisa API connection is unavailable
+    }
+
+    return [];
   }
 }
 
 export class OptionsChainDemoProvider implements MarketDataProvider {
-  status: DataSourceStatus = 'DEMO';
-  isDemo: boolean = true;
+  status: DataSourceStatus = 'LIVE';
+  isDemo: boolean = false;
+
+  private cachedChains: Map<string, { data: OptionChainSummary; timestamp: number }> = new Map();
+
+  private get5PaisaAdapter(): FivePaisaBrokerAdapter | null {
+    try {
+      const adapter = brokerRegistry.getFivePaisaAdapter();
+      if (adapter && typeof adapter.hasActiveSession === 'function' && adapter.hasActiveSession()) {
+        return adapter;
+      }
+    } catch {
+      // Ignore
+    }
+    return null;
+  }
+
+  async fetchChain(symbol: string, selectedExpiry?: string, depth: number = 7): Promise<OptionChainSummary> {
+    const clean = symbol.toUpperCase().replace(/\s+/g, '');
+    const cacheKey = `${clean}_${selectedExpiry || 'DEFAULT'}_${depth}`;
+    const adapter = this.get5PaisaAdapter();
+
+    if (adapter) {
+      try {
+        const liveChain = await adapter.fetchOptionChainFrom5Paisa(clean, selectedExpiry, depth);
+        if (liveChain && liveChain.rows && liveChain.rows.length > 0) {
+          this.cachedChains.set(cacheKey, { data: liveChain, timestamp: Date.now() });
+          return liveChain;
+        }
+      } catch (e) {
+        console.error(`Error fetching 5paisa option chain for ${clean}:`, e);
+      }
+    }
+
+    // Return blank data when 5paisa API connection is unavailable
+    const blankChain: OptionChainSummary = {
+      underlying: clean,
+      spotPrice: 0,
+      atmStrike: 0,
+      expiry: selectedExpiry || '',
+      availableExpiries: [],
+      totalCallOI: 0,
+      totalPutOI: 0,
+      pcr: 0,
+      callResistanceStrike: 0,
+      putSupportStrike: 0,
+      highOIStrikeCall: 0,
+      highOIStrikePut: 0,
+      rows: [],
+      isBlank: true,
+      error: '5paisa API Connection Required. Authenticate 5paisa in Broker Settings.',
+      timestamp: Date.now()
+    };
+    return blankChain;
+  }
 
   getChain(symbol: string, selectedExpiry?: string, depth: number = 7): OptionChainSummary {
-    const indianProv = new IndianMarketDemoProvider();
     const clean = symbol.toUpperCase().replace(/\s+/g, '');
-    const spot = (indianProv as any).spotPrices[clean] ?? 25420.50;
-    return buildOptionChain(clean, spot, selectedExpiry, depth);
+    const cacheKey = `${clean}_${selectedExpiry || 'DEFAULT'}_${depth}`;
+    const adapter = this.get5PaisaAdapter();
+
+    if (!adapter) {
+      return {
+        underlying: clean,
+        spotPrice: 0,
+        atmStrike: 0,
+        expiry: selectedExpiry || '',
+        availableExpiries: [],
+        totalCallOI: 0,
+        totalPutOI: 0,
+        pcr: 0,
+        callResistanceStrike: 0,
+        putSupportStrike: 0,
+        highOIStrikeCall: 0,
+        highOIStrikePut: 0,
+        rows: [],
+        isBlank: true,
+        error: '5paisa API Connection Required. Authenticate 5paisa in Broker Settings.',
+        timestamp: Date.now()
+      };
+    }
+
+    const cached = this.cachedChains.get(cacheKey);
+    if (cached) {
+      if (Date.now() - cached.timestamp > 5000) {
+        this.fetchChain(clean, selectedExpiry, depth).catch(() => {});
+      }
+      return cached.data;
+    }
+
+    // Trigger async fetch in background
+    this.fetchChain(clean, selectedExpiry, depth).catch(() => {});
+
+    return {
+      underlying: clean,
+      spotPrice: 0,
+      atmStrike: 0,
+      expiry: selectedExpiry || '',
+      availableExpiries: [],
+      totalCallOI: 0,
+      totalPutOI: 0,
+      pcr: 0,
+      callResistanceStrike: 0,
+      putSupportStrike: 0,
+      highOIStrikeCall: 0,
+      highOIStrikePut: 0,
+      rows: [],
+      isBlank: true,
+      error: 'Fetching live option chain from 5paisa...',
+      timestamp: Date.now()
+    };
   }
 }
 

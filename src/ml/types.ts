@@ -28,6 +28,9 @@ export type PredictionOutcomeLabel =
   | 'INVALIDATED'      // Market structure invalidated before entry
   | 'PARTIAL_TARGET';  // Reached TP1/partial before stop
 
+export type Matrix = number[][];
+export type Vector = number[];
+
 export type PredictionConfidenceTier =
   | 'NO_EDGE'     // < 0.50
   | 'WEAK'        // 0.50 - 0.59

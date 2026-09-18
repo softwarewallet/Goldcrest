@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { MarketHub } from './components/MarketHub';
 import { SignalsView } from './components/SignalsView';
@@ -214,20 +214,30 @@ export default function App() {
     }
   };
 
+  // Track last fetched timestamps to prevent redundant polling loops
+  const candleFetchTimesRef = useRef<Record<string, number>>({});
+
   // Ensure candles loaded for an instrument
-  const ensureCandlesLoaded = async (symbol: string) => {
-    if (candlesMap[symbol] && candlesMap[symbol].length > 0) return;
+  const ensureCandlesLoaded = useCallback(async (symbol: string) => {
+    if (!symbol) return;
+    const now = Date.now();
+    const lastFetch = candleFetchTimesRef.current[symbol] || 0;
+    // Throttle to at most once every 10 seconds per symbol
+    if (now - lastFetch < 10000) return;
+    candleFetchTimesRef.current[symbol] = now;
+
     try {
       const encoded = encodeURIComponent(symbol);
       const res = await fetch(`/api/candles/${encoded}`);
       if (res.ok) {
         const data = await res.json();
-        setCandlesMap(prev => ({ ...prev, [symbol]: data }));
+        setCandlesMap(prev => ({ ...prev, [symbol]: Array.isArray(data) ? data : [] }));
       }
-    } catch (err) {
-      console.error(`Failed to fetch candles for ${symbol}:`, err);
+    } catch {
+      // Safe fallback when disconnected or server is restarting
+      setCandlesMap(prev => ({ ...prev, [symbol]: prev[symbol] || [] }));
     }
-  };
+  }, []);
 
   // Execute confirmed order
   const handleExecuteConfirmedOrder = async (confirmedOrder: OrderRequest) => {

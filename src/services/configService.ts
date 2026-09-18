@@ -36,7 +36,7 @@ export function getSystemConfig(): SystemConfig {
 
 export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig {
   // Safety rule: Never enable LIVE trading unless explicitly configured in environment
-  if (updates.tradingMode === 'LIVE' && !activeConfig.liveTradingEnabled) {
+  if ((updates.tradingMode as string) === 'LIVE' && !activeConfig.liveTradingEnabled) {
     throw new Error('Live trading gate rejected: LIVE_TRADING_ENABLED environment variable is not true.');
   }
 

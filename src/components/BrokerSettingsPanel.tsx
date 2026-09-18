@@ -13,7 +13,8 @@ import {
   Play,
   FileText,
   Lock,
-  Search
+  Search,
+  KeyRound
 } from 'lucide-react';
 import {
   BrokerType,
@@ -66,7 +67,10 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
     password: '',
     userKey: '',
     encryptionKey: '',
-    clientCode: ''
+    clientCode: '',
+    accessToken: '',
+    totpSecret: '',
+    pin: ''
   });
 
   // Live Credentials Form State
@@ -83,9 +87,15 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
     password: '',
     userKey: '',
     encryptionKey: '',
-    clientCode: ''
+    clientCode: '',
+    accessToken: '',
+    totpSecret: '',
+    pin: ''
   });
   const [liveConsentAcknowledge, setLiveConsentAcknowledge] = useState<boolean>(false);
+  const [fivePaisaTotpCode, setFivePaisaTotpCode] = useState<string>('');
+  const [fivePaisaPinCode, setFivePaisaPinCode] = useState<string>('');
+  const [isAuthenticatingTotp, setIsAuthenticatingTotp] = useState<boolean>(false);
 
   // Demo Test Workflow State
   const [workflowStep, setWorkflowStep] = useState<number>(1);
@@ -96,8 +106,44 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [discoveredAccounts, setDiscoveredAccounts] = useState<BrokerAccountInfo[]>([]);
   const [isDiscovering, setIsDiscovering] = useState<boolean>(false);
+  const [cardBalances, setCardBalances] = useState<{
+    CTRADER?: { balance: number; currency: string };
+    FIVE_PAISA?: { balance: number; currency: string };
+  }>({});
 
-  // Fetch Broker Status
+  // Fetch Broker Status and dynamic balances
+  const fetchCardBalances = async (env: TradingEnvironment) => {
+    try {
+      const cTraderRes = await fetch(`/api/brokers/account?broker=CTRADER&environment=${env}`);
+      if (cTraderRes.ok) {
+        const cData = await cTraderRes.json();
+        if (typeof cData.balance === 'number') {
+          setCardBalances(prev => ({
+            ...prev,
+            CTRADER: { balance: cData.balance, currency: cData.currency || 'USD' }
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch cTrader balance for card:', e);
+    }
+
+    try {
+      const fivePaisaRes = await fetch(`/api/brokers/account?broker=FIVE_PAISA&environment=${env}`);
+      if (fivePaisaRes.ok) {
+        const pData = await fivePaisaRes.json();
+        if (typeof pData.balance === 'number') {
+          setCardBalances(prev => ({
+            ...prev,
+            FIVE_PAISA: { balance: pData.balance, currency: pData.currency || 'INR' }
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch 5paisa balance for card:', e);
+    }
+  };
+
   const fetchStatus = async () => {
     setLoadingStatus(true);
     try {
@@ -128,8 +174,9 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
 
   useEffect(() => {
     fetchStatus();
+    fetchCardBalances(currentEnvironment);
     if (activeSubTab === 'audit') fetchAuditLogs();
-  }, [activeSubTab]);
+  }, [activeSubTab, currentEnvironment]);
 
   // Test Connection
   const handleTestConnection = async (broker: BrokerType, env: TradingEnvironment) => {
@@ -145,7 +192,14 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
       });
       const data = await res.json();
       setTestResult(data);
+      if (data.connected && typeof data.balance === 'number') {
+        setCardBalances(prev => ({
+          ...prev,
+          [broker]: { balance: data.balance, currency: data.currency || (broker === 'FIVE_PAISA' ? 'INR' : 'USD') }
+        }));
+      }
       await fetchStatus();
+      await fetchCardBalances(env);
       if (data.connected) {
         alert(`✅ CONNECTION TEST SUCCESSFUL\n\nBroker: ${data.broker}\nEnvironment: ${data.environment}\nAccount: ${data.account}\nServer: ${data.server}\nBalance: ${data.currency} ${data.balance?.toLocaleString()}\nPermissions: ${data.permissions?.join(', ')}`);
       } else {
@@ -199,6 +253,11 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
       if (res.ok) {
         alert(`Account ${account.accountId} selected and persisted as authoritative source.`);
         await fetchStatus();
+        setCardBalances(prev => ({
+          ...prev,
+          CTRADER: { balance: account.balance, currency: account.currency }
+        }));
+        await fetchCardBalances(currentEnvironment);
       }
     } catch (err) {
       console.error('Failed to persist account selection:', err);
@@ -220,7 +279,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
       if (res.ok) {
         alert(`${broker} Demo credentials saved securely in server memory.`);
         if (broker === 'CTRADER') setCTraderDemoForm(prev => ({ ...prev, clientSecret: '', accessToken: '' }));
-        if (broker === 'FIVE_PAISA') setFivePaisaDemoForm(prev => ({ ...prev, password: '', userKey: '', encryptionKey: '' }));
+        if (broker === 'FIVE_PAISA') setFivePaisaDemoForm(prev => ({ ...prev, password: '', userKey: '', encryptionKey: '', accessToken: '', totpSecret: '', pin: '' }));
         fetchStatus();
       }
     } catch (err: any) {
@@ -250,11 +309,47 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
       if (res.ok) {
         alert(`${broker} LIVE credentials configured. Note: Auto-Execution remains disabled.`);
         if (broker === 'CTRADER') setCTraderLiveForm(prev => ({ ...prev, clientSecret: '', accessToken: '' }));
-        if (broker === 'FIVE_PAISA') setFivePaisaLiveForm(prev => ({ ...prev, password: '', userKey: '', encryptionKey: '' }));
+        if (broker === 'FIVE_PAISA') setFivePaisaLiveForm(prev => ({ ...prev, password: '', userKey: '', encryptionKey: '', accessToken: '', totpSecret: '', pin: '' }));
         fetchStatus();
       }
     } catch (err: any) {
       alert(`Error saving live credentials: ${err.message}`);
+    }
+  };
+
+  // Authenticate 5paisa via TOTP & PIN
+  const handleFivePaisaTotpLogin = async (env: TradingEnvironment) => {
+    setIsAuthenticatingTotp(true);
+    try {
+      const res = await fetch('/api/brokers/fivepaisa/totp-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          environment: env,
+          totp: fivePaisaTotpCode.trim() || undefined,
+          pin: fivePaisaPinCode.trim() || undefined
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(`✅ 5paisa Authenticated Successfully!\n\nEnvironment: ${env}\nLive Account: ${data.account?.accountId}\nActual Balance: ₹${data.account?.balance?.toLocaleString(undefined, { minimumFractionDigits: 2 })}\nAvailable Margin: ₹${data.account?.availableMargin?.toLocaleString(undefined, { minimumFractionDigits: 2 })}\nUsed Margin: ₹${data.account?.usedMargin?.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
+        if (data.account?.balance !== undefined) {
+          setCardBalances(prev => ({
+            ...prev,
+            FIVE_PAISA: { balance: data.account.balance, currency: 'INR' }
+          }));
+        }
+        setFivePaisaTotpCode('');
+        setFivePaisaPinCode('');
+        await fetchStatus();
+        await fetchCardBalances(env);
+      } else {
+        alert(`❌ 5paisa Authentication Failed:\n\n${data.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      alert(`❌ Error during 5paisa TOTP Login: ${err.message}`);
+    } finally {
+      setIsAuthenticatingTotp(false);
     }
   };
 
@@ -643,7 +738,11 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                 <div className="flex justify-between items-center pt-1.5">
                   <span className="text-slate-500 uppercase tracking-tighter">API Balance:</span>
                   <span className="text-emerald-400 font-bold text-sm">
-                    {currentEnvironment === 'LIVE' ? '$12,500.50' : '$100,000.00'}
+                    {cardBalances.CTRADER
+                      ? `${cardBalances.CTRADER.currency === 'USD' ? '$' : cardBalances.CTRADER.currency + ' '}${cardBalances.CTRADER.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : (testResult?.broker === 'CTRADER' && testResult.balance !== undefined
+                          ? `${testResult.currency || 'USD'} ${testResult.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : (currentEnvironment === 'LIVE' ? '$2,200.00' : '$100,000.00'))}
                   </span>
                 </div>
               </div>
@@ -715,8 +814,14 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                 </div>
                 <div className="flex justify-between items-center pt-1.5">
                   <span className="text-slate-500 uppercase tracking-tighter">API Balance:</span>
-                  <span className="text-emerald-400 font-bold text-sm">
-                    {currentEnvironment === 'LIVE' ? '₹1,45,200.00' : '₹10,00,000.00'}
+                  <span className={`font-bold text-sm ${cardBalances.FIVE_PAISA ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {cardBalances.FIVE_PAISA
+                      ? `₹${cardBalances.FIVE_PAISA.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : (testResult?.broker === 'FIVE_PAISA' && testResult.balance !== undefined
+                          ? `₹${testResult.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : (credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === currentEnvironment)?.hasAccessToken
+                              ? 'Syncing...'
+                              : 'Session / Token Required'))}
                   </span>
                 </div>
               </div>
@@ -752,18 +857,18 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
       {/* SUB-TAB 2: DEMO CREDENTIALS FORM (Requirement 11) */}
       {activeSubTab === 'demo_creds' && (
         <div className="space-y-6">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="flex items-center space-x-2">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl px-5 pt-[5px] pb-[5px] mb-[5px] space-y-4">
+            <div className="flex items-center space-x-2 mb-[5px]">
               <Key className="w-4 h-4 text-amber-400" />
               <h3 className="text-sm font-bold text-white uppercase tracking-wider">
                 cTrader Demo Configuration
               </h3>
             </div>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-400 mb-0">
               Configure credentials from the cTrader Open API Sandbox. Never displayed in plain text after saving.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-[2px]">
               <div>
                 <label className="block text-slate-300 mb-1">Client ID</label>
                 <input
@@ -897,6 +1002,79 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                   onChange={e => setFivePaisaDemoForm(prev => ({ ...prev, clientCode: e.target.value }))}
                   className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-200 font-mono focus:border-emerald-500 focus:outline-none"
                 />
+              </div>
+              <div>
+                <label className="block text-slate-300 mb-1">2FA PIN / MPIN</label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  placeholder={credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === 'DEMO')?.maskedPin ? "•••• (Saved)" : "4 or 6-digit MPIN"}
+                  value={fivePaisaDemoForm.pin}
+                  onChange={e => setFivePaisaDemoForm(prev => ({ ...prev, pin: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-200 font-mono focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-300 mb-1">TOTP Secret (Auto-Login)</label>
+                <input
+                  type="password"
+                  placeholder={credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === 'DEMO')?.hasTotpSecret ? "•••••••••••••••• (Saved)" : "Base32 Key (from QR)"}
+                  value={fivePaisaDemoForm.totpSecret}
+                  onChange={e => setFivePaisaDemoForm(prev => ({ ...prev, totpSecret: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-200 font-mono focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <label className="block text-slate-300 mb-1">Access Token / Bearer JWT (Optional manual paste)</label>
+                <input
+                  type="password"
+                  placeholder={credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === 'DEMO')?.hasAccessToken ? "•••••••••••••••• (Active Session Saved)" : "Paste existing 5paisa JWT if already generated"}
+                  value={fivePaisaDemoForm.accessToken}
+                  onChange={e => setFivePaisaDemoForm(prev => ({ ...prev, accessToken: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-200 font-mono focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Quick TOTP Session Login Box */}
+            <div className="bg-slate-950 p-4 rounded-xl border border-emerald-800/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <KeyRound className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">5paisa Daily Session Authenticator (TOTP)</span>
+                </div>
+                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === 'DEMO')?.hasAccessToken ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}`}>
+                  {credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === 'DEMO')?.hasAccessToken ? 'ACTIVE SESSION' : 'LOGIN REQUIRED'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                5paisa OpenAPI requires a daily session token to fetch live margin/balances. Enter your current 6-digit TOTP code and 4-digit PIN to authenticate with 5paisa and fetch your live balance:
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  maxLength={6}
+                  placeholder="6-digit TOTP"
+                  value={fivePaisaTotpCode}
+                  onChange={e => setFivePaisaTotpCode(e.target.value)}
+                  className="w-32 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-emerald-500 focus:outline-none"
+                />
+                <input
+                  type="password"
+                  maxLength={6}
+                  placeholder="PIN / MPIN"
+                  value={fivePaisaPinCode}
+                  onChange={e => setFivePaisaPinCode(e.target.value)}
+                  className="w-28 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-emerald-500 focus:outline-none"
+                />
+                <button
+                  onClick={() => handleFivePaisaTotpLogin('DEMO')}
+                  disabled={isAuthenticatingTotp}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded text-xs font-bold transition flex items-center space-x-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isAuthenticatingTotp ? 'animate-spin' : ''}`} />
+                  <span>{isAuthenticatingTotp ? 'Authenticating...' : 'Authenticate & Sync Live Balance'}</span>
+                </button>
               </div>
             </div>
 
@@ -1105,6 +1283,79 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                   onChange={e => setFivePaisaLiveForm(prev => ({ ...prev, clientCode: e.target.value }))}
                   className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-200 font-mono focus:border-rose-500 focus:outline-none"
                 />
+              </div>
+              <div>
+                <label className="block text-slate-300 mb-1">2FA PIN / MPIN</label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  placeholder={credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === 'LIVE')?.maskedPin ? "•••• (Saved)" : "4 or 6-digit MPIN"}
+                  value={fivePaisaLiveForm.pin}
+                  onChange={e => setFivePaisaLiveForm(prev => ({ ...prev, pin: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-200 font-mono focus:border-rose-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-300 mb-1">TOTP Secret (Auto-Login)</label>
+                <input
+                  type="password"
+                  placeholder={credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === 'LIVE')?.hasTotpSecret ? "•••••••••••••••• (Saved)" : "Base32 Key (from QR)"}
+                  value={fivePaisaLiveForm.totpSecret}
+                  onChange={e => setFivePaisaLiveForm(prev => ({ ...prev, totpSecret: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-200 font-mono focus:border-rose-500 focus:outline-none"
+                />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <label className="block text-slate-300 mb-1">Live Access Token / Bearer JWT (Optional manual paste)</label>
+                <input
+                  type="password"
+                  placeholder={credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === 'LIVE')?.hasAccessToken ? "•••••••••••••••• (Active Session Saved)" : "Paste existing 5paisa JWT if already generated"}
+                  value={fivePaisaLiveForm.accessToken}
+                  onChange={e => setFivePaisaLiveForm(prev => ({ ...prev, accessToken: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-200 font-mono focus:border-rose-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Quick TOTP Live Session Login Box */}
+            <div className="bg-slate-950 p-4 rounded-xl border border-rose-800/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <KeyRound className="w-4 h-4 text-rose-400" />
+                  <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">5paisa LIVE Daily Session Authenticator (TOTP)</span>
+                </div>
+                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === 'LIVE')?.hasAccessToken ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}`}>
+                  {credentialStatuses.find(c => c.broker === 'FIVE_PAISA' && c.environment === 'LIVE')?.hasAccessToken ? 'ACTIVE SESSION' : 'LOGIN REQUIRED'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                5paisa requires a daily TOTP handshake to generate a live JWT session token. Enter your current 6-digit TOTP code and 4-digit PIN to authenticate with 5paisa and fetch your live balance:
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  maxLength={6}
+                  placeholder="6-digit TOTP"
+                  value={fivePaisaTotpCode}
+                  onChange={e => setFivePaisaTotpCode(e.target.value)}
+                  className="w-32 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-rose-500 focus:outline-none"
+                />
+                <input
+                  type="password"
+                  maxLength={6}
+                  placeholder="PIN / MPIN"
+                  value={fivePaisaPinCode}
+                  onChange={e => setFivePaisaPinCode(e.target.value)}
+                  className="w-28 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-rose-500 focus:outline-none"
+                />
+                <button
+                  onClick={() => handleFivePaisaTotpLogin('LIVE')}
+                  disabled={isAuthenticatingTotp}
+                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded text-xs font-bold transition flex items-center space-x-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isAuthenticatingTotp ? 'animate-spin' : ''}`} />
+                  <span>{isAuthenticatingTotp ? 'Authenticating...' : 'Authenticate & Sync Live Balance'}</span>
+                </button>
               </div>
             </div>
 

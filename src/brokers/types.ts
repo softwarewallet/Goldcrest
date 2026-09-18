@@ -254,10 +254,14 @@ export interface BrokerCredentialStatus {
   broker: BrokerType;
   environment: TradingEnvironment;
   configured: boolean;
+  hasAccessToken?: boolean;
+  hasTotpSecret?: boolean;
   maskedAccountId?: string;
   maskedClientId?: string;
   maskedClientSecret?: string;
   maskedAccessToken?: string;
+  maskedTotpSecret?: string;
+  maskedPin?: string;
   maskedAppName?: string;
   maskedAppSource?: string;
   maskedUserId?: string;

@@ -194,12 +194,16 @@ brokerRouter.post('/credentials/live', (req: Request, res: Response) => {
 
 // 7. Normalized Account Details (Requirement 15)
 brokerRouter.get('/account', async (req: Request, res: Response) => {
+  const broker = (req.query.broker as BrokerType) || brokerRegistry.getSelectedBroker();
+  const environment = (req.query.environment as TradingEnvironment) || brokerRegistry.getEnvironment();
+
   try {
-    const adapter = brokerRegistry.getAdapter();
+    const adapter = brokerRegistry.getAdapter(broker, environment);
     const account = await adapter.getAccount();
     res.json(account);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    const normalized = normalizeBrokerError(err, broker, environment);
+    res.status(500).json({ error: normalized.message });
   }
 });
 
@@ -352,4 +356,47 @@ brokerRouter.get('/audit-logs', (req: Request, res: Response) => {
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
   const logs = getAuditLogs(limit);
   res.json(logs);
+});
+
+// 16. 5paisa Session Authentication via TOTP & PIN
+brokerRouter.post('/fivepaisa/totp-login', async (req: Request, res: Response) => {
+  const { environment = 'LIVE', totp, pin } = req.body;
+  try {
+    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', environment as TradingEnvironment) as any;
+    if (typeof adapter.loginWithTotp !== 'function') {
+      return res.status(400).json({ error: 'Selected adapter does not support TOTP login.' });
+    }
+    await adapter.loginWithTotp(totp, pin);
+    const account = await adapter.getAccount();
+    res.json({
+      success: true,
+      message: 'Successfully authenticated with 5paisa OpenAPI via TOTP.',
+      account
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || '5paisa TOTP authentication failed' });
+  }
+});
+
+// 17. 5paisa Exchange Request Token for Access Token
+brokerRouter.post('/fivepaisa/exchange-token', async (req: Request, res: Response) => {
+  const { environment = 'LIVE', requestToken } = req.body;
+  if (!requestToken) {
+    return res.status(400).json({ error: 'Missing requestToken parameter.' });
+  }
+  try {
+    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', environment as TradingEnvironment) as any;
+    if (typeof adapter.exchangeRequestToken !== 'function') {
+      return res.status(400).json({ error: 'Selected adapter does not support token exchange.' });
+    }
+    await adapter.exchangeRequestToken(requestToken);
+    const account = await adapter.getAccount();
+    res.json({
+      success: true,
+      message: 'Successfully exchanged RequestToken for 5paisa AccessToken.',
+      account
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || '5paisa token exchange failed' });
+  }
 });

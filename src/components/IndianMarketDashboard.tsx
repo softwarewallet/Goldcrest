@@ -27,9 +27,20 @@ export const IndianMarketDashboard: React.FC<IndianMarketDashboardProps> = ({
     }
   }, [selectedSymbol, onEnsureCandles]);
 
+  const isConnected = underlyings && underlyings.length > 0;
+
+  const defaultIndices = [
+    { symbol: 'NIFTY', name: 'Nifty 50' },
+    { symbol: 'BANKNIFTY', name: 'Nifty Bank' },
+    { symbol: 'FINNIFTY', name: 'Nifty Financial Services' },
+    { symbol: 'MIDCPNIFTY', name: 'Nifty Midcap Select' },
+    { symbol: 'SENSEX', name: 'BSE SENSEX' }
+  ];
+
   const selectedIndex = useMemo(() => {
+    if (!isConnected) return null;
     return underlyings.find(u => u.symbol === selectedSymbol) || underlyings[0];
-  }, [underlyings, selectedSymbol]);
+  }, [underlyings, selectedSymbol, isConnected]);
 
   const selectedCandles = useMemo(() => {
     return candlesMap[selectedSymbol] || [];
@@ -37,45 +48,97 @@ export const IndianMarketDashboard: React.FC<IndianMarketDashboardProps> = ({
 
   return (
     <div id="indian_market_dashboard_view" className="space-y-4">
-      {/* Index Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        {underlyings.map(u => {
-          const isSelected = u.symbol === selectedSymbol;
-          const isUp = u.change >= 0;
-
-          return (
-            <div
-              key={u.symbol}
-              onClick={() => setSelectedSymbol(u.symbol)}
-              className={`p-3 rounded-lg border transition cursor-pointer select-none ${
-                isSelected
-                  ? 'bg-slate-800/90 border-emerald-500 shadow-md'
-                  : 'bg-slate-900 border-slate-800 hover:border-slate-700'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-white text-sm tracking-wide">{u.symbol}</span>
-                <span className="text-[10px] font-mono text-slate-400">{u.name}</span>
-              </div>
-
-              <div className="mt-1 flex items-baseline justify-between font-mono">
-                <span className="text-lg font-bold text-slate-100">{u.spot.toLocaleString()}</span>
-                <span className={`text-xs font-semibold flex items-center ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {isUp ? <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" /> : <ArrowDownRight className="w-3.5 h-3.5 mr-0.5" />}
-                  {isUp ? '+' : ''}{u.change} ({u.changePercent}%)
-                </span>
-              </div>
-
-              {/* Sub metrics */}
-              <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
-                <span>VWAP: {u.vwap.toLocaleString()}</span>
-                <span className={u.vwapStatus === 'ABOVE_VWAP' ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-                  {u.vwapStatus === 'ABOVE_VWAP' ? '▲ Bullish' : '▼ Bearish'}
-                </span>
+      {/* 5paisa Status Notice Banner when disconnected */}
+      {!isConnected && (
+        <div className="bg-amber-950/40 border border-amber-800/60 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold text-amber-200 text-sm">5paisa API Connection Required</div>
+              <div className="text-amber-300/80 mt-0.5">
+                Indian Market indices stream live via 5paisa API. Synthetic dummy data is disabled. Configure and authenticate 5paisa in Broker Settings to stream real-time NSE/BSE feeds.
               </div>
             </div>
-          );
-        })}
+          </div>
+          <div className="px-3 py-1.5 rounded-lg bg-amber-900/50 border border-amber-700/60 text-amber-300 font-mono text-[11px] font-semibold whitespace-nowrap">
+            Status: Blank (No Dummy Data)
+          </div>
+        </div>
+      )}
+
+      {/* Index Cards Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        {isConnected ? (
+          underlyings.map(u => {
+            const isSelected = u.symbol === selectedSymbol;
+            const isUp = u.change >= 0;
+
+            return (
+              <div
+                key={u.symbol}
+                onClick={() => setSelectedSymbol(u.symbol)}
+                className={`p-3 rounded-lg border transition cursor-pointer select-none ${
+                  isSelected
+                    ? 'bg-slate-800/90 border-emerald-500 shadow-md'
+                    : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white text-sm tracking-wide">{u.symbol}</span>
+                  <span className="text-[10px] font-mono text-slate-400">{u.name}</span>
+                </div>
+
+                <div className="mt-1 flex items-baseline justify-between font-mono">
+                  <span className="text-lg font-bold text-slate-100">{u.spot.toLocaleString()}</span>
+                  <span className={`text-xs font-semibold flex items-center ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {isUp ? <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" /> : <ArrowDownRight className="w-3.5 h-3.5 mr-0.5" />}
+                    {isUp ? '+' : ''}{u.change} ({u.changePercent}%)
+                  </span>
+                </div>
+
+                {/* Sub metrics */}
+                <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+                  <span>VWAP: {u.vwap.toLocaleString()}</span>
+                  <span className={u.vwapStatus === 'ABOVE_VWAP' ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                    {u.vwapStatus === 'ABOVE_VWAP' ? '▲ Bullish' : '▼ Bearish'}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          defaultIndices.map(idx => {
+            const isSelected = idx.symbol === selectedSymbol;
+            return (
+              <div
+                key={idx.symbol}
+                onClick={() => setSelectedSymbol(idx.symbol)}
+                className={`p-3 rounded-lg border transition cursor-pointer select-none ${
+                  isSelected
+                    ? 'bg-slate-800/60 border-slate-600 shadow-md'
+                    : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 text-sm tracking-wide">{idx.symbol}</span>
+                  <span className="text-[10px] font-mono text-slate-500">{idx.name}</span>
+                </div>
+
+                <div className="mt-1 flex items-baseline justify-between font-mono">
+                  <span className="text-lg font-bold text-slate-500">—</span>
+                  <span className="text-xs text-slate-500 font-semibold">
+                    Awaiting Feed
+                  </span>
+                </div>
+
+                <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-500">
+                  <span>VWAP: —</span>
+                  <span className="text-slate-500 font-semibold">—</span>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Main Grid: Chart & Comprehensive Structural Level Card */}

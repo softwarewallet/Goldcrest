@@ -132,7 +132,11 @@ export class Exp2026Research011Engine {
         labelTimestamp: timestamp + 3600000,
         outcome,
         binaryTarget: isTargetFirst ? 1 : 0,
+        holdingPeriodCandles: 4,
+        maxFavorableExcursionPips: isTargetFirst ? 50 : 10,
+        maxAdverseExcursionPips: isTargetFirst ? 8 : 25,
         realizedR: isTargetFirst ? 2.0 : -1.0,
+        exitPrice: isTargetFirst ? 1.0900 : 1.0825,
         resolvedAt: timestamp + 3600000
       };
 

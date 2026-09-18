@@ -41,10 +41,24 @@ export class ScannerService {
     bias: 'Bullish' | 'Bearish' | 'Range-bound';
     pcr: number;
     opportunities: OptionsOpportunityCandidate[];
+    isBlank?: boolean;
+    error?: string;
   } {
     const chain = this.optionsProvider.getChain(symbol);
     const underlyings = this.indiaProvider.getUnderlyingsOverview();
-    const underlyingData = underlyings.find(u => u.symbol === symbol) || underlyings[0];
+    const underlyingData = underlyings.find(u => u.symbol === symbol);
+
+    if (!underlyingData || !chain || chain.rows.length === 0 || chain.spotPrice <= 0) {
+      return {
+        underlying: symbol,
+        spot: 0,
+        bias: 'Range-bound',
+        pcr: 0,
+        opportunities: [],
+        isBlank: true,
+        error: '5paisa API Connection Required. Please authenticate 5paisa in Broker Settings to stream live option setups.'
+      };
+    }
 
     const spot = chain.spotPrice;
     const atm = chain.atmStrike;

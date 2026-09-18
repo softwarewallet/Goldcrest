@@ -17,7 +17,7 @@ async function runAccountSelectionRegressionTest() {
 
     // Step 1: Discover available accounts
     console.log('[STEP 1] Discovering available accounts...');
-    const accounts = await adapter.getAccounts('LIVE');
+    const accounts = await adapter.getAccounts();
     console.log(`[INFO] Found ${accounts.length} accounts:`, accounts.map(a => a.accountId).join(', '));
 
     if (accounts.length < 2) {
@@ -33,7 +33,7 @@ async function runAccountSelectionRegressionTest() {
       selectedCtraderAccountId: accountB.accountId
     });
 
-    const activeAccountB = await adapter.getAccount('LIVE');
+    const activeAccountB = await adapter.getAccount();
     console.log(`[INFO] Active Account ID: ${activeAccountB.accountId}`);
     console.log(`[INFO] Active Balance: ${activeAccountB.currency} ${activeAccountB.balance}`);
 
@@ -54,7 +54,7 @@ async function runAccountSelectionRegressionTest() {
       selectedCtraderAccountId: accountA.accountId
     });
 
-    const activeAccountA = await adapter.getAccount('LIVE');
+    const activeAccountA = await adapter.getAccount();
     console.log(`[INFO] Active Account ID: ${activeAccountA.accountId}`);
     console.log(`[INFO] Active Balance: ${activeAccountA.currency} ${activeAccountA.balance}`);
 

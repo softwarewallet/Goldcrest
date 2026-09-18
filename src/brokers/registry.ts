@@ -11,6 +11,7 @@ import { CTraderDemoAdapter } from './adapters/cTrader/CTraderDemoAdapter';
 import { CTraderLiveAdapter } from './adapters/cTrader/CTraderLiveAdapter';
 import { FivePaisaDemoAdapter } from './adapters/fivepaisa/FivePaisaDemoAdapter';
 import { FivePaisaLiveAdapter } from './adapters/fivepaisa/FivePaisaLiveAdapter';
+import { FivePaisaBrokerAdapter } from './adapters/fivepaisa/FivePaisaBrokerAdapter';
 import { BrokerError } from './errors';
 
 export class BrokerRegistry {
@@ -86,6 +87,25 @@ export class BrokerRegistry {
       );
     }
     return adapter;
+  }
+
+  getFivePaisaAdapter(environment?: TradingEnvironment): FivePaisaBrokerAdapter | null {
+    this.ensureInitialized();
+    if (environment) {
+      const adapter = this.adapters.get(`FIVE_PAISA_${environment}`) as FivePaisaBrokerAdapter | undefined;
+      if (adapter) return adapter;
+    }
+    // Check active environment first
+    const active = this.adapters.get(`FIVE_PAISA_${this.activeEnvironment}`) as FivePaisaBrokerAdapter | undefined;
+    if (active && active.hasActiveSession()) return active;
+
+    // Check LIVE then DEMO
+    const live = this.adapters.get('FIVE_PAISA_LIVE') as FivePaisaBrokerAdapter | undefined;
+    if (live && live.hasActiveSession()) return live;
+    const demo = this.adapters.get('FIVE_PAISA_DEMO') as FivePaisaBrokerAdapter | undefined;
+    if (demo && demo.hasActiveSession()) return demo;
+
+    return live || demo || null;
   }
 
   registerAdapter(broker: BrokerType, environment: TradingEnvironment, adapter: BrokerAdapter): void {
@@ -180,14 +200,24 @@ export class BrokerRegistry {
         broker: 'FIVE_PAISA',
         environment: 'DEMO',
         configured: fpDemoStatus.configured,
+        hasAccessToken: fpDemoStatus.hasAccessToken,
+        hasTotpSecret: fpDemoStatus.hasTotpSecret,
         maskedClientId: fpDemoStatus.maskedClientId,
+        maskedAccessToken: fpDemoStatus.maskedAccessToken,
+        maskedTotpSecret: fpDemoStatus.maskedTotpSecret,
+        maskedPin: fpDemoStatus.maskedPin,
         status: fpDemoStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
       },
       {
         broker: 'FIVE_PAISA',
         environment: 'LIVE',
         configured: fpLiveStatus.configured,
+        hasAccessToken: fpLiveStatus.hasAccessToken,
+        hasTotpSecret: fpLiveStatus.hasTotpSecret,
         maskedClientId: fpLiveStatus.maskedClientId,
+        maskedAccessToken: fpLiveStatus.maskedAccessToken,
+        maskedTotpSecret: fpLiveStatus.maskedTotpSecret,
+        maskedPin: fpLiveStatus.maskedPin,
         status: fpLiveStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
       }
     ];

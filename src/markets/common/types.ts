@@ -158,6 +158,8 @@ export interface OptionChainSummary {
   highOIStrikeCall: number;
   highOIStrikePut: number;
   rows: OptionChainStrikeRow[];
+  isBlank?: boolean;
+  error?: string;
   timestamp: number;
 }
 
