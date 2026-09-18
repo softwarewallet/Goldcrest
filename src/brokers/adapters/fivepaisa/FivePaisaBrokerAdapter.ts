@@ -1378,6 +1378,6 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
     if (scripMap[symbol]) return scripMap[symbol];
 
-    throw new BrokerError('INVALID_SYMBOL', `No authoritative 5paisa scrip code is configured for ${symbol}.`);
+    throw new BrokerError('INVALID_SYMBOL', `No authoritative 5paisa scrip code is configured for ${symbol}.`, 'FIVE_PAISA', this.environment);
   }
 }

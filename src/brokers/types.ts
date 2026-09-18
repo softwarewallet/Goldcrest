@@ -251,6 +251,7 @@ export interface LiveTradingGateResult {
     duplicatePositionCheckPassed: boolean;
     orderParametersValidated: boolean;
     explicitLivePermissionEnabled: boolean;
+    maximumTradeValueCheckPassed?: boolean;
   };
   failedReasons: string[];
 }
