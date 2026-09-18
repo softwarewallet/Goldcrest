@@ -632,22 +632,9 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getInstrument(symbol: string): Promise<BrokerInstrument | null> {
-    const isOption = symbol.includes('_CE') || symbol.includes('_PE');
-    const cleanSym = symbol.split('_')[0];
-    const underlying = getIndianUnderlyingConfig(cleanSym);
-
-    return {
-      symbol,
-      market: isOption ? 'INDIAN_OPTIONS' : 'INDIAN_EQUITY',
-      pipSize: 0.05,
-      minQuantity: underlying.lotSize,
-      maxQuantity: underlying.lotSize * 100,
-      stepQuantity: underlying.lotSize,
-      digits: 2,
-      supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT'],
-      baseCurrency: 'INR',
-      quoteCurrency: 'INR'
-    };
+    const instruments = await this.getInstruments();
+    const normalized = symbol.replace(/^NSE:|^BSE:/, '').toUpperCase();
+    return instruments.find(i => i.symbol.replace(/^NSE:|^BSE:/, '').toUpperCase() === normalized) || null;
   }
 
   async placeOrder(order: OrderRequest): Promise<NormalizedOrder> {
