@@ -85,8 +85,8 @@ class AutoExecutionEngine {
     gateParams: Omit<LiveGateEvaluationParams, 'order'>
   ): Promise<{ executed: boolean; order?: NormalizedOrder; reason?: string; code?: string }> {
     const env = brokerRegistry.getEnvironment();
-    const broker = brokerRegistry.getSelectedBroker();
-    const adapter = brokerRegistry.getAdapter(broker, env);
+    const adapter = brokerRegistry.getAdapterForMarket(order.market);
+    const broker = adapter.broker;
 
     // Stage 1: Kill Switch Check
     if (killSwitch.isHalted()) {
