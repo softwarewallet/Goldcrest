@@ -357,6 +357,30 @@ async function withAuthenticatedAccount<T>(
   }
 }
 
+export async function fetchCTraderSymbols(
+  ctidTraderAccountId: number,
+  clientId: string,
+  clientSecret: string,
+  accessToken: string,
+  isLive: boolean
+): Promise<CTraderSymbolInfo[]> {
+  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+    const payload = await sendAndAwait(ws, MSG_SYMBOLS_LIST_REQ, {
+      ctidTraderAccountId,
+      includeArchivedSymbols: false
+    }, MSG_SYMBOLS_LIST_RES, 15000);
+    const symbols = Array.isArray(payload.symbol) ? payload.symbol : [];
+    return symbols
+      .filter((s: any) => s.enabled !== false && s.symbolId !== undefined && s.symbolName)
+      .map((s: any) => ({
+        symbolId: Number(s.symbolId),
+        symbolName: String(s.symbolName),
+        digits: Number(s.digits || 5),
+        pipPosition: Number(s.pipPosition || 4)
+      }));
+  });
+}
+
 export async function fetchLiveCTraderQuote(
   ctidTraderAccountId: number,
   symbolId: number,
