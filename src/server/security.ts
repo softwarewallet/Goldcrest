@@ -80,3 +80,30 @@ export function blockLegacyTradingModes(req: Request, res: Response, next: NextF
   }
   next();
 }
+
+
+export function operatorAuthRequired(req: Request, res: Response, next: NextFunction): void {
+  const configuredKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
+  if (!configuredKey) {
+    res.status(503).json({
+      error: 'OPERATOR_AUTH_NOT_CONFIGURED',
+      message: 'Protected operator API is disabled until GOLDCREST_OPERATOR_API_KEY is configured.'
+    });
+    return;
+  }
+
+  const supplied = req.header('X-Goldcrest-Operator-Key') || req.header('Authorization')?.replace(/^Bearer\s+/i, '');
+  if (!supplied || supplied.length !== configuredKey.length) {
+    res.status(401).json({ error: 'UNAUTHORIZED', message: 'Valid operator credentials are required.' });
+    return;
+  }
+
+  let mismatch = 0;
+  for (let i = 0; i < configuredKey.length; i++) mismatch |= supplied.charCodeAt(i) ^ configuredKey.charCodeAt(i);
+  if (mismatch !== 0) {
+    res.status(401).json({ error: 'UNAUTHORIZED', message: 'Valid operator credentials are required.' });
+    return;
+  }
+
+  next();
+}
