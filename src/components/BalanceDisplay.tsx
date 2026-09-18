@@ -108,17 +108,15 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
   };
 
   const isTotpRequiredError = (errorMsg: string | null, broker: BrokerType) => {
-    if (broker === 'FIVE_PAISA') return true;
-    if (!errorMsg) return false;
+    // cTrader does not use TOTP in Goldcrest. Authentication/session/token
+    // errors from cTrader must never be presented as a TOTP requirement.
+    if (broker !== 'FIVE_PAISA' || !errorMsg) return false;
     const lower = errorMsg.toLowerCase();
     return (
       lower.includes('totp') ||
-      lower.includes('access token') ||
-      lower.includes('session') ||
-      lower.includes('401') ||
-      lower.includes('token') ||
-      lower.includes('unauthorized') ||
-      lower.includes('expired')
+      lower.includes('two-factor') ||
+      lower.includes('2fa') ||
+      lower.includes('pin')
     );
   };
 
