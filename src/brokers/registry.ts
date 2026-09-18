@@ -185,43 +185,31 @@ export class BrokerRegistry {
 
   getCredentialStatuses(): BrokerCredentialStatus[] {
     this.ensureInitialized();
-    const ctraderDemo = this.adapters.get('CTRADER_DEMO') as CTraderDemoAdapter;
     const ctraderLive = this.adapters.get('CTRADER_LIVE') as CTraderLiveAdapter;
-    const fivePaisaDemo = this.adapters.get('FIVE_PAISA_DEMO') as FivePaisaDemoAdapter;
     const fivePaisaLive = this.adapters.get('FIVE_PAISA_LIVE') as FivePaisaLiveAdapter;
 
-    const cDemoStatus = ctraderDemo.getConfigStatus();
     const cLiveStatus = ctraderLive.getConfigStatus();
-    const fpDemoStatus = fivePaisaDemo.getConfigStatus();
     const fpLiveStatus = fivePaisaLive.getConfigStatus();
 
     return [
       {
-        broker: 'PAPER', environment: 'PAPER', configured: true,
-        maskedAccountId: 'PAPER-SIM-001', status: 'CONNECTED'
-      },
-      {
-        broker: 'CTRADER', environment: 'DEMO', configured: cDemoStatus.configured,
-        maskedAccountId: cDemoStatus.maskedAccountId, maskedClientId: cDemoStatus.maskedClientId,
-        status: cDemoStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
-      },
-      {
-        broker: 'CTRADER', environment: 'LIVE', configured: cLiveStatus.configured,
-        maskedAccountId: cLiveStatus.maskedAccountId, maskedClientId: cLiveStatus.maskedClientId,
+        broker: 'CTRADER',
+        environment: 'LIVE',
+        configured: cLiveStatus.configured,
+        maskedAccountId: cLiveStatus.maskedAccountId,
+        maskedClientId: cLiveStatus.maskedClientId,
         status: cLiveStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
       },
       {
-        broker: 'FIVE_PAISA', environment: 'DEMO', configured: fpDemoStatus.configured,
-        hasAccessToken: fpDemoStatus.hasAccessToken, hasTotpSecret: fpDemoStatus.hasTotpSecret,
-        maskedClientId: fpDemoStatus.maskedClientId, maskedAccessToken: fpDemoStatus.maskedAccessToken,
-        maskedTotpSecret: fpDemoStatus.maskedTotpSecret, maskedPin: fpDemoStatus.maskedPin,
-        status: fpDemoStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
-      },
-      {
-        broker: 'FIVE_PAISA', environment: 'LIVE', configured: fpLiveStatus.configured,
-        hasAccessToken: fpLiveStatus.hasAccessToken, hasTotpSecret: fpLiveStatus.hasTotpSecret,
-        maskedClientId: fpLiveStatus.maskedClientId, maskedAccessToken: fpLiveStatus.maskedAccessToken,
-        maskedTotpSecret: fpLiveStatus.maskedTotpSecret, maskedPin: fpLiveStatus.maskedPin,
+        broker: 'FIVE_PAISA',
+        environment: 'LIVE',
+        configured: fpLiveStatus.configured,
+        hasAccessToken: fpLiveStatus.hasAccessToken,
+        hasTotpSecret: fpLiveStatus.hasTotpSecret,
+        maskedClientId: fpLiveStatus.maskedClientId,
+        maskedAccessToken: fpLiveStatus.maskedAccessToken,
+        maskedTotpSecret: fpLiveStatus.maskedTotpSecret,
+        maskedPin: fpLiveStatus.maskedPin,
         status: fpLiveStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
       }
     ];
