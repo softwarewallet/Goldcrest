@@ -1,169 +1,145 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Wallet, RefreshCw, AlertCircle, Clock } from 'lucide-react';
-import { BrokerType, BrokerAccountInfo } from '../brokers/types';
+import { BrokerAccountInfo, BrokerType } from '../brokers/types';
 
 interface BalanceDisplayProps {
-  broker: BrokerType;
-  environment: string;
+  environment?: string;
 }
 
-export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ broker, environment }) => {
-  const [account, setAccount] = useState<BrokerAccountInfo | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+const BROKERS: BrokerType[] = ['CTRADER', 'FIVE_PAISA'];
 
-  const fetchBalance = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const url = broker
-        ? `/api/brokers/account?broker=${broker}&environment=${environment || 'LIVE'}`
-        : '/api/brokers/account';
-      const response = await fetch(url);
-      if (!response.ok) {
-        let errMsg = 'Failed to fetch account data';
-        try {
-          const errData = await response.json();
-          errMsg = errData.error || errMsg;
-        } catch {
-          errMsg = `Server responded with status ${response.status}`;
+export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'LIVE' }) => {
+  const [accounts, setAccounts] = useState<Record<BrokerType, BrokerAccountInfo | null>>({
+    CTRADER: null,
+    FIVE_PAISA: null,
+    PAPER: null
+  });
+  const [errors, setErrors] = useState<Record<BrokerType, string | null>>({
+    CTRADER: null,
+    FIVE_PAISA: null,
+    PAPER: null
+  });
+  const [loading, setLoading] = useState<Record<BrokerType, boolean>>({
+    CTRADER: false,
+    FIVE_PAISA: false,
+    PAPER: false
+  });
+  const [lastUpdated, setLastUpdated] = useState<Record<BrokerType, number | null>>({
+    CTRADER: null,
+    FIVE_PAISA: null,
+    PAPER: null
+  });
+
+  const fetchBalances = async () => {
+    const results = await Promise.all(BROKERS.map(async (broker) => {
+      setLoading(prev => ({ ...prev, [broker]: true }));
+      try {
+        const response = await fetch(`/api/brokers/account?broker=${broker}&environment=${environment}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Account data unavailable');
         }
-        throw new Error(errMsg);
+
+        setAccounts(prev => ({ ...prev, [broker]: data }));
+        setErrors(prev => ({ ...prev, [broker]: null }));
+        setLastUpdated(prev => ({ ...prev, [broker]: Date.now() }));
+      } catch (err: any) {
+        setErrors(prev => ({ ...prev, [broker]: err.message || 'Connection unavailable' }));
+      } finally {
+        setLoading(prev => ({ ...prev, [broker]: false }));
       }
-      const data = await response.json();
-      setAccount(data);
-      setLastUpdated(Date.now());
-    } catch (err: any) {
-      console.warn('Balance fetch error:', err.message);
-      setError(err.message || 'Connection unavailable');
-    } finally {
-      setLoading(false);
-    }
+    }));
+
+    await Promise.all(results);
   };
 
   useEffect(() => {
-    fetchBalance();
-    // Auto-refresh every 2 minutes
-    const interval = setInterval(fetchBalance, 120000);
+    fetchBalances();
+    const interval = setInterval(fetchBalances, 120000);
     return () => clearInterval(interval);
-  }, [broker, environment]);
+  }, [environment]);
 
-  const formatCurrency = (value: number | undefined, currency: string = 'USD') => {
+  const formatCurrency = (value: number | undefined, currency = 'USD') => {
     if (value === undefined || value === null || !Number.isFinite(value)) return '--';
-    const locale = currency.toUpperCase() === 'INR' ? 'en-IN' : 'en-US';
-    return new Intl.NumberFormat(locale, {
+    const normalized = currency.toUpperCase();
+    return new Intl.NumberFormat(normalized === 'INR' ? 'en-IN' : 'en-US', {
       style: 'currency',
-      currency: currency.toUpperCase(),
+      currency: normalized,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(value);
   };
 
-  const getTimeAgo = (timestamp: number) => {
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    return `${minutes}m ago`;
+  const timeAgo = (timestamp: number | null) => {
+    if (!timestamp) return '—';
+    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    return seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)}m ago`;
   };
 
-  if (error) {
+  const renderCard = (broker: BrokerType) => {
+    const account = accounts[broker];
+    const error = errors[broker];
+    const isLoading = loading[broker];
+    const updated = lastUpdated[broker];
+    const isStale = updated ? Date.now() - updated > 300000 : false;
+    const label = broker === 'CTRADER' ? 'cTrader' : '5paisa';
+    const market = broker === 'CTRADER' ? 'FOREX' : 'INDIAN MARKETS';
+
     return (
-      <div id="balance_display_error" className="flex flex-col bg-slate-900 border border-rose-900/50 rounded-lg p-2.5 min-w-[220px] shadow-sm font-mono text-xs">
+      <div key={broker} id={`balance_display_${broker.toLowerCase()}`} className="flex flex-col bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg p-2.5 min-w-[210px] shadow-sm font-mono">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">Balance Unavailable</span>
-          <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+          <div className="flex items-center space-x-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-amber-400 animate-pulse' : account?.connectionStatus === 'CONNECTED' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">{label}</span>
+            <span className="text-[8px] px-1 rounded bg-slate-800 text-slate-500 border border-slate-700">{market}</span>
+          </div>
+          <Wallet className="w-3.5 h-3.5 text-emerald-500" />
         </div>
-        <div className="text-sm font-mono text-slate-400">
-          {account ? `Last Known: ${formatCurrency(account.balance, account.currency)}` : 'Connection Failed'}
-        </div>
-        <div className="text-[10px] text-rose-400/80 truncate mt-0.5" title={error}>
-          {error}
-        </div>
-        <button 
-          id="btn_retry_balance"
-          onClick={fetchBalance}
-          className="mt-1.5 text-[10px] flex items-center space-x-1 text-slate-400 hover:text-white transition"
+
+        {account ? (
+          <>
+            <div className="flex items-baseline space-x-1.5">
+              <div className="text-lg font-bold text-white tracking-tight">{formatCurrency(account.balance, account.currency)}</div>
+              <div className="text-[9px] font-bold text-slate-500">{account.currency}</div>
+            </div>
+            <div className="mt-1 pt-1 border-t border-slate-800/60 text-[9px] text-slate-400 space-y-0.5">
+              <div className="flex justify-between">
+                <span>Equity <strong className="text-slate-200">{formatCurrency(account.equity, account.currency)}</strong></span>
+                <span>Free <strong className="text-slate-200">{formatCurrency(account.availableMargin ?? account.freeMargin, account.currency)}</strong></span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="truncate max-w-[105px]" title={account.accountId}>A/C {account.accountId}</span>
+                <span className={isStale ? 'text-amber-400 font-bold' : 'text-slate-500'}>
+                  <Clock className="inline w-2.5 h-2.5 mr-0.5" />{isStale ? 'STALE' : timeAgo(updated)}
+                </span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="py-1.5">
+            <div className="text-sm font-bold text-slate-500">{isLoading ? 'Connecting…' : 'Balance Unavailable'}</div>
+            {error && <div className="text-[9px] text-rose-400 truncate mt-0.5" title={error}><AlertCircle className="inline w-2.5 h-2.5 mr-1" />{error}</div>}
+          </div>
+        )}
+
+        <button
+          id={`btn_refresh_balance_${broker.toLowerCase()}`}
+          onClick={fetchBalances}
+          disabled={isLoading}
+          className="mt-1 text-[9px] flex items-center justify-end space-x-1 text-emerald-500 hover:text-emerald-400 disabled:opacity-50"
         >
-          <RefreshCw className="w-3 h-3" />
-          <span>Retry Connection</span>
+          <RefreshCw className={`w-2.5 h-2.5 ${isLoading ? 'animate-spin' : ''}`} />
+          <span>REFRESH</span>
         </button>
       </div>
     );
-  }
-
-  if (!account && loading) {
-    return (
-      <div id="balance_display_loading" className="flex flex-col bg-slate-900 border border-slate-800 rounded-lg p-2.5 min-w-[220px] animate-pulse font-mono">
-        <div className="h-3 w-24 bg-slate-800 rounded mb-2"></div>
-        <div className="h-5 w-32 bg-slate-800 rounded"></div>
-      </div>
-    );
-  }
-
-  if (!account) {
-    return (
-      <div id="balance_display_empty" className="flex flex-col bg-slate-900 border border-slate-800 rounded-lg p-2.5 min-w-[220px] font-mono">
-        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Account</div>
-        <div className="text-sm font-bold text-slate-400">Not Selected</div>
-      </div>
-    );
-  }
-
-  const isStale = lastUpdated && (Date.now() - lastUpdated) > 300000; // Over 5 mins
+  };
 
   return (
-    <div id="balance_display_card" className="flex flex-col bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg p-2.5 min-w-[240px] transition group shadow-sm font-mono">
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center space-x-1.5">
-          <div className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-amber-400 animate-pulse' : account.connectionStatus === 'CONNECTED' ? 'bg-emerald-400' : 'bg-amber-400'}`}></div>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            {account.isLiveAccount ? 'LIVE ACCOUNT' : 'SIMULATED ACCOUNT'}
-          </span>
-          <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
-            {account.connectionStatus || 'CONNECTED'}
-          </span>
-        </div>
-        <div className="flex items-center space-x-2">
-          {loading && <RefreshCw className="w-3 h-3 text-emerald-400 animate-spin" />}
-          <Wallet className="w-3.5 h-3.5 text-emerald-500 group-hover:scale-110 transition-transform" />
-        </div>
-      </div>
-
-      <div className="flex items-baseline space-x-2">
-        <div className="text-lg font-mono font-bold text-white tracking-tight">
-          {formatCurrency(account.balance, account.currency)}
-        </div>
-        <div className="text-[10px] font-mono font-bold text-slate-400 uppercase">
-          {account.currency}
-        </div>
-      </div>
-
-      <div className="mt-1 space-y-0.5 border-t border-slate-800/60 pt-1">
-        <div className="flex items-center justify-between text-[9px] text-slate-400 font-medium">
-          <span>Equity: <strong className="text-slate-200 font-mono">{formatCurrency(account.equity, account.currency)}</strong></span>
-          <span>Avail Margin: <strong className="text-slate-200 font-mono">{formatCurrency(account.availableMargin ?? account.freeMargin, account.currency)}</strong></span>
-        </div>
-        <div className="flex items-center justify-between text-[9px] text-slate-500">
-          <span className="truncate max-w-[130px]" title={`${account.broker} • ${account.accountId}`}>
-            {account.broker} • {account.accountId}
-          </span>
-          <div className="flex items-center space-x-1">
-            <Clock className="w-2.5 h-2.5" />
-            <span className={isStale ? 'text-amber-500 font-bold' : ''}>
-              {isStale ? 'STALE' : lastUpdated ? getTimeAgo(lastUpdated) : 'Live'}
-            </span>
-            <button 
-              id="btn_refresh_balance"
-              onClick={(e) => { e.stopPropagation(); fetchBalance(); }}
-              disabled={loading}
-              className="text-emerald-500 hover:text-emerald-400 font-bold ml-1 transition"
-            >
-              REFRESH
-            </button>
-          </div>
-        </div>
-      </div>
+    <div id="dual_live_balance_display" className="flex items-center gap-2">
+      {renderCard('CTRADER')}
+      {renderCard('FIVE_PAISA')}
     </div>
   );
 };
