@@ -2,7 +2,6 @@ import {
   BrokerAdapter,
   BrokerType,
   TradingEnvironment,
-  BrokerStatus,
   ConnectionTestResult,
   BrokerCredentialStatus
 } from './types';
@@ -16,14 +15,14 @@ import { BrokerError } from './errors';
 
 export class BrokerRegistry {
   private activeEnvironment: TradingEnvironment = 'LIVE';
+  // Broker selection is retained only for backwards compatibility. Market routing
+  // is authoritative and automatically selects the compatible live broker.
   private selectedBroker: BrokerType = 'CTRADER';
 
   private adapters: Map<string, BrokerAdapter> = new Map();
   private isInitialized: boolean = false;
 
-  constructor() {
-    // Lazy initialization breaks circular module dependency with adapters
-  }
+  constructor() {}
 
   private ensureInitialized(): void {
     if (this.isInitialized) return;
@@ -32,17 +31,16 @@ export class BrokerRegistry {
   }
 
   private initializeAdapters(): void {
-    // 1. Paper Broker Adapter
+    // Legacy adapters remain registered for compatibility, but LIVE_ONLY routing
+    // uses only the live cTrader and live 5paisa adapters.
     const paperAdapter = new PaperBrokerAdapter();
     this.adapters.set('PAPER_PAPER', paperAdapter);
 
-    // 2. cTrader Adapters (Forex)
     const ctraderDemo = new CTraderDemoAdapter();
     const ctraderLive = new CTraderLiveAdapter();
     this.adapters.set('CTRADER_DEMO', ctraderDemo);
     this.adapters.set('CTRADER_LIVE', ctraderLive);
 
-    // 3. 5paisa Adapters (Indian Equity / F&O / Options)
     const fivePaisaDemo = new FivePaisaDemoAdapter();
     const fivePaisaLive = new FivePaisaLiveAdapter();
     this.adapters.set('FIVE_PAISA_DEMO', fivePaisaDemo);
@@ -54,7 +52,10 @@ export class BrokerRegistry {
   }
 
   setEnvironment(env: TradingEnvironment): void {
-    this.activeEnvironment = env;
+    if (env !== 'LIVE') {
+      throw new Error('Goldcrest operates in LIVE_ONLY mode.');
+    }
+    this.activeEnvironment = 'LIVE';
   }
 
   getSelectedBroker(): BrokerType {
@@ -62,6 +63,10 @@ export class BrokerRegistry {
   }
 
   setSelectedBroker(broker: BrokerType): void {
+    // Kept for API compatibility. It must not disable the other market broker.
+    if (!['CTRADER', 'FIVE_PAISA'].includes(broker)) {
+      throw new Error('Invalid broker. Allowed: CTRADER, FIVE_PAISA');
+    }
     this.selectedBroker = broker;
   }
 
@@ -89,23 +94,58 @@ export class BrokerRegistry {
     return adapter;
   }
 
+  /**
+   * Resolve the authoritative live broker from the requested market.
+   * FOREX -> cTrader
+   * Indian equity/futures/options -> 5paisa
+   */
+  getAdapterForMarket(market: string): BrokerAdapter {
+    this.ensureInitialized();
+
+    if (market === 'FOREX') {
+      return this.getAdapter('CTRADER', 'LIVE');
+    }
+
+    if (market === 'INDIAN_EQUITY' || market === 'INDIAN_FUTURES' || market === 'INDIAN_OPTIONS') {
+      return this.getAdapter('FIVE_PAISA', 'LIVE');
+    }
+
+    throw new BrokerError(
+      'INVALID_SYMBOL',
+      `No live broker route is configured for market ${market}`,
+      'CTRADER',
+      'LIVE'
+    );
+  }
+
+  /**
+   * Both live broker adapters are active simultaneously.
+   * This is the canonical source for dashboard/account aggregation.
+   */
+  getActiveLiveAdapters(): BrokerAdapter[] {
+    this.ensureInitialized();
+    return [
+      this.getAdapter('CTRADER', 'LIVE'),
+      this.getAdapter('FIVE_PAISA', 'LIVE')
+    ];
+  }
+
   getFivePaisaAdapter(environment?: TradingEnvironment): FivePaisaBrokerAdapter | null {
     this.ensureInitialized();
     if (environment) {
       const adapter = this.adapters.get(`FIVE_PAISA_${environment}`) as FivePaisaBrokerAdapter | undefined;
       if (adapter) return adapter;
     }
-    // Check active environment first
+
     const active = this.adapters.get(`FIVE_PAISA_${this.activeEnvironment}`) as FivePaisaBrokerAdapter | undefined;
     if (active && active.hasActiveSession()) return active;
 
-    // Check LIVE then DEMO
     const live = this.adapters.get('FIVE_PAISA_LIVE') as FivePaisaBrokerAdapter | undefined;
     if (live && live.hasActiveSession()) return live;
-    const demo = this.adapters.get('FIVE_PAISA_DEMO') as FivePaisaBrokerAdapter | undefined;
-    if (demo && demo.hasActiveSession()) return demo;
+    const demo = this.adapters.get('FIVE_PAISA_DEMO') as FivePaisaDemoAdapter | undefined;
+    if (demo && demo.hasActiveSession()) return demo as unknown as FivePaisaBrokerAdapter;
 
-    return live || demo || null;
+    return live || null;
   }
 
   registerAdapter(broker: BrokerType, environment: TradingEnvironment, adapter: BrokerAdapter): void {
@@ -114,28 +154,11 @@ export class BrokerRegistry {
     this.adapters.set(key, adapter);
   }
 
-  /**
-   * Market Compatibility Check (Strict Routing Layer):
-   * - cTrader -> FOREX only
-   * - 5paisa -> INDIAN_EQUITY, INDIAN_FUTURES, INDIAN_OPTIONS only
-   * - Paper -> All supported markets
-   *
-   * Forex + cTrader -> VALID
-   * Indian Options + 5paisa -> VALID
-   * Indian Futures + 5paisa -> VALID
-   * Indian Equity + 5paisa -> VALID
-   * Forex + 5paisa -> INVALID
-   * Indian Options + cTrader -> INVALID
-   */
   validateMarketCompatibility(market: string, broker: BrokerType): { compatible: boolean; reason?: string } {
-    if (broker === 'PAPER') {
-      return { compatible: true };
-    }
+    if (broker === 'PAPER') return { compatible: true };
 
     if (broker === 'CTRADER') {
-      if (market === 'FOREX') {
-        return { compatible: true };
-      }
+      if (market === 'FOREX') return { compatible: true };
       return {
         compatible: false,
         reason: `cTrader broker only supports FOREX market. Cannot route ${market} to cTrader.`
@@ -174,50 +197,31 @@ export class BrokerRegistry {
 
     return [
       {
-        broker: 'PAPER',
-        environment: 'PAPER',
-        configured: true,
-        maskedAccountId: 'PAPER-SIM-001',
-        status: 'CONNECTED'
+        broker: 'PAPER', environment: 'PAPER', configured: true,
+        maskedAccountId: 'PAPER-SIM-001', status: 'CONNECTED'
       },
       {
-        broker: 'CTRADER',
-        environment: 'DEMO',
-        configured: cDemoStatus.configured,
-        maskedAccountId: cDemoStatus.maskedAccountId,
-        maskedClientId: cDemoStatus.maskedClientId,
+        broker: 'CTRADER', environment: 'DEMO', configured: cDemoStatus.configured,
+        maskedAccountId: cDemoStatus.maskedAccountId, maskedClientId: cDemoStatus.maskedClientId,
         status: cDemoStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
       },
       {
-        broker: 'CTRADER',
-        environment: 'LIVE',
-        configured: cLiveStatus.configured,
-        maskedAccountId: cLiveStatus.maskedAccountId,
-        maskedClientId: cLiveStatus.maskedClientId,
+        broker: 'CTRADER', environment: 'LIVE', configured: cLiveStatus.configured,
+        maskedAccountId: cLiveStatus.maskedAccountId, maskedClientId: cLiveStatus.maskedClientId,
         status: cLiveStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
       },
       {
-        broker: 'FIVE_PAISA',
-        environment: 'DEMO',
-        configured: fpDemoStatus.configured,
-        hasAccessToken: fpDemoStatus.hasAccessToken,
-        hasTotpSecret: fpDemoStatus.hasTotpSecret,
-        maskedClientId: fpDemoStatus.maskedClientId,
-        maskedAccessToken: fpDemoStatus.maskedAccessToken,
-        maskedTotpSecret: fpDemoStatus.maskedTotpSecret,
-        maskedPin: fpDemoStatus.maskedPin,
+        broker: 'FIVE_PAISA', environment: 'DEMO', configured: fpDemoStatus.configured,
+        hasAccessToken: fpDemoStatus.hasAccessToken, hasTotpSecret: fpDemoStatus.hasTotpSecret,
+        maskedClientId: fpDemoStatus.maskedClientId, maskedAccessToken: fpDemoStatus.maskedAccessToken,
+        maskedTotpSecret: fpDemoStatus.maskedTotpSecret, maskedPin: fpDemoStatus.maskedPin,
         status: fpDemoStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
       },
       {
-        broker: 'FIVE_PAISA',
-        environment: 'LIVE',
-        configured: fpLiveStatus.configured,
-        hasAccessToken: fpLiveStatus.hasAccessToken,
-        hasTotpSecret: fpLiveStatus.hasTotpSecret,
-        maskedClientId: fpLiveStatus.maskedClientId,
-        maskedAccessToken: fpLiveStatus.maskedAccessToken,
-        maskedTotpSecret: fpLiveStatus.maskedTotpSecret,
-        maskedPin: fpLiveStatus.maskedPin,
+        broker: 'FIVE_PAISA', environment: 'LIVE', configured: fpLiveStatus.configured,
+        hasAccessToken: fpLiveStatus.hasAccessToken, hasTotpSecret: fpLiveStatus.hasTotpSecret,
+        maskedClientId: fpLiveStatus.maskedClientId, maskedAccessToken: fpLiveStatus.maskedAccessToken,
+        maskedTotpSecret: fpLiveStatus.maskedTotpSecret, maskedPin: fpLiveStatus.maskedPin,
         status: fpLiveStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
       }
     ];
@@ -226,22 +230,18 @@ export class BrokerRegistry {
   updateDemoCredentials(broker: BrokerType, creds: Record<string, any>): void {
     this.ensureInitialized();
     if (broker === 'CTRADER') {
-      const adapter = this.adapters.get('CTRADER_DEMO') as CTraderDemoAdapter;
-      adapter.updateCredentials(creds);
+      (this.adapters.get('CTRADER_DEMO') as CTraderDemoAdapter).updateCredentials(creds);
     } else if (broker === 'FIVE_PAISA') {
-      const adapter = this.adapters.get('FIVE_PAISA_DEMO') as FivePaisaDemoAdapter;
-      adapter.updateCredentials(creds);
+      (this.adapters.get('FIVE_PAISA_DEMO') as FivePaisaDemoAdapter).updateCredentials(creds);
     }
   }
 
   updateLiveCredentials(broker: BrokerType, creds: Record<string, any>): void {
     this.ensureInitialized();
     if (broker === 'CTRADER') {
-      const adapter = this.adapters.get('CTRADER_LIVE') as CTraderLiveAdapter;
-      adapter.updateCredentials(creds);
+      (this.adapters.get('CTRADER_LIVE') as CTraderLiveAdapter).updateCredentials(creds);
     } else if (broker === 'FIVE_PAISA') {
-      const adapter = this.adapters.get('FIVE_PAISA_LIVE') as FivePaisaLiveAdapter;
-      adapter.updateCredentials(creds);
+      (this.adapters.get('FIVE_PAISA_LIVE') as FivePaisaLiveAdapter).updateCredentials(creds);
     }
   }
 
@@ -255,6 +255,4 @@ export class BrokerRegistry {
   }
 }
 
-// Global broker registry singleton
 export const brokerRegistry = new BrokerRegistry();
-
