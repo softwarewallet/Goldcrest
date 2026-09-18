@@ -334,26 +334,6 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       });
     }
 
-    if (!LIVE_AUTO_EXECUTION_ALLOWED) {
-      logBrokerAction({
-        source: 'DISPATCH_BOUNDARY',
-        broker,
-        environment: env,
-        account: 'LIVE_ACCOUNT',
-        action: 'PLACE_ORDER',
-        symbol: orderReq.symbol,
-        quantity: orderReq.quantity,
-        result: 'BLOCKED',
-        error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED'
-      });
-
-      console.error(`[CRITICAL] Order blocked: LIVE_AUTO_EXECUTION_ALLOWED is false`);
-      return res.status(403).json({
-        error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
-        code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
-        reason: 'Autonomous live-money order submission is disabled by LIVE_AUTO_EXECUTION_ALLOWED === false.'
-      });
-    }
 
     const placedOrder = await adapter.placeOrder(orderReq);
     return res.json({
