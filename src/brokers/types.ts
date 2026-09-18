@@ -195,6 +195,7 @@ export interface BrokerAdapter {
   getOpenOrders(): Promise<NormalizedOrder[]>;
   getOrderHistory(): Promise<NormalizedOrder[]>;
   getQuote(symbol: string): Promise<NormalizedQuote>;
+  getHistoricalCandles?(symbol: string, timeframe: string, limit: number): Promise<Array<{ open: number; high: number; low: number; close: number; volume: number; timestamp: number }>>;
   getInstrument(symbol: string): Promise<BrokerInstrument | null>;
   getInstruments(): Promise<BrokerInstrument[]>;
   placeOrder(order: OrderRequest): Promise<NormalizedOrder>;
