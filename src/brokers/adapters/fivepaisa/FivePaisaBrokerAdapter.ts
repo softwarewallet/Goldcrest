@@ -780,7 +780,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
         OrderType: order.side === 'BUY' ? 'Buy' : 'Sell',
         Qty: Number(order.quantity),
         DisQty: 0,
-        AtMarket: order.orderType === 'MARKET',
+        AtMarket: order.orderType === 'MARKET' ? 'Y' : 'N',
         IsIntraday: true,
         IOCOrder: order.orderType === 'MARKET' ? false : false,
         IsStopLossOrder: order.orderType === 'STOP' || order.orderType === 'STOP_LIMIT',
