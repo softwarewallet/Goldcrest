@@ -460,7 +460,9 @@ function seedInitialData(db: Database) {
     ('DATA_STATUS', 'UNAVAILABLE', ${now}),
     ('MODEL_STATUS', 'BASELINE_UNCALIBRATED', ${now}),
     ('DEFAULT_RISK_PCT', '1.0', ${now}),
-    ('STRIKE_DEPTH', '7', ${now});
+    ('STRIKE_DEPTH', '7', ${now}),
+    ('MAX_TRADE_VALUE_FOREX_USD', '200', ${now}),
+    ('MAX_TRADE_VALUE_INDIAN_INR', '20000', ${now});
   `);
 
   // Enforce LIVE_ONLY persistence and remove obsolete PAPER/DEMO defaults.
