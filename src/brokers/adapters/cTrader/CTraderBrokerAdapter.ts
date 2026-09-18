@@ -466,8 +466,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         this.config.clientId!,
         this.config.clientSecret!,
         this.config.accessToken!,
-        this.isLive,
-        match.digits
+        this.isLive
       );
       const normalized = symbol.replace('/', '').toUpperCase();
       const match = instruments.find(s => s.symbolName.replace('/', '').toUpperCase() === normalized);
@@ -515,7 +514,8 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         this.config.clientId!,
         this.config.clientSecret!,
         this.config.accessToken!,
-        this.isLive
+        this.isLive,
+        match.digits
       );
       if (quote.bid === undefined || quote.ask === undefined || quote.bid <= 0 || quote.ask <= 0 || quote.ask < quote.bid) {
         throw new BrokerError('STALE_DATA', `cTrader did not provide a valid bid/ask for ${symbol}.`, 'CTRADER', this.environment);

@@ -381,7 +381,23 @@ export async function fetchCTraderSymbols(
   });
 }
 
-export async function fetchCTraderReconcileState(\n  ctidTraderAccountId: number,\n  clientId: string,\n  clientSecret: string,\n  accessToken: string,\n  isLive: boolean\n): Promise<{ positions: any[]; orders: any[] }> {\n  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {\n    const payload = await sendAndAwait(ws, MSG_RECONCILE_REQ, { ctidTraderAccountId }, MSG_RECONCILE_RES, 15000);\n    return {\n      positions: Array.isArray(payload.position) ? payload.position : [],\n      orders: Array.isArray(payload.order) ? payload.order : []\n    };\n  });\n}\n\nexport async function fetchLiveCTraderQuote(
+export async function fetchCTraderReconcileState(
+  ctidTraderAccountId: number,
+  clientId: string,
+  clientSecret: string,
+  accessToken: string,
+  isLive: boolean
+): Promise<{ positions: any[]; orders: any[] }> {
+  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+    const payload = await sendAndAwait(ws, MSG_RECONCILE_REQ, { ctidTraderAccountId }, MSG_RECONCILE_RES, 15000);
+    return {
+      positions: Array.isArray(payload.position) ? payload.position : [],
+      orders: Array.isArray(payload.order) ? payload.order : []
+    };
+  });
+}
+
+export async function fetchLiveCTraderQuote(
   ctidTraderAccountId: number,
   symbolId: number,
   symbol: string,
