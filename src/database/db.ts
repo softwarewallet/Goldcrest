@@ -409,6 +409,19 @@ function initSchema(db: Database) {
       status TEXT NOT NULL
     );
 
+    -- 30. Autonomous Execution Idempotency
+    CREATE TABLE IF NOT EXISTS execution_intents (
+      idempotency_key TEXT PRIMARY KEY,
+      broker TEXT NOT NULL,
+      market TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      side TEXT NOT NULL,
+      state TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      result_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
     -- 30. ML Persistence Bridge
     CREATE TABLE IF NOT EXISTS ml_storage_records (
       id TEXT PRIMARY KEY,
