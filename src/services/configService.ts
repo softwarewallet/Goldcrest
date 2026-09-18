@@ -1,7 +1,7 @@
 export interface SystemConfig {
-  tradingMode: 'LIVE_ONLY'; // PAPER and DEMO removed as selectable user modes
-  liveTradingEnabled: boolean; // This remains the global safety/disarm mechanism
-  dataStatus: 'DEMO' | 'LIVE' | 'DELAYED';
+  tradingMode: 'LIVE_ONLY';
+  liveTradingEnabled: boolean;
+  dataStatus: 'LIVE' | 'DELAYED' | 'STALE' | 'UNAVAILABLE';
   modelStatus: string;
   researchStatus: 'CLOSED';
   selectedCtraderAccountId?: string;
@@ -18,7 +18,7 @@ export interface SystemConfig {
 let activeConfig: SystemConfig = {
   tradingMode: 'LIVE_ONLY',
   liveTradingEnabled: process.env.LIVE_TRADING_ENABLED === 'true',
-  dataStatus: 'DEMO',
+  dataStatus: 'UNAVAILABLE',
   modelStatus: 'ML BASELINE / UNCALIBRATED (PHASE 1)',
   researchStatus: 'CLOSED',
   defaultRiskPct: 1.0,
@@ -35,14 +35,15 @@ export function getSystemConfig(): SystemConfig {
 }
 
 export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig {
-  // Safety rule: Never enable LIVE trading unless explicitly configured in environment
-  if ((updates.tradingMode as string) === 'LIVE' && !activeConfig.liveTradingEnabled) {
-    throw new Error('Live trading gate rejected: LIVE_TRADING_ENABLED environment variable is not true.');
+  // LIVE_ONLY is the only supported user-facing trading mode.
+  if (updates.tradingMode !== undefined && updates.tradingMode !== 'LIVE_ONLY') {
+    throw new Error('Trading mode rejected: Goldcrest supports LIVE_ONLY mode only.');
   }
 
   activeConfig = {
     ...activeConfig,
-    ...updates
+    ...updates,
+    tradingMode: 'LIVE_ONLY'
   };
   return { ...activeConfig };
 }
