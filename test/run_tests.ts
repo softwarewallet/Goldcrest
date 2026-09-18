@@ -7,6 +7,7 @@ import { calculateStrategyPayoff } from '../src/markets/india_options/strategySk
 import { getDatabase, executeQuery } from '../src/database/db';
 import { evaluateForexSetup } from '../src/markets/forex/forexEngine';
 import { generateDemoCandles } from '../src/services/providers';
+import { brokerRegistry } from '../src/brokers/registry';
 
 async function runTests() {
   console.log('====================================================');
