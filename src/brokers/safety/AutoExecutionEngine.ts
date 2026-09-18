@@ -10,6 +10,7 @@ import { killSwitch } from './KillSwitch';
 import { tradeValidator, SignalValidationInput } from './TradeValidator';
 import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
 import { logBrokerAction } from '../auditLog';
+import { claimExecutionIntent, completeExecutionIntent } from '../../services/executionIntentService';
 
 /**
  * ============================================================================
@@ -139,9 +140,36 @@ class AutoExecutionEngine {
       };
     }
 
-    // Submit live order via adapter
+    // Submit live order via an idempotent durable execution intent.
     try {
+      const idempotencyKey = String(order.signalId || '').trim();
+      if (!idempotencyKey) {
+        return {
+          executed: false,
+          code: 'IDEMPOTENCY_KEY_REQUIRED',
+          reason: 'Autonomous signal execution requires a stable signalId for duplicate-order protection.'
+        };
+      }
+
+      const intent = await claimExecutionIntent(idempotencyKey, {
+        broker,
+        market: order.market,
+        symbol: order.symbol,
+        side: order.side,
+        payload: order
+      });
+
+      if (!intent.claimed) {
+        return {
+          executed: intent.existing?.state === 'COMPLETED',
+          order: intent.existing?.result as NormalizedOrder | undefined,
+          code: 'EXECUTION_INTENT_ALREADY_EXISTS',
+          reason: 'This autonomous signal has already been submitted or is pending reconciliation.'
+        };
+      }
+
       const placedOrder = await adapter.placeOrder(order);
+      await completeExecutionIntent(idempotencyKey, placedOrder);
       logBrokerAction({
         source: 'EXECUTION_ENGINE',
         broker,
