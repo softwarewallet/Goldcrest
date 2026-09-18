@@ -158,7 +158,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 });
 
 app.get('/api/health/ready', (req: Request, res: Response) => {
-  const ready = databaseReady && LIVE_AUTO_EXECUTION_ALLOWED === false && getSystemConfig().tradingMode === 'LIVE_ONLY';
+  const ready = databaseReady && LIVE_AUTO_EXECUTION_ALLOWED === true && getSystemConfig().tradingMode === 'LIVE_ONLY';
   res.status(ready ? 200 : 503).json({
     status: ready ? 'ready' : 'not_ready',
     database: databaseReady ? 'READY' : 'INITIALIZING',
