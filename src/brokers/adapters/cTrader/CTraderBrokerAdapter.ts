@@ -22,7 +22,8 @@ import {
   fetchLiveCTraderAccountDetails,
   fetchCTraderSymbols,
   fetchLiveCTraderQuote,
-  fetchCTraderTrendbars
+  fetchCTraderTrendbars,
+  fetchCTraderReconcileState
 } from './cTraderApiClient';
 
 export interface CTraderConfig {
@@ -365,16 +366,89 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getPositions(): Promise<NormalizedPosition[]> {
+    this.syncConfig();
     this.validateCredentials();
-    return Array.from(this.openPositions.values());
+    const accountId = Number(this.config.accountId);
+    if (!Number.isFinite(accountId) || accountId <= 0) {
+      throw new BrokerError('ACCOUNT_NOT_FOUND', `Invalid or missing cTrader account ID: ${this.config.accountId}`, 'CTRADER', this.environment);
+    }
+    const state = await fetchCTraderReconcileState(accountId, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, this.isLive);
+    const symbols = await fetchCTraderSymbols(accountId, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, this.isLive);
+    const byId = new Map(symbols.map(s => [s.symbolId, s]));
+    return state.positions.map((p: any) => {
+      const trade = p.tradeData || {};
+      const symbolInfo = byId.get(Number(trade.symbolId));
+      if (!symbolInfo) return null;
+      const side = String(trade.tradeSide || '').toUpperCase().includes('SELL') ? 'SELL' : 'BUY';
+      const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0));
+      const entryPrice = Number(trade.openPrice || p.price || 0);
+      if (quantity <= 0 || entryPrice <= 0) return null;
+      return {
+        id: String(p.positionId),
+        broker: 'CTRADER',
+        environment: this.environment,
+        market: 'FOREX',
+        symbol: symbolInfo.symbolName,
+        side,
+        quantity,
+        entryPrice,
+        currentPrice: entryPrice,
+        stopLoss: trade.stopLoss,
+        takeProfit: trade.takeProfit,
+        unrealizedPnL: Number(p.unrealizedPnL || 0),
+        realizedPnL: Number(p.realizedPnL || 0),
+        currency: this.accountData?.currency || 'USD',
+        timestamp: Date.now(),
+        brokerPositionId: String(p.positionId)
+      } as NormalizedPosition;
+    }).filter(Boolean) as NormalizedPosition[];
   }
 
   async getOpenOrders(): Promise<NormalizedOrder[]> {
+    this.syncConfig();
     this.validateCredentials();
-    return Array.from(this.openOrders.values());
+    const accountId = Number(this.config.accountId);
+    if (!Number.isFinite(accountId) || accountId <= 0) {
+      throw new BrokerError('ACCOUNT_NOT_FOUND', `Invalid or missing cTrader account ID: ${this.config.accountId}`, 'CTRADER', this.environment);
+    }
+    const state = await fetchCTraderReconcileState(accountId, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, this.isLive);
+    const symbols = await fetchCTraderSymbols(accountId, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, this.isLive);
+    const byId = new Map(symbols.map(s => [s.symbolId, s]));
+    return state.orders.map((o: any) => {
+      const trade = o.tradeData || {};
+      const symbolInfo = byId.get(Number(trade.symbolId));
+      if (!symbolInfo) return null;
+      const orderTypeRaw = String(o.orderType || 'MARKET').toUpperCase();
+      const orderType = orderTypeRaw.includes('STOP_LIMIT') ? 'STOP_LIMIT' : orderTypeRaw.includes('STOP') ? 'STOP' : orderTypeRaw.includes('LIMIT') ? 'LIMIT' : 'MARKET';
+      const side = String(trade.tradeSide || '').toUpperCase().includes('SELL') ? 'SELL' : 'BUY';
+      const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0));
+      if (quantity <= 0) return null;
+      const statusRaw = String(o.orderStatus || 'PENDING').toUpperCase();
+      const status = statusRaw.includes('FILLED') ? 'FILLED' : statusRaw.includes('CANCEL') ? 'CANCELLED' : statusRaw.includes('REJECT') ? 'REJECTED' : statusRaw.includes('EXPIRE') ? 'EXPIRED' : statusRaw.includes('ACCEPT') ? 'ACCEPTED' : 'PENDING';
+      return {
+        id: String(o.orderId),
+        broker: 'CTRADER',
+        environment: this.environment,
+        market: 'FOREX',
+        symbol: symbolInfo.symbolName,
+        side,
+        orderType,
+        quantity,
+        price: Number(o.limitPrice || o.stopPrice || o.executionPrice || 0) || undefined,
+        stopLoss: trade.stopLoss,
+        takeProfit: trade.takeProfit,
+        status,
+        filledQuantity: status === 'FILLED' ? quantity : 0,
+        averageFillPrice: Number(o.executionPrice || 0) || undefined,
+        timestamp: Number(o.utcTimestamp || 0) * 1000 || Date.now(),
+        brokerOrderId: String(o.orderId)
+      } as NormalizedOrder;
+    }).filter(Boolean) as NormalizedOrder[];
   }
 
   async getOrderHistory(): Promise<NormalizedOrder[]> {
+    // cTrader's reconcile endpoint is the authoritative current-state source; it is not order history.
+    // Do not return local/synthetic history as broker truth.
     this.validateCredentials();
     return [];
   }
@@ -461,6 +535,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getInstruments(): Promise<BrokerInstrument[]> {
+    this.syncConfig();
     this.validateCredentials();
     const accountId = Number(this.config.accountId);
     const symbols = await fetchCTraderSymbols(
