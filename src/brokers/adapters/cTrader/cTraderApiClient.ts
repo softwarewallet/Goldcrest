@@ -388,7 +388,8 @@ export async function fetchCTraderReconcileState(\n  ctidTraderAccountId: number
   clientId: string,
   clientSecret: string,
   accessToken: string,
-  isLive: boolean
+  isLive: boolean,
+  digits: number
 ): Promise<CTraderMarketQuote> {
   return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
     const clientMsgId = `quote_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -408,8 +409,8 @@ export async function fetchCTraderReconcileState(\n  ctidTraderAccountId: number
             resolve({
               symbol,
               symbolId,
-              bid: p.bid === undefined ? undefined : priceFromRelative(Number(p.bid), 5),
-              ask: p.ask === undefined ? undefined : priceFromRelative(Number(p.ask), 5),
+              bid: p.bid === undefined ? undefined : priceFromRelative(Number(p.bid), digits),
+              ask: p.ask === undefined ? undefined : priceFromRelative(Number(p.ask), digits),
               timestamp: p.timestamp ? Number(p.timestamp) : Date.now(),
               status: 'FRESH'
             });
