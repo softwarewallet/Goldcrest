@@ -77,3 +77,12 @@ A SQLite reconciliation-snapshot table and broker snapshot API are now present. 
 7. Kill-switch and autonomous-execution safety regression tests.
 8. Backup/restore test for SQLite.
 9. Production reverse-proxy/TLS deployment test.
+
+
+## Latest production hardening
+
+- Browser operator authentication now uses a server-side `GOLDCREST_OPERATOR_API_KEY` to issue an HttpOnly, SameSite=Strict, same-origin session cookie. The secret is never embedded in the frontend bundle.
+- Cookie-backed state-changing operator requests are rejected when their `Origin` is cross-origin; direct server/API clients may continue using the operator header.
+- The public ML research/training API is retired with HTTP 410 while the research program remains CLOSED. No EXP-012 or new research workflow is exposed.
+- 5paisa order history now uses the broker TradeBook endpoint rather than treating the current OrderBook as historical execution history.
+- cTrader account mapping now derives equity from broker balance plus reconciled unrealized P/L and maps broker-reported used margin/free margin when available; missing balance is fail-closed.
