@@ -6,6 +6,7 @@ import { autoExecutionEngine, LIVE_AUTO_EXECUTION_ALLOWED } from './safety/AutoE
 import { getAuditLogs, logBrokerAction, maskIdentifier } from './auditLog';
 import { BrokerType, TradingEnvironment, OrderRequest } from './types';
 import { normalizeBrokerError } from './errors';
+import { reconciliationService } from '../services/reconciliationService';
 
 export const brokerRouter = Router();
 
@@ -366,6 +367,29 @@ brokerRouter.post('/kill-switch', async (req: Request, res: Response) => {
 brokerRouter.post('/controls', (req: Request, res: Response) => {
   const updated = autoExecutionEngine.updateControls(req.body);
   res.json({ success: true, controls: updated });
+});
+
+brokerRouter.post('/reconciliation/snapshot', async (req: Request, res: Response) => {
+  const broker = req.body?.broker as BrokerType | undefined;
+  const brokers = broker ? [broker] : LIVE_BROKERS;
+  if (brokers.some(b => !LIVE_BROKERS.includes(b))) {
+    return res.status(400).json({ error: 'Allowed live brokers: CTRADER, FIVE_PAISA' });
+  }
+  try {
+    const snapshots = await Promise.all(brokers.map(b => reconciliationService.captureBrokerSnapshot(b)));
+    res.json({ success: true, snapshots });
+  } catch (err: any) {
+    res.status(502).json({ error: err.message, code: 'BROKER_RECONCILIATION_FAILED' });
+  }
+});
+
+brokerRouter.get('/reconciliation/snapshots', async (req: Request, res: Response) => {
+  const limit = req.query.limit ? Math.min(Math.max(parseInt(req.query.limit as string, 10), 1), 500) : 50;
+  try {
+    res.json(await reconciliationService.loadBrokerSnapshots(limit));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 brokerRouter.get('/audit-logs', (req: Request, res: Response) => {
