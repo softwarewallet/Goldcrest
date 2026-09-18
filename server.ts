@@ -91,7 +91,12 @@ app.post('/api/operator/logout', (_req: Request, res: Response) => {
 });
 
 app.use('/api/brokers', operatorAuthRequired, brokerRouter);
-app.use('/api/ml', operatorAuthRequired, mlRouter);
+app.use('/api/ml', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.status(410).json({
+    error: 'RESEARCH_API_RETIRED',
+    message: 'Goldcrest research program is closed. ML training, dataset generation, backtesting and experiment APIs are retired.'
+  });
+});
 app.use('/api/governance', operatorAuthRequired, governanceRouter);
 
 
