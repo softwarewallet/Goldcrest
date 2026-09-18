@@ -52,14 +52,14 @@ export const Header: React.FC<HeaderProps> = ({
   isEmergencyHalted,
   onToggleKillSwitch
 }) => {
-  // Primary unified application areas with direct P&L and Operations navigation
+  // Primary unified application areas with direct Control Center, P&L and Operations navigation
   const tabs = [
+    { id: 'control_center', label: 'CONTROL CENTER', icon: Activity },
     { id: 'market', label: 'MARKET', icon: TrendingUp },
     { id: 'signals', label: 'SIGNALS', icon: Target },
     { id: 'trading', label: 'TRADING', icon: Layers },
     { id: 'pnl', label: 'P&L & ACCOUNTING', icon: DollarSign },
-    { id: 'research', label: 'RESEARCH', icon: Cpu },
-    { id: 'operations', label: 'OPERATIONS', icon: Activity },
+    { id: 'research', label: 'RESEARCH (CLOSED)', icon: Cpu },
     { id: 'settings', label: 'SETTINGS', icon: Settings }
   ];
 

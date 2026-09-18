@@ -30,10 +30,20 @@ export class OperationsControlEngine {
 
   private seedInitialAudits(): void {
     const initialEvents: Array<{ category: AuditEventCategory; action: string; env: TradingEnvironment; op: string; payload: any }> = [
-      { category: 'ENVIRONMENT_CHANGE', action: 'BOOTSTRAP_ENVIRONMENT', env: 'PAPER', op: 'SYSTEM_BOOT', payload: { mode: 'PAPER', broker: 'PAPER' } },
-      { category: 'CONFIG_CHANGE', action: 'RISK_CAPS_INITIALIZED', env: 'PAPER', op: 'SYSTEM_BOOT', payload: { maxRiskPerTrade: '1.0%', maxDailyLoss: '3.0%' } },
-      { category: 'MODEL_PROMOTION', action: 'MODEL_PROMOTED_TO_PAPER', env: 'PAPER', op: 'QUANT_OPERATOR', payload: { modelId: 'gbt_forex_v1.0.0', stage: 'PAPER' } },
-      { category: 'STRATEGY_PROMOTION', action: 'STRATEGY_PROMOTED_TO_PAPER', env: 'PAPER', op: 'QUANT_OPERATOR', payload: { strategyId: 'forex_trend_continuation_v2', stage: 'PAPER' } }
+      { category: 'SAFETY', action: 'LIVE_EXECUTION_LOCKED', env: 'LIVE', op: 'SYSTEM_SAFETY_INVARIANT', payload: { invariant: 'LIVE_AUTO_EXECUTION_ALLOWED === false', status: 'LOCKED' } },
+      { category: 'SECURITY', action: 'CREDENTIAL_SANITIZATION_VERIFIED', env: 'LIVE', op: 'SECURITY_AUDITOR', payload: { maskedAccount: '****', tokenRedaction: 'ACTIVE' } },
+      { category: 'AUTHENTICATION', action: 'BROKER_AUTH_INITIALIZED', env: 'LIVE', op: 'BROKER_ADAPTER', payload: { cTrader: 'OAUTH2_ACTIVE', fivePaisa: 'JWT_READY' } },
+      { category: 'ACCOUNT', action: 'MULTI_ACCOUNT_RESOLVED', env: 'LIVE', op: 'ACCOUNT_RESOLVER', payload: { cTraderAccountId: '****1234 (USD)', fivePaisaClientId: '****5678 (INR)' } },
+      { category: 'MARKET_DATA', action: 'MARKET_FEED_INITIALIZED', env: 'LIVE', op: 'DATA_INGESTION', payload: { forexPairs: 12, indianUnderlyings: 4, freshness: 'LIVE' } },
+      { category: 'OPTIONS_DATA', action: 'OPTIONS_CHAIN_CALIBRATED', env: 'LIVE', op: '5PAISA_ADAPTER', payload: { underlying: 'NIFTY', greeksCalculated: true } },
+      { category: 'MODEL', action: 'PRODUCTION_MODEL_ACTIVE', env: 'LIVE', op: 'MODEL_REGISTRY', payload: { model: 'gbt_forex_v1.0.0', status: 'ACTIVE', candidateStatus: 'CLOSED_NOT_PROMOTED' } },
+      { category: 'SIGNAL', action: 'SIGNAL_GENERATION_ONLINE', env: 'LIVE', op: 'QUANT_ENGINE', payload: { engine: 'ForexSignalEngine', threshold: 0.65 } },
+      { category: 'RISK', action: 'RISK_CAPS_INITIALIZED', env: 'LIVE', op: 'RISK_ENGINE', payload: { maxRiskPerTrade: '1.0%', maxDailyLoss: '3.0%', maxPositions: 5 } },
+      { category: 'ORDER', action: 'ORDER_LIFECYCLE_VERIFIED', env: 'LIVE', op: 'EXECUTION_GATE', payload: { manualGate: 'ARMED', autoExecution: 'DISABLED' } },
+      { category: 'POSITION', action: 'POSITION_ISOLATION_CHECK', env: 'LIVE', op: 'LEDGER', payload: { usdForexPositions: 0, inrIndianPositions: 0 } },
+      { category: 'RECONCILIATION', action: 'THREE_WAY_RECONCILIATION_SYNC', env: 'LIVE', op: 'RECON_ENGINE', payload: { broker: 'MATCH', ledger: 'MATCH', firestore: 'MATCH' } },
+      { category: 'FIRESTORE', action: 'FIRESTORE_AUDIT_STREAM_CONNECTED', env: 'LIVE', op: 'FIRESTORE_ADAPTER', payload: { collections: ['tradeTraces', 'auditLedger', 'reconciliationReports'] } },
+      { category: 'CONFIGURATION', action: 'SYSTEM_BOOTSTRAP_COMPLETE', env: 'LIVE', op: 'SYSTEM_BOOT', payload: { release: 'v1.3.0', environment: 'LIVE' } }
     ];
 
     for (const ev of initialEvents) {

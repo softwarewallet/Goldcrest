@@ -11,46 +11,79 @@ import { tradeValidator, SignalValidationInput } from './TradeValidator';
 import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
 import { logBrokerAction } from '../auditLog';
 
+/**
+ * ============================================================================
+ * NON-NEGOTIABLE SAFETY INVARIANT (PHASE 12)
+ * ============================================================================
+ * Autonomous live-money order execution is permanently disabled in Goldcrest.
+ * Goldcrest may connect to live brokers, retrieve live accounts/margins/quotes,
+ * and validate orders. But Goldcrest MUST NOT autonomously submit live orders.
+ */
+export const LIVE_AUTO_EXECUTION_ALLOWED: boolean = false;
+
 export interface ExecutionPermissionConfig {
   liveConnectionEnabled: boolean;
   liveTradingEnabled: boolean;
-  autoExecutionEnabled: boolean;
+  autoExecutionEnabled: false; // Structurally locked to false
+  autonomousLiveExecutionAllowed: false;
 }
 
 class AutoExecutionEngine {
-  // Global controls: strictly OFF by default
+  // Global controls: autoExecution is permanently locked to false
   private permissions: ExecutionPermissionConfig = {
-    liveConnectionEnabled: process.env.LIVE_CONNECTION_ENABLED === 'true',
-    liveTradingEnabled: process.env.LIVE_TRADING_ENABLED === 'true',
-    autoExecutionEnabled: false // ALWAYS default to false
+    liveConnectionEnabled: true,
+    liveTradingEnabled: false, // Connection capability only, NOT autonomous execution
+    autoExecutionEnabled: false,
+    autonomousLiveExecutionAllowed: false
   };
 
   getControls(): ExecutionPermissionConfig {
-    return { ...this.permissions };
+    return {
+      ...this.permissions,
+      autoExecutionEnabled: false,
+      autonomousLiveExecutionAllowed: false
+    };
   }
 
+  /**
+   * Updates operational controls. Note that autonomous live execution
+   * CANNOT be enabled via any API, body flag, or state change.
+   */
   updateControls(updates: Partial<ExecutionPermissionConfig>): ExecutionPermissionConfig {
-    if (updates.autoExecutionEnabled === true) {
-      // Notice: Requirement 23: Even if LIVE credentials are connected: AUTO EXECUTION MUST REMAIN OFF unless strictly confirmed.
-      // Guard against accidental activation
-      console.warn('[SECURITY] Auto execution toggle updated:', updates.autoExecutionEnabled);
+    if ((updates as any).autoExecutionEnabled === true || (updates as any).autonomousLiveExecutionAllowed === true) {
+      console.warn('[SECURITY] Attempt to enable autonomous live execution rejected. Invariant LIVE_AUTO_EXECUTION_ALLOWED === false.');
     }
     this.permissions = {
       ...this.permissions,
-      ...updates
+      liveConnectionEnabled: updates.liveConnectionEnabled !== undefined ? updates.liveConnectionEnabled : this.permissions.liveConnectionEnabled,
+      liveTradingEnabled: updates.liveTradingEnabled !== undefined ? updates.liveTradingEnabled : this.permissions.liveTradingEnabled,
+      autoExecutionEnabled: false, // Structurally immutable
+      autonomousLiveExecutionAllowed: false // Structurally immutable
     };
-    return { ...this.permissions };
+    return this.getControls();
+  }
+
+  /**
+   * Explicit attempt to enable automatic execution fails closed.
+   */
+  enableAutomaticExecution(): { success: boolean; code: string; message: string } {
+    return {
+      success: false,
+      code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
+      message: 'Autonomous live execution is permanently disabled by safety invariant LIVE_AUTO_EXECUTION_ALLOWED === false.'
+    };
   }
 
   /**
    * 5-Stage Execution Pipeline:
    * SignalEngine -> TradeValidator -> RiskEngine -> ExecutionPermission -> ExecutionEngine -> BrokerAdapter
+   * In LIVE mode, autonomous dispatch is permanently blocked at Stage 3.
    */
   async processSignal(
     signalInput: SignalValidationInput,
     order: OrderRequest,
     gateParams: Omit<LiveGateEvaluationParams, 'order'>
-  ): Promise<{ executed: boolean; order?: NormalizedOrder; reason?: string }> {
+  ): Promise<{ executed: boolean; order?: NormalizedOrder; reason?: string; code?: string }> {
     const env = brokerRegistry.getEnvironment();
     const broker = brokerRegistry.getSelectedBroker();
     const adapter = brokerRegistry.getAdapter(broker, env);
@@ -67,7 +100,7 @@ class AutoExecutionEngine {
         result: 'BLOCKED',
         error: 'Emergency Kill Switch is ACTIVE'
       });
-      return { executed: false, reason: 'Emergency Kill Switch is ACTIVE' };
+      return { executed: false, reason: 'Emergency Kill Switch is ACTIVE', code: 'EMERGENCY_STOP_ACTIVE' };
     }
 
     // Stage 2: Trade Validator
@@ -89,57 +122,34 @@ class AutoExecutionEngine {
           reason: valResult.rejectionReason
         }
       });
-      return { executed: false, reason: valResult.rejectionReason };
+      return { executed: false, reason: valResult.rejectionReason, code: 'RISK_REJECTED' };
     }
 
-    // Stage 3: Execution Permission & Auto-Execution Lock
-    if (this.permissions.autoExecutionEnabled !== true) {
+    // Stage 3: Permanent Autonomous Execution Safety Invariant (Section 1 & 2)
+    if (!LIVE_AUTO_EXECUTION_ALLOWED) {
+      logBrokerAction({
+        source: 'SAFETY_GATE',
+        broker,
+        environment: env,
+        account: 'ACTIVE',
+        action: 'EXECUTE_SIGNAL',
+        symbol: order.symbol,
+        result: 'BLOCKED',
+        error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED: Signal validated for operator review only.'
+      });
       return {
         executed: false,
-        reason: 'Auto-Execution is DISABLED by default. Explicit manual order confirmation required.'
+        code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
+        reason: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED: Autonomous live-money order execution is structurally disabled.'
       };
     }
 
-    // Stage 4: Live Trading Gate (if LIVE environment)
-    if (env === 'LIVE') {
-      const gateResult = await liveTradingGate.evaluate(adapter, {
-        order,
-        ...gateParams
-      });
-
-      if (!gateResult.passed) {
-        const failureSummary = gateResult.failedReasons.join('; ');
-        logBrokerAction({
-          source: 'LIVE_TRADING_GATE',
-          broker,
-          environment: 'LIVE',
-          account: 'LIVE_ACCOUNT',
-          action: 'EXECUTE_SIGNAL',
-          symbol: order.symbol,
-          result: 'BLOCKED',
-          error: failureSummary
-        });
-        return {
-          executed: false,
-          reason: `Live Safety Gate Rejected: ${failureSummary}`
-        };
-      }
-    }
-
-    // Stage 5: Broker Adapter Placement
-    try {
-      const placedOrder = await adapter.placeOrder(order);
-      tradeValidator.registerActivePosition(
-        placedOrder.id,
-        order.symbol,
-        order.side,
-        order.strategyId,
-        order.signalId
-      );
-      return { executed: true, order: placedOrder };
-    } catch (err: any) {
-      return { executed: false, reason: err.message };
-    }
+    // Fallback closed
+    return {
+      executed: false,
+      code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
+      reason: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED'
+    };
   }
 }
 

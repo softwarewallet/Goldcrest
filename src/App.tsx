@@ -5,6 +5,7 @@ import { SignalsView } from './components/SignalsView';
 import { TradingHub } from './components/TradingHub';
 import { MLResearchDashboard } from './components/MLResearchDashboard';
 import { TradingOperationsDashboard } from './components/TradingOperationsDashboard';
+import { TradingControlCenter } from './components/TradingControlCenter';
 import { PerformanceResearchCenterView } from './components/PerformanceResearchCenterView';
 import { SettingsHub } from './components/SettingsHub';
 import { SignalModal } from './components/SignalModal';
@@ -16,7 +17,7 @@ import { getForexSessionState, getIndianSessionState } from './markets/common/se
 import { BrokerType, TradingEnvironment, OrderRequest } from './brokers/types';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('market');
+  const [activeTab, setActiveTab] = useState<string>('control_center');
   const [forexPairs, setForexPairs] = useState<any[]>([]);
   const [forexSessions, setForexSessions] = useState<ForexSessionState>(() => getForexSessionState(new Date()));
   const [indianUnderlyings, setIndianUnderlyings] = useState<any[]>([]);
@@ -338,9 +339,9 @@ export default function App() {
               <MLResearchDashboard />
             )}
 
-            {/* 6. OPERATIONS HUB (Live Operations, Reconciliation, Health, Demo Runner, Audit Ledger) */}
-            {(activeTab === 'operations' || activeTab === 'reconciliation' || activeTab === 'reconcile') && (
-              <TradingOperationsDashboard initialSubTab="OPS" />
+            {/* PRIMARY OPERATIONAL HUB: TRADING CONTROL CENTER (10 Core Operational Sections) */}
+            {(activeTab === 'control_center' || activeTab === 'operations' || activeTab === 'reconciliation' || activeTab === 'reconcile') && (
+              <TradingControlCenter onSelectSignalModal={(sig) => setSelectedSignal(sig)} />
             )}
 
             {/* 6. SETTINGS HUB (Broker Connections, Safety Controls, Governance & Readiness Gates) */}

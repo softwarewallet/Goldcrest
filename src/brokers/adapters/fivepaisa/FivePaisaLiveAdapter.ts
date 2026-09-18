@@ -55,8 +55,8 @@ export class FivePaisaLiveAdapter extends FivePaisaBrokerAdapter {
 
   override async placeOrder(order: OrderRequest): Promise<NormalizedOrder> {
     throw new BrokerError(
-      'ORDER_REJECTED',
-      'Direct LIVE order execution is NOT ALLOWED: Real-money automated trading is permanently locked in research/demo mode.',
+      'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
+      'Autonomous live-money order submission is permanently disabled by system safety invariant LIVE_AUTO_EXECUTION_ALLOWED === false.',
       'FIVE_PAISA',
       'LIVE'
     );

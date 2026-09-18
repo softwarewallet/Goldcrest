@@ -148,278 +148,207 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
   /**
-   * Discovers accounts associated with the authenticated cTrader identity
+   * Discovers accounts associated with the authenticated cTrader identity via Open API.
+   * Never injects synthetic fallback accounts.
    */
   async getAccounts(): Promise<BrokerAccountInfo[]> {
     this.syncConfig();
     this.validateCredentials();
     
-    const configuredId = this.config.accountId;
+    const { clientId, clientSecret, accessToken } = this.config;
 
-    // 1. Attempt real cTrader Open API account discovery and real balance fetching
-    if (this.config.clientId && this.config.clientSecret && this.config.accessToken) {
-      try {
-        const liveAccounts = await fetchLiveCTraderAccounts(
-          this.config.clientId,
-          this.config.clientSecret,
-          this.config.accessToken,
-          this.isLive ? 'live' : 'demo'
-        );
-
-        if (liveAccounts.length > 0) {
-          const results: BrokerAccountInfo[] = [];
-          for (const raw of liveAccounts) {
-            try {
-              const details = await fetchLiveCTraderAccountDetails(
-                raw,
-                this.config.clientId,
-                this.config.clientSecret,
-                this.config.accessToken
-              );
-
-              results.push({
-                accountId: String(details.traderLogin),
-                accountType: details.isLive ? 'LIVE' : 'DEMO',
-                balance: details.balance,
-                equity: details.equity,
-                availableMargin: details.availableMargin,
-                usedMargin: details.usedMargin,
-                freeMargin: details.freeMargin,
-                currency: details.currency,
-                broker: 'CTRADER',
-                environment: this.environment,
-                connectionStatus: 'CONNECTED',
-                server: details.brokerName || raw.brokerTitleShort || (details.isLive ? 'cTrader-Live' : 'cTrader-Demo'),
-                permissions: ['TRADE', 'READ'],
-                lastUpdate: Date.now(),
-                isLiveAccount: details.isLive
-              });
-            } catch (detailErr: any) {
-              results.push({
-                accountId: String(raw.traderLogin),
-                accountType: raw.isLive ? 'LIVE' : 'DEMO',
-                balance: 0,
-                equity: 0,
-                availableMargin: 0,
-                usedMargin: 0,
-                freeMargin: 0,
-                currency: 'USD',
-                broker: 'CTRADER',
-                environment: this.environment,
-                connectionStatus: 'CONNECTED',
-                server: raw.brokerTitleShort || 'cTrader',
-                permissions: ['READ'],
-                lastUpdate: Date.now(),
-                isLiveAccount: raw.isLive
-              });
-            }
-          }
-
-          if (results.length > 0) {
-            // Also append secondary demo accounts to enable seamless multi-account selection
-            for (const def of [
-              {
-                accountId: '1234567',
-                accountType: (this.isLive ? 'LIVE' : 'DEMO') as 'LIVE' | 'DEMO',
-                balance: 12500.50,
-                equity: 12500.50,
-                availableMargin: 12500.50,
-                usedMargin: 0,
-                freeMargin: 12500.50,
-                currency: 'USD',
-                broker: 'CTRADER' as const,
-                environment: this.environment,
-                connectionStatus: 'CONNECTED' as const,
-                server: this.isLive ? 'cTrader-Live-EU' : 'cTrader-Demo-Global',
-                lastUpdate: Date.now(),
-                isLiveAccount: this.isLive
-              },
-              {
-                accountId: '7654321',
-                accountType: (this.isLive ? 'LIVE' : 'DEMO') as 'LIVE' | 'DEMO',
-                balance: 84320.15,
-                equity: 84320.15,
-                availableMargin: 84320.15,
-                usedMargin: 0,
-                freeMargin: 84320.15,
-                currency: 'USD',
-                broker: 'CTRADER' as const,
-                environment: this.environment,
-                connectionStatus: 'CONNECTED' as const,
-                server: this.isLive ? 'cTrader-Live-EU' : 'cTrader-Demo-Global',
-                lastUpdate: Date.now(),
-                isLiveAccount: this.isLive
-              }
-            ]) {
-              if (!results.some(r => r.accountId === def.accountId)) {
-                results.push(def);
-              }
-            }
-            return results;
-          }
-        }
-      } catch (apiErr: any) {
-        console.warn('Real cTrader Open API discovery notice:', apiErr.message);
-      }
+    if (!clientId || !clientSecret || !accessToken) {
+      throw new BrokerError(
+        'AUTHENTICATION_FAILED',
+        `cTrader ${this.environment} credentials missing. Required: Client ID, Client Secret, and Access Token.`,
+        'CTRADER',
+        this.environment
+      );
     }
 
-    // Fallback simulation when real API credentials are unlinked or during local regression suites
-    await new Promise(resolve => setTimeout(resolve, 200));
-    const accounts: BrokerAccountInfo[] = [];
+    try {
+      const liveAccounts = await fetchLiveCTraderAccounts(
+        clientId,
+        clientSecret,
+        accessToken,
+        this.isLive ? 'live' : 'demo'
+      );
 
-    const defaultAccounts: BrokerAccountInfo[] = [
-      {
-        accountId: '1234567',
-        accountType: this.isLive ? 'LIVE' : 'DEMO',
-        balance: 12500.50,
-        equity: 12500.50,
-        availableMargin: 12500.50,
-        usedMargin: 0,
-        freeMargin: 12500.50,
-        currency: 'USD',
-        broker: 'CTRADER',
-        environment: this.environment,
-        connectionStatus: 'CONNECTED',
-        server: this.isLive ? 'cTrader-Live-EU' : 'cTrader-Demo-Global',
-        lastUpdate: Date.now(),
-        isLiveAccount: this.isLive
-      },
-      {
-        accountId: '7654321',
-        accountType: this.isLive ? 'LIVE' : 'DEMO',
-        balance: 84320.15,
-        equity: 84320.15,
-        availableMargin: 84320.15,
-        usedMargin: 0,
-        freeMargin: 84320.15,
-        currency: 'USD',
-        broker: 'CTRADER',
-        environment: this.environment,
-        connectionStatus: 'CONNECTED',
-        server: this.isLive ? 'cTrader-Live-EU' : 'cTrader-Demo-Global',
-        lastUpdate: Date.now(),
-        isLiveAccount: this.isLive
-      }
-    ];
-
-    if (configuredId && configuredId !== '1234567' && configuredId !== '7654321') {
-      accounts.push({
-        accountId: configuredId,
-        accountType: this.isLive ? 'LIVE' : 'DEMO',
-        balance: this.isLive ? 50000.00 : 100000.00,
-        equity: this.isLive ? 50000.00 : 100000.00,
-        availableMargin: this.isLive ? 50000.00 : 100000.00,
-        usedMargin: 0,
-        freeMargin: this.isLive ? 50000.00 : 100000.00,
-        currency: 'USD',
-        broker: 'CTRADER',
-        environment: this.environment,
-        connectionStatus: 'CONNECTED',
-        server: this.isLive ? 'cTrader-Live-EU' : 'cTrader-Demo-Global',
-        lastUpdate: Date.now(),
-        isLiveAccount: this.isLive
-      });
-    }
-
-    accounts.push(...defaultAccounts);
-    return accounts;
-  }
-
-  async getAccount(): Promise<BrokerAccountInfo> {
-    this.syncConfig();
-    this.validateCredentials();
-    
-    // 1. Check if we can fetch live data directly from real cTrader Open API
-    if (this.config.clientId && this.config.clientSecret && this.config.accessToken) {
-      try {
-        const liveAccounts = await fetchLiveCTraderAccounts(
-          this.config.clientId,
-          this.config.clientSecret,
-          this.config.accessToken,
-          this.isLive ? 'live' : 'demo'
-        );
-
-        if (liveAccounts.length > 0) {
-          const targetId = this.config.accountId;
-          const matched = targetId
-            ? liveAccounts.find(a => String(a.traderLogin) === targetId || String(a.ctidTraderAccountId) === targetId)
-            : liveAccounts[0];
-
-          if (matched) {
-            const details = await fetchLiveCTraderAccountDetails(
-              matched,
-              this.config.clientId,
-              this.config.clientSecret,
-              this.config.accessToken
-            );
-
-            this.status = 'CONNECTED';
-            return {
-              accountId: String(details.traderLogin),
-              accountType: details.isLive ? 'LIVE' : 'DEMO',
-              balance: details.balance,
-              equity: details.equity,
-              availableMargin: details.availableMargin,
-              usedMargin: details.usedMargin,
-              freeMargin: details.freeMargin,
-              currency: details.currency,
-              broker: 'CTRADER',
-              environment: this.environment,
-              connectionStatus: 'CONNECTED',
-              server: details.brokerName || matched.brokerTitleShort || (details.isLive ? 'cTrader-Live' : 'cTrader-Demo'),
-              permissions: ['TRADE', 'READ'],
-              lastUpdate: Date.now(),
-              isLiveAccount: details.isLive
-            };
-          }
-        }
-      } catch (err: any) {
-        console.warn('Direct real cTrader account fetch error, proceeding to cached pool:', err.message);
-      }
-    }
-
-    // 2. Discover via account pool
-    const accounts = await this.getAccounts();
-    const targetId = this.config.accountId;
-    
-    // Find the explicitly selected account
-    let selected = targetId ? accounts.find(a => a.accountId === targetId) : undefined;
-    
-    if (!selected) {
-      if (targetId) {
-        selected = {
-          accountId: targetId,
-          accountType: this.isLive ? 'LIVE' : 'DEMO',
-          balance: this.isLive ? 50000.00 : 100000.00,
-          equity: this.isLive ? 50000.00 : 100000.00,
-          availableMargin: this.isLive ? 50000.00 : 100000.00,
-          usedMargin: 0,
-          freeMargin: this.isLive ? 50000.00 : 100000.00,
-          currency: 'USD',
-          broker: 'CTRADER',
-          environment: this.environment,
-          connectionStatus: this.status,
-          server: this.isLive ? 'cTrader-Live-EU' : 'cTrader-Demo-Global',
-          lastUpdate: Date.now(),
-          isLiveAccount: this.isLive
-        };
-      } else if (accounts.length > 0) {
-        selected = accounts[0];
-      } else {
+      if (!liveAccounts || liveAccounts.length === 0) {
         throw new BrokerError(
-          'BROKER_UNAVAILABLE',
-          `Account not found for the authenticated identity. Retrieval failed.`,
+          'ACCOUNT_NOT_FOUND',
+          'No cTrader accounts found for authenticated identity.',
           'CTRADER',
           this.environment
         );
       }
+
+      const results: BrokerAccountInfo[] = [];
+      for (const raw of liveAccounts) {
+        try {
+          const details = await fetchLiveCTraderAccountDetails(
+            raw,
+            clientId,
+            clientSecret,
+            accessToken
+          );
+
+          results.push({
+            accountId: String(details.traderLogin),
+            accountType: details.isLive ? 'LIVE' : 'DEMO',
+            balance: details.balance,
+            equity: details.equity,
+            availableMargin: details.availableMargin,
+            usedMargin: details.usedMargin,
+            freeMargin: details.freeMargin,
+            currency: details.currency,
+            broker: 'CTRADER',
+            environment: this.environment,
+            connectionStatus: 'CONNECTED',
+            server: details.brokerName || raw.brokerTitleShort || (details.isLive ? 'cTrader-Live' : 'cTrader-Demo'),
+            permissions: ['TRADE', 'READ'],
+            lastUpdate: Date.now(),
+            isLiveAccount: details.isLive
+          });
+        } catch (detailErr: any) {
+          results.push({
+            accountId: String(raw.traderLogin),
+            accountType: raw.isLive ? 'LIVE' : 'DEMO',
+            balance: 0,
+            equity: 0,
+            availableMargin: 0,
+            usedMargin: 0,
+            freeMargin: 0,
+            currency: 'USD',
+            broker: 'CTRADER',
+            environment: this.environment,
+            connectionStatus: 'CONNECTED',
+            server: raw.brokerTitleShort || 'cTrader',
+            permissions: ['READ'],
+            lastUpdate: Date.now(),
+            isLiveAccount: raw.isLive
+          });
+        }
+      }
+
+      return results;
+    } catch (err: any) {
+      if (err instanceof BrokerError) {
+        throw err;
+      }
+      throw new BrokerError(
+        'ACCOUNT_DATA_UNAVAILABLE',
+        `cTrader API account discovery failed: ${err?.message || String(err)}`,
+        'CTRADER',
+        this.environment,
+        err
+      );
+    }
+  }
+
+  /**
+   * Retrieves authoritative account information for the selected cTrader account.
+   * If a specific accountId is configured, it MUST be found in the authenticated accounts.
+   */
+  async getAccount(): Promise<BrokerAccountInfo> {
+    this.syncConfig();
+    this.validateCredentials();
+    
+    const { clientId, clientSecret, accessToken } = this.config;
+    const targetId = this.config.accountId;
+
+    if (!clientId || !clientSecret || !accessToken) {
+      throw new BrokerError(
+        'AUTHENTICATION_FAILED',
+        `cTrader ${this.environment} credentials missing.`,
+        'CTRADER',
+        this.environment
+      );
     }
 
-    return {
-      ...selected,
-      connectionStatus: this.status,
-      lastUpdate: Date.now()
-    };
+    try {
+      const liveAccounts = await fetchLiveCTraderAccounts(
+        clientId,
+        clientSecret,
+        accessToken,
+        this.isLive ? 'live' : 'demo'
+      );
+
+      if (!liveAccounts || liveAccounts.length === 0) {
+        throw new BrokerError(
+          'ACCOUNT_NOT_FOUND',
+          'No cTrader accounts found for authenticated credentials.',
+          'CTRADER',
+          this.environment
+        );
+      }
+
+      let matched = undefined;
+      if (targetId) {
+        matched = liveAccounts.find(
+          a => String(a.traderLogin) === String(targetId) || String(a.ctidTraderAccountId) === String(targetId)
+        );
+        if (!matched) {
+          throw new BrokerError(
+            'ACCOUNT_NOT_FOUND',
+            `Configured cTrader account ID ${targetId} was not found among authenticated accounts (${liveAccounts.map(a => a.traderLogin).join(', ')}).`,
+            'CTRADER',
+            this.environment
+          );
+        }
+      } else {
+        if (liveAccounts.length === 1) {
+          matched = liveAccounts[0];
+        } else {
+          throw new BrokerError(
+            'ACCOUNT_NOT_FOUND',
+            'Multiple cTrader accounts exist. Please select a specific account ID in configuration.',
+            'CTRADER',
+            this.environment
+          );
+        }
+      }
+
+      const details = await fetchLiveCTraderAccountDetails(
+        matched,
+        clientId,
+        clientSecret,
+        accessToken
+      );
+
+      this.status = 'CONNECTED';
+      const authoritativeAccount: BrokerAccountInfo = {
+        accountId: String(details.traderLogin),
+        accountType: details.isLive ? 'LIVE' : 'DEMO',
+        balance: details.balance,
+        equity: details.equity,
+        availableMargin: details.availableMargin,
+        usedMargin: details.usedMargin,
+        freeMargin: details.freeMargin,
+        currency: details.currency,
+        broker: 'CTRADER',
+        environment: this.environment,
+        connectionStatus: 'CONNECTED',
+        server: details.brokerName || matched.brokerTitleShort || (details.isLive ? 'cTrader-Live' : 'cTrader-Demo'),
+        permissions: ['TRADE', 'READ'],
+        lastUpdate: Date.now(),
+        isLiveAccount: details.isLive
+      };
+
+      this.accountData = authoritativeAccount;
+      return authoritativeAccount;
+    } catch (err: any) {
+      if (err instanceof BrokerError) {
+        throw err;
+      }
+      throw new BrokerError(
+        'ACCOUNT_DATA_UNAVAILABLE',
+        `Authoritative cTrader account data retrieval failed: ${err?.message || String(err)}`,
+        'CTRADER',
+        this.environment,
+        err
+      );
+    }
   }
 
   async getBalance(): Promise<number> {

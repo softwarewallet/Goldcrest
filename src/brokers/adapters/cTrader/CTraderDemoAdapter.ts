@@ -7,10 +7,10 @@ export class CTraderDemoAdapter extends CTraderBrokerAdapter {
 
   constructor(customConfig?: Partial<CTraderConfig>) {
     const config: CTraderConfig = {
-      clientId: customConfig?.clientId ?? process.env.CTRADER_DEMO_CLIENT_ID ?? 'ctrader_demo_client_2841',
-      clientSecret: customConfig?.clientSecret ?? process.env.CTRADER_DEMO_CLIENT_SECRET ?? 'demo_sec_993817',
-      accessToken: customConfig?.accessToken ?? process.env.CTRADER_DEMO_ACCESS_TOKEN ?? 'demo_tok_392817291',
-      accountId: customConfig?.accountId ?? process.env.CTRADER_DEMO_ACCOUNT_ID ?? '29102841',
+      clientId: customConfig?.clientId ?? process.env.CTRADER_DEMO_CLIENT_ID,
+      clientSecret: customConfig?.clientSecret ?? process.env.CTRADER_DEMO_CLIENT_SECRET,
+      accessToken: customConfig?.accessToken ?? process.env.CTRADER_DEMO_ACCESS_TOKEN,
+      accountId: customConfig?.accountId ?? process.env.CTRADER_DEMO_ACCOUNT_ID,
       environment: 'DEMO',
       apiHost: customConfig?.apiHost || 'https://demo.ctraderapi.com'
     };

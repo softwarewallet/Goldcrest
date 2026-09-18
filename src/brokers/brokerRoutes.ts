@@ -3,7 +3,7 @@ import { brokerRegistry } from './registry';
 import { killSwitch } from './safety/KillSwitch';
 import { tradeValidator } from './safety/TradeValidator';
 import { liveTradingGate } from './safety/LiveTradingGate';
-import { autoExecutionEngine } from './safety/AutoExecutionEngine';
+import { autoExecutionEngine, LIVE_AUTO_EXECUTION_ALLOWED } from './safety/AutoExecutionEngine';
 import { getAuditLogs, logBrokerAction, maskIdentifier } from './auditLog';
 import { BrokerType, TradingEnvironment, OrderRequest, OrderType } from './types';
 import { BrokerError, normalizeBrokerError } from './errors';
@@ -24,7 +24,8 @@ brokerRouter.get('/status', async (req: Request, res: Response) => {
       const adapter = brokerRegistry.getAdapter(selectedBroker, environment);
       activeAccount = await adapter.getAccount();
     } catch {
-      // Ignored if not configured yet
+      // Return null if account details are not yet retrieved or authenticated
+      activeAccount = null;
     }
 
     res.json({
@@ -43,10 +44,10 @@ brokerRouter.get('/status', async (req: Request, res: Response) => {
 
 // 2. Connection Testing (Requirement 14)
 brokerRouter.post('/test-connection', async (req: Request, res: Response) => {
-  const { broker, environment } = req.body as { broker: BrokerType; environment: TradingEnvironment };
+  const { broker, environment = 'LIVE' } = req.body as { broker: BrokerType; environment: TradingEnvironment };
 
-  if (!broker || !environment) {
-    return res.status(400).json({ error: 'Missing broker or environment parameters' });
+  if (!broker) {
+    return res.status(400).json({ error: 'Missing broker parameter' });
   }
 
   try {
@@ -81,7 +82,7 @@ brokerRouter.get('/accounts', async (req: Request, res: Response) => {
     }
   } catch (err: any) {
     const normalized = normalizeBrokerError(err, broker, environment);
-    res.status(500).json({ error: normalized.message });
+    res.status(500).json({ error: normalized.message, code: normalized.code });
   }
 });
 
@@ -89,35 +90,26 @@ brokerRouter.get('/accounts', async (req: Request, res: Response) => {
 brokerRouter.post('/environment', (req: Request, res: Response) => {
   const { environment, confirmed } = req.body as { environment: TradingEnvironment; confirmed?: boolean };
 
-  if (!['LIVE'].includes(environment)) {
-    return res.status(400).json({ error: 'Invalid environment. Only LIVE is allowed in production mode.' });
+  if (environment !== 'LIVE') {
+    return res.status(400).json({ error: 'Invalid environment. Goldcrest operates in LIVE_ONLY mode.' });
   }
 
   const currentEnv = brokerRegistry.getEnvironment();
-  if (currentEnv !== environment && !confirmed) {
-    return res.status(400).json({
-      requiresConfirmation: true,
-      currentEnvironment: currentEnv,
-      requestedEnvironment: environment,
-      message: `Switching from ${currentEnv} to ${environment} requires explicit confirmation.`
-    });
-  }
-
-  brokerRegistry.setEnvironment(environment);
+  brokerRegistry.setEnvironment('LIVE');
   logBrokerAction({
     source: 'USER_INTERFACE',
     broker: brokerRegistry.getSelectedBroker(),
-    environment,
+    environment: 'LIVE',
     account: 'CONFIG',
     action: 'ENVIRONMENT_SWITCH',
     result: 'SUCCESS',
-    error: `Switched environment from ${currentEnv} to ${environment}`
+    error: `Operating in LIVE environment`
   });
 
   res.json({
     success: true,
     previousEnvironment: currentEnv,
-    activeEnvironment: environment
+    activeEnvironment: 'LIVE'
   });
 });
 
@@ -125,8 +117,8 @@ brokerRouter.post('/environment', (req: Request, res: Response) => {
 brokerRouter.post('/select', (req: Request, res: Response) => {
   const { broker } = req.body as { broker: BrokerType };
 
-  if (!['CTRADER', 'FIVE_PAISA', 'PAPER'].includes(broker)) {
-    return res.status(400).json({ error: 'Invalid broker. Allowed: CTRADER, FIVE_PAISA, PAPER' });
+  if (!['CTRADER', 'FIVE_PAISA'].includes(broker)) {
+    return res.status(400).json({ error: 'Invalid broker. Allowed: CTRADER, FIVE_PAISA' });
   }
 
   brokerRegistry.setSelectedBroker(broker);
@@ -137,37 +129,13 @@ brokerRouter.post('/select', (req: Request, res: Response) => {
   });
 });
 
-// 5. Update Demo Credentials (Requirement 11)
-brokerRouter.post('/credentials/demo', (req: Request, res: Response) => {
-  const { broker, credentials } = req.body;
-  if (!broker || !credentials) {
-    return res.status(400).json({ error: 'Missing broker or credentials' });
-  }
-
-  brokerRegistry.updateDemoCredentials(broker, credentials);
-  logBrokerAction({
-    source: 'SETTINGS_UI',
-    broker,
-    environment: 'DEMO',
-    account: maskIdentifier(credentials.accountId || credentials.clientId),
-    action: 'UPDATE_DEMO_CREDENTIALS',
-    result: 'SUCCESS'
-  });
-
-  res.json({
-    success: true,
-    message: `${broker} demo credentials updated in secure server memory.`,
-    maskedAccountId: maskIdentifier(credentials.accountId || credentials.clientId)
-  });
-});
-
-// 6. Update Live Credentials with Explicit Warning & Confirmation (Requirement 12)
+// 5. Update Live Credentials with Explicit Warning & Confirmation (Requirement 12)
 brokerRouter.post('/credentials/live', (req: Request, res: Response) => {
   const { broker, credentials, userConfirmedAcknowledge } = req.body;
 
   if (!userConfirmedAcknowledge) {
     return res.status(400).json({
-      error: 'Live credentials can access real-money trading functionality. Explicit confirmation is required before updating.'
+      error: 'Live credentials can access real broker APIs. Explicit confirmation is required before updating.'
     });
   }
 
@@ -187,7 +155,7 @@ brokerRouter.post('/credentials/live', (req: Request, res: Response) => {
 
   res.json({
     success: true,
-    message: `${broker} LIVE credentials configured. Real-money live trading remains guarded.`,
+    message: `${broker} LIVE credentials configured. Real-money live order submission remains permanently locked.`,
     maskedAccountId: maskIdentifier(credentials.accountId || credentials.clientId)
   });
 });
@@ -203,7 +171,7 @@ brokerRouter.get('/account', async (req: Request, res: Response) => {
     res.json(account);
   } catch (err: any) {
     const normalized = normalizeBrokerError(err, broker, environment);
-    res.status(500).json({ error: normalized.message });
+    res.status(500).json({ error: normalized.message, code: normalized.code });
   }
 });
 
@@ -214,7 +182,8 @@ brokerRouter.get('/positions', async (req: Request, res: Response) => {
     const positions = await adapter.getPositions();
     res.json(positions);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    const normalized = normalizeBrokerError(err, brokerRegistry.getSelectedBroker(), brokerRegistry.getEnvironment());
+    res.status(500).json({ error: normalized.message, code: normalized.code });
   }
 });
 
@@ -225,11 +194,12 @@ brokerRouter.get('/orders', async (req: Request, res: Response) => {
     const orders = await adapter.getOpenOrders();
     res.json(orders);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    const normalized = normalizeBrokerError(err, brokerRegistry.getSelectedBroker(), brokerRegistry.getEnvironment());
+    res.status(500).json({ error: normalized.message, code: normalized.code });
   }
 });
 
-// 10. Place Order Interface with Multi-Gate Verification (Requirement 18, 21, 22, 32)
+// 10. Place Order Interface with Multi-Gate Verification & Invariant Enforcement (Section 1, 2, 3)
 brokerRouter.post('/order', async (req: Request, res: Response) => {
   const orderReq = req.body as OrderRequest;
   const env = req.body.environment || brokerRegistry.getEnvironment();
@@ -239,19 +209,20 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
     // 1. Emergency Halt Check
     if (killSwitch.isHalted()) {
       return res.status(403).json({
-        error: 'TRADING HALTED: Emergency Kill Switch is currently active. New orders are blocked.'
+        error: 'TRADING HALTED: Emergency Kill Switch is currently active. New orders are blocked.',
+        code: 'EMERGENCY_STOP_ACTIVE'
       });
     }
 
     // 2. Compatibility check
     const compat = brokerRegistry.validateMarketCompatibility(orderReq.market, broker);
     if (!compat.compatible) {
-      return res.status(400).json({ error: compat.reason });
+      return res.status(400).json({ error: compat.reason, code: 'INVALID_SYMBOL' });
     }
 
     const adapter = brokerRegistry.getAdapter(broker, env);
 
-    // 3. Live Trading Gate (Strict 15-Point Check) if LIVE
+    // 3. Live Trading Gate (Strict 15-Point Pre-Flight Check)
     if (env === 'LIVE') {
       const gateResult = await liveTradingGate.evaluate(adapter, {
         order: orderReq,
@@ -268,11 +239,11 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
 
       if (!gateResult.passed) {
         logBrokerAction({
-          source: 'MANUAL_ORDER_SUBMIT',
+          source: 'ORDER_VALIDATION',
           broker,
           environment: 'LIVE',
           account: 'LIVE_ACCOUNT',
-          action: 'PLACE_ORDER',
+          action: 'VALIDATE_ORDER',
           symbol: orderReq.symbol,
           quantity: orderReq.quantity,
           result: 'BLOCKED',
@@ -281,18 +252,47 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
 
         return res.status(403).json({
           error: 'Live Safety Gate Rejected Order',
+          code: 'SAFETY_GATE_REJECTED',
           details: gateResult.failedReasons
         });
       }
     }
 
+    // Pre-flight validation path
     if (req.body.validateOnly) {
-      return res.json({ status: 'VALIDATED', message: 'Checks passed successfully' });
+      return res.json({
+        status: 'VALIDATED',
+        message: 'Order pre-flight checks passed successfully (Autonomous live execution is disabled).'
+      });
     }
 
-    // 4. Place order via adapter
-    const placedOrder = await adapter.placeOrder(orderReq);
-    res.json(placedOrder);
+    // Stage 5 Execution Boundary: Blocked by Safety Invariant LIVE_AUTO_EXECUTION_ALLOWED === false
+    if (!LIVE_AUTO_EXECUTION_ALLOWED) {
+      logBrokerAction({
+        source: 'DISPATCH_BOUNDARY',
+        broker,
+        environment: env,
+        account: 'LIVE_ACCOUNT',
+        action: 'PLACE_ORDER',
+        symbol: orderReq.symbol,
+        quantity: orderReq.quantity,
+        result: 'BLOCKED',
+        error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED: Autonomous live-money order submission is permanently disabled.'
+      });
+
+      return res.status(403).json({
+        error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
+        code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
+        reason: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
+        message: 'Autonomous live-money order submission is permanently disabled by system safety invariant LIVE_AUTO_EXECUTION_ALLOWED === false.'
+      });
+    }
+
+    // Fallback closed
+    return res.status(403).json({
+      error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
+      code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED'
+    });
   } catch (err: any) {
     const normalized = normalizeBrokerError(err, broker, env);
     res.status(400).json({
