@@ -70,7 +70,17 @@ function extractForexPair(req: Request): string {
 }
 
 // Initialize database on boot
-getDatabase().then(() => {
+getDatabase().then(async () => {
+  const rows = await executeQuery<any>('SELECT key, value FROM system_settings WHERE key IN (?, ?)', ['MAX_TRADE_VALUE_FOREX_USD', 'MAX_TRADE_VALUE_INDIAN_INR']);
+  const persistedLimits: Record<string, number> = {};
+  for (const row of rows) {
+    const value = Number(row.value);
+    if (Number.isFinite(value) && value > 0) persistedLimits[String(row.key)] = value;
+  }
+  updateSystemConfig({
+    maxTradeValueForexUsd: persistedLimits.MAX_TRADE_VALUE_FOREX_USD,
+    maxTradeValueIndianInr: persistedLimits.MAX_TRADE_VALUE_INDIAN_INR
+  });
   console.log('SQLite database initialized successfully');
 }).catch(err => {
   console.error('Failed to initialize SQLite database:', err);
@@ -118,9 +128,30 @@ app.get('/api/config', (req: Request, res: Response) => {
   res.json(getSystemConfig());
 });
 
-app.post('/api/config', (req: Request, res: Response) => {
+app.post('/api/config', async (req: Request, res: Response) => {
   try {
-    const updated = updateSystemConfig(req.body);
+    const requestedForex = req.body?.maxTradeValueForexUsd;
+    const requestedIndian = req.body?.maxTradeValueIndianInr;
+    const updates: any = { ...req.body };
+
+    if (requestedForex !== undefined) {
+      const value = Number(requestedForex);
+      if (!Number.isFinite(value) || value <= 0) return res.status(400).json({ error: 'maxTradeValueForexUsd must be a positive number.' });
+      updates.maxTradeValueForexUsd = value;
+    }
+
+    if (requestedIndian !== undefined) {
+      const value = Number(requestedIndian);
+      if (!Number.isFinite(value) || value <= 0) return res.status(400).json({ error: 'maxTradeValueIndianInr must be a positive number.' });
+      updates.maxTradeValueIndianInr = value;
+    }
+
+    const updated = updateSystemConfig(updates);
+    const now = Date.now();
+    await executeRun(
+      'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?)',
+      ['MAX_TRADE_VALUE_FOREX_USD', String(updated.maxTradeValueForexUsd), now, 'MAX_TRADE_VALUE_INDIAN_INR', String(updated.maxTradeValueIndianInr), now]
+    );
     res.json({ success: true, config: updated });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
