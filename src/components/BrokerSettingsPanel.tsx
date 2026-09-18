@@ -55,7 +55,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
     }
     setSaving(broker);
     try {
-      const credentials = Object.fromEntries(Object.entries(forms[broker]).filter(([, v]) => v.trim() !== ''));
+      const credentials = Object.fromEntries(Object.entries(forms[broker]).filter(([, v]) => String(v).trim() !== ''));
       const res = await fetch('/api/brokers/credentials/live', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

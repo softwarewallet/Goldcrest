@@ -104,8 +104,8 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
         const data = await res.json();
         if (Array.isArray(data)) setTrackedRecords(data);
       }
-    } catch (err) {
-      console.error('Failed to load paper tracking:', err);
+    } catch (err: any) {
+      console.warn('Paper tracking load notice:', err?.message || err);
     }
   }, []);
 
@@ -168,8 +168,8 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
         setTimeout(() => setTrackNotification(null), 4000);
         fetchTracked();
       }
-    } catch (err) {
-      console.error('Paper tracking failed:', err);
+    } catch (err: any) {
+      console.warn('Paper tracking submission notice:', err?.message || err);
     } finally {
       setTrackingLoading(false);
     }
