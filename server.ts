@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
+import { timingSafeEqual } from 'node:crypto';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
@@ -77,7 +78,6 @@ app.post('/api/operator/login', (req: Request, res: Response) => {
   }
   const expected = Buffer.from(configuredKey, 'utf8');
   const actual = Buffer.from(supplied, 'utf8');
-  const { timingSafeEqual } = require('node:crypto') as typeof import('node:crypto');
   if (!timingSafeEqual(expected, actual)) {
     return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Valid operator credentials are required.' });
   }
