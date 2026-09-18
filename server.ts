@@ -31,8 +31,8 @@ import { BrokerError } from './src/brokers/errors';
 import { brokerRouter } from './src/brokers/brokerRoutes';
 import { LIVE_AUTO_EXECUTION_ALLOWED } from './src/brokers/safety/AutoExecutionEngine';
 
-// Phase 3 Machine Learning Engine
-import { mlRouter } from './src/ml/mlRoutes';
+// Phase 3 Machine Learning Engine is retained for internal model compatibility;
+// the public research/training API is retired while the research program is closed.
 
 // Phase 5 Governance Engine
 import { governanceRouter } from './src/governance/governanceRoutes';
