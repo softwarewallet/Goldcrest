@@ -1,4 +1,5 @@
 import { executeQuery, executeRun } from '../database/db';
+import { brokerRegistry } from '../brokers/registry';
 import { firestoreTradeTraceService, TradeTraceData } from './firestoreTradeTraceService';
 
 export type ReconciliationStatus =
@@ -82,6 +83,48 @@ export class ReconciliationService {
       [`recon-${reconciliationId}`, tradeTraceId, JSON.stringify(record), record.timestamp]
     );
     return record;
+  }
+
+  public async captureBrokerSnapshot(broker: 'CTRADER' | 'FIVE_PAISA'): Promise<any> {
+    const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
+    const [account, positions, orders] = await Promise.all([
+      adapter.getAccount(),
+      adapter.getPositions(),
+      adapter.getOpenOrders()
+    ]);
+    const timestamp = Date.now();
+    const snapshot = {
+      id: `BROKER-SNAPSHOT-${broker}-${timestamp}`,
+      broker,
+      environment: 'LIVE',
+      timestamp,
+      account,
+      positions,
+      orders,
+      status: 'CAPTURED'
+    };
+    await executeRun(
+      'INSERT INTO broker_reconciliation_snapshots (id, broker, environment, timestamp, account_json, positions_json, orders_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [snapshot.id, broker, 'LIVE', timestamp, JSON.stringify(account), JSON.stringify(positions), JSON.stringify(orders), snapshot.status]
+    );
+    return snapshot;
+  }
+
+  public async loadBrokerSnapshots(limit=50): Promise<any[]> {
+    const rows = await executeQuery<any>(
+      'SELECT id, broker, environment, timestamp, account_json, positions_json, orders_json, status FROM broker_reconciliation_snapshots ORDER BY timestamp DESC LIMIT ?',
+      [limit]
+    );
+    return rows.map(r => ({
+      id: r.id,
+      broker: r.broker,
+      environment: r.environment,
+      timestamp: Number(r.timestamp),
+      account: JSON.parse(r.account_json),
+      positions: JSON.parse(r.positions_json),
+      orders: JSON.parse(r.orders_json),
+      status: r.status
+    }));
   }
 
   public getLocalRecord(id:string){ return this.localRecords.get(id); }
