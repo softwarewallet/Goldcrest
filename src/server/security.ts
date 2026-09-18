@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 
 const RATE_WINDOW_MS = 60_000;
@@ -98,9 +99,9 @@ export function operatorAuthRequired(req: Request, res: Response, next: NextFunc
     return;
   }
 
-  let mismatch = 0;
-  for (let i = 0; i < configuredKey.length; i++) mismatch |= supplied.charCodeAt(i) ^ configuredKey.charCodeAt(i);
-  if (mismatch !== 0) {
+  const expected = Buffer.from(configuredKey, 'utf8');
+  const actual = Buffer.from(supplied, 'utf8');
+  if (!timingSafeEqual(expected, actual)) {
     res.status(401).json({ error: 'UNAUTHORIZED', message: 'Valid operator credentials are required.' });
     return;
   }
