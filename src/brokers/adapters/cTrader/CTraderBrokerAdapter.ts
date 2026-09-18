@@ -466,7 +466,8 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         this.config.clientId!,
         this.config.clientSecret!,
         this.config.accessToken!,
-        this.isLive
+        this.isLive,
+        match.digits
       );
       const normalized = symbol.replace('/', '').toUpperCase();
       const match = instruments.find(s => s.symbolName.replace('/', '').toUpperCase() === normalized);
