@@ -345,7 +345,54 @@ function initSchema(db: Database) {
       min_rr REAL NOT NULL
     );
 
-    -- 25. Risk Configs & System Settings
+    -- 25. Broker Accounts
+    CREATE TABLE IF NOT EXISTS broker_accounts (
+      id TEXT PRIMARY KEY,
+      broker TEXT NOT NULL,
+      environment TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      account_type TEXT NOT NULL,
+      balance REAL NOT NULL,
+      equity REAL NOT NULL,
+      available_margin REAL NOT NULL,
+      used_margin REAL NOT NULL,
+      free_margin REAL NOT NULL,
+      currency TEXT NOT NULL,
+      connection_status TEXT NOT NULL,
+      server TEXT,
+      permissions_json TEXT,
+      last_update INTEGER NOT NULL,
+      is_live_account INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(broker, environment, account_id)
+    );
+
+    -- 26. Trade Trace Roots
+    CREATE TABLE IF NOT EXISTS trade_traces (
+      trade_trace_id TEXT PRIMARY KEY,
+      payload_json TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    -- 27. Trade Trace Lifecycle Nodes
+    CREATE TABLE IF NOT EXISTS trade_trace_nodes (
+      node_id TEXT PRIMARY KEY,
+      trade_trace_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      timestamp INTEGER NOT NULL
+    );
+
+    -- 28. Trade Notes
+    CREATE TABLE IF NOT EXISTS trade_notes (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      symbol TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    -- 29. Risk Configs & System Settings
     CREATE TABLE IF NOT EXISTS risk_configs (
       id TEXT PRIMARY KEY,
       max_risk_per_trade_pct REAL NOT NULL,
@@ -396,16 +443,22 @@ function seedInitialData(db: Database) {
   // System settings
   const now = Date.now();
   db.run(`INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES 
-    ('TRADING_MODE', 'PAPER', ${now}),
-    ('DATA_STATUS', 'DEMO', ${now}),
+    ('TRADING_MODE', 'LIVE_ONLY', ${now}),
+    ('DATA_STATUS', 'UNAVAILABLE', ${now}),
     ('MODEL_STATUS', 'BASELINE_UNCALIBRATED', ${now}),
     ('DEFAULT_RISK_PCT', '1.0', ${now}),
     ('STRIKE_DEPTH', '7', ${now});
   `);
 
+  // Enforce LIVE_ONLY persistence and remove obsolete PAPER/DEMO defaults.
+  db.run(`UPDATE system_settings SET value = 'LIVE_ONLY', updated_at = ${now} WHERE key = 'TRADING_MODE';
+    UPDATE system_settings SET value = 'UNAVAILABLE', updated_at = ${now} WHERE key = 'DATA_STATUS';
+    UPDATE risk_configs SET trading_mode = 'LIVE_ONLY';
+  `);
+
   // Risk configs
   db.run(`INSERT OR IGNORE INTO risk_configs (id, max_risk_per_trade_pct, max_daily_loss_pct, max_open_positions, trading_mode) VALUES 
-    ('default_risk', 1.0, 3.0, 5, 'PAPER');
+    ('default_risk', 1.0, 3.0, 5, 'LIVE_ONLY');
   `);
 
   // Portfolio
