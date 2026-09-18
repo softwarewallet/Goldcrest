@@ -3,7 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
-import { apiRateLimit, blockLegacyTradingModes, operatorAuthRequired, requestId, securityHeaders } from './src/server/security';
+import { apiRateLimit, blockLegacyTradingModes, operatorAuthConfigured, operatorAuthRequired, requestId, securityHeaders, issueOperatorSession, setOperatorSessionCookie, clearOperatorSessionCookie, isOperatorSessionValid } from './src/server/security';
 
 import { getDatabase, getDatabaseStats, executeQuery, executeRun } from './src/database/db';
 import { getForexSessionState, getIndianSessionState } from './src/markets/common/session';
@@ -52,6 +52,44 @@ app.use(requestId);
 app.use(apiRateLimit);
 app.use(blockLegacyTradingModes);
 app.use(express.json({ limit: '512kb' }));
+
+// Operator authentication is a same-origin, HttpOnly session derived from the
+// server-side operator API key. The secret is never embedded in the client bundle.
+app.get('/api/operator/session', (req: Request, res: Response) => {
+  res.json({
+    configured: operatorAuthConfigured(),
+    authenticated: isOperatorSessionValid(req),
+    ttlHours: 8
+  });
+});
+
+app.post('/api/operator/login', (req: Request, res: Response) => {
+  const configuredKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
+  if (!configuredKey) {
+    return res.status(503).json({
+      error: 'OPERATOR_AUTH_NOT_CONFIGURED',
+      message: 'Configure GOLDCREST_OPERATOR_API_KEY before using operator authentication.'
+    });
+  }
+  const supplied = String(req.body?.key || '');
+  if (!supplied || supplied.length !== configuredKey.length) {
+    return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Valid operator credentials are required.' });
+  }
+  const expected = Buffer.from(configuredKey, 'utf8');
+  const actual = Buffer.from(supplied, 'utf8');
+  const { timingSafeEqual } = require('node:crypto') as typeof import('node:crypto');
+  if (!timingSafeEqual(expected, actual)) {
+    return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Valid operator credentials are required.' });
+  }
+  setOperatorSessionCookie(res, issueOperatorSession(configuredKey));
+  return res.json({ authenticated: true, expiresInHours: 8 });
+});
+
+app.post('/api/operator/logout', (_req: Request, res: Response) => {
+  clearOperatorSessionCookie(res);
+  res.json({ authenticated: false });
+});
+
 app.use('/api/brokers', operatorAuthRequired, brokerRouter);
 app.use('/api/ml', mlRouter);
 app.use('/api/governance', operatorAuthRequired, governanceRouter);
