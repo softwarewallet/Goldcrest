@@ -609,7 +609,9 @@ app.get('/api/india/sessions', (req: Request, res: Response) => {
 app.get('/api/india/candles/:symbol', async (req: Request, res: Response) => {
   const symbol = req.params.symbol.toUpperCase();
   try {
-    const candles = await indiaProvider.fetchCandles(symbol, 60);
+    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE');
+    if (!adapter.getHistoricalCandles) throw new Error('Authoritative 5paisa historical market-data capability is unavailable.');
+    const candles = await adapter.getHistoricalCandles(symbol, '15m', 60);
     res.json(candles);
   } catch (err) {
     res.json([]);
@@ -644,11 +646,13 @@ app.get(['/api/candles/:symbol', '/api/candles/:part1/:part2'], async (req: Requ
 
     const isForex = symbol.includes('/') || FOREX_PAIRS.some(p => p.symbol.toUpperCase() === symbol);
     if (isForex) {
-      const candles = forexProvider.getCandles(symbol, 80);
-      return res.json(candles || []);
+      const candles = await getLiveAnchoredCandles(symbol, '15M', 80);
+      return res.json(candles);
     } else {
-      const candles = await indiaProvider.fetchCandles(symbol, 60);
-      return res.json(candles || []);
+      const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE');
+      if (!adapter.getHistoricalCandles) throw new Error('Authoritative 5paisa historical market-data capability is unavailable.');
+      const candles = await adapter.getHistoricalCandles(symbol, '15m', 60);
+      return res.json(candles);
     }
   } catch (err: any) {
     console.error(`Error in /api/candles endpoint:`, err);
