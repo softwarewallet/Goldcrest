@@ -6,7 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import { apiRateLimit, blockLegacyTradingModes, operatorAuthConfigured, operatorAuthRequired, requestId, securityHeaders, issueOperatorSession, setOperatorSessionCookie, clearOperatorSessionCookie, isOperatorSessionValid } from './src/server/security';
 
-import { getDatabase, getDatabaseStats, executeQuery, executeRun } from './src/database/db';
+import { getDatabase, getDatabaseStats, executeQuery, executeRun, persistDatabase } from './src/database/db';
 import { getForexSessionState, getIndianSessionState } from './src/markets/common/session';
 import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments';
 import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
@@ -878,7 +878,6 @@ async function startServer() {
     server.close(() => {
       try {
         // Persist the authoritative SQLite state before process exit.
-        const { persistDatabase } = require('./src/database/db');
         persistDatabase();
       } catch (err: any) {
         console.error('SQLite shutdown persistence failed:', err?.message || err);
