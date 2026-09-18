@@ -172,7 +172,7 @@ brokerRouter.post('/credentials/live', (req: Request, res: Response) => {
 
   res.json({
     success: true,
-    message: `${broker} LIVE credentials configured. Real-money autonomous order submission remains permanently locked.`,
+    message: `${broker} LIVE credentials configured. Real-money autonomous order submission is enabled only when the server-side live safety gate passes.`,
     maskedAccountId: maskIdentifier(credentials.accountId || credentials.clientId)
   });
 });
