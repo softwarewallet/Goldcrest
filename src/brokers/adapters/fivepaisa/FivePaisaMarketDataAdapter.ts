@@ -21,8 +21,9 @@ export interface UnderlyingMarketData {
   prevWeekLow: number;
   dataSource: string;
   dataEnvironment: TradingEnvironment;
-  dataFreshness: 'FRESH' | 'DELAYED' | 'STALE';
+  dataFreshness: 'FRESH' | 'DELAYED' | 'STALE' | 'UNAVAILABLE';
   timestamp: number;
+  error?: string;
 }
 
 export class FivePaisaMarketDataAdapter {
@@ -37,14 +38,19 @@ export class FivePaisaMarketDataAdapter {
   }
 
   normalizeQuote(feed: FivePaisaMarketFeedItem): NormalizedQuote {
-    const spread = feed.AskPrice > 0 && feed.BidPrice > 0
-      ? Number((feed.AskPrice - feed.BidPrice).toFixed(2))
-      : 0.05;
+    const bid = Number(feed.BidPrice);
+    const ask = Number(feed.AskPrice);
+
+    if (!feed.Symbol || !Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0 || ask < bid) {
+      throw new Error('INVALID_MARKET_DATA: 5Paisa quote is missing valid authoritative bid/ask values');
+    }
+
+    const spread = Number((ask - bid).toFixed(2));
 
     return {
       symbol: feed.Symbol,
-      bid: feed.BidPrice,
-      ask: feed.AskPrice,
+      bid,
+      ask,
       spread,
       timestamp: Date.now(),
       source: '5PAISA_FEED',
@@ -55,48 +61,58 @@ export class FivePaisaMarketDataAdapter {
 
   getUnderlyingData(symbol: string, spotPrice?: number): UnderlyingMarketData {
     const config = getIndianUnderlyingConfig(symbol);
-    const spot = spotPrice || (
-      symbol === 'NIFTY' ? 24850.50 :
-      symbol === 'BANKNIFTY' ? 52120.00 :
-      symbol === 'FINNIFTY' ? 23410.25 :
-      symbol === 'MIDCPNIFTY' ? 12850.80 :
-      symbol === 'SENSEX' ? 81340.50 : 25000.00
-    );
 
-    const prevClose = Number((spot * 0.996).toFixed(2));
-    const change = Number((spot - prevClose).toFixed(2));
-    const changePercent = Number(((change / prevClose) * 100).toFixed(2));
-    const open = Number((prevClose + change * 0.4).toFixed(2));
-    const high = Number((Math.max(spot, open) + spot * 0.004).toFixed(2));
-    const low = Number((Math.min(spot, open) - spot * 0.003).toFixed(2));
-    const vwap = Number(((high + low + spot) / 3).toFixed(2));
+    if (spotPrice !== undefined) {
+      if (!Number.isFinite(spotPrice) || spotPrice <= 0) {
+        throw new Error('INVALID_MARKET_DATA: supplied spot price is invalid');
+      }
 
-    const prevDayHigh = Number((prevClose * 1.006).toFixed(2));
-    const prevDayLow = Number((prevClose * 0.994).toFixed(2));
-    const prevWeekHigh = Number((prevClose * 1.018).toFixed(2));
-    const prevWeekLow = Number((prevClose * 0.982).toFixed(2));
+      return {
+        symbol: config.symbol,
+        name: config.name,
+        ltp: spotPrice,
+        open: spotPrice,
+        high: spotPrice,
+        low: spotPrice,
+        close: spotPrice,
+        prevClose: spotPrice,
+        change: 0,
+        changePercent: 0,
+        volume: 0,
+        vwap: spotPrice,
+        prevDayHigh: spotPrice,
+        prevDayLow: spotPrice,
+        prevWeekHigh: spotPrice,
+        prevWeekLow: spotPrice,
+        dataSource: '5PAISA_XSTREAM',
+        dataEnvironment: this.environment,
+        dataFreshness: 'FRESH',
+        timestamp: Date.now()
+      };
+    }
 
     return {
       symbol: config.symbol,
       name: config.name,
-      ltp: spot,
-      open,
-      high,
-      low,
-      close: spot,
-      prevClose,
-      change,
-      changePercent,
-      volume: 14250000,
-      vwap,
-      prevDayHigh,
-      prevDayLow,
-      prevWeekHigh,
-      prevWeekLow,
+      ltp: 0,
+      open: 0,
+      high: 0,
+      low: 0,
+      close: 0,
+      prevClose: 0,
+      change: 0,
+      changePercent: 0,
+      volume: 0,
+      vwap: 0,
+      prevDayHigh: 0,
+      prevDayLow: 0,
+      prevWeekHigh: 0,
+      prevWeekLow: 0,
       dataSource: '5PAISA_XSTREAM',
       dataEnvironment: this.environment,
-      dataFreshness: 'FRESH',
-      timestamp: Date.now()
+      dataFreshness: 'UNAVAILABLE',
+      timestamp: Date.now(),
+      error: 'MARKET_DATA_UNAVAILABLE: no authoritative 5Paisa underlying snapshot was supplied'
     };
   }
 }
