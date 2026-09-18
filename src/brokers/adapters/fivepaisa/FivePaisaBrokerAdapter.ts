@@ -356,29 +356,8 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       return res;
     } catch (err: any) {
       const maskedClient = maskIdentifier(this.config.clientCode || this.config.userId);
-      if (this.config.clientCode || this.config.userId || this.config.appName) {
-        const res: ConnectionTestResult = {
-          broker: 'FIVE_PAISA',
-          environment: this.environment,
-          connected: true,
-          account: maskedClient,
-          accountType: this.isLive ? 'LIVE' : 'DEMO',
-          balance: 500000,
-          equity: 500000,
-          currency: 'INR',
-          server: this.isLive ? '5paisa-Xstream-OpenAPI-Live' : '5paisa-DevOpenAPI-Sandbox',
-          permissions: ['NSE_EQUITY', 'NSE_FNO'],
-          timestamp: Date.now()
-        };
-        this.status = 'CONNECTED';
-        this.lastConnectionTest = res;
-        this.logAction('TEST_CONNECTION', 'SUCCESS', this.config.clientCode || this.config.userId || '');
-        return res;
-      }
-
       this.status = 'AUTHENTICATION_FAILED';
       this.lastError = err.message;
-
       const res: ConnectionTestResult = {
         broker: 'FIVE_PAISA',
         environment: this.environment,
@@ -386,12 +365,11 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
         account: maskedClient,
         accountType: this.isLive ? 'LIVE' : 'DEMO',
         error: err.message,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        latency: Date.now() - start
       };
       this.lastConnectionTest = res;
-      this.logAction('TEST_CONNECTION', 'FAILURE', this.config.clientCode || this.config.userId || '', {
-        error: err.message
-      });
+      this.logAction('TEST_CONNECTION', 'FAILURE', this.config.clientCode || this.config.userId || '', { error: err.message });
       return res;
     }
   }
@@ -524,73 +502,64 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getQuote(symbol: string): Promise<NormalizedQuote> {
-    const isOption = symbol.includes('_CE') || symbol.includes('_PE');
-    let bid = 0;
-    let ask = 0;
-    let spread = 0.05;
+    this.validateCredentials();
 
-    if (this.environment === 'LIVE') {
-      this.validateCredentials();
-      try {
-        await this.authenticate();
-        if (this.config.accessToken) {
-          // Live API quote fetch via 5paisa market feed session
-          const feedRes = await fetch('https://OpenAPI.5paisa.com/VendorsAPI/Service1.svc/V1/MarketFeed', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${this.config.accessToken}`,
-              'Content-Type': 'application/json',
-              '5Paisa-API-Uid': 'ka7SFqAU6SC'
-            },
-            body: JSON.stringify({
-              head: { Key: this.config.userKey },
-              body: { ScripCode: symbol }
-            })
-          });
-          if (feedRes.ok) {
-            const feedData = await feedRes.json();
-            if (feedData?.body?.LastRate) {
-              bid = Number(feedData.body.LastRate);
-              ask = bid + 0.50;
-              spread = 0.50;
-            }
-          }
-        }
-      } catch (e) {
-        // Fallback to standard live pricing table
-      }
+    if (this.environment !== 'LIVE') {
+      throw new BrokerError('UNAVAILABLE', 'Only LIVE broker market data is supported.', 'FIVE_PAISA', this.environment);
     }
 
-    if (bid === 0) {
-      if (symbol.includes('NIFTY') && !isOption) {
-        bid = 24850.25;
-        ask = 24850.75;
-        spread = 0.50;
-      } else if (symbol.includes('BANKNIFTY') && !isOption) {
-        bid = 52120.00;
-        ask = 52121.50;
-        spread = 1.50;
-      } else if (isOption) {
-        bid = 142.50;
-        ask = 143.10;
-        spread = 0.60;
-      } else {
-        bid = 1000.00;
-        ask = 1000.50;
-        spread = 0.50;
+    try {
+      await this.authenticate();
+      if (!this.config.accessToken) {
+        throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
       }
-    }
 
-    return {
-      symbol,
-      bid,
-      ask,
-      spread,
-      timestamp: Date.now(),
-      source: this.environment === 'LIVE' ? '5PAISA_LIVE_API_FEED' : '5PAISA_FEED',
-      environment: this.environment,
-      status: 'FRESH'
-    };
+      const feedRes = await fetch('https://OpenAPI.5paisa.com/VendorsAPI/Service1.svc/V1/MarketFeed', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.config.accessToken}`,
+          'Content-Type': 'application/json',
+          '5Paisa-API-Uid': 'ka7SFqAU6SC'
+        },
+        body: JSON.stringify({
+          head: { Key: this.config.userKey },
+          body: { ScripCode: symbol }
+        })
+      });
+
+      if (!feedRes.ok) {
+        throw new BrokerError('BROKER_UNAVAILABLE', `5paisa market feed HTTP ${feedRes.status}: ${feedRes.statusText}`, 'FIVE_PAISA', this.environment);
+      }
+
+      const feedData = await feedRes.json();
+      const candidates = [
+        feedData?.body?.Data,
+        feedData?.body?.data,
+        feedData?.body?.MarketFeed,
+        feedData?.body?.MarketFeedData
+      ];
+      const item: any = candidates.flatMap(v => Array.isArray(v) ? v : v ? [v] : [])[0];
+
+      const bid = Number(item?.BidPrice);
+      const ask = Number(item?.AskPrice);
+      if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0 || ask < bid) {
+        throw new BrokerError('UNAVAILABLE', `5paisa returned no authoritative bid/ask quote for ${symbol}; synthetic pricing is disabled.`, 'FIVE_PAISA', this.environment);
+      }
+
+      return {
+        symbol,
+        bid,
+        ask,
+        spread: ask - bid,
+        timestamp: Date.now(),
+        source: '5PAISA_LIVE_API_FEED',
+        environment: 'LIVE',
+        status: 'FRESH'
+      };
+    } catch (err: any) {
+      if (err instanceof BrokerError) throw err;
+      throw new BrokerError('BROKER_UNAVAILABLE', `5paisa authoritative quote retrieval failed: ${err?.message || String(err)}`, 'FIVE_PAISA', this.environment, err);
+    }
   }
 
   async getInstruments(): Promise<BrokerInstrument[]> {
