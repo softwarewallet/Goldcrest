@@ -58,50 +58,15 @@ export class ModelRegistry {
   /**
    * Promotes candidate model to PRODUCTION if it satisfies strict quant gates.
    */
-  public promoteToProduction(modelId: string, approvedBy: string = 'QUANT_LEAD'): {
+  public promoteToProduction(_modelId: string, _approvedBy: string = 'QUANT_LEAD'): {
     success: boolean;
     reason?: string;
     model?: ModelRegistryEntry;
   } {
-    const entry = this.registry.get(modelId);
-    if (!entry) {
-      return { success: false, reason: `Model ${modelId} not found` };
-    }
-
-    const valMetrics = entry.metrics.validation;
-    if (valMetrics.winRate < 0.50) {
-      return {
-        success: false,
-        reason: `Promotion rejected: Validation win rate (${(valMetrics.winRate * 100).toFixed(1)}%) is below 50% threshold.`
-      };
-    }
-
-    if (valMetrics.profitFactor < 1.1) {
-      return {
-        success: false,
-        reason: `Promotion rejected: Validation profit factor (${valMetrics.profitFactor}) is below 1.1 minimum threshold.`
-      };
-    }
-
-    if (valMetrics.brierScore > 0.26) {
-      return {
-        success: false,
-        reason: `Promotion rejected: Brier calibration score (${valMetrics.brierScore}) is too high (poor probability calibration).`
-      };
-    }
-
-    // Demote any current production model in this market to RETIRED
-    for (const [id, m] of this.registry.entries()) {
-      if (m.market === entry.market && m.status === 'PRODUCTION' && id !== modelId) {
-        m.status = 'RETIRED';
-      }
-    }
-
-    entry.status = 'PRODUCTION';
-    entry.approvedBy = approvedBy;
-    entry.approvedAt = Date.now();
-
-    return { success: true, model: entry };
+    return {
+      success: false,
+      reason: 'Model promotion is disabled while the current research program is closed. No candidate may be promoted to production through this runtime method.'
+    };
   }
 
   private seedDefaultProductionModels(): void {
