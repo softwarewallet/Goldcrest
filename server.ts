@@ -3,7 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
-import { apiRateLimit, blockLegacyTradingModes, requestId, securityHeaders } from './src/server/security';
+import { apiRateLimit, blockLegacyTradingModes, operatorAuthRequired, requestId, securityHeaders } from './src/server/security';
 
 import { getDatabase, getDatabaseStats, executeQuery, executeRun } from './src/database/db';
 import { getForexSessionState, getIndianSessionState } from './src/markets/common/session';
@@ -52,9 +52,9 @@ app.use(requestId);
 app.use(apiRateLimit);
 app.use(blockLegacyTradingModes);
 app.use(express.json({ limit: '512kb' }));
-app.use('/api/brokers', brokerRouter);
+app.use('/api/brokers', operatorAuthRequired, brokerRouter);
 app.use('/api/ml', mlRouter);
-app.use('/api/governance', governanceRouter);
+app.use('/api/governance', operatorAuthRequired, governanceRouter);
 
 
 const forexProviderV2 = new ForexDemoProvider();
@@ -148,7 +148,7 @@ app.get('/api/config', (req: Request, res: Response) => {
   res.json(getSystemConfig());
 });
 
-app.post('/api/config', async (req: Request, res: Response) => {
+app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     const requestedForex = req.body?.maxTradeValueForexUsd;
     const requestedIndian = req.body?.maxTradeValueIndianInr;
@@ -551,7 +551,7 @@ app.post('/api/paper/trades/close', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/notes', async (req: Request, res: Response) => {
+app.get('/api/notes', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     const rows = await executeQuery<any>('SELECT id, title, content, symbol, created_at, updated_at FROM trade_notes ORDER BY created_at DESC');
     const notes = rows.map(r => ({
@@ -568,7 +568,7 @@ app.get('/api/notes', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/notes', async (req: Request, res: Response) => {
+app.post('/api/notes', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     const { title, content, symbol } = req.body;
     const id = `note_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -583,7 +583,7 @@ app.post('/api/notes', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/notes/:id', async (req: Request, res: Response) => {
+app.delete('/api/notes/:id', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     await executeRun('DELETE FROM trade_notes WHERE id = ?', [req.params.id]);
     res.json({ success: true });
@@ -722,7 +722,7 @@ app.get('/api/economic-events', (req: Request, res: Response) => {
 });
 
 // 9. Database Stats & Diagnostics
-app.get('/api/db/stats', async (req: Request, res: Response) => {
+app.get('/api/db/stats', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     const stats = await getDatabaseStats();
     res.json(stats);
