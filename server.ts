@@ -36,6 +36,7 @@ import { LIVE_AUTO_EXECUTION_ALLOWED } from './src/brokers/safety/AutoExecutionE
 
 // Phase 5 Governance Engine
 import { governanceRouter } from './src/governance/governanceRoutes';
+import { reconciliationService } from './src/services/reconciliationService';
 
 // Legacy demo execution is retired; LIVE_ONLY production mode is enforced by the server safety layer.
 import { brokerRegistry } from './src/brokers/registry';
