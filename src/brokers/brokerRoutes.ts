@@ -2,11 +2,12 @@ import { Router, Request, Response } from 'express';
 import { brokerRegistry } from './registry';
 import { killSwitch } from './safety/KillSwitch';
 import { liveTradingGate } from './safety/LiveTradingGate';
-import { autoExecutionEngine, LIVE_AUTO_EXECUTION_ALLOWED } from './safety/AutoExecutionEngine';
+import { autoExecutionEngine } from './safety/AutoExecutionEngine';
 import { getAuditLogs, logBrokerAction, maskIdentifier } from './auditLog';
 import { BrokerType, TradingEnvironment, OrderRequest } from './types';
 import { normalizeBrokerError } from './errors';
 import { reconciliationService } from '../services/reconciliationService';
+import { getForexSessionState, getIndianSessionState } from '../markets/common/session';
 import { claimExecutionIntent, completeExecutionIntent } from '../services/executionIntentService';
 
 export const brokerRouter = Router();
@@ -293,16 +294,32 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       }
     }
 
+    const account = await adapter.getAccount();
+    const positions = await adapter.getPositions();
+    const isMarketOpen = orderReq.market === 'FOREX'
+      ? !getForexSessionState().activeSessions.includes('CLOSED (WEEKEND)')
+      : getIndianSessionState().isOpen;
+    const currentExposure = positions.reduce((sum, position) => {
+      const price = Number(position.currentPrice || position.entryPrice || 0);
+      const quantity = Number(position.quantity || 0);
+      return sum + (price > 0 && quantity > 0 ? price * quantity : 0);
+    }, 0);
+    const maxAllowedExposure = Math.max(Number(account.equity || 0), 1);
+    const dailyLossLimit = Math.max(
+      Number(account.balance || 0) * (Number((await import('../services/configService')).getSystemConfig().maxDailyLossPct) / 100),
+      1
+    );
+
     const gateResult = await liveTradingGate.evaluate(adapter, {
       order: orderReq,
       signalAgeMs: 15000,
       currentQuote: quote,
-      isMarketOpen: true,
+      isMarketOpen,
       dailyRealizedLoss: 0,
-      dailyLossLimit: 5000,
-      totalAccountExposure: 10000,
-      maxAllowedExposure: 50000,
-      activePositionsCount: (await adapter.getPositions()).length,
+      dailyLossLimit,
+      totalAccountExposure: currentExposure,
+      maxAllowedExposure,
+      activePositionsCount: positions.length,
       maxOpenPositions: 5
     });
 
@@ -331,7 +348,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
         status: 'VALIDATED',
         broker,
         market: orderReq.market,
-        message: 'Order pre-flight checks passed. Autonomous live execution is operational.'
+        message: 'Order pre-flight checks passed. Live dispatch is permitted by the current server controls.'
       });
     }
 
