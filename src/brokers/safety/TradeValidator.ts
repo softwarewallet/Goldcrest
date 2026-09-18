@@ -2,6 +2,7 @@ import { OrderRequest, TradingEnvironment, BrokerType, BrokerInstrument } from '
 import { BrokerError } from '../errors';
 import { brokerRegistry } from '../registry';
 import { killSwitch } from './KillSwitch';
+import { getSystemConfig } from '../../services/configService';
 
 export interface SignalValidationInput {
   signalId?: string;
@@ -31,6 +32,7 @@ export interface TradeValidationResult {
     spreadPassed: boolean;
     duplicateCheckPassed: boolean;
     orderParametersPassed: boolean;
+    maximumTradeValuePassed: boolean;
   };
 }
 
@@ -91,7 +93,8 @@ export class TradeValidator {
       riskRewardPassed: true,
       spreadPassed: true,
       duplicateCheckPassed: true,
-      orderParametersPassed: true
+      orderParametersPassed: true,
+      maximumTradeValuePassed: true
     };
 
     // 1. Emergency Stop Check
@@ -164,6 +167,44 @@ export class TradeValidator {
           };
         }
       }
+    }
+
+    // 6. Per-broker maximum trade value hard limit.
+    // This check runs in TradeValidator because the signal-driven execution
+    // pipeline must enforce the same limit even when it does not invoke the
+    // HTTP broker route /api/brokers/order.
+    const config = getSystemConfig();
+    const isForex = input.market === 'FOREX';
+    const maxTradeValue = isForex ? config.maxTradeValueForexUsd : config.maxTradeValueIndianInr;
+    const referencePrice = order.price && order.price > 0 ? order.price : input.currentPrice;
+    const quoteCurrency = isForex ? input.symbol.replace(/[^A-Z]/g, '').slice(-3) : 'INR';
+    const tradeValue = Number(order.quantity) * Number(referencePrice);
+    let maximumTradeValuePassed = Number.isFinite(maxTradeValue) && maxTradeValue > 0 && Number.isFinite(tradeValue) && tradeValue > 0;
+
+    if (maximumTradeValuePassed && isForex && quoteCurrency !== 'USD') {
+      maximumTradeValuePassed = false;
+      return {
+        valid: false,
+        rejectionReason: `MAX_TRADE_VALUE_UNVERIFIABLE: Forex pair ${input.symbol} is quoted in ${quoteCurrency}; USD conversion is unavailable, so the configured USD limit cannot be safely verified.`,
+        checks: { ...checks, maximumTradeValuePassed }
+      };
+    }
+
+    if (maximumTradeValuePassed && tradeValue > maxTradeValue) {
+      maximumTradeValuePassed = false;
+      return {
+        valid: false,
+        rejectionReason: `MAX_TRADE_VALUE_EXCEEDED: Trade value ${tradeValue.toFixed(2)} ${isForex ? 'USD' : 'INR'} exceeds the configured maximum of ${maxTradeValue.toFixed(2)} ${isForex ? 'USD' : 'INR'} for ${isForex ? 'cTrader' : '5paisa'}.`,
+        checks: { ...checks, maximumTradeValuePassed }
+      };
+    }
+
+    if (!maximumTradeValuePassed) {
+      return {
+        valid: false,
+        rejectionReason: 'MAX_TRADE_VALUE_INVALID: Maximum trade value could not be safely calculated or configured limit is invalid.',
+        checks: { ...checks, maximumTradeValuePassed }
+      };
     }
 
     // 6. Quantity and Order Parameters
