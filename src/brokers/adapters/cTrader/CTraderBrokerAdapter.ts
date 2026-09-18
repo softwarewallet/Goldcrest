@@ -22,6 +22,7 @@ import {
   fetchLiveCTraderAccountDetails,
   fetchCTraderSymbols,
   fetchLiveCTraderQuote,
+  submitLiveCTraderOrder,
   fetchCTraderTrendbars,
   fetchCTraderReconcileState,
   CTraderRawAccount
@@ -600,12 +601,14 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async placeOrder(order: OrderRequest): Promise<NormalizedOrder> {
+    this.syncConfig();
     this.validateCredentials();
 
-    // cTrader only supports MARKET, LIMIT, STOP
+    if (!this.isLive) {
+      throw new BrokerError('ENVIRONMENT_MISMATCH', 'Autonomous execution is available only for cTrader LIVE.', 'CTRADER', this.environment);
+    }
     this.validateOrderTypeSupport(order.orderType, ['MARKET', 'LIMIT', 'STOP']);
 
-    // Market check: cTrader is strictly Forex / Metals
     if (order.market !== 'FOREX') {
       throw new BrokerError(
         'INVALID_SYMBOL',
@@ -615,14 +618,44 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       );
     }
 
-    const orderId = `ctrader_${this.environment.toLowerCase()}_${Date.now()}`;
-    const fillPrice = order.price;
-    if (order.orderType === 'MARKET' && (!Number.isFinite(fillPrice) || Number(fillPrice) <= 0)) {
-      throw new BrokerError('UNAVAILABLE', 'A market order requires an authoritative current price; no synthetic fill price is permitted.', 'CTRADER', this.environment);
+    const raw = await this.resolveRawAccount();
+    const symbols = await fetchCTraderSymbols(
+      raw.ctidTraderAccountId,
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      raw.isLive
+    );
+    const normalizedSymbol = order.symbol.replace('/', '').toUpperCase();
+    const symbol = symbols.find(s => s.symbolName.replace('/', '').toUpperCase() === normalizedSymbol);
+    if (!symbol) {
+      throw new BrokerError('INVALID_SYMBOL', `cTrader symbol ${order.symbol} was not found in the authenticated account symbol list.`, 'CTRADER', this.environment);
     }
 
+    const clientOrderId = (order.signalId || order.strategyId || `gc-${Date.now()}`).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 50) || `gc-${Date.now()}`;
+    const submitted = await submitLiveCTraderOrder(
+      raw.ctidTraderAccountId,
+      symbol.symbolId,
+      order.orderType as 'MARKET' | 'LIMIT' | 'STOP',
+      order.side,
+      order.quantity,
+      order.price,
+      order.stopLoss,
+      order.takeProfit,
+      clientOrderId,
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      raw.isLive
+    );
+
+    if (submitted.status === 'REJECTED') {
+      throw new BrokerError('ORDER_REJECTED', 'cTrader rejected the live order.', 'CTRADER', this.environment);
+    }
+
+    const brokerOrderId = String(submitted.orderId);
     const normalized: NormalizedOrder = {
-      id: orderId,
+      id: `ctrader-${brokerOrderId}`,
       broker: 'CTRADER',
       environment: this.environment,
       market: 'FOREX',
@@ -630,49 +663,25 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       side: order.side,
       orderType: order.orderType,
       quantity: order.quantity,
-      price: order.price,
+      price: submitted.executionPrice ?? order.price,
       stopLoss: order.stopLoss,
       takeProfit: order.takeProfit,
-      status: order.orderType === 'MARKET' ? 'FILLED' : 'ACCEPTED',
-      filledQuantity: order.orderType === 'MARKET' ? order.quantity : 0,
-      averageFillPrice: order.orderType === 'MARKET' ? fillPrice : undefined,
+      status: submitted.status,
+      filledQuantity: submitted.executedVolume ?? 0,
+      averageFillPrice: submitted.executionPrice,
       commission: undefined,
       timestamp: Date.now(),
-      brokerOrderId: `ct_ord_${orderId}`,
+      brokerOrderId,
       strategyId: order.strategyId,
       signalId: order.signalId
     };
 
-    this.openOrders.set(orderId, normalized);
-
-    if (order.orderType === 'MARKET') {
-      const posId = `ct_pos_${Date.now()}`;
-      const position: NormalizedPosition = {
-        id: posId,
-        broker: 'CTRADER',
-        environment: this.environment,
-        market: 'FOREX',
-        symbol: order.symbol,
-        side: order.side,
-        quantity: order.quantity,
-        entryPrice: fillPrice,
-        currentPrice: fillPrice,
-        stopLoss: order.stopLoss,
-        takeProfit: order.takeProfit,
-        unrealizedPnL: 0,
-        realizedPnL: 0,
-        currency: 'USD',
-        timestamp: Date.now(),
-        brokerPositionId: posId
-      };
-      this.openPositions.set(posId, position);
-    }
-
     this.logAction('PLACE_ORDER', 'SUCCESS', this.config.accountId || '', {
       symbol: order.symbol,
       quantity: order.quantity,
-      price: fillPrice,
-      orderId
+      brokerOrderId,
+      status: submitted.status,
+      clientOrderId
     });
 
     return normalized;
