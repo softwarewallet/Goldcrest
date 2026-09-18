@@ -1,0 +1,197 @@
+import { OrderRequest, TradingEnvironment, BrokerType, BrokerInstrument } from '../types';
+import { BrokerError } from '../errors';
+import { brokerRegistry } from '../registry';
+import { killSwitch } from './KillSwitch';
+
+export interface SignalValidationInput {
+  signalId?: string;
+  strategyId?: string;
+  market: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  signalTimestamp: number;
+  entryPrice: number;
+  currentPrice: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  spread: number;
+  broker: BrokerType;
+  environment: TradingEnvironment;
+}
+
+export interface TradeValidationResult {
+  valid: boolean;
+  rejectionReason?: string;
+  checks: {
+    emergencyHaltPassed: boolean;
+    marketCompatibilityPassed: boolean;
+    signalAgePassed: boolean;
+    priceProximityPassed: boolean;
+    riskRewardPassed: boolean;
+    spreadPassed: boolean;
+    duplicateCheckPassed: boolean;
+    orderParametersPassed: boolean;
+  };
+}
+
+export class TradeValidator {
+  // Configurable maximum signal age (Requirement 27)
+  private maxSignalAgeForexMs: number = 5 * 60 * 1000; // 5 minutes default
+  private maxSignalAgeOptionsMs: number = 2 * 60 * 1000; // 2 minutes default
+
+  // Active positions tracker for duplicate protection (Requirement 28)
+  private activeStrategyPositions: Map<string, { symbol: string; side: string; strategyId?: string; signalId?: string }> = new Map();
+
+  setMaxSignalAge(forexMinutes: number, optionsMinutes: number): void {
+    this.maxSignalAgeForexMs = forexMinutes * 60 * 1000;
+    this.maxSignalAgeOptionsMs = optionsMinutes * 60 * 1000;
+  }
+
+  getMaxSignalAgeConfig() {
+    return {
+      forexMinutes: this.maxSignalAgeForexMs / 60000,
+      optionsMinutes: this.maxSignalAgeOptionsMs / 60000
+    };
+  }
+
+  registerActivePosition(id: string, symbol: string, side: string, strategyId?: string, signalId?: string) {
+    this.activeStrategyPositions.set(id, { symbol, side, strategyId, signalId });
+  }
+
+  unregisterActivePosition(id: string) {
+    this.activeStrategyPositions.delete(id);
+  }
+
+  resetTracking(): void {
+    this.activeStrategyPositions.clear();
+  }
+
+  isDuplicatePosition(symbol: string, side: string, strategyId?: string, signalId?: string): { isDuplicate: boolean; reason?: string } {
+    for (const [_, pos] of this.activeStrategyPositions.entries()) {
+      if (pos.symbol === symbol && pos.side === side) {
+        return {
+          isDuplicate: true,
+          reason: `Active ${side} position already exists for ${symbol}`
+        };
+      }
+    }
+    return { isDuplicate: false };
+  }
+
+  validateSignalAndOrder(
+    input: SignalValidationInput,
+    order: OrderRequest,
+    instrument?: BrokerInstrument | null
+  ): TradeValidationResult {
+    const checks = {
+      emergencyHaltPassed: !killSwitch.isHalted(),
+      marketCompatibilityPassed: true,
+      signalAgePassed: true,
+      priceProximityPassed: true,
+      riskRewardPassed: true,
+      spreadPassed: true,
+      duplicateCheckPassed: true,
+      orderParametersPassed: true
+    };
+
+    // 1. Emergency Stop Check
+    if (!checks.emergencyHaltPassed) {
+      return {
+        valid: false,
+        rejectionReason: 'TRADING HALTED: Emergency Kill Switch is currently active.',
+        checks
+      };
+    }
+
+    // 2. Market / Broker Compatibility
+    const compat = brokerRegistry.validateMarketCompatibility(input.market, input.broker);
+    if (!compat.compatible) {
+      checks.marketCompatibilityPassed = false;
+      return {
+        valid: false,
+        rejectionReason: compat.reason || 'Market and broker combination is incompatible.',
+        checks
+      };
+    }
+
+    // 3. Signal Age Check (Requirement 27)
+    const now = Date.now();
+    const ageMs = now - input.signalTimestamp;
+    const maxAge = input.market === 'FOREX' ? this.maxSignalAgeForexMs : this.maxSignalAgeOptionsMs;
+
+    if (ageMs > maxAge) {
+      checks.signalAgePassed = false;
+      return {
+        valid: false,
+        rejectionReason: `SIGNAL EXPIRED: Signal age (${Math.round(ageMs / 1000)}s) exceeded maximum threshold (${maxAge / 1000}s).`,
+        checks
+      };
+    }
+
+    // 4. Duplicate Trade Protection (Requirement 28)
+    for (const [_, pos] of this.activeStrategyPositions.entries()) {
+      if (pos.symbol === input.symbol && pos.side === input.side) {
+        checks.duplicateCheckPassed = false;
+        return {
+          valid: false,
+          rejectionReason: `DUPLICATE TRADE BLOCKED: An active ${pos.side} position for ${input.symbol} already exists in strategy portfolio.`,
+          checks
+        };
+      }
+    }
+
+    // 5. Risk / Reward and Stop Loss validation
+    if (order.stopLoss !== undefined && order.stopLoss !== null) {
+      const riskDistance = Math.abs(input.currentPrice - order.stopLoss);
+      if (riskDistance <= 0) {
+        checks.riskRewardPassed = false;
+        return {
+          valid: false,
+          rejectionReason: 'INVALID STOP: Stop Loss cannot be equal to current entry price.',
+          checks
+        };
+      }
+
+      if (order.takeProfit !== undefined && order.takeProfit !== null) {
+        const rewardDistance = Math.abs(order.takeProfit - input.currentPrice);
+        const rrRatio = rewardDistance / riskDistance;
+        if (rrRatio < 0.8) {
+          checks.riskRewardPassed = false;
+          return {
+            valid: false,
+            rejectionReason: `POOR RISK/REWARD: Calculated R:R ratio (${rrRatio.toFixed(2)}) is below minimal safety threshold (0.80).`,
+            checks
+          };
+        }
+      }
+    }
+
+    // 6. Quantity and Order Parameters
+    if (order.quantity <= 0) {
+      checks.orderParametersPassed = false;
+      return {
+        valid: false,
+        rejectionReason: 'INVALID_QUANTITY: Order quantity must be greater than zero.',
+        checks
+      };
+    }
+
+    if (instrument) {
+      if (order.quantity < instrument.minQuantity) {
+        checks.orderParametersPassed = false;
+        return {
+          valid: false,
+          rejectionReason: `INVALID_QUANTITY: Quantity ${order.quantity} is below instrument minimum (${instrument.minQuantity}).`,
+          checks
+        };
+      }
+    }
+
+    return {
+      valid: true,
+      checks
+    };
+  }
+}
+
+export const tradeValidator = new TradeValidator();

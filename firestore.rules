@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Default catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Paper portfolios
+    match /paper_portfolios/{portfolioId} {
+      allow read, write: if true;
+    }
+
+    // Paper trades
+    match /paper_trades/{tradeId} {
+      allow read, write: if true;
+    }
+
+    // Paper tracked signals
+    match /paper_signals_tracked/{trackingId} {
+      allow read, write: if true;
+    }
+
+    // Trade traces root
+    match /trade_traces/{tradeTraceId} {
+      allow read, write: if true;
+
+      // Subcollection for trade trace lifecycle nodes
+      match /nodes/{nodeId} {
+        allow read, write: if true;
+      }
+    }
+
+    // Reconciliation records
+    match /reconciliation_records/{reconciliationId} {
+      allow read, write: if true;
+    }
+
+    // Audit events
+    match /audit_events/{eventId} {
+      allow read, write: if true;
+    }
+
+    // Historical Report Snapshots
+    match /historical_report_snapshots/{snapshotId} {
+      allow read, write: if true;
+    }
+
+    // Watchlists & Notes
+    match /watchlists/{watchlistId} {
+      allow read, write: if true;
+    }
+
+    match /trade_notes/{noteId} {
+      allow read, write: if true;
+    }
+
+    match /system_settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    // ML Storage Collections
+    match /ml_feature_snapshots/{snapshotId} {
+      allow read, write: if true;
+    }
+
+    match /ml_outcome_labels/{labelId} {
+      allow read, write: if true;
+    }
+
+    match /ml_prediction_records/{predId} {
+      allow read, write: if true;
+    }
+
+    match /ml_models/{modelId} {
+      allow read, write: if true;
+    }
+
+    match /ml_backtest_results/{btId} {
+      allow read, write: if true;
+    }
+  }
+}

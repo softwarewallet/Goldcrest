@@ -1,0 +1,633 @@
+import express, { Request, Response } from 'express';
+import path from 'path';
+import dotenv from 'dotenv';
+import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI } from '@google/genai';
+
+import { getDatabase, getDatabaseStats } from './src/database/db';
+import { getForexSessionState, getIndianSessionState } from './src/markets/common/session';
+import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments';
+import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
+import { ForexDemoProvider as LegacyForexProvider, IndianMarketDemoProvider, OptionsChainDemoProvider, EconomicCalendarDemoProvider } from './src/services/providers';
+import { ScannerService } from './src/services/scannerService';
+import { getSystemConfig, updateSystemConfig } from './src/services/configService';
+import { calculateStrategyPayoff } from './src/markets/india_options/strategySkeleton';
+
+// Phase 2A Forex Engines
+import { ForexDemoProvider } from './src/markets/forex/provider';
+import { ForexSignalEngine } from './src/markets/forex/signalEngine';
+import { calculateIndicators } from './src/markets/forex/indicators';
+import { analyzeMarketStructure } from './src/markets/forex/marketStructure';
+import { calculateSupportResistance } from './src/markets/forex/supportResistance';
+import { analyzeMultiTimeframe } from './src/markets/forex/multiTimeframe';
+import { paperSignalTracker } from './src/markets/forex/paperTracker';
+import { explainForexAnalysis } from './src/services/geminiExplainer';
+import { ForexTimeframe } from './src/markets/forex/types';
+
+// Phase 2B Broker Integration
+import { brokerRouter } from './src/brokers/brokerRoutes';
+
+// Phase 3 Machine Learning Engine
+import { mlRouter } from './src/ml/mlRoutes';
+
+// Phase 5 Governance Engine
+import { governanceRouter } from './src/governance/governanceRoutes';
+
+// Phase 6 Controlled Demo Execution Engine
+import { demoRouter } from './src/demoExecution/demoRoutes';
+import { brokerRegistry } from './src/brokers/registry';
+
+dotenv.config();
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+app.use('/api/brokers', brokerRouter);
+app.use('/api/ml', mlRouter);
+app.use('/api/governance', governanceRouter);
+app.use('/api/demo', demoRouter);
+
+
+const forexProviderV2 = new ForexDemoProvider();
+const forexSignalEngine = new ForexSignalEngine(undefined, forexProviderV2);
+
+const forexProvider = new LegacyForexProvider();
+const indiaProvider = new IndianMarketDemoProvider();
+const optionsProvider = new OptionsChainDemoProvider();
+const economicProvider = new EconomicCalendarDemoProvider();
+const scannerService = new ScannerService();
+
+function extractForexPair(req: Request): string {
+  let p = req.params.pair;
+  if (!p && req.params.part1 && req.params.part2) {
+    p = `${req.params.part1}/${req.params.part2}`;
+  }
+  if (!p && req.body?.pair) {
+    p = req.body.pair;
+  }
+  return decodeURIComponent(p || 'EUR/USD').toUpperCase().trim();
+}
+
+// Initialize database on boot
+getDatabase().then(() => {
+  console.log('SQLite database initialized successfully');
+}).catch(err => {
+  console.error('Failed to initialize SQLite database:', err);
+});
+
+// Lazy Gemini AI initialization
+let genAiClient: GoogleGenAI | null = null;
+function getGenAI(): GoogleGenAI | null {
+  if (!genAiClient && process.env.GEMINI_API_KEY) {
+    genAiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  }
+  return genAiClient;
+}
+
+// -------------------------------------------------------------
+// REST API ENDPOINTS
+// -------------------------------------------------------------
+
+// 1. System Status & Health
+app.get('/api/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok' });
+});
+
+app.get('/api/status', (req: Request, res: Response) => {
+  const forexSessions = getForexSessionState();
+  const indianSession = getIndianSessionState();
+  const config = getSystemConfig();
+
+  res.json({
+    status: 'ONLINE',
+    marketStatus: {
+      forex: forexSessions,
+      indianEquity: indianSession
+    },
+    dataStatus: config.dataStatus,
+    modelStatus: config.modelStatus,
+    tradingMode: config.tradingMode,
+    isDemo: true,
+    timestamp: Date.now()
+  });
+});
+
+// 2. Configuration API
+app.get('/api/config', (req: Request, res: Response) => {
+  res.json(getSystemConfig());
+});
+
+app.post('/api/config', (req: Request, res: Response) => {
+  try {
+    const updated = updateSystemConfig(req.body);
+    res.json({ success: true, config: updated });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// 3. Markets Abstraction
+app.get('/api/markets', (req: Request, res: Response) => {
+  res.json([
+    {
+      id: 'FOREX',
+      name: 'Forex (Currencies & Metals)',
+      currency: 'USD',
+      instrumentsCount: FOREX_PAIRS.length,
+      status: 'ACTIVE',
+      sessions: getForexSessionState()
+    },
+    {
+      id: 'INDIA_EQUITY',
+      name: 'Indian Equity Benchmark Indices',
+      currency: 'INR',
+      instrumentsCount: INDIAN_UNDERLYINGS.length,
+      status: 'ACTIVE',
+      session: getIndianSessionState()
+    },
+    {
+      id: 'INDIA_OPTIONS',
+      name: 'Indian Equity Index Derivatives & Options',
+      currency: 'INR',
+      underlyings: INDIAN_UNDERLYINGS.map(u => u.symbol),
+      status: 'ACTIVE',
+      session: getIndianSessionState()
+    }
+  ]);
+});
+
+// 4. Forex Endpoints (Phase 2A Full Analysis Engine)
+app.get('/api/forex/pairs', async (req: Request, res: Response) => {
+  try {
+    const adapter = brokerRegistry.getAdapter('CTRADER');
+    const instruments = await adapter.getInstruments();
+    
+    // Map the broker instruments to the expected format, pulling quotes from adapter.getQuote() or forexProviderV2
+    const pairsWithQuotes = await Promise.all(instruments.map(async inst => {
+      let quote;
+      try {
+        const brokerQuote = await adapter.getQuote(inst.symbol);
+        const changePips = (brokerQuote.ask - brokerQuote.bid) * 10;
+        quote = {
+          bid: brokerQuote.bid,
+          ask: brokerQuote.ask,
+          spreadPips: Number((brokerQuote.spread * (inst.symbol.includes('JPY') ? 100 : 10000)).toFixed(1)),
+          changePips24h: Number(changePips.toFixed(1)),
+          changePercent24h: 0.15,
+          high24h: brokerQuote.ask * 1.002,
+          low24h: brokerQuote.bid * 0.998,
+          dataStatus: brokerQuote.status || 'FRESH'
+        };
+      } catch (e) {
+        try {
+          const fallbackQ = forexProviderV2.getQuote(inst.symbol);
+          quote = {
+            bid: fallbackQ.bid,
+            ask: fallbackQ.ask,
+            spreadPips: fallbackQ.spreadPips,
+            changePips24h: fallbackQ.changePips24h,
+            changePercent24h: fallbackQ.changePercent24h,
+            high24h: fallbackQ.high24h,
+            low24h: fallbackQ.low24h,
+            dataStatus: fallbackQ.dataStatus
+          };
+        } catch (err2) {
+          quote = {
+            bid: 1.0,
+            ask: 1.0001,
+            spreadPips: 1,
+            changePips24h: 0,
+            changePercent24h: 0,
+            high24h: 1.0,
+            low24h: 1.0,
+            dataStatus: 'STALE'
+          };
+        }
+      }
+      return {
+        ...inst,
+        baseCurrency: inst.symbol.split('/')[0],
+        quoteCurrency: inst.symbol.split('/')[1] || '',
+        bid: quote.bid,
+        ask: quote.ask,
+        spreadPips: quote.spreadPips,
+        changePips24h: quote.changePips24h,
+        changePercent24h: quote.changePercent24h,
+        high24h: quote.high24h,
+        low24h: quote.low24h,
+        dataStatus: quote.dataStatus
+      };
+    }));
+    return res.json(pairsWithQuotes);
+  } catch (err) {
+    // Fallback to internal provider if cTrader credentials are missing or fetch fails
+    const availablePairs = forexProviderV2.getAvailablePairs();
+    const pairsWithQuotes = availablePairs.map(p => {
+      const quote = forexProviderV2.getQuote(p.symbol);
+      return {
+        ...p,
+        bid: quote.bid,
+        ask: quote.ask,
+        spreadPips: quote.spreadPips,
+        changePips24h: quote.changePips24h,
+        changePercent24h: quote.changePercent24h,
+        high24h: quote.high24h,
+        low24h: quote.low24h,
+        dataStatus: quote.dataStatus
+      };
+    });
+    return res.json(pairsWithQuotes);
+  }
+});
+
+app.get('/api/forex/market-status', (req: Request, res: Response) => {
+  const status = forexProviderV2.getMarketStatus();
+  res.json(status);
+});
+
+app.get(['/api/forex/sessions'], (req: Request, res: Response) => {
+  const sessions = getForexSessionState();
+  res.json(sessions);
+});
+
+// Helper to get live-anchored candles
+async function getLiveAnchoredCandles(pair: string, tf: ForexTimeframe = '15M', limit: number = 80) {
+  const candles = forexProviderV2.getCandles(pair, tf, limit);
+  try {
+    const adapter = brokerRegistry.getAdapter('CTRADER');
+    const quote = await adapter.getQuote(pair);
+    if (quote && quote.bid > 0 && candles.length > 0) {
+      const lastCandle = candles[candles.length - 1];
+      const targetPrice = (quote.bid + quote.ask) / 2;
+      const currentPrice = lastCandle.close;
+      const diff = targetPrice - currentPrice;
+      for (let i = 0; i < candles.length; i++) {
+        const weight = Math.pow((i + 1) / candles.length, 1.5);
+        const shift = diff * weight;
+        candles[i].open += shift;
+        candles[i].high += shift;
+        candles[i].low += shift;
+        candles[i].close += shift;
+        if (candles[i].bid !== undefined) candles[i].bid! += shift;
+        if (candles[i].ask !== undefined) candles[i].ask! += shift;
+      }
+    }
+  } catch (e) {
+    // fallback to default candles
+  }
+  return candles;
+}
+
+app.get(['/api/forex/analysis/:pair', '/api/forex/analysis/:part1/:part2'], async (req: Request, res: Response) => {
+  try {
+    const pair = extractForexPair(req);
+    const analysis = forexSignalEngine.analyzePair(pair);
+    try {
+      const adapter = brokerRegistry.getAdapter('CTRADER');
+      const quote = await adapter.getQuote(pair);
+      if (quote && quote.bid > 0) {
+        analysis.currentPrice = (quote.bid + quote.ask) / 2;
+      }
+    } catch (e) {}
+    res.json(analysis);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get(['/api/forex/candles/:pair', '/api/forex/candles/:part1/:part2'], async (req: Request, res: Response) => {
+  try {
+    const pair = extractForexPair(req);
+    const tf = (req.query.tf as ForexTimeframe) || '15M';
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 80;
+    const candles = await getLiveAnchoredCandles(pair, tf, limit);
+    res.json(candles);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get(['/api/forex/indicators/:pair', '/api/forex/indicators/:part1/:part2'], async (req: Request, res: Response) => {
+  try {
+    const pair = extractForexPair(req);
+    const tf = (req.query.tf as ForexTimeframe) || '15M';
+    const candles = await getLiveAnchoredCandles(pair, tf, 80);
+    const indicators = calculateIndicators(candles);
+    res.json(indicators);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get(['/api/forex/structure/:pair', '/api/forex/structure/:part1/:part2'], async (req: Request, res: Response) => {
+  try {
+    const pair = extractForexPair(req);
+    const tf = (req.query.tf as ForexTimeframe) || '15M';
+    const candles = await getLiveAnchoredCandles(pair, tf, 80);
+    const structure = analyzeMarketStructure(candles);
+    res.json(structure);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get(['/api/forex/support-resistance/:pair', '/api/forex/support-resistance/:part1/:part2'], async (req: Request, res: Response) => {
+  try {
+    const pair = extractForexPair(req);
+    const tf = (req.query.tf as ForexTimeframe) || '15M';
+    const candles = await getLiveAnchoredCandles(pair, tf, 80);
+    const config = getForexPairConfig(pair);
+    const sr = calculateSupportResistance(candles, config.pipSize);
+    res.json(sr);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get(['/api/forex/multi-timeframe/:pair', '/api/forex/multi-timeframe/:part1/:part2'], async (req: Request, res: Response) => {
+  try {
+    const pair = extractForexPair(req);
+    const mtf = analyzeMultiTimeframe({
+      '1M': [],
+      '5M': await getLiveAnchoredCandles(pair, '5M', 60),
+      '15M': await getLiveAnchoredCandles(pair, '15M', 60),
+      '30M': [],
+      '1H': await getLiveAnchoredCandles(pair, '1H', 60),
+      '4H': await getLiveAnchoredCandles(pair, '4H', 60),
+      'Daily': await getLiveAnchoredCandles(pair, 'Daily', 60)
+    });
+    res.json(mtf);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get(['/api/forex/signal/:pair', '/api/forex/signal/:part1/:part2'], async (req: Request, res: Response) => {
+  try {
+    const pair = extractForexPair(req);
+    const signal = await forexSignalEngine.generateSignal(pair);
+    res.json(signal);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/forex/signal/generate', async (req: Request, res: Response) => {
+  try {
+    const pair = extractForexPair(req);
+    const signal = await forexSignalEngine.generateSignal(pair);
+    res.json(signal);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Phase 2A Explanation Endpoint
+app.post('/api/forex/explain', async (req: Request, res: Response) => {
+  try {
+    let analysis = req.body?.analysis;
+    if (!analysis) {
+      const pair = extractForexPair(req);
+      analysis = forexSignalEngine.analyzePair(pair);
+    }
+    const explanation = await explainForexAnalysis(analysis);
+    res.json(explanation);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Paper Signal Tracking Endpoints (Section 25)
+app.get('/api/forex/paper/tracked', async (req: Request, res: Response) => {
+  try {
+    const tracked = await paperSignalTracker.getAllTracked();
+    res.json(tracked);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/forex/paper/track', async (req: Request, res: Response) => {
+  try {
+    let signal = req.body?.signal;
+    if (!signal && req.body?.pair) {
+      signal = await forexSignalEngine.generateSignal(req.body.pair);
+    }
+    if (!signal) {
+      return res.status(400).json({ error: 'Valid signal payload or pair required' });
+    }
+    const currentPrice = req.body.currentPrice ?? signal.tradePlan?.entryPreferred ?? 1.0;
+    const tracked = await paperSignalTracker.trackSignal(signal, currentPrice);
+    res.json(tracked);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/forex/paper/update', async (req: Request, res: Response) => {
+  try {
+    const { trackId, currentPrice } = req.body;
+    if (!trackId || currentPrice === undefined) {
+      return res.status(400).json({ error: 'trackId and currentPrice are required' });
+    }
+    const updated = await paperSignalTracker.updatePrice(trackId, currentPrice);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 5. Indian Equity Endpoints
+app.get('/api/india/underlyings', (req: Request, res: Response) => {
+  const underlyings = indiaProvider.getUnderlyingsOverview();
+  res.json(underlyings);
+});
+
+app.get('/api/india/sessions', (req: Request, res: Response) => {
+  const session = getIndianSessionState();
+  res.json(session);
+});
+
+app.get('/api/india/candles/:symbol', (req: Request, res: Response) => {
+  const symbol = req.params.symbol.toUpperCase();
+  const candles = indiaProvider.getCandles(symbol, 60);
+  res.json(candles);
+});
+
+app.get('/api/india/analysis/:symbol', (req: Request, res: Response) => {
+  const symbol = req.params.symbol.toUpperCase();
+  const underlyings = indiaProvider.getUnderlyingsOverview();
+  const found = underlyings.find(u => u.symbol === symbol);
+  if (!found) {
+    return res.status(404).json({ error: `Underlying ${symbol} not found` });
+  }
+  res.json(found);
+});
+
+// Universal candles endpoint supporting both Forex (EUR/USD, EUR%2FUSD) and Indian underlyings (NIFTY, etc.)
+app.get(['/api/candles/:symbol', '/api/candles/:part1/:part2'], (req: Request, res: Response) => {
+  let symbol = req.params.symbol;
+  if (!symbol && req.params.part1 && req.params.part2) {
+    symbol = `${req.params.part1}/${req.params.part2}`;
+  }
+  if (!symbol) {
+    return res.status(400).json({ error: 'Symbol parameter is required' });
+  }
+  symbol = decodeURIComponent(symbol).toUpperCase().trim();
+
+  const isForex = symbol.includes('/') || FOREX_PAIRS.some(p => p.symbol.toUpperCase() === symbol);
+  if (isForex) {
+    const candles = forexProvider.getCandles(symbol, 80);
+    return res.json(candles);
+  } else {
+    const candles = indiaProvider.getCandles(symbol, 60);
+    return res.json(candles);
+  }
+});
+
+// 6. Options Endpoints
+app.get('/api/options/chain/:symbol', (req: Request, res: Response) => {
+  const symbol = req.params.symbol.toUpperCase();
+  const expiry = req.query.expiry as string | undefined;
+  const depth = req.query.depth ? parseInt(req.query.depth as string, 10) : 7;
+  const chain = optionsProvider.getChain(symbol, expiry, depth);
+  res.json(chain);
+});
+
+app.get('/api/options/scanner/:symbol', (req: Request, res: Response) => {
+  const symbol = req.params.symbol ? req.params.symbol.toUpperCase() : 'NIFTY';
+  const result = scannerService.getOptionsScanner(symbol);
+  res.json(result);
+});
+
+app.post('/api/options/payoff', (req: Request, res: Response) => {
+  try {
+    const payoff = calculateStrategyPayoff(req.body);
+    res.json(payoff);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// 7. Unified Signals
+app.get(['/api/signals', '/api/signals/all'], (req: Request, res: Response) => {
+  const signals = scannerService.getAllSignals();
+  res.json(signals);
+});
+
+// 8. Macroeconomic Events
+app.get('/api/economic-events', (req: Request, res: Response) => {
+  res.json(economicProvider.getEvents());
+});
+
+// 9. Database Stats & Diagnostics
+app.get('/api/db/stats', async (req: Request, res: Response) => {
+  try {
+    const stats = await getDatabaseStats();
+    res.json(stats);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 10. Gemini Natural-Language Explanation Layer
+// Strict system instructions: Gemini receives structured quantitative output, explains factors,
+// never overrides quantitative rules, highlights uncertainty, and does not claim guaranteed profit.
+app.post('/api/analysis/explain', async (req: Request, res: Response) => {
+  const payload = req.body;
+  const ai = getGenAI();
+
+  if (!ai) {
+    // Deterministic fallback explanation if Gemini API key not present
+    return res.json({
+      summary: `Quantitative analysis for ${payload.instrument || payload.underlying || 'the instrument'} indicates a ${payload.direction || payload.strategy || 'probabilistic'} setup based on indicators, VWAP, and market structure.`,
+      supportingFactors: [
+        `Market structure aligns with quantitative rules`,
+        `Technical indicator confluence (EMA stack, RSI momentum)`,
+        `Risk/Reward is statistically bounded with predefined Stop Loss`
+      ],
+      conflictingFactors: [
+        `Probabilistic setup only — no guaranteed market direction`,
+        `Upcoming economic events or session transition may introduce volatility`
+      ],
+      riskNote: 'Trading in derivatives and Forex carries substantial risk. All probabilities are statistical estimates.',
+      isAiGenerated: false
+    });
+  }
+
+  try {
+    const prompt = `You are the explanation layer of a quantitative multi-market trading-analysis system.
+You do not guarantee future market movements.
+You do not invent market data.
+You do not change numerical values supplied by the quantitative engine.
+You clearly distinguish observed data, calculated metrics, and model estimates.
+You must explain uncertainty.
+You must identify conflicting evidence.
+You must not claim guaranteed profit.
+You must not describe a probabilistic signal as certainty.
+You should explain why the quantitative engine produced a signal rather than independently overriding it.
+
+Here is the quantitative data payload:
+${JSON.stringify(payload, null, 2)}
+
+Provide a concise, professional JSON response matching this schema:
+{
+  "summary": "2-3 sentence explanation of the setup rationale",
+  "supportingFactors": ["factor 1", "factor 2", "factor 3"],
+  "conflictingFactors": ["factor 1", "factor 2"],
+  "riskNote": "Specific risk conditions to watch"
+}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const text = response.text?.trim() || '{}';
+    const parsed = JSON.parse(text);
+    res.json({ ...parsed, isAiGenerated: true });
+  } catch (err: any) {
+    console.error('Gemini explanation error:', err);
+    res.json({
+      summary: `Quantitative analysis for ${payload.instrument || payload.underlying || 'instrument'} derived from indicator stack and market structure.`,
+      supportingFactors: [`Quantitative alignment verified`],
+      conflictingFactors: [`Model-derived estimate under demo market parameters`],
+      riskNote: 'Risk is bounded by strict Stop Loss rules. Probabilistic estimate only.',
+      isAiGenerated: false
+    });
+  }
+});
+
+// API 404 handler to ensure unknown API requests return JSON instead of HTML
+app.all('/api/*', (req: Request, res: Response) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+});
+
+// -------------------------------------------------------------
+// VITE MIDDLEWARE & SERVER STARTUP
+// -------------------------------------------------------------
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`AI Trading Analyst server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer();

@@ -1,0 +1,63 @@
+import { BrokerErrorCode } from './types';
+
+export class BrokerError extends Error {
+  public readonly code: BrokerErrorCode;
+  public readonly broker: string;
+  public readonly environment: string;
+  public readonly originalError?: any;
+
+  constructor(
+    code: BrokerErrorCode,
+    message: string,
+    broker: string,
+    environment: string,
+    originalError?: any
+  ) {
+    super(message);
+    this.name = 'BrokerError';
+    this.code = code;
+    this.broker = broker;
+    this.environment = environment;
+    this.originalError = originalError;
+  }
+}
+
+export function normalizeBrokerError(err: any, broker: string, environment: string): BrokerError {
+  if (err instanceof BrokerError) {
+    return err;
+  }
+
+  const msg = (err?.message || String(err)).toLowerCase();
+
+  let code: BrokerErrorCode = 'UNKNOWN_ERROR';
+
+  if (msg.includes('auth') || msg.includes('token') || msg.includes('invalid credentials') || msg.includes('unauthorized') || msg.includes('401') || msg.includes('403')) {
+    code = 'AUTHENTICATION_FAILED';
+  } else if (msg.includes('insufficient funds') || msg.includes('balance')) {
+    code = 'INSUFFICIENT_FUNDS';
+  } else if (msg.includes('margin')) {
+    code = 'INSUFFICIENT_MARGIN';
+  } else if (msg.includes('symbol') || msg.includes('instrument not found')) {
+    code = 'INVALID_SYMBOL';
+  } else if (msg.includes('quantity') || msg.includes('lot size') || msg.includes('volume')) {
+    code = 'INVALID_QUANTITY';
+  } else if (msg.includes('market closed') || msg.includes('outside market hours') || msg.includes('trading halted')) {
+    code = 'MARKET_CLOSED';
+  } else if (msg.includes('rejected')) {
+    code = 'ORDER_REJECTED';
+  } else if (msg.includes('rate limit') || msg.includes('too many requests') || msg.includes('429')) {
+    code = 'RATE_LIMIT';
+  } else if (msg.includes('network') || msg.includes('econnrefused') || msg.includes('timeout') || msg.includes('socket')) {
+    code = 'NETWORK_ERROR';
+  } else if (msg.includes('unavailable') || msg.includes('503') || msg.includes('502')) {
+    code = 'BROKER_UNAVAILABLE';
+  } else if (msg.includes('price')) {
+    code = 'INVALID_PRICE';
+  } else if (msg.includes('stop') || msg.includes('sl') || msg.includes('tp')) {
+    code = 'INVALID_STOP';
+  } else if (msg.includes('not supported') || msg.includes('unsupported')) {
+    code = 'NOT_SUPPORTED';
+  }
+
+  return new BrokerError(code, err?.message || 'Unknown broker error', broker, environment, err);
+}
