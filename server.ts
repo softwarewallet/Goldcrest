@@ -3,6 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { apiRateLimit, blockLegacyTradingModes, requestId, securityHeaders } from './src/server/security';
 
 import { getDatabase, getDatabaseStats, executeQuery, executeRun } from './src/database/db';
 import { getForexSessionState, getIndianSessionState } from './src/markets/common/session';
@@ -34,7 +35,6 @@ import { mlRouter } from './src/ml/mlRoutes';
 import { governanceRouter } from './src/governance/governanceRoutes';
 
 // Phase 6 Controlled Demo Execution Engine
-import { demoRouter } from './src/demoExecution/demoRoutes';
 import { brokerRegistry } from './src/brokers/registry';
 
 dotenv.config();
@@ -42,11 +42,15 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.disable('x-powered-by');
+app.use(securityHeaders);
+app.use(requestId);
+app.use(apiRateLimit);
+app.use(blockLegacyTradingModes);
+app.use(express.json({ limit: '512kb' }));
 app.use('/api/brokers', brokerRouter);
 app.use('/api/ml', mlRouter);
 app.use('/api/governance', governanceRouter);
-app.use('/api/demo', demoRouter);
 
 
 const forexProviderV2 = new ForexDemoProvider();
@@ -118,7 +122,7 @@ app.get('/api/status', (req: Request, res: Response) => {
     dataStatus: config.dataStatus,
     modelStatus: config.modelStatus,
     tradingMode: config.tradingMode,
-    isDemo: true,
+    isDemo: false,
     timestamp: Date.now()
   });
 });
@@ -252,23 +256,7 @@ app.get('/api/forex/pairs', async (req: Request, res: Response) => {
     }));
     return res.json(pairsWithQuotes);
   } catch (err) {
-    // Fallback to internal provider if cTrader credentials are missing or fetch fails
-    const availablePairs = forexProviderV2.getAvailablePairs();
-    const pairsWithQuotes = availablePairs.map(p => {
-      const quote = forexProviderV2.getQuote(p.symbol);
-      return {
-        ...p,
-        bid: quote.bid,
-        ask: quote.ask,
-        spreadPips: quote.spreadPips,
-        changePips24h: quote.changePips24h,
-        changePercent24h: quote.changePercent24h,
-        high24h: quote.high24h,
-        low24h: quote.low24h,
-        dataStatus: quote.dataStatus
-      };
-    });
-    return res.json(pairsWithQuotes);
+    return res.status(503).json({ error: 'LIVE_MARKET_DATA_UNAVAILABLE', message: 'Authoritative cTrader market data is unavailable.' });
   }
 });
 
@@ -284,9 +272,10 @@ app.get(['/api/forex/sessions'], (req: Request, res: Response) => {
 
 // Helper to get live-anchored candles
 async function getLiveAnchoredCandles(pair: string, tf: ForexTimeframe = '15M', limit: number = 80) {
-  const candles = forexProviderV2.getCandles(pair, tf, limit);
+  let candles;
   try {
     const adapter = brokerRegistry.getAdapter('CTRADER');
+    candles = await adapter.getHistoricalCandles(pair, tf, limit);
     const quote = await adapter.getQuote(pair);
     if (quote && quote.bid > 0 && candles.length > 0) {
       const lastCandle = candles[candles.length - 1];
@@ -305,7 +294,7 @@ async function getLiveAnchoredCandles(pair: string, tf: ForexTimeframe = '15M', 
       }
     }
   } catch (e) {
-    // fallback to default candles
+    throw new Error('Authoritative cTrader historical market data unavailable.');
   }
   return candles;
 }
