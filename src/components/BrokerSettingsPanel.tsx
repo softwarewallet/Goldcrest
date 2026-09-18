@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Server, ShieldCheck, RefreshCw, CheckCircle2, XCircle, AlertTriangle, Lock, Database } from 'lucide-react';
+import { Server, ShieldCheck, RefreshCw, CheckCircle2, XCircle, Lock, Database, DollarSign, IndianRupee } from 'lucide-react';
 import { BrokerCredentialStatus, BrokerType, TradingEnvironment, ConnectionTestResult } from '../brokers/types';
 
 interface BrokerSettingsPanelProps {
@@ -29,6 +29,10 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   const [saving, setSaving] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [maxForexUsd, setMaxForexUsd] = useState(200);
+  const [maxIndianInr, setMaxIndianInr] = useState(20000);
+  const [savingLimits, setSavingLimits] = useState(false);
+  const [limitMessage, setLimitMessage] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -37,6 +41,12 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
       if (res.ok) {
         const data = await res.json();
         setStatuses(data.credentials || []);
+        const configRes = await fetch('/api/config');
+        if (configRes.ok) {
+          const config = await configRes.json();
+          if (Number.isFinite(Number(config.maxTradeValueForexUsd))) setMaxForexUsd(Number(config.maxTradeValueForexUsd));
+          if (Number.isFinite(Number(config.maxTradeValueIndianInr))) setMaxIndianInr(Number(config.maxTradeValueIndianInr));
+        }
       }
     } finally {
       setLoading(false);
@@ -117,6 +127,70 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
           <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
           I acknowledge that these credentials access LIVE broker accounts.
         </label>
+      </div>
+
+      <div className="bg-slate-900 border border-amber-800/50 rounded-xl p-5">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="w-5 h-5 text-amber-400 mt-0.5" />
+          <div className="flex-1">
+            <div className="text-sm font-bold text-white">Maximum Trade Value Limits</div>
+            <p className="text-xs text-slate-400 mt-1">
+              Hard per-API notional limit. The order value is calculated from quantity × authoritative order price
+              (BUY uses ask, SELL uses bid for market orders). Orders above the configured limit are rejected by
+              the server safety gate before any dispatch path.
+            </p>
+            <div className="grid md:grid-cols-2 gap-4 mt-4">
+              <label className="block space-y-1">
+                <span className="text-[10px] uppercase text-slate-500 font-mono flex items-center gap-1"><DollarSign className="w-3 h-3" /> cTrader / Forex maximum</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-mono">$</span>
+                  <input type="number" min="0.01" step="0.01" value={maxForexUsd} onChange={e => setMaxForexUsd(Number(e.target.value))} className={inputClass} />
+                  <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap">USD</span>
+                </div>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[10px] uppercase text-slate-500 font-mono flex items-center gap-1"><IndianRupee className="w-3 h-3" /> 5paisa / Indian maximum</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-mono">₹</span>
+                  <input type="number" min="0.01" step="0.01" value={maxIndianInr} onChange={e => setMaxIndianInr(Number(e.target.value))} className={inputClass} />
+                  <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap">INR</span>
+                </div>
+              </label>
+            </div>
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                onClick={async () => {
+                  if (!Number.isFinite(maxForexUsd) || maxForexUsd <= 0 || !Number.isFinite(maxIndianInr) || maxIndianInr <= 0) {
+                    setLimitMessage('Both maximum trade values must be positive numbers.');
+                    return;
+                  }
+                  setSavingLimits(true);
+                  setLimitMessage('');
+                  try {
+                    const res = await fetch('/api/config', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ maxTradeValueForexUsd: maxForexUsd, maxTradeValueIndianInr: maxIndianInr })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Failed to save limits');
+                    setLimitMessage('Trade value limits saved to SQLite and enforced server-side.');
+                    onRefreshGlobal?.();
+                  } catch (err: any) {
+                    setLimitMessage(err.message || 'Failed to save limits');
+                  } finally {
+                    setSavingLimits(false);
+                  }
+                }}
+                disabled={savingLimits}
+                className="px-4 py-2 rounded bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold"
+              >
+                {savingLimits ? 'SAVING…' : 'SAVE TRADE LIMITS'}
+              </button>
+              {limitMessage && <span className="text-[10px] text-slate-400 font-mono">{limitMessage}</span>}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="grid xl:grid-cols-2 gap-4">
