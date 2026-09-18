@@ -19,7 +19,7 @@ import {
   Zap
 } from 'lucide-react';
 import { DemoTestCenterTestResult, FailureRecoveryTestResult } from '../../demoExecution/types';
-import {
+import type {
   CertificationSummary,
   ExecutionCertificationResult,
   CertificationGroup

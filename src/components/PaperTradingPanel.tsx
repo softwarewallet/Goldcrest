@@ -27,7 +27,6 @@ import {
   addCloudTradeNote,
   deleteCloudTradeNote
 } from '../services/firebaseTradingService';
-import { ensureAuthenticatedUser, auth } from '../firebase';
 
 export interface PaperPosition {
   id: string;
@@ -44,13 +43,13 @@ export interface PaperPosition {
 }
 
 export const PaperTradingPanel: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(true);
-  const [syncStatus, setSyncStatus] = useState<string>('Connecting to goldcrestfinman-trading...');
+  const [currentUser, setCurrentUser] = useState<any>({ uid: 'local_trader_01', email: 'trader@goldcrest.internal' });
+  const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
+  const [syncStatus, setSyncStatus] = useState<string>('SQLite Local Persistence Active');
 
   // Cloud State
   const [portfolio, setPortfolio] = useState<CloudPaperPortfolio>({
-    userId: '',
+    userId: 'local_trader_01',
     balance: 100000.0,
     equity: 100000.0,
     marginUsed: 0.0,
@@ -86,60 +85,53 @@ export const PaperTradingPanel: React.FC = () => {
     setTimeout(() => setActionNotice(null), 4000);
   };
 
-  // Initialize Firestore listeners
+  // Initialize listeners
   useEffect(() => {
     let unsubPortfolio: (() => void) | null = null;
     let unsubTrades: (() => void) | null = null;
     let unsubNotes: (() => void) | null = null;
 
-    ensureAuthenticatedUser()
-      .then((user) => {
-        setCurrentUser(user);
-        setIsCloudSyncing(false);
-        setSyncStatus('Firestore Connected (goldcrestfinman-trading)');
+    const user = { uid: 'local_trader_01', email: 'trader@goldcrest.internal' };
+    setCurrentUser(user);
+    setIsCloudSyncing(false);
+    setSyncStatus('SQLite Local Persistence Active');
 
-        // 1. Subscribe to Portfolio
-        unsubPortfolio = subscribePaperPortfolio(
-          user.uid,
-          (p) => setPortfolio(p),
-          (err) => setSyncStatus('Sync warning: ' + err.message)
-        );
+    // 1. Subscribe to Portfolio
+    unsubPortfolio = subscribePaperPortfolio(
+      user.uid,
+      (p) => setPortfolio(p),
+      (err) => setSyncStatus('Sync warning: ' + err.message)
+    );
 
-        // 2. Subscribe to Open Trades
-        unsubTrades = subscribeOpenPaperTrades(
-          user.uid,
-          (cloudTrades) => {
-            if (cloudTrades.length === 0) {
-              // If user has zero trades in cloud yet, populate baseline default simulated trades
-              createCloudPaperTrade({
-                symbol: 'EUR/USD',
-                market: 'FOREX',
-                type: 'BUY',
-                entryPrice: 1.0845,
-                quantity: 100000,
-                stopLoss: 1.0815,
-                takeProfit: 1.0895,
-                pnl: 170.0,
-                status: 'OPEN'
-              }).catch(() => {});
-            } else {
-              setTrades(cloudTrades);
-            }
-          },
-          (err) => console.warn(err)
-        );
+    // 2. Subscribe to Open Trades
+    unsubTrades = subscribeOpenPaperTrades(
+      user.uid,
+      (cloudTrades) => {
+        if (cloudTrades.length === 0) {
+          createCloudPaperTrade({
+            symbol: 'EUR/USD',
+            market: 'FOREX',
+            type: 'BUY',
+            entryPrice: 1.0845,
+            quantity: 100000,
+            stopLoss: 1.0815,
+            takeProfit: 1.0895,
+            pnl: 170.0,
+            status: 'OPEN'
+          }).catch(() => {});
+        } else {
+          setTrades(cloudTrades);
+        }
+      },
+      (err) => console.warn(err)
+    );
 
-        // 3. Subscribe to Cloud Trade Notes
-        unsubNotes = subscribeCloudTradeNotes(
-          user.uid,
-          (cloudNotes) => setNotes(cloudNotes),
-          (err) => console.warn(err)
-        );
-      })
-      .catch((err) => {
-        setIsCloudSyncing(false);
-        setSyncStatus('Offline / Local state fallback: ' + err.message);
-      });
+    // 3. Subscribe to Trade Notes
+    unsubNotes = subscribeCloudTradeNotes(
+      user.uid,
+      (cloudNotes) => setNotes(cloudNotes),
+      (err) => console.warn(err)
+    );
 
     return () => {
       if (unsubPortfolio) unsubPortfolio();

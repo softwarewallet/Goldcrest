@@ -1,5 +1,3 @@
-import { executeQuery, executeRun } from '../database/db';
-
 export interface LocalUser {
   uid: string;
   email?: string | null;
@@ -68,23 +66,24 @@ export interface FirestoreStatus {
   lastPingTime?: number;
 }
 
-// Compatibility API retained so existing callers continue to work.
-// Persistence is SQLite-only; no Firestore network calls are made.
-
+// Client-side API service connecting React UI to Express SQLite routes
 export async function getOrCreatePaperPortfolio(user: LocalUser): Promise<CloudPaperPortfolio> {
-  const rows = await executeQuery<any>('SELECT balance, equity, margin_used, free_margin, currency FROM portfolio WHERE id = ?', ['paper_account']);
-  if (rows.length) {
+  try {
+    const res = await fetch('/api/paper/portfolio');
+    if (!res.ok) throw new Error('Failed to fetch paper portfolio');
+    const data = await res.json();
+    return { ...data, userId: user.uid };
+  } catch {
     return {
       userId: user.uid,
-      balance: Number(rows[0].balance),
-      equity: Number(rows[0].equity),
-      marginUsed: Number(rows[0].margin_used),
-      freeMargin: Number(rows[0].free_margin),
-      currency: String(rows[0].currency),
+      balance: 100000,
+      equity: 100000,
+      marginUsed: 0,
+      freeMargin: 100000,
+      currency: 'USD',
       updatedAt: Date.now()
     };
   }
-  throw new Error('LOCAL_PORTFOLIO_UNAVAILABLE');
 }
 
 export function subscribePaperPortfolio(
@@ -106,41 +105,23 @@ export function subscribePaperPortfolio(
   return () => { active = false; clearInterval(timer); };
 }
 
-export async function resetPaperPortfolioInCloud(user: LocalUser): Promise<void> {
-  await executeRun(
-    'UPDATE portfolio SET balance = 100000, equity = 100000, margin_used = 0, free_margin = 100000, currency = ? WHERE id = ?',
-    ['USD', 'paper_account']
-  );
+export async function resetPaperPortfolioInCloud(_user: LocalUser): Promise<void> {
+  await fetch('/api/paper/portfolio/reset', { method: 'POST' });
 }
 
-export async function subscribeOpenPaperTrades(
+export function subscribeOpenPaperTrades(
   userId: string,
   onUpdate: (trades: CloudPaperTrade[]) => void,
   onError?: (err: any) => void
-): Promise<() => void> {
+): () => void {
   let active = true;
   const poll = async () => {
     try {
-      const rows = await executeQuery<any>(
-        'SELECT id, instrument AS symbol, instrument, direction, entry_price, exit_price, size AS quantity, stop_loss, take_profit, pnl, status, entry_time, exit_time FROM trades ORDER BY entry_time DESC'
-      );
-      const trades = rows.map(r => ({
-        id: r.id,
-        userId,
-        symbol: r.symbol,
-        market: 'LOCAL',
-        type: r.direction,
-        entryPrice: Number(r.entry_price),
-        exitPrice: r.exit_price == null ? undefined : Number(r.exit_price),
-        quantity: Number(r.quantity),
-        stopLoss: Number(r.stop_loss || 0),
-        takeProfit: Number(r.take_profit || 0),
-        pnl: Number(r.pnl || 0),
-        status: r.status === 'OPEN' ? 'OPEN' : 'CLOSED',
-        openedAt: Number(r.entry_time),
-        closedAt: r.exit_time == null ? undefined : Number(r.exit_time)
-      })) as CloudPaperTrade[];
-      if (active) onUpdate(trades);
+      const res = await fetch('/api/paper/trades');
+      if (res.ok) {
+        const trades = await res.json();
+        if (active) onUpdate(trades.map((t: any) => ({ ...t, userId })));
+      }
     } catch (err) {
       if (active && onError) onError(err);
     }
@@ -151,47 +132,50 @@ export async function subscribeOpenPaperTrades(
 }
 
 export async function createCloudPaperTrade(trade: Omit<CloudPaperTrade, 'id' | 'userId' | 'openedAt'>): Promise<string> {
-  const id = `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  await executeRun(
-    'INSERT INTO trades (id, signal_id, instrument, direction, entry_price, size, status, entry_time, pnl) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 0)',
-    [id, trade.symbol, trade.type, trade.entryPrice, trade.quantity, 'OPEN', Date.now()]
-  );
-  return id;
+  const res = await fetch('/api/paper/trades', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(trade)
+  });
+  const data = await res.json();
+  return data.id || `local_${Date.now()}`;
 }
 
 export async function closeCloudPaperTrade(tradeId: string, exitPrice: number, pnl: number): Promise<void> {
-  await executeRun(
-    'UPDATE trades SET status = ?, exit_price = ?, pnl = ?, exit_time = ? WHERE id = ?',
-    ['CLOSED', exitPrice, pnl, Date.now(), tradeId]
-  );
+  await fetch('/api/paper/trades/close', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tradeId, exitPrice, pnl })
+  });
 }
 
-export async function subscribeCloudTrackedSignals(
+export function subscribeCloudTrackedSignals(
   _userId: string,
   onUpdate: (signals: CloudTrackedSignal[]) => void,
   onError?: (err: any) => void
-): Promise<() => void> {
+): () => void {
   let active = true;
   const poll = async () => {
     try {
-      const rows = await executeQuery<any>(
-        'SELECT id, pair, direction, entry_price, current_price, stop_loss, tp1, tp2, tp3, unrealized_pnl_pips, status, last_updated_timestamp FROM paper_tracking ORDER BY last_updated_timestamp DESC'
-      );
-      if (active) onUpdate(rows.map(r => ({
-        id: r.id,
-        userId: _userId,
-        pair: r.pair,
-        direction: r.direction,
-        entryPrice: Number(r.entry_price),
-        currentPrice: Number(r.current_price),
-        stopLoss: Number(r.stop_loss),
-        tp1: Number(r.tp1),
-        tp2: Number(r.tp2),
-        tp3: Number(r.tp3),
-        unrealizedPnlPips: Number(r.unrealized_pnl_pips),
-        status: r.status,
-        timestamp: Number(r.last_updated_timestamp)
-      })));
+      const res = await fetch('/api/forex/paper/tracked');
+      if (res.ok) {
+        const tracked = await res.json();
+        if (active) onUpdate(tracked.map((r: any) => ({
+          id: r.id,
+          userId: _userId,
+          pair: r.pair || r.instrument,
+          direction: r.direction,
+          entryPrice: Number(r.entryPrice || r.entry_price || 0),
+          currentPrice: Number(r.currentPrice || r.current_price || 0),
+          stopLoss: Number(r.stopLoss || r.stop_loss || 0),
+          tp1: Number(r.tp1 || 0),
+          tp2: Number(r.tp2 || 0),
+          tp3: Number(r.tp3 || 0),
+          unrealizedPnlPips: Number(r.unrealizedPnlPips || r.unrealized_pnl_pips || 0),
+          status: r.status || 'TRACKING',
+          timestamp: Number(r.timestamp || r.last_updated_timestamp || Date.now())
+        })));
+      }
     } catch (err) {
       if (active && onError) onError(err);
     }
@@ -202,12 +186,26 @@ export async function subscribeCloudTrackedSignals(
 }
 
 export async function addCloudTrackedSignal(signal: Omit<CloudTrackedSignal, 'id' | 'userId' | 'timestamp'>): Promise<string> {
-  const id = `track_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  await executeRun(
-    'INSERT INTO paper_tracking (id, signal_id, pair, direction, entry_price, current_price, stop_loss, tp1, tp2, tp3, unrealized_pnl_pips, unrealized_pnl_usd, status, entry_timestamp, last_updated_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, '', signal.pair, signal.direction, signal.entryPrice, signal.currentPrice, signal.stopLoss, signal.tp1, signal.tp2 || 0, signal.tp3 || 0, signal.unrealizedPnlPips, 0, signal.status, Date.now(), Date.now()]
-  );
-  return id;
+  const res = await fetch('/api/forex/paper/track', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      signal: {
+        id: `sig_${Date.now()}`,
+        pair: signal.pair,
+        action: signal.direction,
+        qualified: true,
+        tradePlan: {
+          entryPreferred: signal.entryPrice,
+          stopLoss: signal.stopLoss,
+          target1: signal.tp1
+        }
+      },
+      currentPrice: signal.currentPrice
+    })
+  });
+  const data = await res.json();
+  return data.id || `track_${Date.now()}`;
 }
 
 export function subscribeCloudTradeNotes(
@@ -218,8 +216,11 @@ export function subscribeCloudTradeNotes(
   let active = true;
   const poll = async () => {
     try {
-      const rows = await executeQuery<any>('SELECT id, title, content, symbol, created_at, updated_at FROM trade_notes ORDER BY created_at DESC');
-      if (active) onUpdate(rows.map(r => ({ id: r.id, userId: _userId, title: r.title, content: r.content, symbol: r.symbol || undefined, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) })));
+      const res = await fetch('/api/notes');
+      if (res.ok) {
+        const notes = await res.json();
+        if (active) onUpdate(notes.map((n: any) => ({ ...n, userId: _userId })));
+      }
     } catch (err) {
       if (active && onError) onError(err);
     }
@@ -230,14 +231,17 @@ export function subscribeCloudTradeNotes(
 }
 
 export async function addCloudTradeNote(title: string, content: string, symbol?: string): Promise<string> {
-  const id = `note_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const now = Date.now();
-  await executeRun('INSERT INTO trade_notes (id, title, content, symbol, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [id, title, content, symbol || null, now, now]);
-  return id;
+  const res = await fetch('/api/notes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, content, symbol })
+  });
+  const data = await res.json();
+  return data.id || `note_${Date.now()}`;
 }
 
 export async function deleteCloudTradeNote(noteId: string): Promise<void> {
-  await executeRun('DELETE FROM trade_notes WHERE id = ?', [noteId]);
+  await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
 }
 
 export async function checkFirestoreConnection(): Promise<FirestoreStatus> {

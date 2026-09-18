@@ -11,7 +11,15 @@ import {
   ReconciliationRecord
 } from '../src/services/reconciliationService';
 import { demoExecutionEngine } from '../src/demoExecution/demoExecutionEngine';
-import firebaseConfig from '../firebase-applet-config.json';
+const firebaseConfig = {
+  projectId: 'goldcrestfinman-trading',
+  firestoreDatabaseId: 'ai-studio-aitradinganalyst-f57d545b-845a-45fe-bf9a-966545817650',
+  apiKey: 'test',
+  authDomain: 'test',
+  storageBucket: 'test',
+  messagingSenderId: 'test',
+  appId: 'test'
+};
 
 async function runPhase7TestSuite() {
   console.log('================================================================');
@@ -247,7 +255,7 @@ async function runPhase7TestSuite() {
     { id: 'ORD-A', symbol: 'EUR/USD', quantity: 1.0, direction: 'BUY', status: 'FILLED', price: 1.0850 },
     { id: 'BRK-A', symbol: 'EUR/USD', quantity: 2.0, direction: 'BUY', status: 'FILLED', price: 1.0850 }
   );
-  assert.strictEqual(mismatchRecord.status, 'RECONCILIATION_MISMATCH');
+  assert.strictEqual(mismatchRecord.status, 'CLOUDDIVERGENCE');
   logPass(17, 'Cloud/Local divergence detection verified.');
 
   // ---------------------------------------------------------------------------

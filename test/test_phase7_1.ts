@@ -13,7 +13,15 @@ import {
   ReconciliationStatus
 } from '../src/services/reconciliationService';
 import { demoExecutionEngine } from '../src/demoExecution/demoExecutionEngine';
-import firebaseConfig from '../firebase-applet-config.json';
+const firebaseConfig = {
+  projectId: 'goldcrestfinman-trading',
+  firestoreDatabaseId: 'ai-studio-aitradinganalyst-f57d545b-845a-45fe-bf9a-966545817650',
+  apiKey: 'test',
+  authDomain: 'test',
+  storageBucket: 'test',
+  messagingSenderId: 'test',
+  appId: 'test'
+};
 
 async function runPhase7_1TestSuite() {
   console.log('================================================================');
@@ -43,7 +51,7 @@ async function runPhase7_1TestSuite() {
   // ---------------------------------------------------------------------------
   // 2. 14-Stage Trace Lineage Persistence & Node Ordering
   // ---------------------------------------------------------------------------
-  const testTraceId = `trace_phase7_1_lineage_${Date.now()}`;
+  const testTraceId = `trace_phase7_1_lineage_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const baseTimestamp = Date.now();
 
   const stages: TradeTraceLifecycleNode['nodeType'][] = [
@@ -288,6 +296,7 @@ async function runPhase7_1TestSuite() {
   // ---------------------------------------------------------------------------
   const hydTrace = await firestoreTradeTraceService.getTradeTrace(testTraceId);
   const hydNodes = await firestoreTradeTraceService.getLifecycleNodes(testTraceId);
+  console.log('HYD NODES FULL:', JSON.stringify(hydNodes, null, 2));
   assert.ok(hydTrace, 'Hydration retrieves trade trace root');
   assert.strictEqual(hydNodes.length, 14, 'Hydration reconstructs all 14 lifecycle nodes');
   logPass(14, 'Restart hydration state reconstruction verified.');

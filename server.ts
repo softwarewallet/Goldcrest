@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
-import { getDatabase, getDatabaseStats } from './src/database/db';
+import { getDatabase, getDatabaseStats, executeQuery, executeRun } from './src/database/db';
 import { getForexSessionState, getIndianSessionState } from './src/markets/common/session';
 import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments';
 import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
@@ -433,6 +433,140 @@ app.post('/api/forex/paper/update', async (req: Request, res: Response) => {
     }
     const updated = await paperSignalTracker.updatePrice(trackId, currentPrice);
     res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Paper Portfolio & Trade API Endpoints
+app.get('/api/paper/portfolio', async (req: Request, res: Response) => {
+  try {
+    const rows = await executeQuery<any>('SELECT balance, equity, margin_used, free_margin, currency FROM portfolio WHERE id = ?', ['paper_account']);
+    if (rows.length) {
+      res.json({
+        balance: Number(rows[0].balance),
+        equity: Number(rows[0].equity),
+        marginUsed: Number(rows[0].margin_used),
+        freeMargin: Number(rows[0].free_margin),
+        currency: String(rows[0].currency),
+        updatedAt: Date.now()
+      });
+    } else {
+      res.json({
+        balance: 100000,
+        equity: 100000,
+        marginUsed: 0,
+        freeMargin: 100000,
+        currency: 'USD',
+        updatedAt: Date.now()
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/paper/portfolio/reset', async (req: Request, res: Response) => {
+  try {
+    await executeRun(
+      'UPDATE portfolio SET balance = 100000, equity = 100000, margin_used = 0, free_margin = 100000, currency = ? WHERE id = ?',
+      ['USD', 'paper_account']
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/paper/trades', async (req: Request, res: Response) => {
+  try {
+    const rows = await executeQuery<any>(
+      'SELECT id, instrument AS symbol, instrument, direction, entry_price, exit_price, size AS quantity, stop_loss, take_profit, pnl, status, entry_time, exit_time FROM trades ORDER BY entry_time DESC'
+    );
+    const trades = rows.map(r => ({
+      id: r.id,
+      symbol: r.symbol,
+      market: 'LOCAL',
+      type: r.direction,
+      entryPrice: Number(r.entry_price),
+      exitPrice: r.exit_price == null ? undefined : Number(r.exit_price),
+      quantity: Number(r.quantity),
+      stopLoss: Number(r.stop_loss || 0),
+      takeProfit: Number(r.take_profit || 0),
+      pnl: Number(r.pnl || 0),
+      status: r.status === 'OPEN' ? 'OPEN' : 'CLOSED',
+      openedAt: Number(r.entry_time),
+      closedAt: r.exit_time == null ? undefined : Number(r.exit_time)
+    }));
+    res.json(trades);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/paper/trades', async (req: Request, res: Response) => {
+  try {
+    const trade = req.body;
+    const id = `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await executeRun(
+      'INSERT INTO trades (id, signal_id, instrument, direction, entry_price, size, status, entry_time, pnl) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 0)',
+      [id, trade.symbol, trade.type, trade.entryPrice, trade.quantity, 'OPEN', Date.now()]
+    );
+    res.json({ id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/paper/trades/close', async (req: Request, res: Response) => {
+  try {
+    const { tradeId, exitPrice, pnl } = req.body;
+    await executeRun(
+      'UPDATE trades SET status = ?, exit_price = ?, pnl = ?, exit_time = ? WHERE id = ?',
+      ['CLOSED', exitPrice, pnl, Date.now(), tradeId]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/notes', async (req: Request, res: Response) => {
+  try {
+    const rows = await executeQuery<any>('SELECT id, title, content, symbol, created_at, updated_at FROM trade_notes ORDER BY created_at DESC');
+    const notes = rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      content: r.content,
+      symbol: r.symbol || undefined,
+      createdAt: Number(r.created_at),
+      updatedAt: Number(r.updated_at)
+    }));
+    res.json(notes);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/notes', async (req: Request, res: Response) => {
+  try {
+    const { title, content, symbol } = req.body;
+    const id = `note_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const now = Date.now();
+    await executeRun(
+      'INSERT INTO trade_notes (id, title, content, symbol, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, title, content, symbol || null, now, now]
+    );
+    res.json({ id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/notes/:id', async (req: Request, res: Response) => {
+  try {
+    await executeRun('DELETE FROM trade_notes WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

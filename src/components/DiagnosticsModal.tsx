@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { X, Database, CheckCircle2, ShieldCheck, RefreshCw, Server, Lock } from 'lucide-react';
-import { getDatabaseStats } from '../database/db';
 
 interface DiagnosticsModalProps { onClose: () => void; }
 

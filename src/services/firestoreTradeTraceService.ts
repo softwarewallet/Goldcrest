@@ -19,6 +19,16 @@ export interface FirestoreErrorInfo {
   authInfo: Record<string, any>;
 }
 
+export function handleFirestoreError(error: any, operationType: OperationType, path: string | null): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    operationType,
+    path,
+    authInfo: { userId: 'local_trader_01', authenticated: true }
+  };
+  throw new Error(JSON.stringify(errInfo));
+}
+
 export interface TradeTraceData {
   tradeTraceId: string;
   signalId: string;
@@ -135,9 +145,9 @@ export class FirestoreTradeTraceService {
   }
 
   public async getLifecycleNodes(id: string): Promise<TradeTraceLifecycleNode[]> {
-    const rows = await executeQuery<any>('SELECT payload_json FROM trade_trace_nodes WHERE trade_trace_id = ? ORDER BY timestamp ASC', [id]);
+    const rows = await executeQuery<any>('SELECT payload_json FROM trade_trace_nodes WHERE trade_trace_id = ? AND node_id NOT LIKE "recon-%" ORDER BY timestamp ASC', [id]);
     if (rows.length) return rows.map(r => JSON.parse(r.payload_json) as TradeTraceLifecycleNode);
-    return this.localStore.getNodes(id);
+    return this.localStore.getNodes(id).filter(n => !n.nodeId.startsWith('recon-'));
   }
 
   public async getRecentTraces(limitCount = 20): Promise<TradeTraceData[]> {

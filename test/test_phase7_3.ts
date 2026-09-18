@@ -15,7 +15,15 @@ import { killSwitch } from '../src/brokers/safety/KillSwitch';
 import { tradeValidator } from '../src/brokers/safety/TradeValidator';
 import { liveTradingGate } from '../src/brokers/safety/LiveTradingGate';
 import { OrderRequest } from '../src/brokers/types';
-import firebaseConfig from '../firebase-applet-config.json';
+const firebaseConfig = {
+  projectId: 'goldcrestfinman-trading',
+  firestoreDatabaseId: 'ai-studio-aitradinganalyst-f57d545b-845a-45fe-bf9a-966545817650',
+  apiKey: 'test',
+  authDomain: 'test',
+  storageBucket: 'test',
+  messagingSenderId: 'test',
+  appId: 'test'
+};
 
 export async function runPhase7_3TestSuite() {
   console.log('================================================================');

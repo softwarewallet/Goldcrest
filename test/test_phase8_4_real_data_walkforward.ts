@@ -736,7 +736,7 @@ export async function runPhase8_4TestSuite() {
     dataSource: 'HISTORICAL'
   };
   await firebaseMLStorage.saveFeatureSnapshot(snapshot);
-  const stats = firebaseMLStorage.getStats();
+  const stats = await firebaseMLStorage.getStats();
   assert.ok(stats.snapshotsCount >= 1, 'Firebase storage bridge must persist snapshot in memory/Firestore.');
   logPass(39, 'Firebase traceability: research persistence layer stores immutable artifacts with clean fallback.');
 
