@@ -1,157 +1,69 @@
-// ============================================================================
-// FIREBASE FIRESTORE ML STORAGE BRIDGE & IMMUTABLE PERSISTENCE LAYER
-// ============================================================================
+import { FeatureSnapshot, OutcomeLabel, MLPrediction, ModelRegistryEntry, BacktestResult } from '../types';
+import { executeQuery, executeRun } from '../../database/db';
 
-import {
-  FeatureSnapshot,
-  OutcomeLabel,
-  MLPrediction,
-  ModelRegistryEntry,
-  BacktestResult
-} from '../types';
-import { db, auth } from '../../firebase';
-import {
-  collection,
-  doc,
-  setDoc,
-  getDoc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  limit
-} from 'firebase/firestore';
-
+// SQLite is the authoritative local ML persistence layer.
 export class FirebaseMLStorage {
-  private inMemorySnapshots: Map<string, FeatureSnapshot> = new Map();
-  private inMemoryLabels: Map<string, OutcomeLabel> = new Map();
-  private inMemoryPredictions: Map<string, MLPrediction> = new Map();
-  private inMemoryModels: Map<string, ModelRegistryEntry> = new Map();
-  private inMemoryBacktests: Map<string, BacktestResult> = new Map();
+  private async save(recordType: string, id: string, payload: any, timestamp: number): Promise<void> {
+    await executeRun(
+      'INSERT OR REPLACE INTO ml_storage_records (id, record_type, payload_json, timestamp) VALUES (?, ?, ?, ?)',
+      [id, recordType, JSON.stringify(payload), timestamp]
+    );
+  }
 
-  /**
-   * Persists an immutable feature snapshot.
-   */
   public async saveFeatureSnapshot(snapshot: FeatureSnapshot): Promise<void> {
-    // In-memory cache
-    this.inMemorySnapshots.set(snapshot.featureSnapshotId, snapshot);
-
-    try {
-      if (db) {
-        const ref = doc(db, 'ml_feature_snapshots', snapshot.featureSnapshotId);
-        await setDoc(ref, {
-          ...snapshot,
-          savedAt: new Date()
-        });
-      }
-    } catch (err) {
-      console.warn('Firestore ML snapshot save fallback to memory:', err);
-    }
+    await this.save('FEATURE_SNAPSHOT', snapshot.featureSnapshotId, snapshot, Date.now());
   }
 
-  /**
-   * Persists an immutable outcome label.
-   */
   public async saveOutcomeLabel(label: OutcomeLabel): Promise<void> {
-    this.inMemoryLabels.set(label.outcomeId, label);
-
-    try {
-      if (db) {
-        const ref = doc(db, 'ml_outcome_labels', label.outcomeId);
-        await setDoc(ref, {
-          ...label,
-          savedAt: new Date()
-        });
-      }
-    } catch (err) {
-      console.warn('Firestore ML outcome save fallback to memory:', err);
-    }
+    await this.save('OUTCOME_LABEL', label.outcomeId, label, Date.now());
   }
 
-  /**
-   * Persists prediction record.
-   */
   public async savePrediction(prediction: MLPrediction): Promise<void> {
-    this.inMemoryPredictions.set(prediction.predictionId, prediction);
-
-    try {
-      if (db) {
-        const ref = doc(db, 'ml_prediction_records', prediction.predictionId);
-        await setDoc(ref, {
-          ...prediction,
-          savedAt: new Date()
-        });
-      }
-    } catch (err) {
-      console.warn('Firestore ML prediction save fallback to memory:', err);
-    }
+    await this.save('PREDICTION', prediction.predictionId, prediction, prediction.timestamp);
   }
 
-  /**
-   * Saves or updates a model registry entry.
-   */
   public async saveModelEntry(entry: ModelRegistryEntry): Promise<void> {
-    this.inMemoryModels.set(entry.modelId, entry);
-
-    try {
-      if (db) {
-        const ref = doc(db, 'ml_models', entry.modelId);
-        await setDoc(ref, {
-          ...entry,
-          savedAt: new Date()
-        });
-      }
-    } catch (err) {
-      console.warn('Firestore ML model entry save fallback to memory:', err);
-    }
+    await this.save('MODEL', entry.modelId, entry, Date.now());
   }
 
-  /**
-   * Saves backtest result.
-   */
   public async saveBacktestResult(result: BacktestResult): Promise<void> {
-    this.inMemoryBacktests.set(result.backtestId, result);
-
-    try {
-      if (db) {
-        const ref = doc(db, 'ml_backtest_results', result.backtestId);
-        await setDoc(ref, {
-          ...result,
-          savedAt: new Date()
-        });
-      }
-    } catch (err) {
-      console.warn('Firestore ML backtest save fallback to memory:', err);
-    }
+    await this.save('BACKTEST', result.backtestId, result, result.timestamp);
   }
 
-  /**
-   * Retrieves all predictions with optional limit.
-   */
   public async getRecentPredictions(max: number = 50): Promise<MLPrediction[]> {
-    const list = Array.from(this.inMemoryPredictions.values())
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, max);
-    return list;
+    const rows = await executeQuery<any>(
+      'SELECT payload_json FROM ml_storage_records WHERE record_type = ? ORDER BY timestamp DESC LIMIT ?',
+      ['PREDICTION', max]
+    );
+    return rows.map(r => JSON.parse(r.payload_json) as MLPrediction);
   }
 
-  public getInMemoryBacktests(): BacktestResult[] {
-    return Array.from(this.inMemoryBacktests.values()).sort((a, b) => b.timestamp - a.timestamp);
+  public async getInMemoryBacktests(): Promise<BacktestResult[]> {
+    const rows = await executeQuery<any>(
+      'SELECT payload_json FROM ml_storage_records WHERE record_type = ? ORDER BY timestamp DESC',
+      ['BACKTEST']
+    );
+    return rows.map(r => JSON.parse(r.payload_json) as BacktestResult);
   }
 
-  public getStats(): {
+  public async getStats(): Promise<{
     snapshotsCount: number;
     labelsCount: number;
     predictionsCount: number;
     modelsCount: number;
     backtestsCount: number;
-  } {
+  }> {
+    const rows = await executeQuery<any>(
+      'SELECT record_type, COUNT(*) AS count FROM ml_storage_records GROUP BY record_type'
+    );
+    const counts: Record<string, number> = {};
+    rows.forEach(r => { counts[r.record_type] = Number(r.count); });
     return {
-      snapshotsCount: this.inMemorySnapshots.size,
-      labelsCount: this.inMemoryLabels.size,
-      predictionsCount: this.inMemoryPredictions.size,
-      modelsCount: this.inMemoryModels.size,
-      backtestsCount: this.inMemoryBacktests.size
+      snapshotsCount: counts.FEATURE_SNAPSHOT || 0,
+      labelsCount: counts.OUTCOME_LABEL || 0,
+      predictionsCount: counts.PREDICTION || 0,
+      modelsCount: counts.MODEL || 0,
+      backtestsCount: counts.BACKTEST || 0
     };
   }
 }
