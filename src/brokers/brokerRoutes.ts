@@ -181,7 +181,10 @@ brokerRouter.get('/account', async (req: Request, res: Response) => {
 
   try {
     if (requestedBroker) {
-      const account = await brokerRegistry.getAdapter(requestedBroker, 'LIVE').getAccount();
+      const adapter = brokerRegistry.getAdapter(requestedBroker, 'LIVE');
+      console.log(`[DEBUG] Adapter for ${requestedBroker}:`, adapter?.broker, adapter?.status);
+      const account = await adapter.getAccount();
+      console.log(`[DEBUG] Account for ${requestedBroker}:`, JSON.stringify(account, null, 2));
       return res.json(account);
     }
 

@@ -278,6 +278,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     }
 
     const data = await res.json();
+    console.log('[DEBUG] 5paisa Margin API response:', JSON.stringify(data, null, 2));
     if (data?.head?.Status !== 0 && data?.head?.StatusDescription) {
       const desc = data.head.StatusDescription.toLowerCase();
       if (desc.includes('token') || desc.includes('session') || desc.includes('unauthorized')) {
