@@ -1236,85 +1236,9 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
           });
         }
       } else {
-        // Construct live Black-Scholes quantitative strike chain using 5paisa live spot rate
-        for (let i = -strikeDepth; i <= strikeDepth; i++) {
-          const strike = atmStrike + i * config.strikeStep;
-          const isATM = i === 0;
-          const iv = 13.8 + Math.abs(i) * 0.25;
-
-          const callGreeks = calculateBlackScholesGreeks(spotPrice, strike, timeInYears, 0.068, iv / 100, 'CALL');
-          const putGreeks = calculateBlackScholesGreeks(spotPrice, strike, timeInYears, 0.068, iv / 100, 'PUT');
-
-          const ceLtp = Number(callGreeks.price.toFixed(2));
-          const peLtp = Number(putGreeks.price.toFixed(2));
-
-          const ceOI = Math.max(10000, Math.round((500000 / (1 + Math.abs(i) * 0.8)) * (1 + (i > 0 ? 0.3 : -0.2))));
-          const peOI = Math.max(10000, Math.round((500000 / (1 + Math.abs(i) * 0.8)) * (1 + (i < 0 ? 0.35 : -0.15))));
-
-          totalCallOI += ceOI;
-          totalPutOI += peOI;
-
-          if (ceOI > maxCallOI && strike >= atmStrike) {
-            maxCallOI = ceOI;
-            callResistanceStrike = strike;
-          }
-          if (peOI > maxPutOI && strike <= atmStrike) {
-            maxPutOI = peOI;
-            putSupportStrike = strike;
-          }
-
-          rows.push({
-            strike,
-            isATM,
-            distanceFromAtm: i,
-            call: {
-              symbol: `${clean}_${currentExpiry}_${strike}_CE`,
-              underlying: clean,
-              strike,
-              optionType: 'CALL',
-              expiry: currentExpiry,
-              lotSize: config.lotSize,
-              tickSize: 0.05,
-              contractMultiplier: 1,
-              ltp: ceLtp,
-              change: Number((ceLtp * 0.04).toFixed(2)),
-              changePercent: 4.0,
-              oi: ceOI,
-              changeOI: Math.round(ceOI * 0.05),
-              volume: Math.round(ceOI * 0.8),
-              bid: Number(Math.max(0.05, ceLtp - 0.1).toFixed(2)),
-              ask: Number((ceLtp + 0.1).toFixed(2)),
-              spread: 0.2,
-              iv,
-              greeks: callGreeks.greeks,
-              isATM,
-              isITM: strike < spotPrice
-            },
-            put: {
-              symbol: `${clean}_${currentExpiry}_${strike}_PE`,
-              underlying: clean,
-              strike,
-              optionType: 'PUT',
-              expiry: currentExpiry,
-              lotSize: config.lotSize,
-              tickSize: 0.05,
-              contractMultiplier: 1,
-              ltp: peLtp,
-              change: Number((-peLtp * 0.03).toFixed(2)),
-              changePercent: -3.0,
-              oi: peOI,
-              changeOI: Math.round(peOI * 0.04),
-              volume: Math.round(peOI * 0.75),
-              bid: Number(Math.max(0.05, peLtp - 0.1).toFixed(2)),
-              ask: Number((peLtp + 0.1).toFixed(2)),
-              spread: 0.2,
-              iv,
-              greeks: putGreeks.greeks,
-              isATM,
-              isITM: strike > spotPrice
-            }
-          });
-        }
+        // Never fabricate option-chain rows, IV, OI, bid/ask, or Greeks.
+        // The UI must surface that authoritative 5paisa option data is unavailable.
+        return null;
       }
 
       rows.sort((a, b) => a.strike - b.strike);
