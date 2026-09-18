@@ -86,3 +86,30 @@ At minimum retain:
 - [ ] SQLite volume is durable and backed up.
 - [ ] No broker credentials committed to Git.
 - [ ] Autonomous live order submission remains disabled.
+
+
+## HTTPS reverse proxy
+
+The production Compose stack now includes Caddy. Set GOLDCREST_DOMAIN to the real public hostname and point its DNS A/AAAA record to the production host. Caddy terminates HTTPS and proxies internally to Goldcrest; port 3000 is not published publicly. Keep the Caddy data volume durable so certificate state survives container recreation.
+
+Docker volumes are used because container filesystems are ephemeral; durable volumes preserve SQLite and certificate state across container lifecycle events. See Docker's volume documentation.
+
+For production Compose deployments, a single server is an appropriate deployment shape for this stateful application, provided the SQLite volume is durable.
+
+### Final host setup
+
+1. Provision one Linux server with Docker Engine and Compose.
+2. Allow inbound TCP 80 and 443. Do not expose TCP 3000 publicly.
+3. Clone the Goldcrest repository.
+4. Create .env from .env.example.
+5. Set the real GOLDCREST_DOMAIN.
+6. Set the production operator key and LIVE broker credentials.
+7. Start with docker compose up -d --build.
+8. Confirm docker compose ps shows both goldcrest and caddy healthy.
+9. Confirm the HTTPS /api/health endpoint returns HTTP 200.
+10. Confirm the HTTPS /api/health/ready endpoint returns HTTP 200.
+11. Log in through the browser operator gate.
+12. Verify both live balance cards and broker status.
+13. Take the first verified SQLite backup before normal production use.
+
+Do not put broker credentials or the operator key into Git or Vite frontend variables.
