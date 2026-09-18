@@ -382,76 +382,89 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   async getHistoricalCandles(symbol: string, timeframe: string, limit: number) {
     this.syncConfig();
     this.validateCredentials();
-    if (!this.ctidTraderAccountId) await this.getAccount();
-    const instruments = await fetchCTraderSymbols(
-      this.ctidTraderAccountId!,
-      this.config.clientId!,
-      this.config.clientSecret!,
-      this.config.accessToken!,
-      this.isLive
-    );
-    const normalized = symbol.replace('/', '').toUpperCase();
-    const match = instruments.find(s => s.symbolName.replace('/', '').toUpperCase() === normalized);
-    if (!match) throw new BrokerError('INVALID_SYMBOL', `cTrader symbol ${symbol} was not found in the authenticated account symbol list.`, 'CTRADER', this.environment);
-    return fetchCTraderTrendbars(
-      this.ctidTraderAccountId!,
-      match.symbolId,
-      timeframe,
-      limit,
-      this.config.clientId!,
-      this.config.clientSecret!,
-      this.config.accessToken!,
-      this.isLive,
-      match.digits
-    );
+    const accountId = Number(this.config.accountId);
+    if (!Number.isFinite(accountId) || accountId <= 0) {
+      throw new BrokerError('ACCOUNT_NOT_FOUND', `Invalid or missing cTrader account ID: ${this.config.accountId}`, 'CTRADER', this.environment);
+    }
+    try {
+      const instruments = await fetchCTraderSymbols(
+        accountId,
+        this.config.clientId!,
+        this.config.clientSecret!,
+        this.config.accessToken!,
+        this.isLive
+      );
+      const normalized = symbol.replace('/', '').toUpperCase();
+      const match = instruments.find(s => s.symbolName.replace('/', '').toUpperCase() === normalized);
+      if (!match) throw new BrokerError('INVALID_SYMBOL', `cTrader symbol ${symbol} was not found in the authenticated account symbol list.`, 'CTRADER', this.environment);
+      return await fetchCTraderTrendbars(
+        accountId,
+        match.symbolId,
+        timeframe,
+        limit,
+        this.config.clientId!,
+        this.config.clientSecret!,
+        this.config.accessToken!,
+        this.isLive,
+        match.digits
+      );
+    } catch (err: any) {
+      throw normalizeBrokerError(err, 'CTRADER', this.environment);
+    }
   }
 
   async getQuote(symbol: string): Promise<NormalizedQuote> {
     this.syncConfig();
     this.validateCredentials();
-    const account = await this.getAccount();
-    const symbols = await fetchCTraderSymbols(
-      this.ctidTraderAccountId!,
-      this.config.clientId!,
-      this.config.clientSecret!,
-      this.config.accessToken!,
-      this.isLive
-    );
-    const normalized = symbol.replace('/', '').toUpperCase();
-    const match = symbols.find(s => s.symbolName.replace('/', '').toUpperCase() === normalized);
-    if (!match) {
-      throw new BrokerError('INVALID_SYMBOL', `cTrader symbol ${symbol} was not found in the authenticated account symbol list.`, 'CTRADER', this.environment);
+    const accountId = Number(this.config.accountId);
+    if (!Number.isFinite(accountId) || accountId <= 0) {
+      throw new BrokerError('ACCOUNT_NOT_FOUND', `Invalid or missing cTrader account ID: ${this.config.accountId}`, 'CTRADER', this.environment);
     }
-    const quote = await fetchLiveCTraderQuote(
-      this.ctidTraderAccountId!,
-      match.symbolId,
-      match.symbolName,
-      this.config.clientId!,
-      this.config.clientSecret!,
-      this.config.accessToken!,
-      this.isLive
-    );
-    if (quote.bid === undefined || quote.ask === undefined || quote.bid <= 0 || quote.ask <= 0 || quote.ask < quote.bid) {
-      throw new BrokerError('STALE_DATA', `cTrader did not provide a valid bid/ask for ${symbol}.`, 'CTRADER', this.environment);
+    try {
+      const symbols = await fetchCTraderSymbols(
+        accountId,
+        this.config.clientId!,
+        this.config.clientSecret!,
+        this.config.accessToken!,
+        this.isLive
+      );
+      const normalized = symbol.replace('/', '').toUpperCase();
+      const match = symbols.find(s => s.symbolName.replace('/', '').toUpperCase() === normalized);
+      if (!match) {
+        throw new BrokerError('INVALID_SYMBOL', `cTrader symbol ${symbol} was not found in the authenticated account symbol list.`, 'CTRADER', this.environment);
+      }
+      const quote = await fetchLiveCTraderQuote(
+        accountId,
+        match.symbolId,
+        match.symbolName,
+        this.config.clientId!,
+        this.config.clientSecret!,
+        this.config.accessToken!,
+        this.isLive
+      );
+      if (quote.bid === undefined || quote.ask === undefined || quote.bid <= 0 || quote.ask <= 0 || quote.ask < quote.bid) {
+        throw new BrokerError('STALE_DATA', `cTrader did not provide a valid bid/ask for ${symbol}.`, 'CTRADER', this.environment);
+      }
+      return {
+        symbol,
+        bid: Number(quote.bid.toFixed(match.digits)),
+        ask: Number(quote.ask.toFixed(match.digits)),
+        spread: Number((quote.ask - quote.bid).toFixed(match.digits)),
+        timestamp: quote.timestamp,
+        source: 'CTRADER_OPEN_API',
+        environment: this.environment,
+        status: 'FRESH'
+      };
+    } catch (err: any) {
+      throw normalizeBrokerError(err, 'CTRADER', this.environment);
     }
-    return {
-      symbol,
-      bid: Number(quote.bid.toFixed(match.digits)),
-      ask: Number(quote.ask.toFixed(match.digits)),
-      spread: Number((quote.ask - quote.bid).toFixed(match.digits)),
-      timestamp: quote.timestamp,
-      source: 'CTRADER_OPEN_API',
-      environment: this.environment,
-      status: 'FRESH'
-    };
   }
 
   async getInstruments(): Promise<BrokerInstrument[]> {
     this.validateCredentials();
-    
-    const account = await this.getAccount();
+    const accountId = Number(this.config.accountId);
     const symbols = await fetchCTraderSymbols(
-      this.ctidTraderAccountId!,
+      accountId,
       this.config.clientId!,
       this.config.clientSecret!,
       this.config.accessToken!,

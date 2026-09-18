@@ -35,7 +35,7 @@ export function normalizeBrokerError(err: any, broker: string, environment: stri
     code = 'AUTONOMOUS_LIVE_EXECUTION_DISABLED';
   } else if (msg.includes('account_identity_mismatch') || msg.includes('identity mismatch')) {
     code = 'ACCOUNT_IDENTITY_MISMATCH';
-  } else if (msg.includes('account_not_found') || msg.includes('account not found')) {
+  } else if (msg.includes('account_not_found') || msg.includes('account not found') || msg.includes('ch_ctid_trader_account_not_found') || msg.includes('trader account with id')) {
     code = 'ACCOUNT_NOT_FOUND';
   } else if (msg.includes('account_data_unavailable') || msg.includes('data unavailable')) {
     code = 'ACCOUNT_DATA_UNAVAILABLE';

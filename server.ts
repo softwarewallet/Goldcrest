@@ -26,6 +26,7 @@ import { explainForexAnalysis } from './src/services/geminiExplainer';
 import { ForexTimeframe } from './src/markets/forex/types';
 
 // Phase 2B Broker Integration
+import { BrokerError } from './src/brokers/errors';
 import { brokerRouter } from './src/brokers/brokerRoutes';
 import { LIVE_AUTO_EXECUTION_ALLOWED } from './src/brokers/safety/AutoExecutionEngine';
 
@@ -289,11 +290,11 @@ app.get(['/api/forex/sessions'], (req: Request, res: Response) => {
 async function getLiveAnchoredCandles(pair: string, tf: ForexTimeframe = '15M', limit: number = 80) {
   const adapter = brokerRegistry.getAdapter('CTRADER');
   if (!adapter.getHistoricalCandles) {
-    throw new Error('Authoritative cTrader historical market-data capability is unavailable.');
+    throw new BrokerError('UNAVAILABLE', 'Authoritative cTrader historical market-data capability is unavailable.', 'CTRADER', 'LIVE');
   }
   const candles = await adapter.getHistoricalCandles(pair, tf, limit);
   if (!Array.isArray(candles) || candles.length === 0) {
-    throw new Error(`No authoritative cTrader historical candles returned for ${pair} ${tf}.`);
+    throw new BrokerError('STALE_DATA', `No authoritative cTrader historical candles returned for ${pair} ${tf}.`, 'CTRADER', 'LIVE');
   }
   return candles;
 }
@@ -650,13 +651,17 @@ app.get(['/api/candles/:symbol', '/api/candles/:part1/:part2'], async (req: Requ
       return res.json(candles);
     } else {
       const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE');
-      if (!adapter.getHistoricalCandles) throw new Error('Authoritative 5paisa historical market-data capability is unavailable.');
+      if (!adapter.getHistoricalCandles) throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa historical market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
       const candles = await adapter.getHistoricalCandles(symbol, '15m', 60);
       return res.json(candles);
     }
   } catch (err: any) {
-    console.error(`Error in /api/candles endpoint:`, err);
-    return res.json([]);
+    const isAuth = err?.code === 'AUTHENTICATION_FAILED' || err?.code === 'ACCOUNT_NOT_FOUND' || err?.code === 'TOKEN_EXPIRED';
+    const status = isAuth ? 401 : 503;
+    return res.status(status).json({
+      error: err?.code || 'MARKET_DATA_UNAVAILABLE',
+      message: err?.message || 'Historical candle data is unavailable from the live broker.'
+    });
   }
 });
 

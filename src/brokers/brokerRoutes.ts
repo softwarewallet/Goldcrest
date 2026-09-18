@@ -370,8 +370,8 @@ brokerRouter.post('/controls', (req: Request, res: Response) => {
 });
 
 brokerRouter.post('/reconciliation/snapshot', async (req: Request, res: Response) => {
-  const broker = req.body?.broker as BrokerType | undefined;
-  const brokers = broker ? [broker] : LIVE_BROKERS;
+  const broker = req.body?.broker as ('CTRADER' | 'FIVE_PAISA') | undefined;
+  const brokers: ('CTRADER' | 'FIVE_PAISA')[] = broker ? [broker] : ['CTRADER', 'FIVE_PAISA'];
   if (brokers.some(b => !LIVE_BROKERS.includes(b))) {
     return res.status(400).json({ error: 'Allowed live brokers: CTRADER, FIVE_PAISA' });
   }

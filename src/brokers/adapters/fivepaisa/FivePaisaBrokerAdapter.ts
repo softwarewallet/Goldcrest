@@ -465,8 +465,22 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
   async getOpenOrders(): Promise<NormalizedOrder[]> {
     await this.ensureActiveSession();
-    if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unava  async getOrderHistory(): Promise<NormalizedOrder[]> {
-    return this.getOpenOrders();
+    if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
+    const url = `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/OrderBook`;
+    const data = await this.postUserApi(url, '5POB', { ClientCode: this.config.clientCode || this.config.userId });
+    const orders: any[] = data?.body?.OrderBookDetail || [];
+    if (!Array.isArray(orders)) throw new BrokerError('BROKER_UNAVAILABLE', '5paisa returned an invalid order-book response.', 'FIVE_PAISA', this.environment);
+    return orders.map(o => this.normalizeBrokerOrder(o)).filter(o => o.status === 'PENDING' || o.status === 'ACCEPTED');
+  }
+
+  async getOrderHistory(): Promise<NormalizedOrder[]> {
+    await this.ensureActiveSession();
+    if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
+    const url = `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/OrderBook`;
+    const data = await this.postUserApi(url, '5POB', { ClientCode: this.config.clientCode || this.config.userId });
+    const orders: any[] = data?.body?.OrderBookDetail || [];
+    if (!Array.isArray(orders)) throw new BrokerError('BROKER_UNAVAILABLE', '5paisa returned an invalid order-book response.', 'FIVE_PAISA', this.environment);
+    return orders.map(o => this.normalizeBrokerOrder(o));
   }
 
   private async postUserApi(url: string, requestCode: string, body: Record<string, unknown>): Promise<any> {
