@@ -8,6 +8,7 @@ import {
   BrokerType,
   ConnectionTestResult,
   NormalizedOrder,
+  NormalizedFill,
   NormalizedPosition,
   NormalizedQuote,
   OrderModification,
@@ -893,6 +894,25 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       ? weightedPriceNumerator / filledVolume
       : undefined;
     const latestDeal = matchingDeals[matchingDeals.length - 1];
+    const symbols = await fetchCTraderSymbols(
+      raw.ctidTraderAccountId,
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      raw.isLive
+    );
+    const symbolInfo = symbols.find(s => Number(s.symbolId) === Number(latestDeal.symbolId));
+    const normalizedSymbol = symbolInfo?.symbolName || String(latestDeal.symbolId);
+    const fillEvents: NormalizedFill[] = matchingDeals
+      .filter((deal: any) => Number(deal.filledVolume || 0) > 0 && deal.dealId !== undefined && Number(deal.executionPrice || 0) > 0)
+      .map((deal: any) => ({
+        brokerFillId: String(deal.dealId),
+        brokerOrderId: String(brokerId),
+        quantity: Math.max(0, Number(deal.filledVolume || 0)) / 100,
+        price: Number(deal.executionPrice),
+        commission: Number(deal.commission || 0) || undefined,
+        timestamp: Number(deal.executionTimestamp || deal.utcLastUpdateTimestamp || deal.createTimestamp || Date.now())
+      }));
     const hasFilledDeal = matchingDeals.some((d: any) => Number(d.dealStatus) === 2 || Number(d.filledVolume || 0) > 0);
     const hasRejectedDeal = matchingDeals.some((d: any) => [4, 5, 6, 7].includes(Number(d.dealStatus)));
     const status = requestedVolume > 0 && filledVolume >= requestedVolume
@@ -910,7 +930,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       broker: 'CTRADER',
       environment: this.environment,
       market: 'FOREX',
-      symbol: String(latestDeal.symbolId),
+      symbol: normalizedSymbol,
       side: Number(latestDeal.tradeSide) === 2 ? 'SELL' : 'BUY',
       orderType: 'MARKET',
       quantity: requestedVolume > 0 ? requestedVolume : filledVolume,
@@ -920,7 +940,8 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       averageFillPrice,
       commission: matchingDeals.reduce((sum: number, deal: any) => sum + (Number(deal.commission || 0) || 0), 0) || undefined,
       timestamp: Number(latestDeal.executionTimestamp || latestDeal.utcLastUpdateTimestamp || Date.now()),
-      brokerOrderId: String(brokerId)
+      brokerOrderId: String(brokerId),
+      fillEvents
     };
   }
 }
