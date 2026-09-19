@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { executeQuery, executeRun } from '../database/db';
 
-export type ExecutionIntentState = 'PENDING' | 'COMPLETED' | 'FAILED';
+export type ExecutionIntentState = 'PENDING' | 'IN_FLIGHT' | 'COMPLETED' | 'FAILED';
 
 export interface ExecutionIntentRecord {
   idempotencyKey: string;
@@ -53,6 +53,13 @@ export async function claimExecutionIntent(
     payload: JSON.parse(row.payload_json || 'null'),
     result: row.result_json ? JSON.parse(row.result_json) : undefined
   }};
+}
+
+export async function markExecutionIntentInFlight(idempotencyKey: string, result: unknown): Promise<void> {
+  await executeRun(
+    'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state = ?',
+    ['IN_FLIGHT', JSON.stringify(result), Date.now(), idempotencyKey, 'PENDING']
+  );
 }
 
 export async function completeExecutionIntent(idempotencyKey: string, result: unknown): Promise<void> {
