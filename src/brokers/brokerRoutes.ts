@@ -295,6 +295,14 @@ brokerRouter.get('/dashboard-summary', async (_req: Request, res: Response) => {
       positions,
       openOrders,
       orderHistory: orderHistory.slice(0, 100),
+      brokerSummaries: results.map(r => ({
+        broker: r.broker,
+        account: r.account,
+        dailyRealizedPnL: r.dailyRealizedPnL,
+        positionsCount: r.positions.length,
+        openOrdersCount: r.openOrders.length,
+        orderHistory: r.orderHistory.slice(0, 50)
+      })),
       metrics: {
         totalBalance,
         totalEquity,
