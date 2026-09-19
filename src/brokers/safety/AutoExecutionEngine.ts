@@ -152,10 +152,12 @@ class AutoExecutionEngine {
     // even though the separate autonomous-live execution invariant remains OFF.
     const autoAuthorization = await autoTradingController.authorizeSignal({
       signalTimestamp: signalInput.signalTimestamp,
-      score: Number((signalInput as any).score ?? 0),
-      riskReward: order.takeProfit && order.stopLoss
-        ? Math.abs(order.takeProfit - order.price) / Math.max(Math.abs(order.price - order.stopLoss), Number.EPSILON)
-        : 0,
+      score: Number(signalInput.score ?? 0),
+      riskReward: Number(signalInput.riskReward ?? (
+        order.takeProfit && order.stopLoss
+          ? Math.abs(order.takeProfit - signalInput.currentPrice) / Math.max(Math.abs(signalInput.currentPrice - order.stopLoss), Number.EPSILON)
+          : 0
+      )),
       spread: Number(signalInput.spread ?? 0),
       spreadRatio: Number(order.price || signalInput.currentPrice) > 0
         ? Number(signalInput.spread ?? 0) / Number(order.price || signalInput.currentPrice)
