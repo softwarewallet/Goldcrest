@@ -423,6 +423,21 @@ function initSchema(db: Database) {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    -- 30.1. Durable execution fill observations
+    CREATE TABLE IF NOT EXISTS execution_fill_observations (
+      id TEXT PRIMARY KEY,
+      idempotency_key TEXT NOT NULL,
+      broker TEXT NOT NULL,
+      broker_order_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      requested_quantity REAL,
+      filled_quantity REAL NOT NULL,
+      remaining_quantity REAL,
+      average_fill_price REAL,
+      commission REAL,
+      observed_at INTEGER NOT NULL
+    );
+
     -- 30. ML Persistence Bridge
     CREATE TABLE IF NOT EXISTS ml_storage_records (
       id TEXT PRIMARY KEY,
