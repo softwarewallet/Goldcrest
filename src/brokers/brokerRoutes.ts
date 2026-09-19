@@ -24,6 +24,91 @@ function resolveMarketBroker(market: string): BrokerType {
   throw new Error(`Unsupported market: ${market}. No compatible live broker is configured.`);
 }
 
+function forexQuoteCurrencies(symbol: string): { base: string; quote: string } | null {
+  const compact = String(symbol || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (compact.length !== 6) return null;
+  return { base: compact.slice(0, 3), quote: compact.slice(3, 6) };
+}
+
+async function convertForexNotionalToAccountCurrency(
+  adapter: ReturnType<typeof brokerRegistry.getAdapter>,
+  symbol: string,
+  notional: number,
+  accountCurrency: string
+): Promise<number> {
+  if (!Number.isFinite(notional) || notional < 0) throw new Error('INVALID_EXPOSURE_NOTIONAL');
+  const currencies = forexQuoteCurrencies(symbol);
+  if (!currencies) throw new Error(`Unable to determine Forex currencies for ${symbol}.`);
+  const target = String(accountCurrency || '').toUpperCase();
+  if (!target) throw new Error('ACCOUNT_CURRENCY_UNAVAILABLE');
+
+  // Forex position quantity is denominated in base currency. Its notional in
+  // account currency is therefore base quantity converted through base/target.
+  if (currencies.base === target) return notional;
+
+  const direct = currencies.base + '/' + target;
+  try {
+    const q = await adapter.getQuote(direct);
+    const rate = Number(q.bid || q.ask || 0);
+    if (rate > 0) return notional * rate;
+  } catch {
+    // Try the inverse pair below.
+  }
+
+  const inverse = target + '/' + currencies.base;
+  try {
+    const q = await adapter.getQuote(inverse);
+    const rate = Number(q.ask || q.bid || 0);
+    if (rate > 0) return notional / rate;
+  } catch {
+    // Conversion is intentionally fail-closed.
+  }
+
+  throw new Error(`Authoritative FX conversion unavailable for ${currencies.base} to ${target}.`);
+}
+
+async function calculateAccountCurrencyExposure(
+  adapter: ReturnType<typeof brokerRegistry.getAdapter>,
+  positions: Awaited<ReturnType<ReturnType<typeof brokerRegistry.getAdapter>['getPositions']>>,
+  order: OrderRequest,
+  accountCurrency: string,
+  quote: Awaited<ReturnType<ReturnType<typeof brokerRegistry.getAdapter>['getQuote']>>
+): Promise<number> {
+  let exposure = 0;
+
+  for (const position of positions) {
+    const quantity = Math.abs(Number(position.quantity || 0));
+    const price = Number(position.currentPrice || position.entryPrice || 0);
+    if (!(quantity > 0 && price > 0)) continue;
+
+    if (order.market !== 'FOREX') {
+      exposure += quantity * price;
+      continue;
+    }
+
+    const currencies = forexQuoteCurrencies(position.symbol);
+    if (!currencies) throw new Error(`Unable to determine Forex currencies for ${position.symbol}.`);
+    const baseNotional = quantity;
+    exposure += await convertForexNotionalToAccountCurrency(adapter, position.symbol, baseNotional, accountCurrency);
+  }
+
+  const proposedQuantity = Math.abs(Number(order.quantity || 0));
+  if (proposedQuantity > 0) {
+    if (order.market !== 'FOREX') {
+      exposure += proposedQuantity * Number(order.price || (order.side === 'BUY' ? quote.ask : quote.bid) || 0);
+    } else {
+      exposure += await convertForexNotionalToAccountCurrency(
+        adapter,
+        order.symbol,
+        proposedQuantity,
+        accountCurrency
+      );
+    }
+  }
+
+  return exposure;
+}
+
 // Both LIVE broker connections remain active simultaneously. No user broker
 // selection is required; market compatibility determines the adapter.
 brokerRouter.get('/status', async (_req: Request, res: Response) => {
@@ -302,16 +387,22 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
     const isMarketOpen = orderReq.market === 'FOREX'
       ? !getForexSessionState().activeSessions.includes('CLOSED (WEEKEND)')
       : getIndianSessionState().isOpen;
-    const currentExposure = positions.reduce((sum, position) => {
-      const price = Number(position.currentPrice || position.entryPrice || 0);
-      const quantity = Number(position.quantity || 0);
-      return sum + (price > 0 && quantity > 0 ? price * quantity : 0);
-    }, 0);
-    const proposedReferencePrice = Number(orderReq.price || (orderReq.side === 'BUY' ? quote.ask : quote.bid) || 0);
-    const proposedExposure = proposedReferencePrice > 0 && orderReq.quantity > 0
-      ? proposedReferencePrice * Number(orderReq.quantity)
-      : 0;
-    const totalExposureIncludingOrder = currentExposure + proposedExposure;
+    let totalExposureIncludingOrder: number;
+    try {
+      totalExposureIncludingOrder = await calculateAccountCurrencyExposure(
+        adapter,
+        positions,
+        orderReq,
+        account.currency,
+        quote
+      );
+    } catch (exposureErr: any) {
+      return res.status(403).json({
+        error: 'Live Safety Gate Rejected Order',
+        code: 'EXPOSURE_CURRENCY_UNAVAILABLE',
+        details: [`Account-currency exposure could not be verified safely: ${exposureErr?.message || String(exposureErr)}`]
+      });
+    }
     const maxAllowedExposure = Math.max(Number(account.equity || 0), 1);
     const dailyLossLimit = Math.max(
       Number(account.balance || 0) * (Number(getSystemConfig().maxDailyLossPct) / 100),
