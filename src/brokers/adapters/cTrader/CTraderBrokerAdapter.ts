@@ -25,6 +25,7 @@ import {
   submitLiveCTraderOrder,
   fetchCTraderTrendbars,
   fetchCTraderReconcileState,
+  fetchCTraderDeals,
   CTraderRawAccount
 } from './cTraderApiClient';
 
@@ -502,10 +503,34 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getOrderHistory(): Promise<NormalizedOrder[]> {
-    // cTrader's reconcile endpoint is the authoritative current-state source; it is not order history.
-    // Do not return local/synthetic history as broker truth.
+    this.syncConfig();
     this.validateCredentials();
-    return [];
+    const raw = await this.resolveRawAccount();
+    const from = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const deals = await fetchCTraderDeals(raw.ctidTraderAccountId, from, Date.now(), this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+    return deals.map((deal: any) => {
+      const status = Number(deal.dealStatus) === 2 ? 'FILLED' : 'REJECTED';
+      const side = Number(deal.tradeSide) === 2 ? 'SELL' : 'BUY';
+      const volume = Math.abs(Number(deal.filledVolume ?? deal.volume ?? 0)) / 100;
+      const executionPrice = Number(deal.executionPrice || 0);
+      return {
+        id: String(deal.dealId),
+        broker: 'CTRADER',
+        environment: this.environment,
+        market: 'FOREX',
+        symbol: String(deal.symbolId),
+        side,
+        orderType: 'MARKET',
+        quantity: volume,
+        price: executionPrice > 0 ? executionPrice : undefined,
+        status,
+        filledQuantity: status === 'FILLED' ? volume : 0,
+        averageFillPrice: executionPrice > 0 ? executionPrice : undefined,
+        commission: Number(deal.commission || 0) || undefined,
+        timestamp: Number(deal.executionTimestamp || deal.utcLastUpdateTimestamp || Date.now()),
+        brokerOrderId: String(deal.orderId),
+      } as NormalizedOrder;
+    });
   }
 
   async getHistoricalCandles(symbol: string, timeframe: string, limit: number) {
@@ -770,11 +795,44 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
 
 
   async getOrderStatus(orderId: string): Promise<NormalizedOrder> {
+    this.syncConfig();
     this.validateCredentials();
-    const order = this.openOrders.get(orderId);
-    if (!order) {
-      throw new BrokerError('ORDER_REJECTED', `Order ${orderId} not found`, 'CTRADER', this.environment);
+    const raw = await this.resolveRawAccount();
+    const brokerId = Number(String(orderId).replace(/^ctrader-/, ''));
+    if (!Number.isSafeInteger(brokerId) || brokerId <= 0) {
+      throw new BrokerError('ORDER_REJECTED', 'Invalid cTrader broker order ID.', 'CTRADER', this.environment);
     }
-    return order;
+
+    const state = await fetchCTraderReconcileState(raw.ctidTraderAccountId, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+    const liveOrder = state.orders.find((o: any) => Number(o.orderId) === brokerId);
+    if (liveOrder) {
+      const orders = await this.getOpenOrders();
+      const normalized = orders.find(o => Number(o.brokerOrderId) === brokerId);
+      if (normalized) return normalized;
+    }
+
+    const deals = await fetchCTraderDeals(raw.ctidTraderAccountId, Date.now() - 7 * 24 * 60 * 60 * 1000, Date.now(), this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+    const matching = deals.filter((d: any) => Number(d.orderId) === brokerId).sort((a: any, b: any) => Number(b.executionTimestamp || 0) - Number(a.executionTimestamp || 0))[0];
+    if (!matching) throw new BrokerError('ORDER_REJECTED', `cTrader order ${brokerId} was not found in authoritative broker state.`, 'CTRADER', this.environment);
+
+    const volume = Math.abs(Number(matching.filledVolume ?? matching.volume ?? 0)) / 100;
+    const price = Number(matching.executionPrice || 0);
+    return {
+      id: String(brokerId),
+      broker: 'CTRADER',
+      environment: this.environment,
+      market: 'FOREX',
+      symbol: String(matching.symbolId),
+      side: Number(matching.tradeSide) === 2 ? 'SELL' : 'BUY',
+      orderType: 'MARKET',
+      quantity: volume,
+      price: price > 0 ? price : undefined,
+      status: Number(matching.dealStatus) === 2 ? 'FILLED' : 'REJECTED',
+      filledQuantity: Number(matching.dealStatus) === 2 ? volume : 0,
+      averageFillPrice: price > 0 ? price : undefined,
+      commission: Number(matching.commission || 0) || undefined,
+      timestamp: Number(matching.executionTimestamp || matching.utcLastUpdateTimestamp || Date.now()),
+      brokerOrderId: String(brokerId)
+    };
   }
 }
