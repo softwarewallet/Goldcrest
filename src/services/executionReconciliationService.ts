@@ -37,11 +37,19 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
   try {
     const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
     const status = await adapter.getOrderStatus(String(brokerOrderId));
+    const requestedQuantity = Number(stored?.quantity ?? stored?.order?.quantity ?? status.quantity ?? 0);
+    const filledQuantity = Math.max(0, Number(status.filledQuantity ?? 0));
+    const remainingQuantity = requestedQuantity > 0
+      ? Math.max(0, requestedQuantity - Math.min(filledQuantity, requestedQuantity))
+      : undefined;
+
     const merged = {
       ...stored,
       brokerOrderId: status.brokerOrderId || brokerOrderId,
       brokerStatus: status.status,
-      filledQuantity: status.filledQuantity,
+      requestedQuantity: requestedQuantity > 0 ? requestedQuantity : undefined,
+      filledQuantity,
+      remainingQuantity,
       averageFillPrice: status.averageFillPrice,
       commission: status.commission,
       reconciledAt: Date.now(),
