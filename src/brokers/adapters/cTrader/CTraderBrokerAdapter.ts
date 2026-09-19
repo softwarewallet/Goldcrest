@@ -738,10 +738,11 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     const brokerOrder = state.orders.find((o: any) => Number(o.orderId) === brokerId);
     if (!brokerOrder) throw new BrokerError('ORDER_REJECTED', 'cTrader pending order was not found in authoritative broker state.', 'CTRADER', this.environment);
 
+    const brokerOrderType = String(brokerOrder.orderType || '').toUpperCase();
     const result = await amendLiveCTraderOrder(raw.ctidTraderAccountId, brokerId, {
       volume: modifications.quantity,
-      limitPrice: modifications.price,
-      stopPrice: modifications.price,
+      limitPrice: brokerOrderType.includes('LIMIT') ? modifications.price : undefined,
+      stopPrice: brokerOrderType.includes('STOP') ? modifications.price : undefined,
       stopLoss: modifications.stopLoss,
       takeProfit: modifications.takeProfit
     }, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
