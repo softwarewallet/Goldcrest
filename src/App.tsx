@@ -259,7 +259,7 @@ export default function App() {
         })
       });
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (res.ok && (data.success || ['EXECUTED', 'ACCEPTED', 'PARTIALLY_FILLED', 'DUPLICATE_REPLAY'].includes(data.status))) {
         alert(`Order Placed Successfully!\nBroker: ${selectedBroker}\nID: ${data.order?.orderId}\nStatus: ${data.order?.status}`);
         await refreshBrokerStatus();
       } else {
