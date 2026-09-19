@@ -113,6 +113,8 @@ export interface NormalizedOrder {
   side: OrderSide;
   orderType: OrderType;
   quantity: number;
+  /** Broker-reported original/requested quantity when available; useful for partial-fill reconciliation. */
+  requestedQuantity?: number;
   price?: number;
   stopLoss?: number;
   takeProfit?: number;
