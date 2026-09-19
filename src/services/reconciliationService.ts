@@ -162,6 +162,21 @@ export class ReconciliationService {
    * If no baseline exists yet, the current balance is treated as the baseline.
    */
   public async getDailyLoss(broker: 'CTRADER' | 'FIVE_PAISA', currentBalance: number): Promise<number> {
+    const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
+    if (typeof adapter.getDailyRealizedPnL === 'function') {
+      try {
+        const realizedPnL = await adapter.getDailyRealizedPnL();
+        if (Number.isFinite(realizedPnL)) {
+          return Math.max(0, -Number(realizedPnL));
+        }
+      } catch (err: any) {
+        console.warn('[Goldcrest] authoritative daily PnL unavailable; using reconciliation baseline:', err?.message || err);
+      }
+    }
+
+    // Conservative fallback for brokers that do not expose a reliable daily
+    // realized-P/L field: compare against the first authoritative balance
+    // snapshot captured during the local calendar day.
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const rows = await executeQuery<any>(
@@ -170,15 +185,14 @@ export class ReconciliationService {
     );
     if (!rows.length) return 0;
 
-    let baselineBalance = Number.NaN;
     try {
       const account = JSON.parse(rows[0].account_json || '{}');
-      baselineBalance = Number(account?.balance);
+      const baselineBalance = Number(account?.balance);
+      if (!Number.isFinite(baselineBalance) || !Number.isFinite(currentBalance)) return 0;
+      return Math.max(0, baselineBalance - currentBalance);
     } catch {
-      baselineBalance = Number.NaN;
+      return 0;
     }
-    if (!Number.isFinite(baselineBalance) || !Number.isFinite(currentBalance)) return 0;
-    return Math.max(0, baselineBalance - currentBalance);
   }
 
   public getLocalRecord(id:string){ return this.localRecords.get(id); }
