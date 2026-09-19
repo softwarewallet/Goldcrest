@@ -53,6 +53,8 @@ const MSG_DEAL_LIST_REQ = 2133;
 const MSG_DEAL_LIST_RES = 2134;
 const MSG_EXECUTION_EVENT = 2126;
 const MSG_ORDER_ERROR_EVENT = 2132;
+const MSG_ORDER_DETAILS_REQ = 2181;
+const MSG_ORDER_DETAILS_RES = 2182;
 const MSG_ERROR_RES = 2142;
 
 /**
@@ -663,6 +665,26 @@ export async function fetchCTraderSymbols(
         digits: Number(s.digits || 5),
         pipPosition: Number(s.pipPosition || 4)
       }));
+  });
+}
+
+export async function fetchCTraderOrderDetails(
+  ctidTraderAccountId: number,
+  orderId: number,
+  clientId: string,
+  clientSecret: string,
+  accessToken: string,
+  isLive: boolean
+): Promise<{ order: any | null; deals: any[] }> {
+  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+    const payload = await sendAndAwait(ws, MSG_ORDER_DETAILS_REQ, {
+      ctidTraderAccountId,
+      orderId
+    }, MSG_ORDER_DETAILS_RES, 15000);
+    return {
+      order: payload?.order || null,
+      deals: Array.isArray(payload?.deal) ? payload.deal : []
+    };
   });
 }
 
