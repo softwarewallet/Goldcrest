@@ -247,41 +247,50 @@ export async function runPhase7_4TestSuite() {
   logPass(6, 'Environment Isolation & Strict LIVE Block Hardening verified.');
 
   // ---------------------------------------------------------------------------
-  // 7. DEMO/SANDBOX Broker Lifecycle (cTrader & 5paisa)
+  // 7. DEMO/SANDBOX Isolation — Autonomous Order Placement Must Remain Blocked
   // ---------------------------------------------------------------------------
-  // cTrader DEMO Execution
-  const ctraderOrder = await ctraderAdapter.placeOrder({
-    market: 'FOREX',
-    symbol: 'GBP/USD',
-    side: 'BUY',
-    quantity: 5000,
-    orderType: 'MARKET',
-    stopLoss: 1.2500,
-    takeProfit: 1.2700
-  });
-  assert.ok(ctraderOrder.id || ctraderOrder.brokerOrderId);
-  assert.strictEqual(ctraderOrder.status, 'FILLED');
+  // Goldcrest is intentionally LIVE_ONLY. DEMO adapters may be used for deterministic
+  // validation, but autonomous broker order placement is not permitted in this architecture.
+  let ctraderDemoBlocked = false;
+  try {
+    await ctraderAdapter.placeOrder({
+      market: 'FOREX',
+      symbol: 'GBP/USD',
+      side: 'BUY',
+      quantity: 5000,
+      orderType: 'MARKET',
+      stopLoss: 1.2500,
+      takeProfit: 1.2700
+    });
+  } catch (err: any) {
+    ctraderDemoBlocked = true;
+    assert.ok(
+      err.message.includes('Autonomous execution') || err.message.includes('LIVE_ONLY') || err.message.includes('LIVE'),
+      'cTrader DEMO autonomous execution is explicitly blocked'
+    );
+  }
+  assert.strictEqual(ctraderDemoBlocked, true);
 
-  const positions = await ctraderAdapter.getPositions();
-  const gbppos = positions.find(p => p.symbol === 'GBP/USD');
-  assert.ok(gbppos);
-
-  const closeRes = await ctraderAdapter.closePosition(gbppos!.id);
-  assert.strictEqual(closeRes, true);
-
-  // 5paisa DEMO Execution
   const fpAdapter = brokerRegistry.getAdapter('FIVE_PAISA', 'DEMO');
-  const fpOrder = await fpAdapter.placeOrder({
-    market: 'INDIAN_OPTIONS',
-    symbol: 'BANKNIFTY26MAR48000CE',
-    side: 'BUY',
-    quantity: 25,
-    orderType: 'MARKET'
-  });
-  assert.ok(fpOrder.id || fpOrder.brokerOrderId);
-  assert.strictEqual(fpOrder.status, 'FILLED');
+  let fivePaisaDemoBlocked = false;
+  try {
+    await fpAdapter.placeOrder({
+      market: 'INDIAN_OPTIONS',
+      symbol: 'BANKNIFTY26MAR48000CE',
+      side: 'BUY',
+      quantity: 25,
+      orderType: 'MARKET'
+    });
+  } catch (err: any) {
+    fivePaisaDemoBlocked = true;
+    assert.ok(
+      err.message.includes('Autonomous execution') || err.message.includes('LIVE_ONLY') || err.message.includes('LIVE'),
+      '5paisa DEMO autonomous execution is explicitly blocked'
+    );
+  }
+  assert.strictEqual(fivePaisaDemoBlocked, true);
 
-  logPass(7, 'DEMO/SANDBOX Broker Lifecycle (cTrader & 5paisa) verified.');
+  logPass(7, 'DEMO/SANDBOX isolation verified; autonomous broker execution remains blocked.');
 
   // ---------------------------------------------------------------------------
   // 8. Failure Injection & Resilience (Timeout & Missing Node Handling)
