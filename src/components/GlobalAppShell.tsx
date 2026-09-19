@@ -1,14 +1,14 @@
 import React from 'react';
 import {
   BarChart3, BookOpen, CandlestickChart, LayoutDashboard, ListChecks,
-  Settings, Sparkles, TrendingUp, Wallet, ShieldAlert
+  Settings, Sparkles, TrendingUp
 } from 'lucide-react';
 
 interface GlobalAppShellProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   children: React.ReactNode;
-  isEmergencyHalted: boolean;
+  header: React.ReactNode;
 }
 
 const nav = [
@@ -23,11 +23,11 @@ const nav = [
 ];
 
 export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
-  activeTab, setActiveTab, children, isEmergencyHalted
+  activeTab, setActiveTab, children, header
 }) => (
   <div className="min-h-screen bg-[#05090d] text-slate-100">
     <aside id="global_fixed_sidebar" className="fixed inset-y-0 left-0 z-[60] w-[222px] border-r border-slate-800/80 bg-[#071019] flex flex-col">
-      <div className="h-[82px] px-5 flex items-center gap-3 border-b border-slate-800/70 shrink-0">
+      <div className="h-[126px] px-5 flex items-center gap-3 border-b border-slate-800/70 shrink-0">
         <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
           <TrendingUp className="w-5 h-5 text-emerald-400" />
         </div>
@@ -37,28 +37,21 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
           <div className="text-[10px] text-emerald-400 font-bold mt-0.5">PRIVATE TERMINAL</div>
         </div>
       </div>
-
       <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
         {nav.map(item => {
           const Icon = item.icon;
           const selected = activeTab === item.id;
           return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
+            <button key={item.id} onClick={() => setActiveTab(item.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition text-left ${
-                selected
-                  ? 'bg-emerald-600/15 border border-emerald-500/40 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
-              }`}
-            >
+                selected ? 'bg-emerald-600/15 border border-emerald-500/40 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+              }`}>
               <Icon className={`w-4 h-4 ${selected ? 'text-emerald-400' : 'text-slate-500'}`} />
               <span>{item.label}</span>
             </button>
           );
         })}
       </nav>
-
       <div className="p-3 border-t border-slate-800/70 shrink-0">
         <div className="rounded-xl bg-slate-950/70 border border-slate-800 p-3 flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-blue-600/80 flex items-center justify-center font-semibold">R</div>
@@ -70,13 +63,9 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
       </div>
     </aside>
 
-    {isEmergencyHalted && (
-      <div className="fixed top-0 left-[222px] right-0 z-[70] h-8 bg-rose-700 text-white px-4 flex items-center gap-2 text-[10px] font-mono font-bold">
-        <ShieldAlert className="w-3.5 h-3.5" /> TRADING HALTED — EMERGENCY STOP ACTIVE
-      </div>
-    )}
+    {header}
 
-    <div id="global_app_content" className="ml-[222px] min-h-screen pb-9">
+    <div id="global_app_content" className="ml-[222px] min-h-screen pt-[126px] pb-9">
       {children}
     </div>
 
