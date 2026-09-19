@@ -438,6 +438,22 @@ function initSchema(db: Database) {
       observed_at INTEGER NOT NULL
     );
 
+    -- 30.2. Broker-native execution fill event ledger
+    -- Each broker fill/deal is stored once by its broker-native execution ID.
+    CREATE TABLE IF NOT EXISTS execution_fill_events (
+      id TEXT PRIMARY KEY,
+      idempotency_key TEXT NOT NULL,
+      broker TEXT NOT NULL,
+      broker_order_id TEXT NOT NULL,
+      broker_fill_id TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      price REAL NOT NULL,
+      commission REAL,
+      executed_at INTEGER NOT NULL,
+      observed_at INTEGER NOT NULL,
+      UNIQUE(broker, broker_order_id, broker_fill_id)
+    );
+
     -- 30. ML Persistence Bridge
     CREATE TABLE IF NOT EXISTS ml_storage_records (
       id TEXT PRIMARY KEY,
@@ -580,7 +596,7 @@ export async function getDatabaseStats() {
     'markets', 'currency_pairs', 'underlyings', 'contracts', 'candles',
     'signals', 'trades', 'positions', 'orders', 'portfolio', 'economic_events',
     'risk_configs', 'system_settings', 'broker_accounts',
-    'broker_reconciliation_snapshots', 'execution_intents', 'execution_fill_observations',
+    'broker_reconciliation_snapshots', 'execution_intents', 'execution_fill_observations', 'execution_fill_events',
     'trade_traces', 'trade_trace_nodes', 'trade_notes', 'ml_storage_records'
   ];
 
