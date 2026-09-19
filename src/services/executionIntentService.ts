@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { executeRun, executeTransaction } from '../database/db';
+import { executeQuery, executeRun, executeTransaction } from '../database/db';
 
 export type ExecutionIntentState = 'PENDING' | 'IN_FLIGHT' | 'RECONCILIATION_TIMEOUT' | 'COMPLETED' | 'FAILED';
 
@@ -98,9 +98,7 @@ export async function resumeExecutionIntentReconciliation(idempotencyKey: string
 }
 
 export async function getExecutionIntent(idempotencyKey: string): Promise<ExecutionIntentRecord | undefined> {
-  const rows = await import('../database/db').then(({ executeQuery }) =>
-    executeQuery<any>('SELECT * FROM execution_intents WHERE idempotency_key = ?', [idempotencyKey])
-  );
+  const rows = await executeQuery<any>('SELECT * FROM execution_intents WHERE idempotency_key = ?', [idempotencyKey]);
   const row = rows[0];
   if (!row) return undefined;
   return {
