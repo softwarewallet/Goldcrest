@@ -9,6 +9,7 @@ import { brokerRegistry } from '../registry';
 import { killSwitch } from './KillSwitch';
 import { tradeValidator, SignalValidationInput } from './TradeValidator';
 import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
+import { autoTradeReadinessService } from './AutoTradeReadiness';
 import { logBrokerAction } from '../auditLog';
 import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../../services/executionIntentService';
 
@@ -73,9 +74,9 @@ class AutoExecutionEngine {
   }
 
   /**
-   * 5-Stage Execution Pipeline:
-   * SignalEngine -> TradeValidator -> RiskEngine -> ExecutionPermission -> ExecutionEngine -> BrokerAdapter
-   * In LIVE mode, dispatch is allowed only after the server-side validation gates pass.
+   * Signal-driven execution pipeline:
+   * SignalEngine -> TradeValidator -> LiveTradingGate -> AutoTradeReadiness
+   * -> immutable autonomous-live permission boundary -> idempotent execution.
    */
   async processSignal(
     signalInput: SignalValidationInput,
@@ -147,7 +148,42 @@ class AutoExecutionEngine {
       };
     }
 
-    // Stage 4: Autonomous live execution permission boundary
+    // Stage 3B: Independent readiness gate. This re-checks live broker state,
+    // daily loss, trade frequency, consecutive losses, spread, strategy
+    // calibration and signal identity immediately before any autonomous path.
+    const readiness = await autoTradeReadinessService.evaluate(
+      adapter,
+      order,
+      signalInput.signalTimestamp
+    );
+    if (!readiness.ready) {
+      logBrokerAction({
+        source: 'AUTO_TRADE_READINESS',
+        broker,
+        environment: env,
+        account: 'ACTIVE',
+        action: 'EXECUTE_SIGNAL',
+        symbol: order.symbol,
+        signalId: order.signalId,
+        strategyId: order.strategyId,
+        result: 'BLOCKED',
+        error: readiness.failedReasons.join(', '),
+        riskValidation: {
+          passed: false,
+          checks: readiness.checks,
+          reason: readiness.failedReasons.join(', ')
+        }
+      });
+      return {
+        executed: false,
+        code: 'AUTO_TRADE_NOT_READY',
+        reason: readiness.failedReasons.join(', ')
+      };
+    }
+
+    // Stage 4: Autonomous live execution permission boundary.
+    // This remains permanently disabled until a separately reviewed safety
+    // milestone explicitly changes the invariant.
     if (!LIVE_AUTO_EXECUTION_ALLOWED) {
       logBrokerAction({
         source: 'SAFETY_GATE',
@@ -201,9 +237,6 @@ class AutoExecutionEngine {
       } else if (placedOrder.status === 'CANCELLED' || placedOrder.status === 'REJECTED' || placedOrder.status === 'EXPIRED') {
         await failExecutionIntent(idempotencyKey, placedOrder);
       } else {
-        // Broker acknowledgement is not proof of final execution. Persist the
-        // accepted/partial state and let authoritative reconciliation determine
-        // the terminal outcome.
         await markExecutionIntentInFlight(idempotencyKey, placedOrder);
       }
 
