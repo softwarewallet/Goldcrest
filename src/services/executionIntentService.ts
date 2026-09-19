@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { executeQuery, executeRun, executeTransaction } from '../database/db';
+import { executeRun, executeTransaction } from '../database/db';
 
 export type ExecutionIntentState = 'PENDING' | 'IN_FLIGHT' | 'COMPLETED' | 'FAILED';
 
