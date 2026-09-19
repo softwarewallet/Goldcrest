@@ -237,9 +237,11 @@ export async function runPhase7_3TestSuite() {
   logPass(4, 'Market Data Continuity & Stale Quote Rejection verified.');
 
   // ---------------------------------------------------------------------------
-  // 5. Complete DEMO/SANDBOX Trade Lifecycles (cTrader DEMO & 5paisa DEMO)
+  // 5. Execution Environment Isolation & Local Sandbox Lifecycle
   // ---------------------------------------------------------------------------
-  // cTrader DEMO Lifecycle
+  // Current Goldcrest execution is LIVE_ONLY. DEMO broker adapters must not
+  // accept autonomous order placement; local paper execution remains the
+  // deterministic sandbox for lifecycle tests.
   const ctraderOrderReq: OrderRequest = {
     market: 'FOREX',
     symbol: 'EUR/USD',
@@ -250,38 +252,45 @@ export async function runPhase7_3TestSuite() {
     takeProfit: 1.0950
   };
   const ctraderAdapter = brokerRegistry.getAdapter('CTRADER', 'DEMO');
-  const ctraderOrder = await ctraderAdapter.placeOrder(ctraderOrderReq);
+  let ctraderDemoBlocked = false;
+  try {
+    await ctraderAdapter.placeOrder(ctraderOrderReq);
+  } catch (err: any) {
+    ctraderDemoBlocked = err?.code === 'ENVIRONMENT_MISMATCH';
+  }
+  assert.strictEqual(ctraderDemoBlocked, true, 'cTrader DEMO autonomous order is blocked in LIVE_ONLY mode');
 
-  assert.ok(ctraderOrder.id || ctraderOrder.brokerOrderId, 'cTrader DEMO order assigned ID');
-  assert.strictEqual(ctraderOrder.status, 'FILLED', 'cTrader DEMO order filled');
-  assert.ok(ctraderOrder.averageFillPrice, 'cTrader DEMO execution price populated');
-
-  // Verify position opened
-  const ctraderPositions = await ctraderAdapter.getPositions();
-  const ctraderPos = ctraderPositions.find(p => p.symbol === 'EUR/USD');
-  assert.ok(ctraderPos, 'cTrader DEMO open position tracked');
-
-  // Close position
-  const closeRes = await ctraderAdapter.closePosition(ctraderPos!.id);
-  assert.strictEqual(closeRes, true, 'cTrader DEMO position closed');
-
-  // 5paisa DEMO Lifecycle
-  const fpOrderReq: OrderRequest = {
-    market: 'INDIAN_OPTIONS',
-    symbol: 'NIFTY26MAR25000CE',
-    side: 'BUY',
-    quantity: 50,
-    orderType: 'MARKET',
-    stopLoss: 100,
-    takeProfit: 300
-  };
   const fpAdapter = brokerRegistry.getAdapter('FIVE_PAISA', 'DEMO');
-  const fpOrder = await fpAdapter.placeOrder(fpOrderReq);
+  let fpDemoBlocked = false;
+  try {
+    await fpAdapter.placeOrder({
+      market: 'INDIAN_OPTIONS',
+      symbol: 'NIFTY26MAR25000CE',
+      side: 'BUY',
+      quantity: 50,
+      orderType: 'MARKET',
+      stopLoss: 100,
+      takeProfit: 300
+    });
+  } catch (err: any) {
+    fpDemoBlocked = Boolean(err?.code === 'ENVIRONMENT_MISMATCH' || err?.code === 'AUTONOMOUS_LIVE_EXECUTION_DISABLED');
+  }
+  assert.strictEqual(fpDemoBlocked, true, '5paisa DEMO autonomous order is blocked in LIVE_ONLY mode');
 
-  assert.ok(fpOrder.id || fpOrder.brokerOrderId, '5paisa DEMO order assigned ID');
-  assert.strictEqual(fpOrder.status, 'FILLED', '5paisa DEMO order filled');
+  // Deterministic local sandbox lifecycle.
+  const paperAdapter = brokerRegistry.getAdapter('PAPER', 'PAPER');
+  const paperOrder = await paperAdapter.placeOrder(ctraderOrderReq);
+  assert.ok(paperOrder.id || paperOrder.brokerOrderId, 'Paper sandbox order assigned ID');
+  assert.strictEqual(paperOrder.status, 'FILLED', 'Paper sandbox order filled');
 
-  logPass(5, 'Complete DEMO/SANDBOX Trade Lifecycles (cTrader & 5paisa) executed & verified.');
+  const paperPositions = await paperAdapter.getPositions();
+  const paperPos = paperPositions.find(p => p.symbol === 'EUR/USD');
+  assert.ok(paperPos, 'Paper sandbox open position tracked');
+
+  const closeRes = await paperAdapter.closePosition(paperPos!.id);
+  assert.strictEqual(closeRes, true, 'Paper sandbox position closed');
+
+  logPass(5, 'Execution environment isolation and local sandbox lifecycle verified.');
 
   // ---------------------------------------------------------------------------
   // 6. Position Management, Safety Gates & Duplicate Prevention
