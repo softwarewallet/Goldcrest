@@ -10,6 +10,7 @@ import { PerformanceResearchCenterView } from './components/PerformanceResearchC
 import { SettingsHub } from './components/SettingsHub';
 import { TerminalDashboard } from './components/TerminalDashboard';
 import { ForexTerminalDashboard } from './components/ForexTerminalDashboard';
+import { GlobalAppShell } from './components/GlobalAppShell';
 import { SignalModal } from './components/SignalModal';
 import { DiagnosticsModal } from './components/DiagnosticsModal';
 import { EnvironmentSwitchModal } from './components/EnvironmentSwitchModal';
@@ -19,7 +20,7 @@ import { getForexSessionState, getIndianSessionState } from './markets/common/se
 import { BrokerType, TradingEnvironment, OrderRequest } from './brokers/types';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('market');
+  const [activeTab, setActiveTab] = useState<string>('forex_terminal');
   const [forexPairs, setForexPairs] = useState<any[]>([]);
   const [forexSessions, setForexSessions] = useState<ForexSessionState>(() => getForexSessionState(new Date()));
   const [indianUnderlyings, setIndianUnderlyings] = useState<any[]>([]);
@@ -269,7 +270,7 @@ export default function App() {
   };
 
   return (
-    <div id="app_root_terminal" className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <GlobalAppShell activeTab={activeTab} setActiveTab={setActiveTab} isEmergencyHalted={isEmergencyHalted}>
       {/* Top Fixed Header with Multi-Market Sessions, Environment Selector & Kill Switch */}
       {activeTab === 'market' ? (
         <TerminalDashboard
@@ -330,7 +331,7 @@ export default function App() {
 
       {/* Main Terminal Viewport */}
       {activeTab !== 'market' && activeTab !== 'forex_terminal' && (
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 space-y-4" style={{ paddingTop: '5px', paddingBottom: '5px' }}>
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 pt-[120px] pb-10 space-y-4">
         {loadingInitial ? (
           <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 font-mono">
             <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
@@ -446,6 +447,6 @@ export default function App() {
           currentPrice={pendingOrder.price || 0}
         />
       )}
-    </div>
+    </GlobalAppShell>
   );
 }
