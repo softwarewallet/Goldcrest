@@ -10,7 +10,7 @@ import { killSwitch } from './KillSwitch';
 import { tradeValidator, SignalValidationInput } from './TradeValidator';
 import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
 import { logBrokerAction } from '../auditLog';
-import { claimExecutionIntent, completeExecutionIntent } from '../../services/executionIntentService';
+import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../../services/executionIntentService';
 
 /**
  * ============================================================================
@@ -193,7 +193,18 @@ class AutoExecutionEngine {
       }
 
       const placedOrder = await adapter.placeOrder(order);
-      await completeExecutionIntent(idempotencyKey, placedOrder);
+
+      if (placedOrder.status === 'FILLED') {
+        await completeExecutionIntent(idempotencyKey, placedOrder);
+      } else if (placedOrder.status === 'CANCELLED' || placedOrder.status === 'REJECTED' || placedOrder.status === 'EXPIRED') {
+        await failExecutionIntent(idempotencyKey, placedOrder);
+      } else {
+        // Broker acknowledgement is not proof of final execution. Persist the
+        // accepted/partial state and let authoritative reconciliation determine
+        // the terminal outcome.
+        await markExecutionIntentInFlight(idempotencyKey, placedOrder);
+      }
+
       logBrokerAction({
         source: 'EXECUTION_ENGINE',
         broker,
@@ -205,7 +216,7 @@ class AutoExecutionEngine {
         quantity: order.quantity
       });
       return {
-        executed: true,
+        executed: placedOrder.status === 'FILLED',
         order: placedOrder
       };
     } catch (err: any) {
