@@ -51,6 +51,7 @@ export type OrderSide = 'BUY' | 'SELL';
 export type OrderStatus =
   | 'PENDING'
   | 'ACCEPTED'
+  | 'PARTIALLY_FILLED'
   | 'FILLED'
   | 'CANCELLED'
   | 'REJECTED'
