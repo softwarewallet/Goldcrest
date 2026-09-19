@@ -255,6 +255,66 @@ brokerRouter.post('/credentials/live', (req: Request, res: Response) => {
   });
 });
 
+brokerRouter.get('/dashboard-summary', async (_req: Request, res: Response) => {
+  try {
+    const results = await Promise.all(LIVE_BROKERS.map(async (broker) => {
+      const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
+      const [account, positions, openOrders, orderHistory] = await Promise.all([
+        adapter.getAccount(),
+        adapter.getPositions(),
+        adapter.getOpenOrders(),
+        adapter.getOrderHistory()
+      ]);
+      let dailyRealizedPnL: number | null = null;
+      if (typeof adapter.getDailyRealizedPnL === 'function') {
+        try { dailyRealizedPnL = await adapter.getDailyRealizedPnL(); } catch { dailyRealizedPnL = null; }
+      }
+      return { broker, account, positions, openOrders, orderHistory, dailyRealizedPnL };
+    }));
+
+    const accounts = results.map(r => r.account);
+    const positions = results.flatMap(r => r.positions);
+    const openOrders = results.flatMap(r => r.openOrders);
+    const orderHistory = results.flatMap(r => r.orderHistory)
+      .sort((a, b) => b.timestamp - a.timestamp);
+
+    const totalBalance = accounts.reduce((sum, a) => sum + Number(a.balance || 0), 0);
+    const totalEquity = accounts.reduce((sum, a) => sum + Number(a.equity || 0), 0);
+    const totalFreeMargin = accounts.reduce((sum, a) => sum + Number(a.freeMargin || 0), 0);
+    const openPnL = positions.reduce((sum, p) => sum + Number(p.unrealizedPnL || 0), 0);
+    const dailyRealizedPnLValues = results.map(r => r.dailyRealizedPnL).filter((v): v is number => Number.isFinite(v as number));
+    const dailyRealizedPnL = dailyRealizedPnLValues.length
+      ? dailyRealizedPnLValues.reduce((sum, v) => sum + v, 0)
+      : null;
+
+    const closedHistory = orderHistory.filter(o => ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'].includes(o.status));
+    res.json({
+      accounts,
+      positions,
+      openOrders,
+      orderHistory: orderHistory.slice(0, 100),
+      metrics: {
+        totalBalance,
+        totalEquity,
+        totalFreeMargin,
+        openPnL,
+        dailyRealizedPnL,
+        totalOrders: closedHistory.length,
+        winRate: null,
+        profitFactor: null,
+        maxDrawdown: null
+      },
+      dataStatus: 'LIVE',
+      generatedAt: Date.now()
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_DASHBOARD_DATA_UNAVAILABLE',
+      message: err?.message || 'Authoritative broker dashboard data is unavailable.'
+    });
+  }
+});
+
 brokerRouter.get('/account', async (req: Request, res: Response) => {
   const requestedBroker = req.query.broker as BrokerType | undefined;
 
