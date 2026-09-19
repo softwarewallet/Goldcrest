@@ -945,12 +945,24 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
 
   async getOrderStatus(orderId: string): Promise<NormalizedOrder> {
-    await this.authenticate();
-    const order = this.openOrders.get(orderId);
-    if (!order) {
-      throw new BrokerError('UNKNOWN_ERROR', `5paisa Order ${orderId} not found`, 'FIVE_PAISA', this.environment);
-    }
-    return order;
+    await this.ensureActiveSession();
+    const url = `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/OrderBook`;
+    const data = await this.postUserApi(url, '5POB', { ClientCode: this.config.clientCode || this.config.userId });
+    const orders: any[] = data?.body?.OrderBookDetail || [];
+    const target = orders.find(o =>
+      String(o.ExchOrderID ?? '') === String(orderId) ||
+      String(o.BrokerOrderID ?? '') === String(orderId) ||
+      String(o.RemoteOrderID ?? '') === String(orderId) ||
+      String(o.OrderID ?? '') === String(orderId)
+    );
+    if (target) return this.normalizeBrokerOrder(target);
+
+    const history = await this.getOrderHistory();
+    const historical = history.find(o =>
+      String(o.brokerOrderId ?? '') === String(orderId) || String(o.id) === String(orderId)
+    );
+    if (historical) return historical;
+    throw new BrokerError('UNKNOWN_ERROR', `5paisa authoritative order state did not contain order ${orderId}`, 'FIVE_PAISA', this.environment);
   }
 
   async getTradingStatus(): Promise<BrokerStatus> {
