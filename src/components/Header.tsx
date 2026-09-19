@@ -66,7 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
   const isLive = environment === 'LIVE';
 
   return (
-    <header id="main_terminal_header" className="bg-slate-900 border-b border-slate-800 text-slate-100 select-none">
+    <header id="main_terminal_header" className="fixed top-0 left-[222px] right-0 z-40 bg-slate-900 border-b border-slate-800 text-slate-100 select-none">
       {/* Emergency Halt Banner if Kill Switch is Triggered */}
       {isEmergencyHalted && (
         <div id="emergency_halt_banner" className="bg-rose-600 text-white px-4 py-2 text-xs font-mono font-bold flex items-center justify-between animate-pulse">
