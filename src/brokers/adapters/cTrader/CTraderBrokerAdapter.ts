@@ -840,7 +840,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
 
-  async getOrderStatus(orderId: string): Promise<NormalizedOrder> {
+  async getOrderStatus(orderId: string, requestedQuantity?: number): Promise<NormalizedOrder> {
     this.syncConfig();
     this.validateCredentials();
     const raw = await this.resolveRawAccount();
@@ -870,10 +870,13 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     // fills it in pieces. Aggregate the authoritative deals rather than using
     // only the latest deal, otherwise a later partial fill can overwrite the
     // cumulative fill with a smaller quantity.
-    const requestedVolume = matchingDeals.reduce(
+    const brokerReportedVolume = matchingDeals.reduce(
       (sum: number, deal: any) => sum + Math.max(0, Number(deal.volume || 0)),
       0
     ) / 100;
+    const requestedVolume = Number(requestedQuantity || 0) > 0
+      ? Number(requestedQuantity)
+      : brokerReportedVolume;
     const filledVolume = matchingDeals.reduce(
       (sum: number, deal: any) => sum + Math.max(0, Number(deal.filledVolume || 0)),
       0
