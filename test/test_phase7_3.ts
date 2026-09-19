@@ -191,7 +191,7 @@ export async function runPhase7_3TestSuite() {
     market: 'FOREX',
     symbol: 'EUR/USD',
     side: 'BUY',
-    quantity: 10000,
+    quantity: 100,
     orderType: 'MARKET',
     stopLoss: 1.0800,
     takeProfit: 1.0950
