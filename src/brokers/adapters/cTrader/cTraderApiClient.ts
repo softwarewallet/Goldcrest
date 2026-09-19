@@ -49,6 +49,8 @@ const MSG_CANCEL_ORDER_REQ = 2108;
 const MSG_AMEND_ORDER_REQ = 2109;
 const MSG_AMEND_POSITION_SLTP_REQ = 2110;
 const MSG_CLOSE_POSITION_REQ = 2111;
+const MSG_DEAL_LIST_REQ = 2133;
+const MSG_DEAL_LIST_RES = 2134;
 const MSG_EXECUTION_EVENT = 2126;
 const MSG_ORDER_ERROR_EVENT = 2132;
 const MSG_ERROR_RES = 2142;
@@ -661,6 +663,18 @@ export async function fetchCTraderSymbols(
         digits: Number(s.digits || 5),
         pipPosition: Number(s.pipPosition || 4)
       }));
+  });
+}
+
+export async function fetchCTraderDeals(
+  ctidTraderAccountId: number, fromTimestamp: number, toTimestamp: number,
+  clientId: string, clientSecret: string, accessToken: string, isLive: boolean
+): Promise<any[]> {
+  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+    const payload = await sendAndAwait(ws, MSG_DEAL_LIST_REQ, {
+      ctidTraderAccountId, fromTimestamp, toTimestamp, maxRows: 10000
+    }, MSG_DEAL_LIST_RES, 15000);
+    return Array.isArray(payload.deal) ? payload.deal : [];
   });
 }
 
