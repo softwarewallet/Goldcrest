@@ -557,6 +557,8 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
   private normalizeBrokerOrder(o: any): NormalizedOrder {
     const side = String(o.OrderType || o.BuySell || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY';
+    const qty = Number(o.Qty ?? o.OrderedQty ?? o.Quantity ?? 0);
+    const filled = Number(o.TradedQty ?? o.FilledQty ?? o.TradedQuantity ?? 0);
     const statusText = String(o.OrderStatus || o.Status || '').toUpperCase();
     const status = statusText.includes('CANCEL') ? 'CANCELLED'
       : statusText.includes('REJECT') ? 'REJECTED'
@@ -564,8 +566,6 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       : filled > 0 && qty > filled ? 'PARTIALLY_FILLED'
       : statusText.includes('PENDING') || statusText.includes('OPEN') ? 'PENDING'
       : 'ACCEPTED';
-    const qty = Number(o.Qty ?? o.OrderedQty ?? o.Quantity ?? 0);
-    const filled = Number(o.TradedQty ?? o.FilledQty ?? o.TradedQuantity ?? 0);
     const price = Number(o.Price ?? o.Rate ?? o.AveragePrice ?? 0);
     return {
       id: String(o.RemoteOrderID ?? o.OrderID ?? o.ExchOrderID ?? `5P_${Date.now()}`),
