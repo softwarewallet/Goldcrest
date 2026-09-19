@@ -184,6 +184,7 @@ export class LiveTradingGate {
         dailyLossLimitNotExceeded,
         maxExposureNotExceeded,
         duplicatePositionCheckPassed,
+        maxOpenPositionsCheckPassed,
         orderParametersValidated,
         explicitLivePermissionEnabled,
         maximumTradeValueCheckPassed

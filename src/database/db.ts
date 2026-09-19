@@ -540,7 +540,7 @@ export async function executeRun(sql: string, params: any[] = []): Promise<void>
   db.run(sql, params);
   persistDatabase();
 }
-\nexport async function executeTransaction<T>(work: (db: Database) => T): Promise<T> {
+export async function executeTransaction<T>(work: (db: Database) => T): Promise<T> {
   const db = await getDatabase();
   db.run('BEGIN IMMEDIATE TRANSACTION');
   try {

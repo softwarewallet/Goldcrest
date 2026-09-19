@@ -853,9 +853,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     this.logAction('PLACE_ORDER', 'SUCCESS', this.config.clientCode || this.config.userId || '', {
       symbol: order.symbol,
       quantity: order.quantity,
-      brokerOrderId,
-      remoteOrderId,
-      status: 'ACCEPTED'
+      orderId: brokerOrderId
     });
 
     return normalized;

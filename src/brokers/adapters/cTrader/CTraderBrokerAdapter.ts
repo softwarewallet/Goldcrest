@@ -26,6 +26,9 @@ import {
   fetchCTraderTrendbars,
   fetchCTraderReconcileState,
   fetchCTraderDeals,
+  amendLiveCTraderOrder,
+  cancelLiveCTraderOrder,
+  closeLiveCTraderPosition,
   CTraderRawAccount
 } from './cTraderApiClient';
 
@@ -762,10 +765,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
 
     this.logAction('PLACE_ORDER', 'SUCCESS', this.config.accountId || '', {
       symbol: order.symbol,
-      quantity: order.quantity,
-      brokerOrderId,
-      status: submitted.status,
-      clientOrderId
+      quantity: order.quantity
     });
 
     return normalized;

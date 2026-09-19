@@ -23,6 +23,7 @@ export type BrokerErrorCode =
   | 'TOKEN_EXPIRED'
   | 'PERMISSION_DENIED'
   | 'EMERGENCY_STOP_ACTIVE'
+  | 'ENVIRONMENT_MISMATCH'
   | 'INSUFFICIENT_FUNDS'
   | 'INSUFFICIENT_MARGIN'
   | 'INVALID_SYMBOL'
@@ -160,6 +161,7 @@ export interface BrokerInstrument {
   supportedOrderTypes: OrderType[];
   baseCurrency?: string;
   quoteCurrency?: string;
+  brokerInstrumentId?: string;
 }
 
 export interface ConnectionTestResult {

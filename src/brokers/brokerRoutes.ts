@@ -186,7 +186,8 @@ brokerRouter.get('/account', async (req: Request, res: Response) => {
   try {
     if (requestedBroker) {
       const adapter = brokerRegistry.getAdapter(requestedBroker, 'LIVE');
-      console.log(`[DEBUG] Adapter for ${requestedBroker}:`, adapter?.broker, adapter?.status);
+      const tradingStatus = await adapter.getTradingStatus();
+      console.log(`[DEBUG] Adapter for ${requestedBroker}:`, adapter?.broker, tradingStatus);
       const account = await adapter.getAccount();
       console.log(`[DEBUG] Account for ${requestedBroker}:`, JSON.stringify(account, null, 2));
       return res.json(account);
@@ -322,7 +323,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       signalAgeMs: 15000,
       currentQuote: quote,
       isMarketOpen,
-      dailyRealizedLoss: await reconciliationService.getDailyLoss(broker, Number(account.balance || 0)),
+      dailyRealizedLoss: adapter.broker === 'PAPER' ? 0 : await reconciliationService.getDailyLoss(adapter.broker as 'CTRADER' | 'FIVE_PAISA', Number(account.balance || 0)),
       dailyLossLimit,
       totalAccountExposure: totalExposureIncludingOrder,
       maxAllowedExposure,
