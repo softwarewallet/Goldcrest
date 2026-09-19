@@ -464,6 +464,15 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       }));
   }
 
+  async getDailyRealizedPnL(): Promise<number> {
+    await this.ensureActiveSession();
+    const positions = await this.getPositions();
+    return positions.reduce((sum, position) => {
+      const value = Number(position.realizedPnL || 0);
+      return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+  }
+
   async getOpenOrders(): Promise<NormalizedOrder[]> {
     await this.ensureActiveSession();
     if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
