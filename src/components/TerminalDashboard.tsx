@@ -184,7 +184,8 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
   const recentSignals = signals.slice().sort((a, b) => b.timestamp - a.timestamp).slice(0, 4);
 
   const nav = [
-    { id: 'market', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'market', label: 'NSE Dashboard', icon: LayoutDashboard },
+    { id: 'forex_terminal', label: 'Forex Dashboard', icon: TrendingUp },
     { id: 'indian', label: 'Market Watch', icon: LineChart },
     { id: 'trading', label: 'Positions', icon: CandlestickChart },
     { id: 'control_center', label: 'Orders', icon: ListChecks },
