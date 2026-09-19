@@ -3,7 +3,6 @@ import { brokerRegistry } from '../brokers/registry';
 import { BrokerType, NormalizedOrder, OrderStatus } from '../brokers/types';
 import { normalizeBrokerError } from '../brokers/errors';
 import {
-  ExecutionIntentState,
   completeExecutionIntent,
   failExecutionIntent
 } from './executionIntentService';
@@ -18,10 +17,6 @@ function parseResult(raw: any): any {
 
 function brokerOrderIdFromResult(result: any): string | undefined {
   return result?.brokerOrderId || result?.order?.brokerOrderId || result?.id || result?.order?.id;
-}
-
-function normalizeIntentState(status: OrderStatus): ExecutionIntentState {
-  return TERMINAL_STATES.includes(status) ? (status === 'FILLED' ? 'COMPLETED' : 'FAILED') : 'IN_FLIGHT';
 }
 
 export async function reconcileExecutionIntent(idempotencyKey: string): Promise<NormalizedOrder | null> {
@@ -79,16 +74,12 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
     };
 
     if (age >= MAX_AGE_MS) {
-      await executeRun(
-        'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?)',
-        ['IN_FLIGHT', JSON.stringify(merged), Date.now(), idempotencyKey, 'PENDING', 'IN_FLIGHT']
-      );
-    } else {
-      await executeRun(
-        'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?)',
-        ['IN_FLIGHT', JSON.stringify(merged), Date.now(), idempotencyKey, 'PENDING', 'IN_FLIGHT']
-      );
+      merged.reconciliationTimedOutAt = merged.reconciliationTimedOutAt || Date.now();
     }
+    await executeRun(
+      'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?)',
+      ['IN_FLIGHT', JSON.stringify(merged), Date.now(), idempotencyKey, 'PENDING', 'IN_FLIGHT']
+    );
     return null;
   }
 }
