@@ -41,20 +41,14 @@ async function runPhase2BTests() {
     `Paper order placed and filled successfully (ID: ${placedPaper.id})`
   );
 
-  // 2. Demo cTrader Connection Test
-  console.log('\n[Test 2: Demo cTrader Connection Test]');
-  let ctraderTest: any = {};
-  try {
-    ctraderTest = await brokerRegistry.testBrokerConnection('CTRADER', 'DEMO');
-  } catch (e) {
-    ctraderTest = { connected: true, broker: 'CTRADER', environment: 'DEMO', account: '10114397', currency: 'USD' };
-  }
+  // 2. Demo cTrader Adapter Isolation Test
+  console.log('\n[Test 2: Demo cTrader Adapter Isolation Test]');
+  const ctraderDemoAdapter = brokerRegistry.getAdapter('CTRADER', 'DEMO');
   assert(
-    ctraderTest.broker === 'CTRADER' &&
-    ctraderTest.environment === 'DEMO' &&
-    typeof ctraderTest.account === 'string' &&
-    ctraderTest.currency === 'USD',
-    `cTrader Demo connection tested with account: ${ctraderTest.account}`
+    ctraderDemoAdapter.broker === 'CTRADER' &&
+    ctraderDemoAdapter.environment === 'DEMO' &&
+    ctraderDemoAdapter.isLive === false,
+    'cTrader demo adapter is isolated from LIVE execution'
   );
 
   // 3. Demo 5paisa Connection Test
@@ -74,7 +68,47 @@ async function runPhase2BTests() {
 
   // 4. Live Gate Rejection When Conditions Fail
   console.log('\n[Test 4: Live Gate Rejection When Conditions Fail]');
-  const liveAdapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+  // Use a deterministic in-memory LIVE adapter for the gate unit test so CI
+  // never requires real broker credentials or network access.
+  const liveAdapter: any = {
+    broker: 'CTRADER',
+    environment: 'LIVE',
+    isLive: true,
+    async getTradingStatus() { return 'CONNECTED'; },
+    async getAccount() {
+      return {
+        accountId: 'TEST-LIVE-ACCOUNT',
+        accountType: 'LIVE',
+        balance: 100000,
+        equity: 100000,
+        availableMargin: 100000,
+        usedMargin: 0,
+        freeMargin: 100000,
+        currency: 'USD',
+        broker: 'CTRADER',
+        environment: 'LIVE',
+        connectionStatus: 'CONNECTED',
+        permissions: ['TRADING'],
+        lastUpdate: Date.now(),
+        isLiveAccount: true
+      };
+    },
+    async getInstrument() {
+      return {
+        symbol: 'EUR/USD',
+        market: 'FOREX',
+        pipSize: 0.0001,
+        minQuantity: 1000,
+        maxQuantity: 1000000,
+        stepQuantity: 1000,
+        digits: 5,
+        supportedOrderTypes: ['MARKET', 'LIMIT'],
+        baseCurrency: 'EUR',
+        quoteCurrency: 'USD'
+      };
+    },
+    async getPositions() { return []; }
+  };
   const gateResult = await liveTradingGate.evaluate(liveAdapter, {
     order: {
       market: 'FOREX',

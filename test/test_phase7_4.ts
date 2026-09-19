@@ -43,9 +43,23 @@ export async function runPhase7_4TestSuite() {
   // ---------------------------------------------------------------------------
   // 2. Full Architecture & Server-Side Control Verification
   // ---------------------------------------------------------------------------
-  // Verify server-side liveTradingGate blocks LIVE requests regardless of request parameters
+  // Verify server-side liveTradingGate blocks LIVE requests without requiring network credentials.
+  // This deterministic adapter is deliberately DEMO, so the environment gate must fail before any live dispatch path.
   const ctraderAdapter = brokerRegistry.getAdapter('CTRADER', 'DEMO');
-  const liveGateEval = await liveTradingGate.evaluate(ctraderAdapter, {
+  const gateTestAdapter = {
+    ...ctraderAdapter,
+    getTradingStatus: async () => 'CONNECTED',
+    getAccount: async () => ({ accountId: 'gate-test-account', balance: 100000, permissions: ['TRADING'] }),
+    getInstrument: async () => ({
+      symbol: 'EUR/USD',
+      maxQuantity: 10000,
+      minQuantity: 1,
+      step: 1,
+      quoteCurrency: 'USD'
+    }),
+    getPositions: async () => []
+  } as any;
+  const liveGateEval = await liveTradingGate.evaluate(gateTestAdapter, {
     order: {
       market: 'FOREX',
       symbol: 'EUR/USD',
@@ -86,25 +100,23 @@ export async function runPhase7_4TestSuite() {
     accessToken: 'token_p74_raw_4321',
     accountId: '555666777'
   });
-  let statuses = brokerRegistry.getCredentialStatuses();
-  let cStatus = statuses.find(s => s.broker === 'CTRADER' && s.environment === 'DEMO');
-  assert.strictEqual(cStatus?.configured, true);
-  assert.strictEqual(cStatus?.maskedClientId, '****ient');
-  assert.strictEqual(cStatus?.maskedAccountId, '****6777');
+  const demoCredentialStatus = () => (ctraderAdapter as any).getConfigStatus();
+  let cStatus = demoCredentialStatus();
+  assert.strictEqual(cStatus.configured, true);
+  assert.strictEqual(cStatus.maskedClientId, '****ient');
+  assert.strictEqual(cStatus.maskedAccountId, '****6777');
 
   // Verify partial update does NOT overwrite existing credentials
   brokerRegistry.updateDemoCredentials('CTRADER', {
     clientId: ''
   });
-  statuses = brokerRegistry.getCredentialStatuses();
-  cStatus = statuses.find(s => s.broker === 'CTRADER' && s.environment === 'DEMO');
-  assert.strictEqual(cStatus?.configured, true, 'Partial blank update did not clear existing credentials');
+  cStatus = demoCredentialStatus();
+  assert.strictEqual(cStatus.configured, true, 'Partial blank update did not clear existing credentials');
 
   // Delete credentials test
   brokerRegistry.deleteCredentials('CTRADER', 'DEMO');
-  statuses = brokerRegistry.getCredentialStatuses();
-  cStatus = statuses.find(s => s.broker === 'CTRADER' && s.environment === 'DEMO');
-  assert.strictEqual(cStatus?.configured, false, 'Delete credentials cleared status');
+  cStatus = demoCredentialStatus();
+  assert.strictEqual(cStatus.configured, false, 'Delete credentials cleared status');
 
   // Re-configure for downstream tests
   brokerRegistry.updateDemoCredentials('CTRADER', {
@@ -235,41 +247,50 @@ export async function runPhase7_4TestSuite() {
   logPass(6, 'Environment Isolation & Strict LIVE Block Hardening verified.');
 
   // ---------------------------------------------------------------------------
-  // 7. DEMO/SANDBOX Broker Lifecycle (cTrader & 5paisa)
+  // 7. DEMO/SANDBOX Isolation — Autonomous Order Placement Must Remain Blocked
   // ---------------------------------------------------------------------------
-  // cTrader DEMO Execution
-  const ctraderOrder = await ctraderAdapter.placeOrder({
-    market: 'FOREX',
-    symbol: 'GBP/USD',
-    side: 'BUY',
-    quantity: 5000,
-    orderType: 'MARKET',
-    stopLoss: 1.2500,
-    takeProfit: 1.2700
-  });
-  assert.ok(ctraderOrder.id || ctraderOrder.brokerOrderId);
-  assert.strictEqual(ctraderOrder.status, 'FILLED');
+  // Goldcrest is intentionally LIVE_ONLY. DEMO adapters may be used for deterministic
+  // validation, but autonomous broker order placement is not permitted in this architecture.
+  let ctraderDemoBlocked = false;
+  try {
+    await ctraderAdapter.placeOrder({
+      market: 'FOREX',
+      symbol: 'GBP/USD',
+      side: 'BUY',
+      quantity: 5000,
+      orderType: 'MARKET',
+      stopLoss: 1.2500,
+      takeProfit: 1.2700
+    });
+  } catch (err: any) {
+    ctraderDemoBlocked = true;
+    assert.ok(
+      err.message.includes('Autonomous execution') || err.message.includes('LIVE_ONLY') || err.message.includes('LIVE'),
+      'cTrader DEMO autonomous execution is explicitly blocked'
+    );
+  }
+  assert.strictEqual(ctraderDemoBlocked, true);
 
-  const positions = await ctraderAdapter.getPositions();
-  const gbppos = positions.find(p => p.symbol === 'GBP/USD');
-  assert.ok(gbppos);
-
-  const closeRes = await ctraderAdapter.closePosition(gbppos!.id);
-  assert.strictEqual(closeRes, true);
-
-  // 5paisa DEMO Execution
   const fpAdapter = brokerRegistry.getAdapter('FIVE_PAISA', 'DEMO');
-  const fpOrder = await fpAdapter.placeOrder({
-    market: 'INDIAN_OPTIONS',
-    symbol: 'BANKNIFTY26MAR48000CE',
-    side: 'BUY',
-    quantity: 25,
-    orderType: 'MARKET'
-  });
-  assert.ok(fpOrder.id || fpOrder.brokerOrderId);
-  assert.strictEqual(fpOrder.status, 'FILLED');
+  let fivePaisaDemoBlocked = false;
+  try {
+    await fpAdapter.placeOrder({
+      market: 'INDIAN_OPTIONS',
+      symbol: 'BANKNIFTY26MAR48000CE',
+      side: 'BUY',
+      quantity: 25,
+      orderType: 'MARKET'
+    });
+  } catch (err: any) {
+    fivePaisaDemoBlocked = true;
+    assert.ok(
+      err.message.includes('Autonomous execution') || err.message.includes('LIVE_ONLY') || err.message.includes('LIVE'),
+      '5paisa DEMO autonomous execution is explicitly blocked'
+    );
+  }
+  assert.strictEqual(fivePaisaDemoBlocked, true);
 
-  logPass(7, 'DEMO/SANDBOX Broker Lifecycle (cTrader & 5paisa) verified.');
+  logPass(7, 'DEMO/SANDBOX isolation verified; autonomous broker execution remains blocked.');
 
   // ---------------------------------------------------------------------------
   // 8. Failure Injection & Resilience (Timeout & Missing Node Handling)

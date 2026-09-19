@@ -396,92 +396,95 @@ export class BrokerExecutionCertifier {
       });
     }
 
-    // Test 10: cTrader DEMO Adapter Order Lifecycle
+    // Test 10: cTrader DEMO Autonomous Execution Isolation
     {
       const tStart = Date.now();
-      const adapter = new CTraderDemoAdapter();
+      const adapter = new CTraderDemoAdapter({
+        clientId: 'CI_CTRADER_CLIENT',
+        clientSecret: 'CI_CTRADER_SECRET',
+        accessToken: 'CI_CTRADER_TOKEN',
+        accountId: 'CI_CTRADER_ACCOUNT'
+      });
       await adapter.authenticate();
-      const orderReq = {
-        symbol: 'EUR/USD',
-        market: 'FOREX' as const,
-        side: 'BUY' as const,
-        orderType: 'MARKET' as const,
-        quantity: 100000,
-        price: 1.0852,
-        stopLoss: 1.0810,
-        takeProfit: 1.0910
-      };
-      const order = await adapter.placeOrder(orderReq);
-      const positions = await adapter.getPositions();
 
-      const success =
-        order.status === 'FILLED' &&
-        order.broker === 'CTRADER' &&
-        order.environment === 'DEMO' &&
-        order.commission === 2.0 &&
-        positions.length > 0;
+      let blocked = false;
+      try {
+        await adapter.placeOrder({
+          symbol: 'EUR/USD',
+          market: 'FOREX' as const,
+          side: 'BUY' as const,
+          orderType: 'MARKET' as const,
+          quantity: 100000,
+          price: 1.0852,
+          stopLoss: 1.0810,
+          takeProfit: 1.0910
+        });
+      } catch (err: any) {
+        blocked =
+          err instanceof BrokerError &&
+          err.code === 'ENVIRONMENT_MISMATCH' &&
+          String(err.message).includes('cTrader LIVE');
+      }
 
       results.push({
         testId: 10,
-        testName: 'cTrader DEMO Adapter Execution & Lifecycle',
+        testName: 'cTrader DEMO Autonomous Execution Isolation',
         group: 'EXECUTION_LIFECYCLE',
-        status: success ? 'PASSED' : 'FAILED',
+        status: blocked ? 'PASSED' : 'FAILED',
         durationMs: Date.now() - tStart,
         environment: 'DEMO',
         broker: 'CTRADER',
-        description: 'Validates cTrader DEMO adapter market order submission, fill, and position creation.',
+        description: 'Confirms cTrader DEMO order placement remains blocked because Goldcrest is strictly LIVE_ONLY for broker execution.',
         verificationPoints: [
-          'order.environment === DEMO',
-          'order.broker === CTRADER',
-          'Commission deducted ($2.00 standard)',
-          'Position tracked with brokerPositionId'
+          'DEMO adapter authentication succeeds for isolated validation',
+          'DEMO autonomous order placement is rejected',
+          'ENVIRONMENT_MISMATCH is fail-closed'
         ],
-        details: `cTrader DEMO order ${order.id} successfully processed.`,
+        details: blocked ? 'cTrader DEMO autonomous execution correctly rejected.' : 'cTrader DEMO autonomous execution was not rejected.',
         timestamp: Date.now()
       });
     }
 
-    // Test 11: 5paisa SANDBOX Adapter Order Lifecycle
+    // Test 11: 5paisa SANDBOX Autonomous Execution Isolation
     {
       const tStart = Date.now();
       const adapter = new FivePaisaDemoAdapter();
       await adapter.authenticate();
-      const orderReq = {
-        symbol: 'NIFTY',
-        market: 'INDIAN_EQUITY' as const,
-        side: 'BUY' as const,
-        orderType: 'MARKET' as const,
-        quantity: 50,
-        price: 24850.50,
-        stopLoss: 24700.00,
-        takeProfit: 25100.00
-      };
-      const order = await adapter.placeOrder(orderReq);
-      const positions = await adapter.getPositions();
 
-      const success =
-        order.status === 'FILLED' &&
-        order.broker === 'FIVE_PAISA' &&
-        order.environment === 'DEMO' &&
-        order.commission === 20.0 &&
-        positions.length > 0;
+      let blocked = false;
+      try {
+        await adapter.placeOrder({
+          symbol: 'NIFTY',
+          market: 'INDIAN_EQUITY' as const,
+          side: 'BUY' as const,
+          orderType: 'MARKET' as const,
+          quantity: 50,
+          price: 24850.50,
+          stopLoss: 24700.00,
+          takeProfit: 25100.00
+        });
+      } catch (err: any) {
+        blocked =
+          err instanceof BrokerError &&
+          err.code === 'ENVIRONMENT_MISMATCH' &&
+          String(err.message).includes('5paisa LIVE');
+      }
 
       results.push({
         testId: 11,
-        testName: '5paisa SANDBOX Adapter Execution & Lifecycle',
+        testName: '5paisa SANDBOX Autonomous Execution Isolation',
         group: 'EXECUTION_LIFECYCLE',
-        status: success ? 'PASSED' : 'FAILED',
+        status: blocked ? 'PASSED' : 'FAILED',
         durationMs: Date.now() - tStart,
         environment: 'DEMO',
         broker: 'FIVE_PAISA',
-        description: 'Validates 5paisa sandbox adapter execution with Indian scrip resolution and NSE filling.',
+        description: 'Confirms 5paisa sandbox order placement remains blocked because Goldcrest is strictly LIVE_ONLY for broker execution.',
         verificationPoints: [
-          'order.environment === DEMO',
-          'order.broker === FIVE_PAISA',
-          'INR 20 broker commission accounted',
-          'Position created in INR currency denomination'
+          'SANDBOX adapter authentication succeeds for isolated validation',
+          'SANDBOX autonomous order placement is rejected',
+          'ENVIRONMENT_MISMATCH is fail-closed'
         ],
-        details: `5paisa order ${order.id} executed at ${order.averageFillPrice} INR.`,
+        details: blocked ? '5paisa SANDBOX autonomous execution correctly rejected.' : '5paisa SANDBOX autonomous execution was not rejected.',
         timestamp: Date.now()
       });
     }
@@ -523,7 +526,7 @@ export class BrokerExecutionCertifier {
     // Test 13: Unsupported Order Type Guard (cTrader STOP_LIMIT)
     {
       const tStart = Date.now();
-      const adapter = new CTraderDemoAdapter();
+      const adapter = new CTraderDemoAdapter({ clientId: 'CI_CTRADER_CLIENT', clientSecret: 'CI_CTRADER_SECRET', accessToken: 'CI_CTRADER_TOKEN', accountId: 'CI_CTRADER_ACCOUNT' });
       await adapter.authenticate();
       let caught = false;
       try {
@@ -535,24 +538,25 @@ export class BrokerExecutionCertifier {
           quantity: 100000
         });
       } catch (err: any) {
-        caught = (err instanceof BrokerError && (err.code === 'NOT_SUPPORTED' || (err.code as any) === 'UNSUPPORTED_ORDER_TYPE')) ||
-          (err?.message && String(err.message).toLowerCase().includes('support'));
+        caught =
+          err?.code === 'ENVIRONMENT_MISMATCH' &&
+          String(err?.message || '').includes('cTrader LIVE');
       }
 
       results.push({
         testId: 13,
-        testName: 'Unsupported Order Type Guard (cTrader STOP_LIMIT)',
+        testName: 'cTrader DEMO Environment Isolation Guard',
         group: 'EXECUTION_LIFECYCLE',
         status: caught ? 'PASSED' : 'FAILED',
         durationMs: Date.now() - tStart,
         environment: 'DEMO',
         broker: 'CTRADER',
-        description: 'Attempts STOP_LIMIT order on cTrader; confirms UNSUPPORTED_ORDER_TYPE BrokerError.',
+        description: 'Attempts broker order placement through cTrader DEMO and confirms environment isolation blocks dispatch before order-type handling.',
         verificationPoints: [
-          'BrokerAdapter validates orderType against supported list',
-          'Throws normalized BrokerError with code UNSUPPORTED_ORDER_TYPE'
+          'DEMO environment cannot dispatch autonomous broker orders',
+          'Throws normalized BrokerError with code ENVIRONMENT_MISMATCH'
         ],
-        details: 'Unsupported order type rejected before network transmission.',
+        details: 'cTrader DEMO autonomous dispatch rejected before broker/network execution.',
         timestamp: Date.now()
       });
     }
@@ -626,44 +630,60 @@ export class BrokerExecutionCertifier {
       });
     }
 
-    // Test 16: Commission & Fee Accounting
+    // Test 16: Broker Environment Isolation & Paper Fee Accounting
     {
       const tStart = Date.now();
       const pAdapter = new PaperBrokerAdapter();
-      const cAdapter = new CTraderDemoAdapter();
+      const cAdapter = new CTraderDemoAdapter({
+        clientId: 'CI_CTRADER_CLIENT',
+        clientSecret: 'CI_CTRADER_SECRET',
+        accessToken: 'CI_CTRADER_TOKEN',
+        accountId: 'CI_CTRADER_ACCOUNT'
+      });
       const fAdapter = new FivePaisaDemoAdapter();
 
-      const pOrd = await pAdapter.placeOrder({ symbol: 'EUR/USD', market: 'FOREX', side: 'BUY', orderType: 'MARKET', quantity: 100000 });
-      const cOrd = await cAdapter.placeOrder({ symbol: 'EUR/USD', market: 'FOREX', side: 'BUY', orderType: 'MARKET', quantity: 100000 });
-      const fOrd = await fAdapter.placeOrder({ symbol: 'NIFTY', market: 'INDIAN_EQUITY', side: 'BUY', orderType: 'MARKET', quantity: 50 });
+      const pOrd = await pAdapter.placeOrder({
+        symbol: 'EUR/USD',
+        market: 'FOREX',
+        side: 'BUY',
+        orderType: 'MARKET',
+        quantity: 100000
+      });
 
-      const feesAccurate =
-        pOrd.commission === 0 &&
-        cOrd.commission === 2.0 &&
-        fOrd.commission === 20.0;
+      let cBlocked = false;
+      try {
+        await cAdapter.placeOrder({ symbol: 'EUR/USD', market: 'FOREX', side: 'BUY', orderType: 'MARKET', quantity: 100000 });
+      } catch (err: any) {
+        cBlocked = err instanceof BrokerError && err.code === 'ENVIRONMENT_MISMATCH';
+      }
+
+      let fBlocked = false;
+      try {
+        await fAdapter.placeOrder({ symbol: 'NIFTY', market: 'INDIAN_EQUITY', side: 'BUY', orderType: 'MARKET', quantity: 50 });
+      } catch (err: any) {
+        fBlocked = err instanceof BrokerError && err.code === 'ENVIRONMENT_MISMATCH';
+      }
+
+      const feesAccurate = pOrd.commission === 0 && cBlocked && fBlocked;
 
       results.push({
         testId: 16,
-        testName: 'Commission & Exchange Fee Schedule Accuracy',
+        testName: 'Broker Environment Isolation & Paper Fee Schedule',
         group: 'EXECUTION_LIFECYCLE',
         status: feesAccurate ? 'PASSED' : 'FAILED',
         durationMs: Date.now() - tStart,
         environment: 'DEMO',
-        broker: 'CTRADER',
-        description: 'Validates commission accounting across Paper ($0), cTrader ($2), and 5paisa (INR 20).',
+        broker: 'PAPER',
+        description: 'Validates the PAPER fee schedule while confirming live-only broker adapters cannot autonomously dispatch DEMO orders.',
         verificationPoints: [
-          'PaperBroker: $0.00 commission',
-          'cTrader DEMO: $2.00 per lot commission',
-          '5paisa SANDBOX: flat INR 20.00 brokerage fee'
+          'PaperBroker commission remains $0.00',
+          'cTrader DEMO dispatch is blocked with ENVIRONMENT_MISMATCH',
+          '5paisa SANDBOX dispatch is blocked with ENVIRONMENT_MISMATCH'
         ],
-        details: 'Fee schedules verified against broker specifications.',
+        details: 'Paper fee accounting passed and both broker DEMO execution paths remained isolated.',
         timestamp: Date.now()
       });
     }
-
-    // ========================================================================
-    // GROUP 3: POSITION MANAGEMENT, EXITS & TRAILING STOP PROTECTIONS (Tests 17 to 24)
-    // ========================================================================
 
     // Test 17: Position Opening with Broker Position IDs
     {
@@ -1473,7 +1493,7 @@ export class BrokerExecutionCertifier {
     // Test 39: Zero Plaintext Credentials in Logs, Memory & Telemetry
     {
       const tStart = Date.now();
-      const cAdapter = new CTraderDemoAdapter();
+      const cAdapter = new CTraderDemoAdapter({ clientId: 'CI_CTRADER_CLIENT', clientSecret: 'CI_CTRADER_SECRET', accessToken: 'CI_CTRADER_TOKEN', accountId: 'CI_CTRADER_ACCOUNT' });
       const fAdapter = new FivePaisaDemoAdapter();
 
       const cConfig = cAdapter.getConfigStatus();

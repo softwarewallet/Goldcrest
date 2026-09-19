@@ -62,8 +62,8 @@ export class Exp2026Research009Engine {
   public executeStudy(config?: Partial<StudyRunConfig>): any {
     // Safety check
     LiveTradingGate.verifySafetyInvariant();
-    if (LIVE_AUTO_EXECUTION_ALLOWED !== true) {
-      throw new Error('CRITICAL SAFETY INVARIANT VIOLATION: Live trading must remain TRUE.');
+    if (LIVE_AUTO_EXECUTION_ALLOWED !== false) {
+      throw new Error('CRITICAL SAFETY INVARIANT VIOLATION: Live automated execution must remain FALSE.');
     }
 
     const seed = config?.seed ?? 2026;

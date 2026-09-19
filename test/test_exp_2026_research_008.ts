@@ -18,6 +18,7 @@ export async function runExp2026Research008TestSuite() {
   console.log(' RUNNING EXP-2026-RESEARCH-008 PLATT CALIBRATION TEST SUITE ');
   console.log('================================================================');
 
+  // Research execution remains valid only with the global live-autonomy hard-lock engaged.
   const engine = new Exp2026Research008Engine();
   const run1 = engine.executeStudy({ seed: 2026, totalObservations: 600 });
   const run2 = engine.executeStudy({ seed: 2026, totalObservations: 600 });

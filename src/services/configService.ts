@@ -10,6 +10,10 @@ export interface SystemConfig {
   defaultRiskPct: number;
   maxDailyLossPct: number;
   maxOpenPositions: number;
+  maxTradesPerDay: number;
+  maxConsecutiveLosses: number;
+  maxSpreadBps: number;
+  signalCooldownMs: number;
   eventProximityThresholdMinutes: number;
   strikeDepth: number;
   maxTradeValueForexUsd: number;
@@ -26,6 +30,10 @@ let activeConfig: SystemConfig = {
   defaultRiskPct: 1.0,
   maxDailyLossPct: 3.0,
   maxOpenPositions: 5,
+  maxTradesPerDay: 20,
+  maxConsecutiveLosses: 3,
+  maxSpreadBps: 30,
+  signalCooldownMs: 60000,
   eventProximityThresholdMinutes: 20,
   strikeDepth: 7,
   maxTradeValueForexUsd: 200,

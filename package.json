@@ -9,6 +9,7 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "test:auto_trade_readiness": "tsx test/test_auto_trade_readiness.ts",
     "test:phase8_5": "tsx test/test_phase8_5_broker_execution_certification.ts",
     "test:multi_currency": "tsx test/test_phase11_multi_currency_accounting.ts",
     "test:fx_integrity": "tsx test/test_fx_rate_integrity.ts",
