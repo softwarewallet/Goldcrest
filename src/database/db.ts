@@ -579,7 +579,9 @@ export async function getDatabaseStats() {
   const tables = [
     'markets', 'currency_pairs', 'underlyings', 'contracts', 'candles',
     'signals', 'trades', 'positions', 'orders', 'portfolio', 'economic_events',
-    'risk_configs', 'system_settings'
+    'risk_configs', 'system_settings', 'broker_accounts',
+    'broker_reconciliation_snapshots', 'execution_intents', 'execution_fill_observations',
+    'trade_traces', 'trade_trace_nodes', 'trade_notes', 'ml_storage_records'
   ];
 
   const stats: Record<string, number> = {};
