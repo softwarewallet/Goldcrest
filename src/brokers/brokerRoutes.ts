@@ -8,7 +8,8 @@ import { BrokerType, TradingEnvironment, OrderRequest } from './types';
 import { normalizeBrokerError } from './errors';
 import { reconciliationService } from '../services/reconciliationService';
 import { getForexSessionState, getIndianSessionState } from '../markets/common/session';
-import { claimExecutionIntent, completeExecutionIntent } from '../services/executionIntentService';
+import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../services/executionIntentService';
+import { reconcileExecutionIntent } from '../services/executionReconciliationService';
 import { getSystemConfig } from '../services/configService';
 
 export const brokerRouter = Router();
@@ -396,13 +397,45 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       });
     }
 
-    const placedOrder = await adapter.placeOrder(orderReq);
-    await completeExecutionIntent(idempotencyKey, placedOrder);
+    let placedOrder;
+    try {
+      placedOrder = await adapter.placeOrder(orderReq);
+    } catch (err: any) {
+      await failExecutionIntent(idempotencyKey, {
+        broker,
+        market: orderReq.market,
+        symbol: orderReq.symbol,
+        submissionState: 'REJECTED_OR_FAILED',
+        error: err?.message || String(err),
+        code: err?.code || 'ORDER_REJECTED',
+        failedAt: Date.now()
+      });
+      throw err;
+    }
+
+    if (placedOrder.status === 'FILLED') {
+      await completeExecutionIntent(idempotencyKey, placedOrder);
+      return res.json({
+        status: 'EXECUTED',
+        broker,
+        market: orderReq.market,
+        order: placedOrder
+      });
+    }
+
+    await markExecutionIntentInFlight(idempotencyKey, placedOrder);
+
+    // Never infer FILLED from submission acknowledgement. The broker remains
+    // authoritative and the background reconciler will transition ACCEPTED /
+    // PARTIALLY_FILLED to a terminal broker-confirmed state.
+    void reconcileExecutionIntent(idempotencyKey);
+
     return res.json({
-      status: placedOrder.status === 'FILLED' ? 'EXECUTED' : 'ACCEPTED',
+      status: placedOrder.status === 'PARTIALLY_FILLED' ? 'PARTIALLY_FILLED' : 'ACCEPTED',
       broker,
       market: orderReq.market,
-      order: placedOrder
+      order: placedOrder,
+      executionState: 'IN_FLIGHT'
     });
   } catch (err: any) {
     const broker = (() => {
