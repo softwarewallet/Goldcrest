@@ -188,11 +188,11 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
       {isEmergencyHalted && <div className="rounded-lg border border-rose-700 bg-rose-950/80 px-4 py-2 text-xs font-mono text-rose-200">TRADING HALTED — emergency stop is active; new orders are blocked.</div>}
 
       <section className="grid grid-cols-2 xl:grid-cols-6 gap-3">
-        <Kpi label="Live P&L" value={dailyPnl == null ? '—' : money(dailyPnl, nseAccount?.currency || currency)} sub="Broker-reported realized P&L" tone={pnlClass(metrics?.dailyRealizedPnL)} />
-        <Kpi label="Win Rate" value={metrics?.winRate == null ? '—' : `${metrics.winRate.toFixed(1)}%`} sub="Only calculated from closed trade ledger" />
+        <Kpi label="Live P&L" value={dailyPnl == null ? '—' : money(dailyPnl, nseAccount?.currency || currency)} sub="Broker-reported realized P&L" tone={pnlClass(dailyPnl)} />
+        <Kpi label="Win Rate" value="—" sub="Only calculated from closed trade ledger" />
         <Kpi label="Total Trades" value={nseBrokerSummary ? String(nseBrokerSummary.orderHistory.length) : '—'} sub="Live broker order history" />
-        <Kpi label="Profit Factor" value={metrics?.profitFactor == null ? '—' : metrics.profitFactor.toFixed(2)} sub="Requires realized trade P&L" />
-        <Kpi label="Max Drawdown" value={metrics?.maxDrawdown == null ? '—' : `${metrics.maxDrawdown.toFixed(2)}%`} sub="Requires equity history" tone="text-rose-400" />
+        <Kpi label="Profit Factor" value="—" sub="Requires realized trade P&L" />
+        <Kpi label="Max Drawdown" value="—" sub="Requires equity history" tone="text-rose-400" />
         <Kpi label="Account Balance" value={money(accountBalance, nseAccount?.currency || currency)} sub={`Available: ${nseAccount ? money(freeMargin, nseAccount.currency) : '—'}`} />
       </section>
 
