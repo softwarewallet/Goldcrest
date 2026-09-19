@@ -15,6 +15,37 @@ type LiveForm = Record<string, string>;
 const emptyCTrader: LiveForm = { clientId: '', clientSecret: '', accessToken: '', accountId: '' };
 const emptyFivePaisa: LiveForm = { appName: '', appSource: '', userId: '', password: '', userKey: '', encryptionKey: '', clientCode: '', accessToken: '', totpSecret: '', pin: '' };
 
+interface BrokerCredentialFieldProps {
+  broker: 'CTRADER' | 'FIVE_PAISA';
+  name: string;
+  label: string;
+  secret?: boolean;
+  value: string;
+  onChange: (broker: 'CTRADER' | 'FIVE_PAISA', name: string, value: string) => void;
+  inputClass: string;
+}
+
+const BrokerCredentialField: React.FC<BrokerCredentialFieldProps> = React.memo(({
+  broker,
+  name,
+  label,
+  secret = false,
+  value,
+  onChange,
+  inputClass
+}) => (
+  <label className="block space-y-1">
+    <span className="text-[10px] uppercase text-slate-500 font-mono">{label}</span>
+    <input
+      className={inputClass}
+      type={secret ? 'password' : 'text'}
+      value={value}
+      onChange={e => onChange(broker, name, e.target.value)}
+      autoComplete="off"
+    />
+  </label>
+));
+
 export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   currentEnvironment,
   onRefreshGlobal
@@ -106,12 +137,6 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
 
   const statusFor = (broker: BrokerType) => statuses.find(s => s.broker === broker && s.environment === 'LIVE');
   const inputClass = 'w-full px-3 py-2 rounded bg-slate-950 border border-slate-800 text-slate-200 text-xs font-mono outline-none focus:border-emerald-600';
-  const Field = ({ broker, name, label, secret=false }: { broker: 'CTRADER'|'FIVE_PAISA'; name: string; label: string; secret?: boolean }) => (
-    <label className="block space-y-1">
-      <span className="text-[10px] uppercase text-slate-500 font-mono">{label}</span>
-      <input className={inputClass} type={secret ? 'password' : 'text'} value={forms[broker][name] || ''} onChange={e => updateField(broker, name, e.target.value)} autoComplete="off" />
-    </label>
-  );
 
   return (
     <div id="broker_settings_panel" className="space-y-4">
@@ -206,19 +231,19 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 {isC ? <>
-                  <Field broker={broker} name="clientId" label="Client ID" />
-                  <Field broker={broker} name="clientSecret" label="Client Secret" secret />
-                  <Field broker={broker} name="accessToken" label="Access Token" secret />
-                  <Field broker={broker} name="accountId" label="Account ID" />
+                  <BrokerCredentialField broker={broker} name="clientId" label="Client ID" value={forms[broker].clientId || ''} onChange={updateField} inputClass={inputClass} />
+                  <BrokerCredentialField broker={broker} name="clientSecret" label="Client Secret" secret value={forms[broker].clientSecret || ''} onChange={updateField} inputClass={inputClass} />
+                  <BrokerCredentialField broker={broker} name="accessToken" label="Access Token" secret value={forms[broker].accessToken || ''} onChange={updateField} inputClass={inputClass} />
+                  <BrokerCredentialField broker={broker} name="accountId" label="Account ID" value={forms[broker].accountId || ''} onChange={updateField} inputClass={inputClass} />
                 </> : <>
-                  <Field broker={broker} name="appName" label="App Name" />
-                  <Field broker={broker} name="appSource" label="App Source" />
-                  <Field broker={broker} name="userId" label="User ID" />
-                  <Field broker={broker} name="password" label="Password" secret />
-                  <Field broker={broker} name="userKey" label="User Key" secret />
-                  <Field broker={broker} name="encryptionKey" label="Encryption Key" secret />
-                  <Field broker={broker} name="clientCode" label="Client Code" />
-                  <Field broker={broker} name="accessToken" label="Access Token" secret />
+                  <BrokerCredentialField broker={broker} name="appName" label="App Name" value={forms[broker].appName || ''} onChange={updateField} inputClass={inputClass} />
+                  <BrokerCredentialField broker={broker} name="appSource" label="App Source" value={forms[broker].appSource || ''} onChange={updateField} inputClass={inputClass} />
+                  <BrokerCredentialField broker={broker} name="userId" label="User ID" value={forms[broker].userId || ''} onChange={updateField} inputClass={inputClass} />
+                  <BrokerCredentialField broker={broker} name="password" label="Password" secret value={forms[broker].password || ''} onChange={updateField} inputClass={inputClass} />
+                  <BrokerCredentialField broker={broker} name="userKey" label="User Key" secret value={forms[broker].userKey || ''} onChange={updateField} inputClass={inputClass} />
+                  <BrokerCredentialField broker={broker} name="encryptionKey" label="Encryption Key" secret value={forms[broker].encryptionKey || ''} onChange={updateField} inputClass={inputClass} />
+                  <BrokerCredentialField broker={broker} name="clientCode" label="Client Code" value={forms[broker].clientCode || ''} onChange={updateField} inputClass={inputClass} />
+                  <BrokerCredentialField broker={broker} name="accessToken" label="Access Token" secret value={forms[broker].accessToken || ''} onChange={updateField} inputClass={inputClass} />
                 </>}
               </div>
               <div className="flex flex-wrap gap-2 mt-4">
