@@ -274,6 +274,7 @@ export default function App() {
       activeTab={activeTab}
       setActiveTab={setActiveTab}
       indianSession={indianSession}
+      indianUnderlyings={indianUnderlyings}
       header={
         <Header
           activeTab={activeTab}
