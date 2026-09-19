@@ -858,26 +858,65 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     }
 
     const deals = await fetchCTraderDeals(raw.ctidTraderAccountId, Date.now() - 7 * 24 * 60 * 60 * 1000, Date.now(), this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
-    const matching = deals.filter((d: any) => Number(d.orderId) === brokerId).sort((a: any, b: any) => Number(b.executionTimestamp || 0) - Number(a.executionTimestamp || 0))[0];
-    if (!matching) throw new BrokerError('ORDER_REJECTED', `cTrader order ${brokerId} was not found in authoritative broker state.`, 'CTRADER', this.environment);
+    const matchingDeals = deals
+      .filter((d: any) => Number(d.orderId) === brokerId)
+      .sort((a: any, b: any) => Number(a.executionTimestamp || a.createTimestamp || 0) - Number(b.executionTimestamp || b.createTimestamp || 0));
 
-    const volume = Math.abs(Number(matching.filledVolume ?? matching.volume ?? 0)) / 100;
-    const price = Number(matching.executionPrice || 0);
+    if (matchingDeals.length === 0) {
+      throw new BrokerError('ORDER_REJECTED', `cTrader order ${brokerId} was not found in authoritative broker state.`, 'CTRADER', this.environment);
+    }
+
+    // One cTrader order can produce multiple execution deals when liquidity
+    // fills it in pieces. Aggregate the authoritative deals rather than using
+    // only the latest deal, otherwise a later partial fill can overwrite the
+    // cumulative fill with a smaller quantity.
+    const requestedVolume = matchingDeals.reduce(
+      (sum: number, deal: any) => sum + Math.max(0, Number(deal.volume || 0)),
+      0
+    ) / 100;
+    const filledVolume = matchingDeals.reduce(
+      (sum: number, deal: any) => sum + Math.max(0, Number(deal.filledVolume || 0)),
+      0
+    ) / 100;
+    const weightedPriceNumerator = matchingDeals.reduce(
+      (sum: number, deal: any) => {
+        const filled = Math.max(0, Number(deal.filledVolume || 0)) / 100;
+        const executionPrice = Number(deal.executionPrice || 0);
+        return sum + (filled > 0 && executionPrice > 0 ? filled * executionPrice : 0);
+      },
+      0
+    );
+    const averageFillPrice = filledVolume > 0 && weightedPriceNumerator > 0
+      ? weightedPriceNumerator / filledVolume
+      : undefined;
+    const latestDeal = matchingDeals[matchingDeals.length - 1];
+    const hasFilledDeal = matchingDeals.some((d: any) => Number(d.dealStatus) === 2 || Number(d.filledVolume || 0) > 0);
+    const hasRejectedDeal = matchingDeals.some((d: any) => [4, 5, 6, 7].includes(Number(d.dealStatus)));
+    const status = requestedVolume > 0 && filledVolume >= requestedVolume
+      ? 'FILLED'
+      : filledVolume > 0
+        ? 'PARTIALLY_FILLED'
+        : hasRejectedDeal
+          ? 'REJECTED'
+          : hasFilledDeal
+            ? 'PARTIALLY_FILLED'
+            : 'ACCEPTED';
+
     return {
       id: String(brokerId),
       broker: 'CTRADER',
       environment: this.environment,
       market: 'FOREX',
-      symbol: String(matching.symbolId),
-      side: Number(matching.tradeSide) === 2 ? 'SELL' : 'BUY',
+      symbol: String(latestDeal.symbolId),
+      side: Number(latestDeal.tradeSide) === 2 ? 'SELL' : 'BUY',
       orderType: 'MARKET',
-      quantity: volume,
-      price: price > 0 ? price : undefined,
-      status: Number(matching.dealStatus) === 2 ? 'FILLED' : 'REJECTED',
-      filledQuantity: Number(matching.dealStatus) === 2 ? volume : 0,
-      averageFillPrice: price > 0 ? price : undefined,
-      commission: Number(matching.commission || 0) || undefined,
-      timestamp: Number(matching.executionTimestamp || matching.utcLastUpdateTimestamp || Date.now()),
+      quantity: requestedVolume > 0 ? requestedVolume : filledVolume,
+      price: Number(latestDeal.executionPrice || 0) > 0 ? Number(latestDeal.executionPrice) : undefined,
+      status,
+      filledQuantity: filledVolume,
+      averageFillPrice,
+      commission: matchingDeals.reduce((sum: number, deal: any) => sum + (Number(deal.commission || 0) || 0), 0) || undefined,
+      timestamp: Number(latestDeal.executionTimestamp || latestDeal.utcLastUpdateTimestamp || Date.now()),
       brokerOrderId: String(brokerId)
     };
   }
