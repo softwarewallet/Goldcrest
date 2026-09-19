@@ -102,10 +102,11 @@ export const ForexTerminalDashboard: React.FC<ForexTerminalDashboardProps> = ({
     mid: Number.isFinite(Number(pair?.bid)) && Number.isFinite(Number(pair?.ask)) ? (Number(pair.bid) + Number(pair.ask)) / 2 : NaN
   };
   const last = candles[candles.length - 1];
-  const first24 = candles[Math.max(0, candles.length - 24)];
+  const candles24h = last ? candles.filter(c => Number(c.timestamp) >= Number(last.timestamp) - 24 * 60 * 60 * 1000) : [];
+  const first24 = candles24h[0];
   const change24 = last && first24?.close ? (last.close - first24.close) / first24.close * 100 : null;
-  const high24 = candles.slice(-24).reduce((m, c) => Math.max(m, c.high), -Infinity);
-  const low24 = candles.slice(-24).reduce((m, c) => Math.min(m, c.low), Infinity);
+  const high24 = candles24h.reduce((m, c) => Math.max(m, c.high), -Infinity);
+  const low24 = candles24h.reduce((m, c) => Math.min(m, c.low), Infinity);
 
   const watchlist = useMemo(() => forexPairs.filter(p => !search || String(p.symbol).toUpperCase().includes(search.toUpperCase())).slice(0, 14), [forexPairs, search]);
   const relatedSignals = signals.filter(s => s.market === 'FOREX').sort((a,b) => b.timestamp - a.timestamp).slice(0, 5);
