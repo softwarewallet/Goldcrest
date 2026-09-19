@@ -1,8 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  BarChart3, Bell, CandlestickChart, ChevronDown, Gauge, Plus, RefreshCw,
-  Search, Settings2, SlidersHorizontal, TrendingUp, Wallet
-} from 'lucide-react';
+import { Gauge, Plus, RefreshCw, Search, Settings2 } from 'lucide-react';
 import { Candle, IndianSessionState, ForexSessionState, TradingSignal } from '../markets/common/types';
 import { BrokerType, TradingEnvironment } from '../brokers/types';
 
@@ -175,7 +172,6 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
   const nseAccount = summary?.accounts?.find(a => a.broker === 'FIVE_PAISA');
   const nseBrokerSummary = (summary as any)?.brokerSummaries?.find((x: any) => x.broker === 'FIVE_PAISA');
   const nsePositions = (summary?.positions || []).filter((p: any) => p.broker === 'FIVE_PAISA' || p.market === 'INDIAN_EQUITY');
-  const nseOrders = (summary?.orderHistory || []).filter((o: any) => o.broker === 'FIVE_PAISA' || o.market !== 'FOREX');
   const equity = Number(nseAccount?.equity ?? balance);
   const accountBalance = Number(nseAccount?.balance ?? balance);
   const freeMargin = Number(nseAccount?.freeMargin ?? 0);
