@@ -147,7 +147,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Dual LIVE broker balances: cTrader (Forex) + 5paisa (Indian markets) */}
           <BalanceDisplay environment="LIVE" />
 
-          <div className="hidden xl:flex items-center space-x-2 pl-4 border-l border-slate-800 text-xs font-mono">
+          <div className="flex flex-col space-y-1.5 pl-0 border-l border-slate-800 text-xs font-mono">
             {/* Forex Sessions Badge */}
             {(() => {
               const activeList = forexSessions.activeSessions || [];
@@ -156,11 +156,11 @@ export const Header: React.FC<HeaderProps> = ({
                 <div
                   id="header_fx_session_badge"
                   title={isFxOpen ? `Forex Market Active: ${activeList.join(', ')}` : 'Forex Market Closed for Weekend'}
-                  className={`flex items-center space-x-1.5 px-2.5 py-1 rounded border transition ${
+                  className={`flex items-center space-x-1.5 px-2.5 py-0.5 rounded border transition ${
                     isFxOpen ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
                   }`}
                 >
-                  <Globe className={`w-3.5 h-3.5 ${isFxOpen ? 'text-emerald-400' : 'text-slate-400'}`} />
+                  <Globe className={`w-3 h-3 ${isFxOpen ? 'text-emerald-400' : 'text-slate-400'}`} />
                   <span className="text-slate-400 font-semibold">FX:</span>
                   {isFxOpen ? (
                     <span className="relative flex h-2 w-2">
@@ -184,12 +184,12 @@ export const Header: React.FC<HeaderProps> = ({
                 <div
                   id="header_nse_session_badge"
                   title={`NSE Stock Market Hours: 09:15 - 15:30 IST. Current Phase: ${indianSession.currentPhase}`}
-                  className={`flex items-center space-x-1.5 px-2.5 py-1 rounded border transition ${
+                  className={`flex items-center space-x-1.5 px-2.5 py-0.5 rounded border transition ${
                     isNseOpen ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
                   }`}
                 >
-                  <Activity className={`w-3.5 h-3.5 ${isNseOpen ? 'text-emerald-400' : 'text-amber-400'}`} />
-                  <span className="text-slate-400 font-semibold">NSE (IST):</span>
+                  <Activity className={`w-3 h-3 ${isNseOpen ? 'text-emerald-400' : 'text-amber-400'}`} />
+                  <span className="text-slate-400 font-semibold">NSE:</span>
                   {isNseOpen ? (
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -213,39 +213,34 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             id="btn_emergency_stop"
             onClick={onToggleKillSwitch}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-bold font-mono transition border ${
+            className={`flex items-center p-2 rounded text-xs font-bold font-mono transition border ${
               isEmergencyHalted
                 ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500 animate-pulse'
                 : 'bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border-rose-800'
             }`}
-            title="Trigger Emergency Stop: Cancels pending orders, halts new orders"
+            title={isEmergencyHalted ? "System Halted - Click to Resume" : "Trigger Emergency Stop: Cancels pending orders, halts new orders"}
           >
-            <AlertOctagon className="w-3.5 h-3.5" />
-            <span>{isEmergencyHalted ? 'HALTED' : 'EMERGENCY STOP'}</span>
+            <AlertOctagon className="w-4 h-4" />
           </button>
 
           <button
             id="btn_terminal_refresh"
             onClick={onRefresh}
             disabled={isRefreshing}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+            className="flex items-center p-2 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
             title="Refresh Quotes and Signals"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
           </button>
 
           <button
             id="btn_open_diagnostics"
             onClick={onOpenDiagnostics}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+            className="flex items-center p-2 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
             title="SQLite Database & System Diagnostics"
           >
-            <Database className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">DB</span>
+            <Database className="w-4 h-4 text-cyan-400" />
           </button>
-
-
         </div>
       </div>
 

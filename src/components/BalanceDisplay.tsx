@@ -275,7 +275,7 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
               ) : (
                 <div className="text-[9px] text-rose-400 truncate mt-0.5" title={error}>
                   <AlertCircle className="inline w-2.5 h-2.5 mr-1" />
-                  {error}
+                  {error.length > 50 ? `${error.substring(0, 47)}...` : error}
                 </div>
               )
             )}
