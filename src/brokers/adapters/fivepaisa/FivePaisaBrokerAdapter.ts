@@ -1025,8 +1025,22 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       const commission = fillEvents.length > 0
         ? fillEvents.reduce((sum, fill) => sum + (Number(fill.commission || 0) || 0), 0)
         : fills.reduce((sum, fill) => sum + (Number(fill.commission || 0) || 0), 0);
+      const requestedQuantity = Math.max(
+        Number(normalizedTarget.requestedQuantity || 0),
+        Number(normalizedTarget.quantity || 0),
+        filledQuantity
+      );
       return {
         ...normalizedTarget,
+        quantity: requestedQuantity,
+        requestedQuantity,
+        status: normalizedTarget.status === 'REJECTED' || normalizedTarget.status === 'CANCELLED' || normalizedTarget.status === 'EXPIRED'
+          ? normalizedTarget.status
+          : filledQuantity >= requestedQuantity && requestedQuantity > 0
+            ? 'FILLED'
+            : filledQuantity > 0
+              ? 'PARTIALLY_FILLED'
+              : normalizedTarget.status,
         filledQuantity,
         averageFillPrice: filledQuantity > 0 && weightedPrice > 0 ? weightedPrice / filledQuantity : normalizedTarget.averageFillPrice,
         commission: commission || normalizedTarget.commission,
@@ -1081,13 +1095,18 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     const commission = fillEvents.length > 0
       ? fillEvents.reduce((sum, fill) => sum + (Number(fill.commission || 0) || 0), 0)
       : fills.reduce((sum, fill) => sum + (Number(fill.commission || 0) || 0), 0);
-    const requestedQuantity = Math.max(Number(first.quantity || 0), filledQuantity);
+    const requestedQuantity = Math.max(
+      Number(first.requestedQuantity || 0),
+      Number(first.quantity || 0),
+      filledQuantity
+    );
 
     return {
       ...first,
       id: String(orderId),
       brokerOrderId: String(orderId),
       quantity: requestedQuantity,
+      requestedQuantity,
       status: filledQuantity >= requestedQuantity && requestedQuantity > 0 ? 'FILLED' : 'PARTIALLY_FILLED',
       filledQuantity,
       averageFillPrice,
