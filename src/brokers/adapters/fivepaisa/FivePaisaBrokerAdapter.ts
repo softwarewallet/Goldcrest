@@ -977,7 +977,26 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       String(o.RemoteOrderID ?? '') === String(orderId) ||
       String(o.OrderID ?? '') === String(orderId)
     );
-    if (target) return this.normalizeBrokerOrder(target);
+    if (target) {
+      const normalizedTarget = this.normalizeBrokerOrder(target);
+      if (normalizedTarget.filledQuantity <= 0) return normalizedTarget;
+      const history = await this.getOrderHistory();
+      const fills = history.filter(o => String(o.brokerOrderId ?? '') === String(orderId) || String(o.id ?? '') === String(orderId));
+      if (fills.length === 0) return normalizedTarget;
+      const filledQuantity = fills.reduce((sum, fill) => sum + Math.max(0, Number(fill.filledQuantity || 0)), 0);
+      const weightedPrice = fills.reduce((sum, fill) => {
+        const quantity = Math.max(0, Number(fill.filledQuantity || 0));
+        const price = Number(fill.averageFillPrice || fill.price || 0);
+        return sum + (quantity > 0 && price > 0 ? quantity * price : 0);
+      }, 0);
+      return {
+        ...normalizedTarget,
+        filledQuantity,
+        averageFillPrice: filledQuantity > 0 && weightedPrice > 0 ? weightedPrice / filledQuantity : normalizedTarget.averageFillPrice,
+        commission: fills.reduce((sum, fill) => sum + (Number(fill.commission || 0) || 0), 0) || normalizedTarget.commission,
+        fillEvents: fills.flatMap(fill => fill.fillEvents || [])
+      };
+    }
 
     // TradeBook is the authoritative execution ledger. Multiple trade rows
     // can belong to one order when it is partially filled. Aggregate those
