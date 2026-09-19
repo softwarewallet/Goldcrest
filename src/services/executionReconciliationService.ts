@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { executeQuery, executeRun } from '../database/db';
 import { brokerRegistry } from '../brokers/registry';
 import { BrokerType, NormalizedOrder, OrderStatus } from '../brokers/types';
@@ -87,6 +88,38 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
       reconciledAt: Date.now(),
       order: status
     };
+
+    // Persist each distinct cumulative-fill observation. The deterministic key
+    // makes repeated reconciliation of the same broker state idempotent while
+    // retaining an audit trail of fill progression.
+    if (filledQuantity > 0) {
+      const observationId = crypto.createHash('sha256')
+        .update([
+          idempotencyKey,
+          status.brokerOrderId || brokerOrderId,
+          status.status,
+          String(filledQuantity),
+          String(status.averageFillPrice ?? ''),
+          String(status.commission ?? '')
+        ].join('|'))
+        .digest('hex');
+      await executeRun(
+        'INSERT OR IGNORE INTO execution_fill_observations (id, idempotency_key, broker, broker_order_id, status, requested_quantity, filled_quantity, remaining_quantity, average_fill_price, commission, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          observationId,
+          idempotencyKey,
+          broker,
+          String(status.brokerOrderId || brokerOrderId),
+          status.status,
+          requestedQuantity > 0 ? requestedQuantity : null,
+          filledQuantity,
+          remainingQuantity ?? null,
+          status.averageFillPrice ?? null,
+          status.commission ?? null,
+          Date.now()
+        ]
+      );
+    }
 
     if (status.status === 'FILLED') {
       // A terminal FILLED state is only durable when the cumulative fill is
