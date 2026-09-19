@@ -510,8 +510,31 @@ export async function runPhase7_3TestSuite() {
   // ---------------------------------------------------------------------------
   // 10. Adversarial API Testing & Hard-Lock Protection
   // ---------------------------------------------------------------------------
+  // Use an isolated DEMO adapter stub for the gate test. The assertion is
+  // specifically about environment rejection and must not require cTrader network
+  // credentials in CI.
+  const gateTestAdapter: any = {
+    broker: 'CTRADER',
+    environment: 'DEMO',
+    isLive: false,
+    async getTradingStatus() { return 'CONNECTED'; },
+    async getAccount() {
+      return {
+        accountId: 'CI-DEMO',
+        balance: 100000,
+        equity: 100000,
+        availableMargin: 100000,
+        usedMargin: 0,
+        freeMargin: 100000,
+        currency: 'USD',
+        permissions: ['TRADING'],
+        connectionStatus: 'CONNECTED'
+      };
+    }
+  };
+
   // Attempt LIVE execution via liveTradingGate
-  const liveGateRes = await liveTradingGate.evaluate(ctraderAdapter, {
+  const liveGateRes = await liveTradingGate.evaluate(gateTestAdapter, {
     order: {
       market: 'FOREX',
       symbol: 'EUR/USD',
