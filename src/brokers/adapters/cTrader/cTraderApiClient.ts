@@ -55,6 +55,8 @@ const MSG_EXECUTION_EVENT = 2126;
 const MSG_ORDER_ERROR_EVENT = 2132;
 const MSG_ORDER_DETAILS_REQ = 2181;
 const MSG_ORDER_DETAILS_RES = 2182;
+const MSG_SYMBOLS_FOR_CONVERSION_REQ = 2118;
+const MSG_SYMBOLS_FOR_CONVERSION_RES = 2119;
 const MSG_ERROR_RES = 2142;
 
 /**
@@ -287,6 +289,68 @@ export async function fetchLiveCTraderAccountDetails(
   });
 }
 
+
+export interface CTraderAssetInfo {
+  assetId: number;
+  name: string;
+  displayName?: string;
+  digits?: number;
+}
+
+export interface CTraderConversionSymbol {
+  symbolId: number;
+  symbolName: string;
+  baseAssetId?: number;
+  quoteAssetId?: number;
+}
+
+export async function fetchCTraderAssets(
+  ctidTraderAccountId: number,
+  clientId: string,
+  clientSecret: string,
+  accessToken: string,
+  isLive: boolean
+): Promise<CTraderAssetInfo[]> {
+  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+    const payload = await sendAndAwait(ws, MSG_ASSET_LIST_REQ, { ctidTraderAccountId }, MSG_ASSET_LIST_RES, 15000);
+    const assets = Array.isArray(payload.asset) ? payload.asset : [];
+    return assets
+      .filter((a: any) => a.assetId !== undefined && (a.name || a.displayName))
+      .map((a: any) => ({
+        assetId: Number(a.assetId),
+        name: String(a.name || a.displayName).toUpperCase(),
+        displayName: a.displayName ? String(a.displayName) : undefined,
+        digits: a.digits !== undefined ? Number(a.digits) : undefined
+      }));
+  });
+}
+
+export async function fetchCTraderConversionSymbols(
+  ctidTraderAccountId: number,
+  firstAssetId: number,
+  lastAssetId: number,
+  clientId: string,
+  clientSecret: string,
+  accessToken: string,
+  isLive: boolean
+): Promise<CTraderConversionSymbol[]> {
+  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+    const payload = await sendAndAwait(ws, MSG_SYMBOLS_FOR_CONVERSION_REQ, {
+      ctidTraderAccountId,
+      firstAssetId,
+      lastAssetId
+    }, MSG_SYMBOLS_FOR_CONVERSION_RES, 15000);
+    const symbols = Array.isArray(payload.symbol) ? payload.symbol : [];
+    return symbols
+      .filter((s: any) => s.symbolId !== undefined && s.symbolName)
+      .map((s: any) => ({
+        symbolId: Number(s.symbolId),
+        symbolName: String(s.symbolName),
+        baseAssetId: s.baseAssetId !== undefined ? Number(s.baseAssetId) : undefined,
+        quoteAssetId: s.quoteAssetId !== undefined ? Number(s.quoteAssetId) : undefined
+      }));
+  });
+}
 
 export interface CTraderMarketQuote {
   symbol: string;
