@@ -114,7 +114,7 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
   const [config, setConfig] = useState<any>(null);
   const [selectedSymbol, setSelectedSymbol] = useState('NIFTY');
   const [range, setRange] = useState('6M');
-  const [timeframe, setTimeframe] = useState('Daily');
+  const [timeframe, setTimeframe] = useState('1d');
   const [show20, setShow20] = useState(true);
   const [show50, setShow50] = useState(true);
   const [watchSearch, setWatchSearch] = useState('');
@@ -203,13 +203,13 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
         <div className="rounded-xl border border-slate-800 bg-[#04121f] overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-800 flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-base font-semibold"><span>{selectedIndex?.name || (selectedSymbol === 'NIFTY' ? 'NIFTY 50' : selectedSymbol)} · {timeframe} · NSE</span><span className={`w-2 h-2 rounded-full ${indianSession.isOpen ? 'bg-emerald-400' : 'bg-amber-400'}`}/></div>
+              <div className="flex items-center gap-2 text-base font-semibold"><span>{selectedIndex?.name || (selectedSymbol === 'NIFTY' ? 'NIFTY 50' : selectedSymbol)} · {timeframe === '1d' ? '1D' : timeframe} · NSE</span><span className={`w-2 h-2 rounded-full ${indianSession.isOpen ? 'bg-emerald-400' : 'bg-amber-400'}`}/></div>
               <div className="text-[11px] font-mono mt-1">
                 {last ? <>O <b>{num(last.open)}</b>&nbsp;&nbsp; H <b>{num(last.high)}</b>&nbsp;&nbsp; L <b>{num(last.low)}</b>&nbsp;&nbsp; C <b className="text-emerald-400">{num(last.close)}</b>&nbsp;&nbsp; <span className={pnlClass(change)}>{change == null ? '—' : `${change >= 0 ? '+' : ''}${num(change)} (${pct(changePct)})`}</span></> : <span className="text-slate-500">Authoritative candle feed unavailable</span>}
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <select value={timeframe} onChange={e => setTimeframe(e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs"><option value="Daily">1D</option><option value="1H">1H</option><option value="15m">15M</option></select>
+              <select value={timeframe} onChange={e => setTimeframe(e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs"><option value="1d">1D</option><option value="60m">1H</option><option value="15m">15M</option></select>
               <button onClick={() => setShow20(v => !v)} className={`px-2 py-1.5 rounded border text-[11px] ${show20 ? 'border-emerald-600 text-emerald-400' : 'border-slate-700 text-slate-500'}`}>EMA20</button>
               <button onClick={() => setShow50(v => !v)} className={`px-2 py-1.5 rounded border text-[11px] ${show50 ? 'border-blue-600 text-blue-400' : 'border-slate-700 text-slate-500'}`}>EMA50</button>
               <button onClick={onRefresh} className="p-1.5 rounded border border-slate-700"><RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-emerald-400' : 'text-slate-400'}`}/></button>
