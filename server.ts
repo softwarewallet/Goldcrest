@@ -696,12 +696,16 @@ app.get(['/api/candles/:symbol', '/api/candles/:part1/:part2'], async (req: Requ
 
     const isForex = symbol.includes('/') || FOREX_PAIRS.some(p => p.symbol.toUpperCase() === symbol);
     if (isForex) {
-      const candles = await getLiveAnchoredCandles(symbol, '15M', 80);
+      const tf = (req.query.tf as ForexTimeframe) || '15M';
+      const limit = req.query.limit ? Math.min(Math.max(parseInt(req.query.limit as string, 10), 10), 500) : 80;
+      const candles = await getLiveAnchoredCandles(symbol, tf, limit);
       return res.json(candles);
     } else {
       const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE');
       if (!adapter.getHistoricalCandles) throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa historical market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
-      const candles = await adapter.getHistoricalCandles(symbol, '15m', 60);
+      const tf = String(req.query.tf || '15m');
+      const limit = req.query.limit ? Math.min(Math.max(parseInt(req.query.limit as string, 10), 10), 500) : 80;
+      const candles = await adapter.getHistoricalCandles(symbol, tf, limit);
       return res.json(candles);
     }
   } catch (err: any) {
