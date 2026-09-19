@@ -502,6 +502,30 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     }).filter(Boolean) as NormalizedOrder[];
   }
 
+  async getDailyRealizedPnL(): Promise<number> {
+    this.syncConfig();
+    this.validateCredentials();
+    const raw = await this.resolveRawAccount();
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const deals = await fetchCTraderDeals(
+      raw.ctidTraderAccountId,
+      startOfDay.getTime(),
+      Date.now(),
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      raw.isLive
+    );
+    return deals.reduce((sum: number, deal: any) => {
+      const detail = deal.closePositionDetail || deal.closePositionDetails;
+      const gross = Number(detail?.grossProfit ?? detail?.profit ?? deal.grossProfit ?? deal.profit ?? 0);
+      const commission = Number(detail?.commission ?? deal.commission ?? 0);
+      const swap = Number(detail?.swap ?? deal.swap ?? 0);
+      return sum + (Number.isFinite(gross) ? gross : 0) + (Number.isFinite(commission) ? commission : 0) + (Number.isFinite(swap) ? swap : 0);
+    }, 0);
+  }
+
   async getOrderHistory(): Promise<NormalizedOrder[]> {
     this.syncConfig();
     this.validateCredentials();
