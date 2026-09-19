@@ -201,7 +201,7 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
 
   return (
     <div className="min-h-screen bg-[#020914] text-slate-100 flex overflow-hidden">
-      <aside className="hidden lg:flex w-[222px] shrink-0 border-r border-slate-800/80 bg-[#03101d] flex-col">
+      <aside className="hidden w-[222px] shrink-0 border-r border-slate-800/80 bg-[#03101d] flex-col">
         <div className="h-[88px] px-5 flex items-center gap-3 border-b border-slate-800/70">
           <div className="w-10 h-10 rounded-xl border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center">
             <BarChart3 className="w-5 h-5 text-emerald-400" />
@@ -249,7 +249,7 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <div className="h-8 border-b border-slate-800/80 bg-[#020711] px-4 flex items-center justify-between text-[10px] font-mono overflow-hidden">
+        <div className="fixed top-0 left-[222px] right-0 z-40 h-8 border-b border-slate-800/80 bg-[#020711] px-4 flex items-center justify-between text-[10px] font-mono overflow-hidden">
           <div className="flex items-center gap-3 whitespace-nowrap">
             <span>ACTIVE AREA: <b className="text-white">MARKET</b></span>
             <span className="text-slate-700">|</span>
@@ -268,7 +268,7 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
           </div>
         </div>
 
-        <header className="border-b border-slate-800/80 bg-[#04111e] px-4 py-3">
+        <header className="fixed top-8 left-[222px] right-0 z-40 border-b border-slate-800/80 bg-[#04111e] px-4 py-3">
           <div className="flex flex-wrap items-center gap-3">
             <div className="lg:hidden">
               <button className="p-2 rounded bg-slate-900 border border-slate-800"><Menu className="w-4 h-4" /></button>
@@ -305,7 +305,7 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto p-3 md:p-4 space-y-3">
+        <main className="flex-1 overflow-auto pt-[126px] pb-10 p-3 md:p-4 space-y-3">
           {isEmergencyHalted && (
             <div className="rounded-lg border border-rose-700 bg-rose-950/70 text-rose-200 px-4 py-2 text-xs font-mono">
               TRADING HALTED — emergency stop is active; new orders are blocked
