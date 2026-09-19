@@ -445,47 +445,46 @@ export class BrokerExecutionCertifier {
       });
     }
 
-    // Test 11: 5paisa SANDBOX Adapter Order Lifecycle
+    // Test 11: 5paisa SANDBOX Autonomous Execution Isolation
     {
       const tStart = Date.now();
       const adapter = new FivePaisaDemoAdapter();
       await adapter.authenticate();
-      const orderReq = {
-        symbol: 'NIFTY',
-        market: 'INDIAN_EQUITY' as const,
-        side: 'BUY' as const,
-        orderType: 'MARKET' as const,
-        quantity: 50,
-        price: 24850.50,
-        stopLoss: 24700.00,
-        takeProfit: 25100.00
-      };
-      const order = await adapter.placeOrder(orderReq);
-      const positions = await adapter.getPositions();
 
-      const success =
-        order.status === 'FILLED' &&
-        order.broker === 'FIVE_PAISA' &&
-        order.environment === 'DEMO' &&
-        order.commission === 20.0 &&
-        positions.length > 0;
+      let blocked = false;
+      try {
+        await adapter.placeOrder({
+          symbol: 'NIFTY',
+          market: 'INDIAN_EQUITY' as const,
+          side: 'BUY' as const,
+          orderType: 'MARKET' as const,
+          quantity: 50,
+          price: 24850.50,
+          stopLoss: 24700.00,
+          takeProfit: 25100.00
+        });
+      } catch (err: any) {
+        blocked =
+          err instanceof BrokerError &&
+          err.code === 'ENVIRONMENT_MISMATCH' &&
+          String(err.message).includes('5paisa LIVE');
+      }
 
       results.push({
         testId: 11,
-        testName: '5paisa SANDBOX Adapter Execution & Lifecycle',
+        testName: '5paisa SANDBOX Autonomous Execution Isolation',
         group: 'EXECUTION_LIFECYCLE',
-        status: success ? 'PASSED' : 'FAILED',
+        status: blocked ? 'PASSED' : 'FAILED',
         durationMs: Date.now() - tStart,
         environment: 'DEMO',
         broker: 'FIVE_PAISA',
-        description: 'Validates 5paisa sandbox adapter execution with Indian scrip resolution and NSE filling.',
+        description: 'Confirms 5paisa sandbox order placement remains blocked because Goldcrest is strictly LIVE_ONLY for broker execution.',
         verificationPoints: [
-          'order.environment === DEMO',
-          'order.broker === FIVE_PAISA',
-          'INR 20 broker commission accounted',
-          'Position created in INR currency denomination'
+          'SANDBOX adapter authentication succeeds for isolated validation',
+          'SANDBOX autonomous order placement is rejected',
+          'ENVIRONMENT_MISMATCH is fail-closed'
         ],
-        details: `5paisa order ${order.id} executed at ${order.averageFillPrice} INR.`,
+        details: blocked ? '5paisa SANDBOX autonomous execution correctly rejected.' : '5paisa SANDBOX autonomous execution was not rejected.',
         timestamp: Date.now()
       });
     }
