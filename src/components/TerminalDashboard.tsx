@@ -111,6 +111,7 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
   isRefreshing, onRefresh, candlesMap, indianUnderlyings, signals
 }) => {
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [config, setConfig] = useState<any>(null);
   const [selectedSymbol, setSelectedSymbol] = useState('NIFTY');
   const [range, setRange] = useState('6M');
   const [timeframe, setTimeframe] = useState('Daily');
@@ -121,15 +122,17 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
 
   const fetchDashboard = async () => {
     try {
-      const [s, c] = await Promise.all([
+      const [s, c, cfg] = await Promise.all([
         fetch('/api/brokers/dashboard-summary'),
-        fetch(`/api/candles/${encodeURIComponent(selectedSymbol)}?tf=${encodeURIComponent(timeframe)}&limit=500`)
+        fetch(`/api/candles/${encodeURIComponent(selectedSymbol)}?tf=${encodeURIComponent(timeframe)}&limit=500`),
+        fetch('/api/config')
       ]);
       if (s.ok) setSummary(await s.json());
       if (c.ok) {
         const data = await c.json();
         if (Array.isArray(data)) setCandles(data);
       }
+      if (cfg.ok) setConfig(await cfg.json());
     } catch {
       // Keep the last authoritative values visible; never fabricate a fallback.
     }
@@ -177,7 +180,11 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
   const freeMargin = Number(nseAccount?.freeMargin ?? 0);
   const dailyPnl = Number.isFinite(Number(nseBrokerSummary?.dailyRealizedPnL)) ? Number(nseBrokerSummary.dailyRealizedPnL) : null;
   const exposure = equity > 0 ? (nsePositions.reduce((s, p) => s + Math.abs(Number(p.quantity || 0) * Number(p.currentPrice || 0)), 0) || 0) / equity * 100 : null;
-  const risk = { dailyLimit: -3, riskPerTrade: 1, maxPositions: 5 };
+  const risk = {
+    dailyLimit: -Number(config?.maxDailyLossPct ?? 3),
+    riskPerTrade: Number(config?.defaultRiskPct ?? 1),
+    maxPositions: Number(config?.maxOpenPositions ?? 5)
+  };
 
   return (
     <div className="w-full min-h-[calc(100vh-162px)] bg-[#020914] text-slate-100 p-3 md:p-4 space-y-3">
