@@ -249,9 +249,9 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
 
       <section className="grid grid-cols-1 xl:grid-cols-3 gap-3">
         <div className="rounded-xl border border-slate-800 bg-[#04121f] p-4">
-          <div className="flex items-center justify-between mb-3"><h3 className="font-semibold">Trade Performance</h3><span className="text-[11px] text-slate-500">LIVE LEDGER</span></div>
+          <div className="flex items-center justify-between mb-3"><h3 className="font-semibold">Market Performance</h3><span className="text-[11px] text-slate-500">LIVE LEDGER</span></div>
           <div className="h-36"><MiniLine values={candles.map(c => c.close)} /></div>
-          <div className="text-[11px] text-slate-500">Chart uses authoritative NIFTY closes; realized performance is shown only when broker history provides it.</div>
+          <div className="text-[11px] text-slate-500">Chart uses authoritative NIFTY closes. Realized trade performance is shown separately only when broker history provides it.</div>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-[#04121f] overflow-hidden">
