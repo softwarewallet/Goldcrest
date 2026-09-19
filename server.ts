@@ -48,6 +48,32 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 let databaseReady = false;
 
+function productionPreflight(): { ok: boolean; checks: Record<string, string> } {
+  const checks: Record<string, string> = {};
+  const operatorKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
+  const ctraderConfigured = Boolean(
+    process.env.CTRADER_LIVE_CLIENT_ID?.trim() &&
+    process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
+    process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
+    process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
+  );
+  const fivePaisaConfigured = Boolean(
+    process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
+    process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
+    process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
+    process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
+  );
+  checks.operatorAuth = operatorKey ? 'CONFIGURED' : 'MISSING';
+  checks.liveBroker = ctraderConfigured || fivePaisaConfigured ? 'CONFIGURED' : 'MISSING';
+  checks.autonomousExecution = LIVE_AUTO_EXECUTION_ALLOWED === false ? 'DISABLED' : 'INVALID';
+  checks.tradingMode = getSystemConfig().tradingMode;
+  const ok = Boolean(operatorKey) && (ctraderConfigured || fivePaisaConfigured) && LIVE_AUTO_EXECUTION_ALLOWED === false && getSystemConfig().tradingMode === 'LIVE_ONLY';
+  if (!ok && process.env.NODE_ENV === 'production') {
+    throw new Error(`Production preflight failed: ${Object.entries(checks).filter(([, value]) => value !== 'CONFIGURED' && value !== 'DISABLED' && value !== 'LIVE_ONLY').map(([key]) => key).join(', ') || 'invalid safety configuration'}`);
+  }
+  return { ok, checks };
+}
+
 app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 app.disable('x-powered-by');
 app.use(securityHeaders);
@@ -154,17 +180,19 @@ function getGenAI(): GoogleGenAI | null {
 // -------------------------------------------------------------
 
 // 1. System Status & Health
-app.get('/api/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'goldcrest', timestamp: Date.now() });
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', service: 'goldcrest', environment: process.env.NODE_ENV || 'development', timestamp: Date.now() });
 });
 
 app.get('/api/health/ready', (req: Request, res: Response) => {
-  const ready = databaseReady && LIVE_AUTO_EXECUTION_ALLOWED === true && getSystemConfig().tradingMode === 'LIVE_ONLY';
+  const preflight = productionPreflight();
+  const ready = databaseReady && preflight.ok;
   res.status(ready ? 200 : 503).json({
     status: ready ? 'ready' : 'not_ready',
     database: databaseReady ? 'READY' : 'INITIALIZING',
     tradingMode: getSystemConfig().tradingMode,
     autonomousLiveExecutionAllowed: LIVE_AUTO_EXECUTION_ALLOWED,
+    productionChecks: preflight.checks,
     timestamp: Date.now()
   });
 });
@@ -854,6 +882,7 @@ async function captureLiveBrokerReconciliation(): Promise<void> {
 }
 
 async function startServer() {
+  productionPreflight();
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
