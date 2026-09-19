@@ -471,7 +471,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     const data = await this.postUserApi(url, '5POB', { ClientCode: this.config.clientCode || this.config.userId });
     const orders: any[] = data?.body?.OrderBookDetail || [];
     if (!Array.isArray(orders)) throw new BrokerError('BROKER_UNAVAILABLE', '5paisa returned an invalid order-book response.', 'FIVE_PAISA', this.environment);
-    return orders.map(o => this.normalizeBrokerOrder(o)).filter(o => o.status === 'PENDING' || o.status === 'ACCEPTED');
+    return orders.map(o => this.normalizeBrokerOrder(o)).filter(o => o.status === 'PENDING' || o.status === 'ACCEPTED' || o.status === 'PARTIALLY_FILLED');
   }
 
   async getOrderHistory(): Promise<NormalizedOrder[]> {
