@@ -205,7 +205,7 @@ export interface BrokerAdapter {
   modifyOrder(orderId: string, modifications: OrderModification): Promise<NormalizedOrder>;
   cancelOrder(orderId: string): Promise<boolean>;
   closePosition(positionId: string, quantity?: number): Promise<boolean>;
-  getOrderStatus(orderId: string): Promise<NormalizedOrder>;
+  getOrderStatus(orderId: string, requestedQuantity?: number): Promise<NormalizedOrder>;
   getTradingStatus(): Promise<BrokerStatus>;
   getDailyRealizedPnL?(): Promise<number>;
 }
