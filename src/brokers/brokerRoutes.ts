@@ -4,7 +4,7 @@ import { killSwitch } from './safety/KillSwitch';
 import { liveTradingGate } from './safety/LiveTradingGate';
 import { autoExecutionEngine } from './safety/AutoExecutionEngine';
 import { getAuditLogs, logBrokerAction, maskIdentifier } from './auditLog';
-import { BrokerType, TradingEnvironment, OrderRequest } from './types';
+import { BrokerAdapter, BrokerType, NormalizedPosition, NormalizedQuote, TradingEnvironment, OrderRequest } from './types';
 import { normalizeBrokerError } from './errors';
 import { reconciliationService } from '../services/reconciliationService';
 import { getForexSessionState, getIndianSessionState } from '../markets/common/session';
@@ -31,7 +31,7 @@ function forexQuoteCurrencies(symbol: string): { base: string; quote: string } |
 }
 
 async function convertForexNotionalToAccountCurrency(
-  adapter: ReturnType<typeof brokerRegistry.getAdapter>,
+  adapter: BrokerAdapter,
   symbol: string,
   notional: number,
   accountCurrency: string
@@ -68,11 +68,11 @@ async function convertForexNotionalToAccountCurrency(
 }
 
 async function calculateAccountCurrencyExposure(
-  adapter: ReturnType<typeof brokerRegistry.getAdapter>,
-  positions: Awaited<ReturnType<ReturnType<typeof brokerRegistry.getAdapter>['getPositions']>>,
+  adapter: BrokerAdapter,
+  positions: NormalizedPosition[],
   order: OrderRequest,
   accountCurrency: string,
-  quote: Awaited<ReturnType<ReturnType<typeof brokerRegistry.getAdapter>['getQuote']>>
+  quote: NormalizedQuote
 ): Promise<number> {
   let exposure = 0;
 
