@@ -8,6 +8,7 @@ import { TradingOperationsDashboard } from './components/TradingOperationsDashbo
 import { TradingControlCenter } from './components/TradingControlCenter';
 import { PerformanceResearchCenterView } from './components/PerformanceResearchCenterView';
 import { SettingsHub } from './components/SettingsHub';
+import { TerminalDashboard } from './components/TerminalDashboard';
 import { SignalModal } from './components/SignalModal';
 import { DiagnosticsModal } from './components/DiagnosticsModal';
 import { EnvironmentSwitchModal } from './components/EnvironmentSwitchModal';
@@ -269,23 +270,46 @@ export default function App() {
   return (
     <div id="app_root_terminal" className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       {/* Top Fixed Header with Multi-Market Sessions, Environment Selector & Kill Switch */}
-      <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        forexSessions={forexSessions}
-        indianSession={indianSession}
-        onRefresh={refreshTerminalData}
-        isRefreshing={isRefreshing}
-        onOpenDiagnostics={() => setShowDiagnostics(true)}
-        environment={environment}
-        onRequestEnvironmentChange={handleRequestEnvironmentChange}
-        selectedBroker={selectedBroker}
-        maskedAccount={maskedAccount}
-        isEmergencyHalted={isEmergencyHalted}
-        onToggleKillSwitch={handleToggleKillSwitch}
-      />
+      {activeTab === 'market' ? (
+        <TerminalDashboard
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          forexSessions={forexSessions}
+          indianSession={indianSession}
+          selectedBroker={selectedBroker}
+          environment={environment}
+          maskedAccount={maskedAccount}
+          balance={balance}
+          currency={currency}
+          isEmergencyHalted={isEmergencyHalted}
+          isRefreshing={isRefreshing}
+          onRefresh={refreshTerminalData}
+          onToggleKillSwitch={handleToggleKillSwitch}
+          candlesMap={candlesMap}
+          indianUnderlyings={indianUnderlyings}
+          signals={signals}
+          onSelectSignal={(sig) => setSelectedSignal(sig)}
+        />
+      ) : (
+        <Header
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          forexSessions={forexSessions}
+          indianSession={indianSession}
+          onRefresh={refreshTerminalData}
+          isRefreshing={isRefreshing}
+          onOpenDiagnostics={() => setShowDiagnostics(true)}
+          environment={environment}
+          onRequestEnvironmentChange={handleRequestEnvironmentChange}
+          selectedBroker={selectedBroker}
+          maskedAccount={maskedAccount}
+          isEmergencyHalted={isEmergencyHalted}
+          onToggleKillSwitch={handleToggleKillSwitch}
+        />
+      )}
 
       {/* Main Terminal Viewport */}
+      {activeTab !== 'market' && (
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 space-y-4" style={{ paddingTop: '5px', paddingBottom: '5px' }}>
         {loadingInitial ? (
           <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 font-mono">
@@ -357,8 +381,9 @@ export default function App() {
           </>
         )}
       </main>
+      )}
 
-      {/* Signal Quantitative Inspection Modal */}
+      {/* Signal Quantitative Inspection Modal */
       {selectedSignal && (
         <SignalModal
           signal={selectedSignal}
