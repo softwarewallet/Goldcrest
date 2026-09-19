@@ -41,51 +41,57 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
   const fetchBalances = async () => {
     setLoading({ CTRADER: true, FIVE_PAISA: true, PAPER: false });
 
-    const loadBrokerAccount = async (broker: BrokerType): Promise<BrokerAccountInfo> => {
-      const response = await fetch(
-        `/api/brokers/account?broker=${encodeURIComponent(broker)}&environment=LIVE`,
-        {
-          headers: { Accept: 'application/json' },
-          cache: 'no-store'
+    const loadBrokerAccount = async (broker: BrokerType, retries = 3): Promise<BrokerAccountInfo> => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const response = await fetch(
+            `/api/brokers/account?broker=${encodeURIComponent(broker)}&environment=LIVE`,
+            {
+              headers: { Accept: 'application/json' },
+              cache: 'no-store'
+            }
+          );
+
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            const message =
+              data?.error ||
+              data?.message ||
+              `Broker account request failed (HTTP ${response.status})`;
+            throw new Error(String(message));
+          }
+
+          if (data?.error) {
+            throw new Error(String(data.error));
+          }
+
+          const account =
+            data?.account ||
+            (Array.isArray(data?.accounts)
+              ? data.accounts.find((item: any) => item?.broker === broker)
+              : undefined) ||
+            (data?.broker === broker ? data : undefined);
+
+          if (!account) {
+            throw new Error(`${broker} returned HTTP 200 without account data.`);
+          }
+
+          if (account.broker && account.broker !== broker) {
+            throw new Error(`Unexpected broker account returned: ${account.broker}`);
+          }
+
+          if (!Number.isFinite(Number(account.balance))) {
+            throw new Error(`${broker} returned an invalid live balance.`);
+          }
+
+          return account as BrokerAccountInfo;
+        } catch (err: any) {
+          if (i === retries - 1) throw err;
+          await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1))); // Exponential backoff
         }
-      );
-
-      const data = await response.json().catch(() => ({}));
-
-      // Parse the broker account payload directly. A valid HTTP 200 must never
-      // be converted into a transport-level error such as "Server returned HTTP 200".
-      if (!response.ok) {
-        const message =
-          data?.error ||
-          data?.message ||
-          `Broker account request failed (HTTP ${response.status})`;
-        throw new Error(String(message));
       }
-
-      if (data?.error) {
-        throw new Error(String(data.error));
-      }
-
-      const account =
-        data?.account ||
-        (Array.isArray(data?.accounts)
-          ? data.accounts.find((item: any) => item?.broker === broker)
-          : undefined) ||
-        (data?.broker === broker ? data : undefined);
-
-      if (!account) {
-        throw new Error(`${broker} returned HTTP 200 without account data.`);
-      }
-
-      if (account.broker && account.broker !== broker) {
-        throw new Error(`Unexpected broker account returned: ${account.broker}`);
-      }
-
-      if (!Number.isFinite(Number(account.balance))) {
-        throw new Error(`${broker} returned an invalid live balance.`);
-      }
-
-      return account as BrokerAccountInfo;
+      throw new Error('Retries exhausted');
     };
 
     const results = await Promise.all(
