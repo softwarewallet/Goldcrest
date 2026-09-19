@@ -863,6 +863,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     }
 
     let historicalOrderStatus: number | undefined;
+    let historicalOrder: any | null = null;
     let matchingDeals: any[] = [];
     try {
       const details = await fetchCTraderOrderDetails(
@@ -874,6 +875,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         raw.isLive
       );
       if (details.order) {
+        historicalOrder = details.order;
         historicalOrderStatus = Number(details.order.orderStatus);
         matchingDeals = Array.isArray(details.deals) ? details.deals : [];
       }
@@ -883,7 +885,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       // are temporarily unavailable.
     }
 
-    if (matchingDeals.length === 0) {
+    if (matchingDeals.length === 0 && !historicalOrder) {
       const deals = await fetchCTraderDeals(
         raw.ctidTraderAccountId,
         Date.now() - 7 * 24 * 60 * 60 * 1000,
@@ -898,7 +900,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         .sort((a: any, b: any) => Number(a.executionTimestamp || a.createTimestamp || 0) - Number(b.executionTimestamp || b.createTimestamp || 0));
     }
 
-    if (matchingDeals.length === 0) {
+    if (matchingDeals.length === 0 && !historicalOrder) {
       throw new BrokerError('ORDER_REJECTED', `cTrader order ${brokerId} was not found in authoritative broker state.`, 'CTRADER', this.environment);
     }
 
@@ -928,7 +930,17 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     const averageFillPrice = filledVolume > 0 && weightedPriceNumerator > 0
       ? weightedPriceNumerator / filledVolume
       : undefined;
-    const latestDeal = matchingDeals[matchingDeals.length - 1];
+    const latestDeal = matchingDeals.length > 0
+      ? matchingDeals[matchingDeals.length - 1]
+      : {
+          symbolId: historicalOrder?.tradeData?.symbolId,
+          tradeSide: historicalOrder?.tradeData?.tradeSide,
+          executionPrice: historicalOrder?.executionPrice,
+          executionTimestamp: historicalOrder?.utcLastUpdateTimestamp || historicalOrder?.tradeData?.openTimestamp,
+          dealStatus: historicalOrderStatus,
+          dealId: undefined,
+          commission: undefined
+        };
     const symbols = await fetchCTraderSymbols(
       raw.ctidTraderAccountId,
       this.config.clientId!,
