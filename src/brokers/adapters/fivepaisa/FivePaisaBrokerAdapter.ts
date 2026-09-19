@@ -852,63 +852,97 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async modifyOrder(orderId: string, modifications: OrderModification): Promise<NormalizedOrder> {
-    await this.authenticate();
-    const order = this.openOrders.get(orderId);
-    if (!order) {
-      throw new BrokerError('UNKNOWN_ERROR', `5paisa Order ${orderId} not found`, 'FIVE_PAISA', this.environment);
+    await this.ensureActiveSession();
+    if (!this.isLive) throw new BrokerError('ENVIRONMENT_MISMATCH', '5paisa lifecycle actions require LIVE.', 'FIVE_PAISA', this.environment);
+
+    const url = `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/OrderBook`;
+    const data = await this.postUserApi(url, '5POB', { ClientCode: this.config.clientCode || this.config.userId });
+    const orders: any[] = data?.body?.OrderBookDetail || [];
+    const target = orders.find(o =>
+      String(o.ExchOrderID ?? '') === String(orderId) ||
+      String(o.BrokerOrderID ?? '') === String(orderId) ||
+      String(o.RemoteOrderID ?? '') === String(orderId) ||
+      String(o.OrderID ?? '') === String(orderId)
+    );
+    if (!target?.ExchOrderID) throw new BrokerError('ORDER_REJECTED', '5paisa authoritative order book did not contain the requested exchange order ID.', 'FIVE_PAISA', this.environment);
+
+    const payload: Record<string, unknown> = {
+      ExchangeOrderID: undefined,
+      ExchOrderID: String(target.ExchOrderID)
+    };
+    if (modifications.price !== undefined) payload.Price = Number(modifications.price);
+    if (modifications.quantity !== undefined) payload.Qty = Number(modifications.quantity);
+    if (modifications.stopLoss !== undefined) payload.StopLossPrice = Number(modifications.stopLoss);
+    payload.DisQty = 0;
+
+    const response = await this.postUserApi(
+      `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/ModifyOrderRequest`,
+      '5PModifyOrdReqV1',
+      payload
+    );
+    const body = response?.body;
+    const headStatus = String(response?.head?.status ?? response?.head?.Status ?? '0');
+    const status = Number(body?.Status ?? 0);
+    if (headStatus !== '0' || status !== 0) {
+      throw new BrokerError('ORDER_REJECTED', body?.Message || response?.head?.statusDescription || '5paisa rejected the order modification.', 'FIVE_PAISA', this.environment);
     }
 
-    if (order.status !== 'PENDING' && order.status !== 'ACCEPTED') {
-      throw new BrokerError('ORDER_REJECTED', `Cannot modify 5paisa order in status ${order.status}`, 'FIVE_PAISA', this.environment);
-    }
-
-    if (modifications.price) order.price = modifications.price;
-    if (modifications.quantity) order.quantity = modifications.quantity;
-    if (modifications.stopLoss) order.stopLoss = modifications.stopLoss;
-    if (modifications.takeProfit) order.takeProfit = modifications.takeProfit;
-
-    this.logAction('MODIFY_ORDER', 'SUCCESS', this.config.clientCode || this.config.userId || '', {
-      orderId,
-      price: modifications.price,
-      quantity: modifications.quantity
-    });
-
-    return order;
+    const refreshed = await this.getOpenOrders();
+    const updated = refreshed.find(o => String(o.brokerOrderId) === String(target.ExchOrderID));
+    if (!updated) throw new BrokerError('ORDER_REJECTED', '5paisa accepted the modification but the order was not present in the refreshed broker state.', 'FIVE_PAISA', this.environment);
+    return updated;
   }
 
   async cancelOrder(orderId: string): Promise<boolean> {
-    await this.authenticate();
-    const order = this.openOrders.get(orderId);
-    if (!order) return false;
+    await this.ensureActiveSession();
+    if (!this.isLive) throw new BrokerError('ENVIRONMENT_MISMATCH', '5paisa lifecycle actions require LIVE.', 'FIVE_PAISA', this.environment);
 
-    order.status = 'CANCELLED';
-    this.logAction('CANCEL_ORDER', 'SUCCESS', this.config.clientCode || this.config.userId || '', { orderId });
+    const url = `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/OrderBook`;
+    const data = await this.postUserApi(url, '5POB', { ClientCode: this.config.clientCode || this.config.userId });
+    const orders: any[] = data?.body?.OrderBookDetail || [];
+    const target = orders.find(o =>
+      String(o.ExchOrderID ?? '') === String(orderId) ||
+      String(o.BrokerOrderID ?? '') === String(orderId) ||
+      String(o.RemoteOrderID ?? '') === String(orderId) ||
+      String(o.OrderID ?? '') === String(orderId)
+    );
+    if (!target?.ExchOrderID) return false;
+
+    const response = await this.postUserApi(
+      `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/CancelOrderRequest`,
+      '5PCancelOrdReqV1',
+      { ExchOrderID: String(target.ExchOrderID) }
+    );
+    const body = response?.body;
+    const headStatus = String(response?.head?.status ?? response?.head?.Status ?? '0');
+    const status = Number(body?.Status ?? 0);
+    if (headStatus !== '0' || status !== 0) {
+      throw new BrokerError('ORDER_REJECTED', body?.Message || response?.head?.statusDescription || '5paisa rejected the order cancellation.', 'FIVE_PAISA', this.environment);
+    }
     return true;
   }
 
   async closePosition(positionId: string, quantity?: number): Promise<boolean> {
-    await this.authenticate();
-    const pos = this.openPositions.get(positionId);
-    if (!pos) return false;
+    await this.ensureActiveSession();
+    if (!this.isLive) throw new BrokerError('ENVIRONMENT_MISMATCH', '5paisa lifecycle actions require LIVE.', 'FIVE_PAISA', this.environment);
 
-    const closeQty = quantity && quantity < pos.quantity ? quantity : pos.quantity;
-    const exitPrice = pos.currentPrice;
-    const realized = (exitPrice - pos.entryPrice) * closeQty * (pos.side === 'BUY' ? 1 : -1);
+    const positions = await this.getPositions();
+    const position = positions.find(p => p.id === positionId || p.brokerPositionId === positionId);
+    if (!position) return false;
+    const closeQty = quantity === undefined ? position.quantity : Math.min(Number(quantity), position.quantity);
+    if (!Number.isFinite(closeQty) || closeQty <= 0) throw new BrokerError('INVALID_QUANTITY', 'Invalid 5paisa close quantity.', 'FIVE_PAISA', this.environment);
 
-    if (closeQty >= pos.quantity) {
-      this.openPositions.delete(positionId);
-    } else {
-      pos.quantity -= closeQty;
-      pos.realizedPnL += realized;
-    }
-
-    this.logAction('CLOSE_POSITION', 'SUCCESS', this.config.clientCode || this.config.userId || '', {
-      symbol: pos.symbol,
+    const result = await this.placeOrder({
+      market: position.market,
+      symbol: position.symbol,
+      side: position.side === 'BUY' ? 'SELL' : 'BUY',
+      orderType: 'MARKET',
       quantity: closeQty,
-      price: exitPrice
+      strategyId: 'POSITION_CLOSE'
     });
-    return true;
+    return result.status === 'ACCEPTED' || result.status === 'FILLED';
   }
+
 
   async getOrderStatus(orderId: string): Promise<NormalizedOrder> {
     await this.authenticate();
