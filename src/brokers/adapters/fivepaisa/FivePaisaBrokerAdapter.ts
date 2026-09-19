@@ -7,6 +7,7 @@ import {
   BrokerType,
   ConnectionTestResult,
   NormalizedOrder,
+  NormalizedFill,
   NormalizedPosition,
   NormalizedQuote,
   OrderModification,
@@ -515,8 +516,20 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     const parsedTimestamp = typeof timestampRaw === 'number'
       ? timestampRaw
       : Date.parse(String(timestampRaw || ''));
+    const brokerFillId = String(trade.TradeID ?? trade.TradeId ?? trade.ExchTradeID ?? '');
+    const brokerOrderId = String(trade.ExchOrderID ?? trade.OrderID ?? trade.RemoteOrderID ?? '');
+    const fillEvents: NormalizedFill[] = brokerFillId && quantity > 0 && price > 0
+      ? [{
+          brokerFillId,
+          brokerOrderId: brokerOrderId || undefined,
+          quantity,
+          price,
+          commission: Number(trade.Brokerage ?? trade.BrokerageAmount ?? 0) || undefined,
+          timestamp: Number.isFinite(parsedTimestamp) && parsedTimestamp > 0 ? parsedTimestamp : Date.now()
+        }]
+      : [];
     return {
-      id: String(trade.TradeID ?? trade.TradeId ?? trade.ExchTradeID ?? trade.ExchOrderID ?? ('5P_TRADE_' + Date.now())),
+      id: brokerFillId || brokerOrderId || ('5P_TRADE_' + Date.now()),
       broker: 'FIVE_PAISA',
       environment: this.environment,
       market: symbol.includes('CE') || symbol.includes('PE')
@@ -532,7 +545,8 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       averageFillPrice: price > 0 ? price : undefined,
       commission: Number(trade.Brokerage ?? trade.BrokerageAmount ?? 0) || undefined,
       timestamp: Number.isFinite(parsedTimestamp) && parsedTimestamp > 0 ? parsedTimestamp : Date.now(),
-      brokerOrderId: String(trade.ExchOrderID ?? trade.OrderID ?? trade.RemoteOrderID ?? '')
+      brokerOrderId,
+      fillEvents
     };
   }
 
@@ -954,7 +968,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
   async getOrderStatus(orderId: string): Promise<NormalizedOrder> {
     await this.ensureActiveSession();
-    const url = `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/OrderBook`;
+    const url = this.getApiHost() + '/VendorsAPI/Service1.svc/V1/OrderBook';
     const data = await this.postUserApi(url, '5POB', { ClientCode: this.config.clientCode || this.config.userId });
     const orders: any[] = data?.body?.OrderBookDetail || [];
     const target = orders.find(o =>
@@ -965,12 +979,41 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     );
     if (target) return this.normalizeBrokerOrder(target);
 
+    // TradeBook is the authoritative execution ledger. Multiple trade rows
+    // can belong to one order when it is partially filled. Aggregate those
+    // executions rather than returning whichever trade row happens to match first.
     const history = await this.getOrderHistory();
-    const historical = history.find(o =>
-      String(o.brokerOrderId ?? '') === String(orderId) || String(o.id) === String(orderId)
+    const fills = history.filter(o =>
+      String(o.brokerOrderId ?? '') === String(orderId) ||
+      String(o.id ?? '') === String(orderId)
     );
-    if (historical) return historical;
-    throw new BrokerError('UNKNOWN_ERROR', `5paisa authoritative order state did not contain order ${orderId}`, 'FIVE_PAISA', this.environment);
+    if (fills.length === 0) {
+      throw new BrokerError('UNKNOWN_ERROR', '5paisa authoritative order state did not contain order ' + orderId, 'FIVE_PAISA', this.environment);
+    }
+
+    const first = fills[0];
+    const filledQuantity = fills.reduce((sum, fill) => sum + Math.max(0, Number(fill.filledQuantity || 0)), 0);
+    const weightedPrice = fills.reduce((sum, fill) => {
+      const quantity = Math.max(0, Number(fill.filledQuantity || 0));
+      const price = Number(fill.averageFillPrice || fill.price || 0);
+      return sum + (quantity > 0 && price > 0 ? quantity * price : 0);
+    }, 0);
+    const averageFillPrice = filledQuantity > 0 && weightedPrice > 0 ? weightedPrice / filledQuantity : undefined;
+    const fillEvents = fills.flatMap(fill => fill.fillEvents || []);
+    const commission = fills.reduce((sum, fill) => sum + (Number(fill.commission || 0) || 0), 0) || undefined;
+    const requestedQuantity = Math.max(Number(first.quantity || 0), filledQuantity);
+
+    return {
+      ...first,
+      id: String(orderId),
+      brokerOrderId: String(orderId),
+      quantity: requestedQuantity,
+      status: filledQuantity >= requestedQuantity && requestedQuantity > 0 ? 'FILLED' : 'PARTIALLY_FILLED',
+      filledQuantity,
+      averageFillPrice,
+      commission,
+      fillEvents
+    };
   }
 
   async getTradingStatus(): Promise<BrokerStatus> {
