@@ -476,7 +476,14 @@ brokerRouter.post('/kill-switch', async (req: Request, res: Response) => {
   const { action, reason } = req.body;
   if (action === 'HALT') {
     const result = await killSwitch.triggerEmergencyHalt(reason || 'Operator triggered Emergency Stop');
-    return res.json({ status: 'TRADING HALTED', isHalted: true, cancelledOrders: result.cancelledCount });
+    return res.json({
+      status: 'TRADING HALTED',
+      isHalted: true,
+      cancelledOrders: result.cancelledCount,
+      requestedCancellations: result.requestedCount,
+      unconfirmedOpenOrders: result.unconfirmedCount,
+      brokerResults: result.brokerResults
+    });
   }
   if (action === 'RESUME') {
     killSwitch.resumeTrading();
