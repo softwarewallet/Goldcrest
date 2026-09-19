@@ -9,6 +9,7 @@ import { normalizeBrokerError } from './errors';
 import { reconciliationService } from '../services/reconciliationService';
 import { getForexSessionState, getIndianSessionState } from '../markets/common/session';
 import { claimExecutionIntent, completeExecutionIntent } from '../services/executionIntentService';
+import { getSystemConfig } from '../services/configService';
 
 export const brokerRouter = Router();
 
@@ -306,7 +307,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
     }, 0);
     const maxAllowedExposure = Math.max(Number(account.equity || 0), 1);
     const dailyLossLimit = Math.max(
-      Number(account.balance || 0) * (Number((await import('../services/configService')).getSystemConfig().maxDailyLossPct) / 100),
+      Number(account.balance || 0) * (Number(getSystemConfig().maxDailyLossPct) / 100),
       1
     );
 
@@ -315,7 +316,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       signalAgeMs: 15000,
       currentQuote: quote,
       isMarketOpen,
-      dailyRealizedLoss: 0,
+      dailyRealizedLoss: await reconciliationService.getDailyLoss(broker, Number(account.balance || 0)),
       dailyLossLimit,
       totalAccountExposure: currentExposure,
       maxAllowedExposure,
