@@ -72,11 +72,11 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
 
   protected validateCredentials(): void {
     const { clientId, clientSecret, accessToken, accountId } = this.config;
-    if (!clientId || !clientSecret || !accessToken || !accountId) {
+    if (!clientId || !clientSecret || !accessToken) {
       this.status = 'AUTHENTICATION_FAILED';
       throw new BrokerError(
         'AUTHENTICATION_FAILED',
-        `cTrader ${this.environment} credentials missing. Required: Client ID, Client Secret, Access Token, and Account ID.`,
+        `cTrader ${this.environment} credentials missing. Required: Client ID, Client Secret, and Access Token.`,
         'CTRADER',
         this.environment
       );
@@ -328,7 +328,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         environment: this.environment,
         connectionStatus: 'CONNECTED',
         server: details.brokerName || matched.brokerTitleShort || (details.isLive ? 'cTrader-Live' : 'cTrader-Demo'),
-        permissions: ['TRADE', 'READ'],
+        permissions: ['TRADE', 'READ', 'TRADING'],
         lastUpdate: Date.now(),
         isLiveAccount: details.isLive
       };
