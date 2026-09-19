@@ -278,9 +278,11 @@ brokerRouter.get('/dashboard-summary', async (_req: Request, res: Response) => {
     const orderHistory = results.flatMap(r => r.orderHistory)
       .sort((a, b) => b.timestamp - a.timestamp);
 
-    const totalBalance = accounts.reduce((sum, a) => sum + Number(a.balance || 0), 0);
-    const totalEquity = accounts.reduce((sum, a) => sum + Number(a.equity || 0), 0);
-    const totalFreeMargin = accounts.reduce((sum, a) => sum + Number(a.freeMargin || 0), 0);
+    const currencies = Array.from(new Set(accounts.map(a => String(a.currency || '').toUpperCase()).filter(Boolean)));
+    const sameCurrency = currencies.length <= 1;
+    const totalBalance = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.balance || 0), 0) : null;
+    const totalEquity = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.equity || 0), 0) : null;
+    const totalFreeMargin = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.freeMargin || 0), 0) : null;
     const openPnL = positions.reduce((sum, p) => sum + Number(p.unrealizedPnL || 0), 0);
     const dailyRealizedPnLValues = results.map(r => r.dailyRealizedPnL).filter((v): v is number => Number.isFinite(v as number));
     const dailyRealizedPnL = dailyRealizedPnLValues.length
@@ -297,6 +299,7 @@ brokerRouter.get('/dashboard-summary', async (_req: Request, res: Response) => {
         totalBalance,
         totalEquity,
         totalFreeMargin,
+        currencies,
         openPnL,
         dailyRealizedPnL,
         totalOrders: closedHistory.length,
