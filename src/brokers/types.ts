@@ -249,6 +249,7 @@ export interface LiveTradingGateResult {
     dailyLossLimitNotExceeded: boolean;
     maxExposureNotExceeded: boolean;
     duplicatePositionCheckPassed: boolean;
+    maxOpenPositionsCheckPassed: boolean;
     orderParametersValidated: boolean;
     explicitLivePermissionEnabled: boolean;
     maximumTradeValueCheckPassed?: boolean;
