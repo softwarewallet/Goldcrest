@@ -396,47 +396,51 @@ export class BrokerExecutionCertifier {
       });
     }
 
-    // Test 10: cTrader DEMO Adapter Order Lifecycle
+    // Test 10: cTrader DEMO Autonomous Execution Isolation
     {
       const tStart = Date.now();
-      const adapter = new CTraderDemoAdapter({ clientId: 'CI_CTRADER_CLIENT', clientSecret: 'CI_CTRADER_SECRET', accessToken: 'CI_CTRADER_TOKEN', accountId: 'CI_CTRADER_ACCOUNT' });
+      const adapter = new CTraderDemoAdapter({
+        clientId: 'CI_CTRADER_CLIENT',
+        clientSecret: 'CI_CTRADER_SECRET',
+        accessToken: 'CI_CTRADER_TOKEN',
+        accountId: 'CI_CTRADER_ACCOUNT'
+      });
       await adapter.authenticate();
-      const orderReq = {
-        symbol: 'EUR/USD',
-        market: 'FOREX' as const,
-        side: 'BUY' as const,
-        orderType: 'MARKET' as const,
-        quantity: 100000,
-        price: 1.0852,
-        stopLoss: 1.0810,
-        takeProfit: 1.0910
-      };
-      const order = await adapter.placeOrder(orderReq);
-      const positions = await adapter.getPositions();
 
-      const success =
-        order.status === 'FILLED' &&
-        order.broker === 'CTRADER' &&
-        order.environment === 'DEMO' &&
-        order.commission === 2.0 &&
-        positions.length > 0;
+      let blocked = false;
+      try {
+        await adapter.placeOrder({
+          symbol: 'EUR/USD',
+          market: 'FOREX' as const,
+          side: 'BUY' as const,
+          orderType: 'MARKET' as const,
+          quantity: 100000,
+          price: 1.0852,
+          stopLoss: 1.0810,
+          takeProfit: 1.0910
+        });
+      } catch (err: any) {
+        blocked =
+          err instanceof BrokerError &&
+          err.code === 'ENVIRONMENT_MISMATCH' &&
+          String(err.message).includes('cTrader LIVE');
+      }
 
       results.push({
         testId: 10,
-        testName: 'cTrader DEMO Adapter Execution & Lifecycle',
+        testName: 'cTrader DEMO Autonomous Execution Isolation',
         group: 'EXECUTION_LIFECYCLE',
-        status: success ? 'PASSED' : 'FAILED',
+        status: blocked ? 'PASSED' : 'FAILED',
         durationMs: Date.now() - tStart,
         environment: 'DEMO',
         broker: 'CTRADER',
-        description: 'Validates cTrader DEMO adapter market order submission, fill, and position creation.',
+        description: 'Confirms cTrader DEMO order placement remains blocked because Goldcrest is strictly LIVE_ONLY for broker execution.',
         verificationPoints: [
-          'order.environment === DEMO',
-          'order.broker === CTRADER',
-          'Commission deducted ($2.00 standard)',
-          'Position tracked with brokerPositionId'
+          'DEMO adapter authentication succeeds for isolated validation',
+          'DEMO autonomous order placement is rejected',
+          'ENVIRONMENT_MISMATCH is fail-closed'
         ],
-        details: `cTrader DEMO order ${order.id} successfully processed.`,
+        details: blocked ? 'cTrader DEMO autonomous execution correctly rejected.' : 'cTrader DEMO autonomous execution was not rejected.',
         timestamp: Date.now()
       });
     }
@@ -541,18 +545,18 @@ export class BrokerExecutionCertifier {
 
       results.push({
         testId: 13,
-        testName: 'Unsupported Order Type Guard (cTrader STOP_LIMIT)',
+        testName: 'cTrader DEMO Environment Isolation Guard',
         group: 'EXECUTION_LIFECYCLE',
         status: caught ? 'PASSED' : 'FAILED',
         durationMs: Date.now() - tStart,
         environment: 'DEMO',
         broker: 'CTRADER',
-        description: 'Attempts STOP_LIMIT order on cTrader; confirms UNSUPPORTED_ORDER_TYPE BrokerError.',
+        description: 'Attempts broker order placement through cTrader DEMO and confirms environment isolation blocks dispatch before order-type handling.',
         verificationPoints: [
-          'BrokerAdapter validates orderType against supported list',
-          'Throws normalized BrokerError with code UNSUPPORTED_ORDER_TYPE'
+          'DEMO environment cannot dispatch autonomous broker orders',
+          'Throws normalized BrokerError with code ENVIRONMENT_MISMATCH'
         ],
-        details: 'Unsupported order type rejected before network transmission.',
+        details: 'cTrader DEMO autonomous dispatch rejected before broker/network execution.',
         timestamp: Date.now()
       });
     }
