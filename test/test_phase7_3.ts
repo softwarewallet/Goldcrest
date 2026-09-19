@@ -530,6 +530,18 @@ export async function runPhase7_3TestSuite() {
         permissions: ['TRADING'],
         connectionStatus: 'CONNECTED'
       };
+    },
+    async getInstrument(symbol: string) {
+      return {
+        symbol,
+        maxQuantity: 1000000,
+        minQuantity: 1,
+        quantityStep: 1,
+        quoteCurrency: 'USD'
+      };
+    },
+    async getPositions() {
+      return [];
     }
   };
 
