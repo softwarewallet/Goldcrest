@@ -509,6 +509,10 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   private normalizeBrokerTrade(trade: any): NormalizedOrder {
     const price = Number(trade.TradePrice ?? trade.AveragePrice ?? trade.Price ?? trade.Rate ?? 0);
     const quantity = Math.abs(Number(trade.TradedQty ?? trade.TradeQty ?? trade.Quantity ?? trade.Qty ?? 0));
+    const requestedQuantityRaw = Number(trade.OrderedQty ?? trade.OrderQty ?? trade.OrderQuantity ?? trade.RequestedQty ?? trade.QtyOrdered ?? 0);
+    const requestedQuantity = Number.isFinite(requestedQuantityRaw) && requestedQuantityRaw > 0
+      ? requestedQuantityRaw
+      : undefined;
     const side = String(trade.BuySell ?? trade.OrderType ?? '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY';
     const exchangeType = String(trade.ExchType ?? trade.ExchangeType ?? '').toUpperCase();
     const symbol = String(trade.ScripName ?? trade.ScripData ?? trade.ScripCode ?? '');
@@ -539,8 +543,9 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       side,
       orderType: 'MARKET',
       quantity,
+      requestedQuantity,
       price: price > 0 ? price : undefined,
-      status: 'FILLED',
+      status: requestedQuantity && quantity < requestedQuantity ? 'PARTIALLY_FILLED' : 'FILLED',
       filledQuantity: quantity,
       averageFillPrice: price > 0 ? price : undefined,
       commission: Number(trade.Brokerage ?? trade.BrokerageAmount ?? 0) || undefined,
