@@ -552,6 +552,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     const status = statusText.includes('CANCEL') ? 'CANCELLED'
       : statusText.includes('REJECT') ? 'REJECTED'
       : statusText.includes('COMPLETE') || statusText.includes('TRADED') || statusText.includes('EXECUT') ? 'FILLED'
+      : filled > 0 && qty > filled ? 'PARTIALLY_FILLED'
       : statusText.includes('PENDING') || statusText.includes('OPEN') ? 'PENDING'
       : 'ACCEPTED';
     const qty = Number(o.Qty ?? o.OrderedQty ?? o.Quantity ?? 0);
