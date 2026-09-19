@@ -43,9 +43,23 @@ export async function runPhase7_4TestSuite() {
   // ---------------------------------------------------------------------------
   // 2. Full Architecture & Server-Side Control Verification
   // ---------------------------------------------------------------------------
-  // Verify server-side liveTradingGate blocks LIVE requests regardless of request parameters
+  // Verify server-side liveTradingGate blocks LIVE requests without requiring network credentials.
+  // This deterministic adapter is deliberately DEMO, so the environment gate must fail before any live dispatch path.
   const ctraderAdapter = brokerRegistry.getAdapter('CTRADER', 'DEMO');
-  const liveGateEval = await liveTradingGate.evaluate(ctraderAdapter, {
+  const gateTestAdapter = {
+    ...ctraderAdapter,
+    getTradingStatus: async () => 'CONNECTED',
+    getAccount: async () => ({ accountId: 'gate-test-account', balance: 100000, permissions: ['TRADING'] }),
+    getInstrument: async () => ({
+      symbol: 'EUR/USD',
+      maxQuantity: 10000,
+      minQuantity: 1,
+      step: 1,
+      quoteCurrency: 'USD'
+    }),
+    getPositions: async () => []
+  } as any;
+  const liveGateEval = await liveTradingGate.evaluate(gateTestAdapter, {
     order: {
       market: 'FOREX',
       symbol: 'EUR/USD',
