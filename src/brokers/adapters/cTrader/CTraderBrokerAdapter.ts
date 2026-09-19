@@ -862,10 +862,41 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       if (normalized && Number(normalized.filledQuantity || 0) <= 0) return normalized;
     }
 
-    const deals = await fetchCTraderDeals(raw.ctidTraderAccountId, Date.now() - 7 * 24 * 60 * 60 * 1000, Date.now(), this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
-    const matchingDeals = deals
-      .filter((d: any) => Number(d.orderId) === brokerId)
-      .sort((a: any, b: any) => Number(a.executionTimestamp || a.createTimestamp || 0) - Number(b.executionTimestamp || b.createTimestamp || 0));
+    let historicalOrderStatus: number | undefined;
+    let matchingDeals: any[] = [];
+    try {
+      const details = await fetchCTraderOrderDetails(
+        raw.ctidTraderAccountId,
+        brokerId,
+        this.config.clientId!,
+        this.config.clientSecret!,
+        this.config.accessToken!,
+        raw.isLive
+      );
+      if (details.order) {
+        historicalOrderStatus = Number(details.order.orderStatus);
+        matchingDeals = Array.isArray(details.deals) ? details.deals : [];
+      }
+    } catch {
+      // Fall back to the deal history endpoint below. The deal ledger still
+      // provides authoritative fill quantities and prices when order details
+      // are temporarily unavailable.
+    }
+
+    if (matchingDeals.length === 0) {
+      const deals = await fetchCTraderDeals(
+        raw.ctidTraderAccountId,
+        Date.now() - 7 * 24 * 60 * 60 * 1000,
+        Date.now(),
+        this.config.clientId!,
+        this.config.clientSecret!,
+        this.config.accessToken!,
+        raw.isLive
+      );
+      matchingDeals = deals
+        .filter((d: any) => Number(d.orderId) === brokerId)
+        .sort((a: any, b: any) => Number(a.executionTimestamp || a.createTimestamp || 0) - Number(b.executionTimestamp || b.createTimestamp || 0));
+    }
 
     if (matchingDeals.length === 0) {
       throw new BrokerError('ORDER_REJECTED', `cTrader order ${brokerId} was not found in authoritative broker state.`, 'CTRADER', this.environment);
@@ -919,15 +950,28 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       }));
     const hasFilledDeal = matchingDeals.some((d: any) => Number(d.dealStatus) === 2 || Number(d.filledVolume || 0) > 0);
     const hasRejectedDeal = matchingDeals.some((d: any) => [4, 5, 6, 7].includes(Number(d.dealStatus)));
-    const status = requestedVolume > 0 && filledVolume >= requestedVolume
+    const statusFromOrder = historicalOrderStatus === 2
       ? 'FILLED'
-      : filledVolume > 0
-        ? 'PARTIALLY_FILLED'
-        : hasRejectedDeal
-          ? 'REJECTED'
-          : hasFilledDeal
-            ? 'PARTIALLY_FILLED'
-            : 'ACCEPTED';
+      : historicalOrderStatus === 3
+        ? 'REJECTED'
+        : historicalOrderStatus === 4
+          ? 'EXPIRED'
+          : historicalOrderStatus === 5
+            ? 'CANCELLED'
+            : historicalOrderStatus === 1
+              ? 'ACCEPTED'
+              : undefined;
+    const status = statusFromOrder || (
+      requestedVolume > 0 && filledVolume >= requestedVolume
+        ? 'FILLED'
+        : filledVolume > 0
+          ? 'PARTIALLY_FILLED'
+          : hasRejectedDeal
+            ? 'REJECTED'
+            : hasFilledDeal
+              ? 'PARTIALLY_FILLED'
+              : 'ACCEPTED'
+    );
 
     return {
       id: String(brokerId),
