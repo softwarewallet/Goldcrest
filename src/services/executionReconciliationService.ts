@@ -37,10 +37,38 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
   try {
     const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
     const status = await adapter.getOrderStatus(String(brokerOrderId));
-    const requestedQuantity = Number(stored?.quantity ?? stored?.order?.quantity ?? status.quantity ?? 0);
-    const filledQuantity = Math.max(0, Number(status.filledQuantity ?? 0));
+    const requestedQuantity = Number(stored?.requestedQuantity ?? stored?.quantity ?? stored?.order?.quantity ?? status.quantity ?? 0);
+    const previousFilledQuantity = Math.max(0, Number(stored?.filledQuantity ?? stored?.order?.filledQuantity ?? 0));
+    const brokerReportedFilledQuantity = Math.max(0, Number(status.filledQuantity ?? 0));
+
+    // Broker reconciliation is cumulative: a later snapshot must never move the
+    // durable fill quantity backwards. This prevents partial-fill state from
+    // regressing when a broker endpoint temporarily reports a stale snapshot.
+    const filledQuantity = Math.max(previousFilledQuantity, brokerReportedFilledQuantity);
+
+    if (requestedQuantity > 0 && filledQuantity > requestedQuantity) {
+      const merged = {
+        ...stored,
+        brokerOrderId: status.brokerOrderId || brokerOrderId,
+        brokerStatus: status.status,
+        requestedQuantity,
+        filledQuantity: previousFilledQuantity,
+        remainingQuantity: Math.max(0, requestedQuantity - Math.min(previousFilledQuantity, requestedQuantity)),
+        reconciliationError: 'BROKER_FILLED_QUANTITY_EXCEEDS_REQUESTED_QUANTITY',
+        reconciliationErrorCode: 'FILL_QUANTITY_INCONSISTENT',
+        brokerReportedFilledQuantity,
+        reconciledAt: Date.now(),
+        order: status
+      };
+      await executeRun(
+        'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?)',
+        ['IN_FLIGHT', JSON.stringify(merged), Date.now(), idempotencyKey, 'PENDING', 'IN_FLIGHT']
+      );
+      return null;
+    }
+
     const remainingQuantity = requestedQuantity > 0
-      ? Math.max(0, requestedQuantity - Math.min(filledQuantity, requestedQuantity))
+      ? Math.max(0, requestedQuantity - filledQuantity)
       : undefined;
 
     const merged = {
@@ -57,6 +85,22 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
     };
 
     if (status.status === 'FILLED') {
+      // A terminal FILLED state is only durable when the cumulative fill is
+      // consistent with the requested quantity. If the broker reports FILLED
+      // without a usable quantity, retain IN_FLIGHT for another authoritative
+      // reconciliation instead of inventing a completion.
+      if (requestedQuantity > 0 && filledQuantity < requestedQuantity) {
+        const incompleteTerminal = {
+          ...merged,
+          reconciliationError: 'BROKER_REPORTED_FILLED_BEFORE_FULL_QUANTITY',
+          reconciliationErrorCode: 'FILL_QUANTITY_INCOMPLETE'
+        };
+        await executeRun(
+          'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?)',
+          ['IN_FLIGHT', JSON.stringify(incompleteTerminal), Date.now(), idempotencyKey, 'PENDING', 'IN_FLIGHT']
+        );
+        return null;
+      }
       await completeExecutionIntent(idempotencyKey, merged);
     } else if (status.status === 'CANCELLED' || status.status === 'REJECTED' || status.status === 'EXPIRED') {
       await failExecutionIntent(idempotencyKey, merged);
