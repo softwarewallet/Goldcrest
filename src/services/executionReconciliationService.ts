@@ -89,6 +89,33 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
       order: status
     };
 
+    // Persist broker-native fill events separately from cumulative snapshots.
+    // For cTrader, dealId is the authoritative execution identity, so repeated
+    // reconciliation cannot create a second fill for the same broker execution.
+    if (Array.isArray(status.fillEvents)) {
+      for (const fill of status.fillEvents) {
+        if (!fill?.brokerFillId || !(Number(fill.quantity) > 0) || !(Number(fill.price) > 0)) continue;
+        const fillId = crypto.createHash('sha256')
+          .update([broker, status.brokerOrderId || brokerOrderId, fill.brokerFillId].join('|'))
+          .digest('hex');
+        await executeRun(
+          'INSERT OR IGNORE INTO execution_fill_events (id, idempotency_key, broker, broker_order_id, broker_fill_id, quantity, price, commission, executed_at, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            fillId,
+            idempotencyKey,
+            broker,
+            String(status.brokerOrderId || brokerOrderId),
+            String(fill.brokerFillId),
+            Number(fill.quantity),
+            Number(fill.price),
+            fill.commission ?? null,
+            Number(fill.timestamp || Date.now()),
+            Date.now()
+          ]
+        );
+      }
+    }
+
     // Persist each distinct cumulative-fill observation. The deterministic key
     // makes repeated reconciliation of the same broker state idempotent while
     // retaining an audit trail of fill progression.
