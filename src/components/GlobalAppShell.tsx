@@ -137,7 +137,7 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
 
       <main
         id="global_app_content"
-        className="ml-[242px] min-h-screen pt-[126px] pb-9 bg-white text-slate-900"
+        className="ml-[242px] min-h-screen pt-[126px] pb-9 bg-[#03070d] text-slate-100"
       >
         {children}
       </main>
