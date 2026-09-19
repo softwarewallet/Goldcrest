@@ -28,6 +28,8 @@ import {
   fetchCTraderReconcileState,
   fetchCTraderDeals,
   fetchCTraderOrderDetails,
+  fetchCTraderAssets,
+  fetchCTraderConversionSymbols,
   amendLiveCTraderOrder,
   cancelLiveCTraderOrder,
   closeLiveCTraderPosition,
@@ -352,6 +354,76 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         err
       );
     }
+  }
+
+  /**
+   * Converts a Forex base-currency notional into the cTrader account deposit
+   * currency using cTrader's native asset conversion-chain API. This avoids
+   * assuming that every currency pair exists as a directly tradable symbol.
+   * The returned rate is based on authoritative live broker quotes and fails
+   * closed if any required conversion leg is unavailable or stale.
+   */
+  async getAccountCurrencyConversionRate(fromCurrency: string, toCurrency: string): Promise<number> {
+    const from = String(fromCurrency || '').trim().toUpperCase();
+    const to = String(toCurrency || '').trim().toUpperCase();
+    if (!from || !to) throw new Error('Currency conversion requires both source and target currencies.');
+    if (from === to) return 1;
+
+    const raw = await this.resolveRawAccount();
+    const { clientId, clientSecret, accessToken } = this.config;
+    if (!clientId || !clientSecret || !accessToken) throw new Error('cTrader credentials unavailable for currency conversion.');
+
+    const assets = await fetchCTraderAssets(raw.ctidTraderAccountId, clientId, clientSecret, accessToken, raw.isLive);
+    const assetByName = new Map(assets.map(asset => [asset.name.toUpperCase(), asset.assetId]));
+    const firstAssetId = assetByName.get(from);
+    const lastAssetId = assetByName.get(to);
+    if (firstAssetId === undefined || lastAssetId === undefined) {
+      throw new Error(`cTrader asset ID unavailable for ${from} to ${to} conversion.`);
+    }
+
+    const chain = await fetchCTraderConversionSymbols(
+      raw.ctidTraderAccountId,
+      firstAssetId,
+      lastAssetId,
+      clientId,
+      clientSecret,
+      accessToken,
+      raw.isLive
+    );
+    if (chain.length === 0) throw new Error(`cTrader returned no conversion chain for ${from} to ${to}.`);
+
+    let rate = 1;
+    let currentAssetId = firstAssetId;
+    for (const leg of chain) {
+      const baseAssetId = leg.baseAssetId;
+      const quoteAssetId = leg.quoteAssetId;
+      if (baseAssetId === undefined || quoteAssetId === undefined) {
+        throw new Error(`cTrader conversion leg ${leg.symbolName} is missing asset direction metadata.`);
+      }
+
+      const quote = await this.getQuote(leg.symbolName);
+      if (quote.status === 'STALE' || !(quote.bid > 0 && quote.ask > 0)) {
+        throw new Error(`Authoritative live quote unavailable for conversion leg ${leg.symbolName}.`);
+      }
+
+      if (baseAssetId === currentAssetId) {
+        // Selling the source/base asset into the next asset uses bid.
+        rate *= quote.bid;
+        currentAssetId = quoteAssetId;
+      } else if (quoteAssetId === currentAssetId) {
+        // Converting the current asset through a reversed pair requires buying
+        // the pair's base asset, so use ask and divide.
+        rate /= quote.ask;
+        currentAssetId = baseAssetId;
+      } else {
+        throw new Error(`cTrader conversion chain is discontinuous at ${leg.symbolName}.`);
+      }
+    }
+
+    if (currentAssetId !== lastAssetId || !Number.isFinite(rate) || rate <= 0) {
+      throw new Error(`cTrader conversion chain did not resolve ${from} to ${to}.`);
+    }
+    return rate;
   }
 
   async getBalance(): Promise<number> {
