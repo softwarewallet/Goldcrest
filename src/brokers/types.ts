@@ -95,6 +95,15 @@ export interface NormalizedPosition {
   brokerPositionId?: string;
 }
 
+export interface NormalizedFill {
+  brokerFillId: string;
+  brokerOrderId?: string;
+  quantity: number;
+  price: number;
+  commission?: number;
+  timestamp: number;
+}
+
 export interface NormalizedOrder {
   id: string;
   broker: BrokerType;
@@ -116,6 +125,8 @@ export interface NormalizedOrder {
   strategyId?: string;
   signalId?: string;
   rejectionReason?: string;
+  /** Broker-native execution events when the adapter can expose them authoritatively. */
+  fillEvents?: NormalizedFill[];
 }
 
 export interface OrderRequest {
