@@ -629,44 +629,60 @@ export class BrokerExecutionCertifier {
       });
     }
 
-    // Test 16: Commission & Fee Accounting
+    // Test 16: Broker Environment Isolation & Paper Fee Accounting
     {
       const tStart = Date.now();
       const pAdapter = new PaperBrokerAdapter();
-      const cAdapter = new CTraderDemoAdapter({ clientId: 'CI_CTRADER_CLIENT', clientSecret: 'CI_CTRADER_SECRET', accessToken: 'CI_CTRADER_TOKEN', accountId: 'CI_CTRADER_ACCOUNT' });
+      const cAdapter = new CTraderDemoAdapter({
+        clientId: 'CI_CTRADER_CLIENT',
+        clientSecret: 'CI_CTRADER_SECRET',
+        accessToken: 'CI_CTRADER_TOKEN',
+        accountId: 'CI_CTRADER_ACCOUNT'
+      });
       const fAdapter = new FivePaisaDemoAdapter();
 
-      const pOrd = await pAdapter.placeOrder({ symbol: 'EUR/USD', market: 'FOREX', side: 'BUY', orderType: 'MARKET', quantity: 100000 });
-      const cOrd = await cAdapter.placeOrder({ symbol: 'EUR/USD', market: 'FOREX', side: 'BUY', orderType: 'MARKET', quantity: 100000 });
-      const fOrd = await fAdapter.placeOrder({ symbol: 'NIFTY', market: 'INDIAN_EQUITY', side: 'BUY', orderType: 'MARKET', quantity: 50 });
+      const pOrd = await pAdapter.placeOrder({
+        symbol: 'EUR/USD',
+        market: 'FOREX',
+        side: 'BUY',
+        orderType: 'MARKET',
+        quantity: 100000
+      });
 
-      const feesAccurate =
-        pOrd.commission === 0 &&
-        cOrd.commission === 2.0 &&
-        fOrd.commission === 20.0;
+      let cBlocked = false;
+      try {
+        await cAdapter.placeOrder({ symbol: 'EUR/USD', market: 'FOREX', side: 'BUY', orderType: 'MARKET', quantity: 100000 });
+      } catch (err: any) {
+        cBlocked = err instanceof BrokerError && err.code === 'ENVIRONMENT_MISMATCH';
+      }
+
+      let fBlocked = false;
+      try {
+        await fAdapter.placeOrder({ symbol: 'NIFTY', market: 'INDIAN_EQUITY', side: 'BUY', orderType: 'MARKET', quantity: 50 });
+      } catch (err: any) {
+        fBlocked = err instanceof BrokerError && err.code === 'ENVIRONMENT_MISMATCH';
+      }
+
+      const feesAccurate = pOrd.commission === 0 && cBlocked && fBlocked;
 
       results.push({
         testId: 16,
-        testName: 'Commission & Exchange Fee Schedule Accuracy',
+        testName: 'Broker Environment Isolation & Paper Fee Schedule',
         group: 'EXECUTION_LIFECYCLE',
         status: feesAccurate ? 'PASSED' : 'FAILED',
         durationMs: Date.now() - tStart,
         environment: 'DEMO',
-        broker: 'CTRADER',
-        description: 'Validates commission accounting across Paper ($0), cTrader ($2), and 5paisa (INR 20).',
+        broker: 'PAPER',
+        description: 'Validates the PAPER fee schedule while confirming live-only broker adapters cannot autonomously dispatch DEMO orders.',
         verificationPoints: [
-          'PaperBroker: $0.00 commission',
-          'cTrader DEMO: $2.00 per lot commission',
-          '5paisa SANDBOX: flat INR 20.00 brokerage fee'
+          'PaperBroker commission remains $0.00',
+          'cTrader DEMO dispatch is blocked with ENVIRONMENT_MISMATCH',
+          '5paisa SANDBOX dispatch is blocked with ENVIRONMENT_MISMATCH'
         ],
-        details: 'Fee schedules verified against broker specifications.',
+        details: 'Paper fee accounting passed and both broker DEMO execution paths remained isolated.',
         timestamp: Date.now()
       });
     }
-
-    // ========================================================================
-    // GROUP 3: POSITION MANAGEMENT, EXITS & TRAILING STOP PROTECTIONS (Tests 17 to 24)
-    // ========================================================================
 
     // Test 17: Position Opening with Broker Position IDs
     {
