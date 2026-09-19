@@ -540,6 +540,24 @@ export async function executeRun(sql: string, params: any[] = []): Promise<void>
   db.run(sql, params);
   persistDatabase();
 }
+\nexport async function executeTransaction<T>(work: (db: Database) => T): Promise<T> {
+  const db = await getDatabase();
+  db.run('BEGIN IMMEDIATE TRANSACTION');
+  try {
+    const result = work(db);
+    db.run('COMMIT');
+    persistDatabase();
+    return result;
+  } catch (err) {
+    try {
+      db.run('ROLLBACK');
+    } catch {
+      // Preserve the original transaction error.
+    }
+    throw err;
+  }
+}
+
 
 export async function getDatabaseStats() {
   const db = await getDatabase();
