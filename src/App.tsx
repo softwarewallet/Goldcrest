@@ -383,7 +383,7 @@ export default function App() {
       </main>
       )}
 
-      {/* Signal Quantitative Inspection Modal */
+      {/* Signal Quantitative Inspection Modal */}
       {selectedSignal && (
         <SignalModal
           signal={selectedSignal}
