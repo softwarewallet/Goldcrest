@@ -213,7 +213,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
             environment: this.environment,
             connectionStatus: 'CONNECTED',
             server: details.brokerName || raw.brokerTitleShort || (details.isLive ? 'cTrader-Live' : 'cTrader-Demo'),
-            permissions: ['TRADE', 'READ'],
+            permissions: ['TRADE', 'READ', 'TRADING'],
             lastUpdate: Date.now(),
             isLiveAccount: details.isLive
           });
