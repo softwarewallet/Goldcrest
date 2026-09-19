@@ -29,6 +29,7 @@ import { ForexTimeframe } from './src/markets/forex/types';
 // Phase 2B Broker Integration
 import { BrokerError } from './src/brokers/errors';
 import { brokerRouter } from './src/brokers/brokerRoutes';
+import { autoTradingRouter } from './src/brokers/autoTradingRoutes';
 import { LIVE_AUTO_EXECUTION_ALLOWED } from './src/brokers/safety/AutoExecutionEngine';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
@@ -119,6 +120,7 @@ app.post('/api/operator/logout', (_req: Request, res: Response) => {
 });
 
 app.use('/api/brokers', operatorAuthRequired, brokerRouter);
+app.use('/api/auto-trading', autoTradingRouter);
 app.use('/api/ml', operatorAuthRequired, (_req: Request, res: Response) => {
   res.status(410).json({
     error: 'RESEARCH_API_RETIRED',
