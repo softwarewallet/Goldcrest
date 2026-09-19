@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { executeQuery, executeRun } from '../database/db';
+import { executeQuery, executeRun, executeTransaction } from '../database/db';
 
 export type ExecutionIntentState = 'PENDING' | 'IN_FLIGHT' | 'COMPLETED' | 'FAILED';
 
@@ -18,46 +18,52 @@ export async function claimExecutionIntent(
   idempotencyKey: string,
   metadata: Omit<ExecutionIntentRecord, 'idempotencyKey' | 'state' | 'result'>
 ): Promise<{ claimed: boolean; existing?: ExecutionIntentRecord }> {
-  const existingRows = await executeQuery<any>(
-    'SELECT * FROM execution_intents WHERE idempotency_key = ?',
-    [idempotencyKey]
-  );
-  if (existingRows[0]) {
-    const row = existingRows[0];
-    const payload = JSON.parse(row.payload_json || 'null');
-    if (JSON.stringify(payload) !== JSON.stringify(metadata.payload ?? null)) {
+  const claimToken = crypto.randomUUID();
+  const payloadJson = JSON.stringify(metadata.payload ?? null);
+
+  return executeTransaction((db) => {
+    const readExisting = () => {
+      const stmt = db.prepare('SELECT * FROM execution_intents WHERE idempotency_key = ?');
+      try {
+        stmt.bind([idempotencyKey]);
+        if (!stmt.step()) return undefined;
+        return stmt.getAsObject() as any;
+      } finally {
+        stmt.free();
+      }
+    };
+
+    const existing = readExisting();
+    if (!existing) {
+      const now = Date.now();
+      db.run(
+        'INSERT INTO execution_intents (idempotency_key, claim_token, broker, market, symbol, side, state, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [idempotencyKey, claimToken, metadata.broker, metadata.market, metadata.symbol, metadata.side, 'PENDING', payloadJson, now, now]
+      );
+    }
+
+    const row = readExisting();
+    if (!row) throw new Error('EXECUTION_INTENT_NOT_PERSISTED');
+
+    const storedPayload = JSON.parse(row.payload_json || 'null');
+    if (JSON.stringify(storedPayload) !== payloadJson) {
       throw new Error('IDEMPOTENCY_KEY_PAYLOAD_MISMATCH');
     }
+
     return {
-      claimed: false,
+      claimed: row.claim_token === claimToken,
       existing: {
-        idempotencyKey: row.idempotency_key, broker: row.broker, market: row.market,
-        symbol: row.symbol, side: row.side, state: row.state, payload,
+        idempotencyKey: row.idempotency_key,
+        broker: row.broker,
+        market: row.market,
+        symbol: row.symbol,
+        side: row.side,
+        state: row.state,
+        payload: storedPayload,
         result: row.result_json ? JSON.parse(row.result_json) : undefined
       }
     };
-  }
-  const now = Date.now();
-  const claimToken = crypto.randomUUID();
-  await executeRun(
-    'INSERT OR IGNORE INTO execution_intents (idempotency_key, claim_token, broker, market, symbol, side, state, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [idempotencyKey, claimToken, metadata.broker, metadata.market, metadata.symbol, metadata.side, 'PENDING', JSON.stringify(metadata.payload ?? null), now, now]
-  );
-  const rows = await executeQuery<any>('SELECT * FROM execution_intents WHERE idempotency_key = ?', [idempotencyKey]);
-  const row = rows[0];
-  if (!row) throw new Error('EXECUTION_INTENT_NOT_PERSISTED');
-  const storedPayload = JSON.parse(row.payload_json || 'null');
-  if (JSON.stringify(storedPayload) !== JSON.stringify(metadata.payload ?? null)) {
-    throw new Error('IDEMPOTENCY_KEY_PAYLOAD_MISMATCH');
-  }
-
-  const claimed = row.claim_token === claimToken;
-  return { claimed, existing: {
-    idempotencyKey: row.idempotency_key, broker: row.broker, market: row.market,
-    symbol: row.symbol, side: row.side, state: row.state,
-    payload: storedPayload,
-    result: row.result_json ? JSON.parse(row.result_json) : undefined
-  }};
+  });
 }
 
 export async function markExecutionIntentInFlight(idempotencyKey: string, result: unknown): Promise<void> {
