@@ -48,7 +48,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 let databaseReady = false;
 
-function productionPreflight(): { ok: boolean; checks: Record<string, string> } {
+function productionPreflight(enforce = false): { ok: boolean; checks: Record<string, string> } {
   const checks: Record<string, string> = {};
   const operatorKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
   const ctraderConfigured = Boolean(
@@ -68,7 +68,7 @@ function productionPreflight(): { ok: boolean; checks: Record<string, string> } 
   checks.autonomousExecution = LIVE_AUTO_EXECUTION_ALLOWED === false ? 'DISABLED' : 'INVALID';
   checks.tradingMode = getSystemConfig().tradingMode;
   const ok = Boolean(operatorKey) && (ctraderConfigured || fivePaisaConfigured) && LIVE_AUTO_EXECUTION_ALLOWED === false && getSystemConfig().tradingMode === 'LIVE_ONLY';
-  if (!ok && process.env.NODE_ENV === 'production') {
+  if (!ok && enforce && process.env.NODE_ENV === 'production') {
     throw new Error(`Production preflight failed: ${Object.entries(checks).filter(([, value]) => value !== 'CONFIGURED' && value !== 'DISABLED' && value !== 'LIVE_ONLY').map(([key]) => key).join(', ') || 'invalid safety configuration'}`);
   }
   return { ok, checks };
@@ -882,7 +882,7 @@ async function captureLiveBrokerReconciliation(): Promise<void> {
 }
 
 async function startServer() {
-  productionPreflight();
+  productionPreflight(true);
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
