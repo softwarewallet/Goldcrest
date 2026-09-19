@@ -477,10 +477,20 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       const orderTypeRaw = String(o.orderType || 'MARKET').toUpperCase();
       const orderType = orderTypeRaw.includes('STOP_LIMIT') ? 'STOP_LIMIT' : orderTypeRaw.includes('STOP') ? 'STOP' : orderTypeRaw.includes('LIMIT') ? 'LIMIT' : 'MARKET';
       const side = String(trade.tradeSide || '').toUpperCase().includes('SELL') ? 'SELL' : 'BUY';
-      const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0));
+      const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0)) / 100;
+      const filledQuantity = Math.min(
+        quantity,
+        Math.abs(Number(o.filledVolume || o.executedVolume || trade.filledVolume || 0)) / 100
+      );
       if (quantity <= 0) return null;
       const statusRaw = String(o.orderStatus || 'PENDING').toUpperCase();
-      const status = statusRaw.includes('FILLED') ? 'FILLED' : statusRaw.includes('CANCEL') ? 'CANCELLED' : statusRaw.includes('REJECT') ? 'REJECTED' : statusRaw.includes('EXPIRE') ? 'EXPIRED' : statusRaw.includes('ACCEPT') ? 'ACCEPTED' : 'PENDING';
+      const status = statusRaw.includes('FILLED') ? 'FILLED'
+        : statusRaw.includes('CANCEL') ? 'CANCELLED'
+        : statusRaw.includes('REJECT') ? 'REJECTED'
+        : statusRaw.includes('EXPIRE') ? 'EXPIRED'
+        : filledQuantity > 0 && filledQuantity < quantity ? 'PARTIALLY_FILLED'
+        : statusRaw.includes('ACCEPT') ? 'ACCEPTED'
+        : 'PENDING';
       return {
         id: String(o.orderId),
         broker: 'CTRADER',
@@ -494,7 +504,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         stopLoss: trade.stopLoss,
         takeProfit: trade.takeProfit,
         status,
-        filledQuantity: status === 'FILLED' ? quantity : 0,
+        filledQuantity,
         averageFillPrice: Number(o.executionPrice || 0) || undefined,
         timestamp: Number(o.utcTimestamp || 0) * 1000 || Date.now(),
         brokerOrderId: String(o.orderId)
