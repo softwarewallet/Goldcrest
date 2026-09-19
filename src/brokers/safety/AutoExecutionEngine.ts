@@ -11,6 +11,7 @@ import { tradeValidator, SignalValidationInput } from './TradeValidator';
 import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
 import { logBrokerAction } from '../auditLog';
 import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../../services/executionIntentService';
+import { autoTradingController } from './AutoTradingController';
 
 /**
  * ============================================================================
@@ -147,7 +148,28 @@ class AutoExecutionEngine {
       };
     }
 
-    // Stage 4: Autonomous live execution permission boundary
+    // Stage 4: Auto-trading control-plane authorization. This gate is evaluated
+    // even though the separate autonomous-live execution invariant remains OFF.
+    const autoAuthorization = await autoTradingController.authorizeSignal({
+      signalTimestamp: signalInput.signalTimestamp,
+      score: Number((signalInput as any).score ?? 0),
+      riskReward: order.takeProfit && order.stopLoss
+        ? Math.abs(order.takeProfit - order.price) / Math.max(Math.abs(order.price - order.stopLoss), Number.EPSILON)
+        : 0,
+      spread: Number(signalInput.spread ?? 0),
+      spreadRatio: Number(order.price || signalInput.currentPrice) > 0
+        ? Number(signalInput.spread ?? 0) / Number(order.price || signalInput.currentPrice)
+        : undefined
+    });
+    if (!autoAuthorization.allowed) {
+      return {
+        executed: false,
+        code: 'AUTO_TRADING_GATE_REJECTED',
+        reason: autoAuthorization.reasons.join(', ')
+      };
+    }
+
+    // Stage 5: Autonomous live execution permission boundary
     if (!LIVE_AUTO_EXECUTION_ALLOWED) {
       logBrokerAction({
         source: 'SAFETY_GATE',
