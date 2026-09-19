@@ -41,20 +41,14 @@ async function runPhase2BTests() {
     `Paper order placed and filled successfully (ID: ${placedPaper.id})`
   );
 
-  // 2. Demo cTrader Connection Test
-  console.log('\n[Test 2: Demo cTrader Connection Test]');
-  let ctraderTest: any = {};
-  try {
-    ctraderTest = await brokerRegistry.testBrokerConnection('CTRADER', 'DEMO');
-  } catch (e) {
-    ctraderTest = { connected: true, broker: 'CTRADER', environment: 'DEMO', account: '10114397', currency: 'USD' };
-  }
+  // 2. Demo cTrader Adapter Isolation Test
+  console.log('\n[Test 2: Demo cTrader Adapter Isolation Test]');
+  const ctraderDemoAdapter = brokerRegistry.getAdapter('CTRADER', 'DEMO');
   assert(
-    ctraderTest.broker === 'CTRADER' &&
-    ctraderTest.environment === 'DEMO' &&
-    typeof ctraderTest.account === 'string' &&
-    ctraderTest.currency === 'USD',
-    `cTrader Demo connection tested with account: ${ctraderTest.account}`
+    ctraderDemoAdapter.broker === 'CTRADER' &&
+    ctraderDemoAdapter.environment === 'DEMO' &&
+    ctraderDemoAdapter.isLive === false,
+    'cTrader demo adapter is isolated from LIVE execution'
   );
 
   // 3. Demo 5paisa Connection Test
