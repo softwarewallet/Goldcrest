@@ -17,7 +17,7 @@ The absolute safety invariant:
 
 `LIVE_AUTO_EXECUTION_ALLOWED === false`
 
-is permanently enforced. Goldcrest may validate and present orders and may support explicit operator workflows where permitted by the application, but it must not autonomously submit live-money orders.
+is permanently enforced. Goldcrest may validate and execute explicit operator-controlled LIVE orders through the broker routes after the server-side safety gates pass, but it must not autonomously submit live-money orders.
 
 ## Account Selection
 
@@ -49,3 +49,9 @@ Goldcrest uses the local SQLite database at `data/trading_analyst.sqlite` as the
 Operational broker, governance, configuration, notes, and database-statistics endpoints require the `GOLDCREST_OPERATOR_API_KEY` environment variable. Clients authenticate with the `X-Goldcrest-Operator-Key` header or an `Authorization: Bearer <key>` header. The key is never stored in SQLite or returned by the API.
 
 If the operator key is not configured, protected endpoints fail closed with `OPERATOR_AUTH_NOT_CONFIGURED`.
+
+## Production deployment
+
+Goldcrest production startup performs a fail-closed preflight. Production will not start unless GOLDCREST_OPERATOR_API_KEY is configured, at least one LIVE broker credential set is configured, the trading mode is LIVE_ONLY, and autonomous execution is disabled. The runtime exposes /api/health for liveness and /api/health/ready for readiness.
+
+Build with npm ci && npm run build and run with NODE_ENV=production npm start. Put the Node process behind a TLS reverse proxy and persist data/trading_analyst.sqlite on durable storage.
