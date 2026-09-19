@@ -107,7 +107,7 @@ export const ForexTerminalDashboard: React.FC<ForexTerminalDashboardProps> = ({
 
   return (
     <div className="min-h-screen bg-[#05090d] text-slate-100 flex overflow-hidden font-sans">
-      <aside className="hidden xl:flex w-[220px] shrink-0 border-r border-slate-800/80 bg-[#080d12] flex-col">
+      <aside className="hidden w-[220px] shrink-0 border-r border-slate-800/80 bg-[#080d12] flex-col">
         <div className="h-[82px] px-5 flex items-center gap-3 border-b border-slate-800/70">
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
             <TrendingUp className="w-5 h-5 text-emerald-400"/>
@@ -121,7 +121,7 @@ export const ForexTerminalDashboard: React.FC<ForexTerminalDashboardProps> = ({
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <div className="h-8 border-b border-slate-800 bg-[#070b10] px-4 flex items-center gap-4 text-[10px] font-mono overflow-hidden whitespace-nowrap">
+        <div className="fixed top-0 left-[222px] right-0 z-40 h-8 border-b border-slate-800 bg-[#070b10] px-4 flex items-center gap-4 text-[10px] font-mono overflow-hidden whitespace-nowrap">
           <span>MARKET: <b className="text-white">FOREX</b></span><span className="text-slate-700">|</span>
           <span>BROKER: <b className="text-slate-200">cTrader</b></span><span className="text-slate-700">|</span>
           <span>ENV: <b className="text-rose-400">LIVE</b></span><span className="text-slate-700">|</span>
@@ -130,7 +130,7 @@ export const ForexTerminalDashboard: React.FC<ForexTerminalDashboardProps> = ({
           <span className="ml-auto text-slate-500">ACCOUNT: <b className="text-slate-300">{maskedAccount}</b></span>
         </div>
 
-        <header className="h-[76px] border-b border-slate-800 bg-[#080d12] px-4 flex items-center gap-5">
+        <header className="fixed top-8 left-[222px] right-0 z-40 h-[76px] border-b border-slate-800 bg-[#080d12] px-4 flex items-center gap-5">
           <div className="flex items-center gap-3 min-w-[260px]">
             <div className="w-9 h-9 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center"><span className="text-blue-300 font-bold">FX</span></div>
             <div><div className="text-lg font-semibold">{selectedPair}</div><div className="text-[10px] text-slate-500">FOREX • SPOT</div></div>
@@ -146,7 +146,7 @@ export const ForexTerminalDashboard: React.FC<ForexTerminalDashboardProps> = ({
           </div>
         </header>
 
-        <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 min-h-0 flex flex-col pt-[108px] pb-10">
           <div className="grid grid-cols-[220px_minmax(0,1fr)_250px_235px] min-h-[560px] border-b border-slate-800">
             <section className="border-r border-slate-800 bg-[#070b10] overflow-auto">
               <div className="p-3 border-b border-slate-800 flex items-center gap-2"><Search className="w-3.5 h-3.5 text-slate-500"/><input className="bg-transparent outline-none text-xs w-full" placeholder="Search pair"/></div>
