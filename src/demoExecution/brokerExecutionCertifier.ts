@@ -399,7 +399,7 @@ export class BrokerExecutionCertifier {
     // Test 10: cTrader DEMO Adapter Order Lifecycle
     {
       const tStart = Date.now();
-      const adapter = new CTraderDemoAdapter();
+      const adapter = new CTraderDemoAdapter({ clientId: 'CI_CTRADER_CLIENT', clientSecret: 'CI_CTRADER_SECRET', accessToken: 'CI_CTRADER_TOKEN', accountId: 'CI_CTRADER_ACCOUNT' });
       await adapter.authenticate();
       const orderReq = {
         symbol: 'EUR/USD',
@@ -523,7 +523,7 @@ export class BrokerExecutionCertifier {
     // Test 13: Unsupported Order Type Guard (cTrader STOP_LIMIT)
     {
       const tStart = Date.now();
-      const adapter = new CTraderDemoAdapter();
+      const adapter = new CTraderDemoAdapter({ clientId: 'CI_CTRADER_CLIENT', clientSecret: 'CI_CTRADER_SECRET', accessToken: 'CI_CTRADER_TOKEN', accountId: 'CI_CTRADER_ACCOUNT' });
       await adapter.authenticate();
       let caught = false;
       try {
@@ -630,7 +630,7 @@ export class BrokerExecutionCertifier {
     {
       const tStart = Date.now();
       const pAdapter = new PaperBrokerAdapter();
-      const cAdapter = new CTraderDemoAdapter();
+      const cAdapter = new CTraderDemoAdapter({ clientId: 'CI_CTRADER_CLIENT', clientSecret: 'CI_CTRADER_SECRET', accessToken: 'CI_CTRADER_TOKEN', accountId: 'CI_CTRADER_ACCOUNT' });
       const fAdapter = new FivePaisaDemoAdapter();
 
       const pOrd = await pAdapter.placeOrder({ symbol: 'EUR/USD', market: 'FOREX', side: 'BUY', orderType: 'MARKET', quantity: 100000 });
@@ -1473,7 +1473,7 @@ export class BrokerExecutionCertifier {
     // Test 39: Zero Plaintext Credentials in Logs, Memory & Telemetry
     {
       const tStart = Date.now();
-      const cAdapter = new CTraderDemoAdapter();
+      const cAdapter = new CTraderDemoAdapter({ clientId: 'CI_CTRADER_CLIENT', clientSecret: 'CI_CTRADER_SECRET', accessToken: 'CI_CTRADER_TOKEN', accountId: 'CI_CTRADER_ACCOUNT' });
       const fAdapter = new FivePaisaDemoAdapter();
 
       const cConfig = cAdapter.getConfigStatus();
