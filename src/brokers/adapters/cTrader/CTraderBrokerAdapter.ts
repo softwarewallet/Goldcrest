@@ -27,6 +27,7 @@ import {
   fetchCTraderTrendbars,
   fetchCTraderReconcileState,
   fetchCTraderDeals,
+  fetchCTraderOrderDetails,
   amendLiveCTraderOrder,
   cancelLiveCTraderOrder,
   closeLiveCTraderPosition,
