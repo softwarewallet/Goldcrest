@@ -82,3 +82,17 @@ export async function failExecutionIntent(idempotencyKey: string, result: unknow
   await executeRun('UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ?',
     ['FAILED', JSON.stringify(result), Date.now(), idempotencyKey]);
 }
+
+export async function markExecutionIntentReconciliationTimeout(idempotencyKey: string, result: unknown): Promise<void> {
+  await executeRun(
+    'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?)',
+    ['RECONCILIATION_TIMEOUT', JSON.stringify(result), Date.now(), idempotencyKey, 'PENDING', 'IN_FLIGHT']
+  );
+}
+
+export async function resumeExecutionIntentReconciliation(idempotencyKey: string): Promise<void> {
+  await executeRun(
+    'UPDATE execution_intents SET state = ?, updated_at = ? WHERE idempotency_key = ? AND state = ?',
+    ['IN_FLIGHT', Date.now(), idempotencyKey, 'RECONCILIATION_TIMEOUT']
+  );
+}
