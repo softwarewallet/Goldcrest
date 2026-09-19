@@ -247,13 +247,14 @@ export default function App() {
   const handleExecuteConfirmedOrder = async (confirmedOrder: OrderRequest) => {
     setPendingOrder(null);
     try {
-      const res = await fetch('/api/brokers/orders', {
+      const idempotencyKey = confirmedOrder.signalId || `manual-${confirmedOrder.market}-${confirmedOrder.symbol}-${confirmedOrder.side}-${Date.now()}`;
+      const res = await fetch('/api/brokers/order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
+          ...confirmedOrder,
           broker: selectedBroker,
           environment,
-          order: confirmedOrder,
           operatorConfirmed: true
         })
       });
@@ -312,6 +313,7 @@ export default function App() {
           forexPairs={forexPairs}
           signals={signals}
           onSelectSignal={(sig) => setSelectedSignal(sig)}
+          onRequestOrder={(order) => setPendingOrder(order)}
         />
       ) : activeTab === 'market' ? (
         <TerminalDashboard
