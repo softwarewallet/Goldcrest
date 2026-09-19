@@ -45,6 +45,10 @@ const MSG_SUBSCRIBE_LIVE_TRENDBAR_REQ = 2135;
 const MSG_GET_ACCOUNTS_REQ = 2149;
 const MSG_GET_ACCOUNTS_RES = 2150;
 const MSG_NEW_ORDER_REQ = 2106;
+const MSG_CANCEL_ORDER_REQ = 2108;
+const MSG_AMEND_ORDER_REQ = 2109;
+const MSG_AMEND_POSITION_SLTP_REQ = 2110;
+const MSG_CLOSE_POSITION_REQ = 2111;
 const MSG_EXECUTION_EVENT = 2126;
 const MSG_ORDER_ERROR_EVENT = 2132;
 const MSG_ERROR_RES = 2142;
@@ -385,6 +389,105 @@ async function withAuthenticatedAccount<T>(
   }
 
   throw lastError || new Error('cTrader API: failed to authenticate account on available cTrader endpoints.');
+}
+
+export interface CTraderExecutionActionResult {
+  executionType: number;
+  orderId?: number;
+  positionId?: number;
+  raw: any;
+}
+
+async function submitLiveCTraderExecutionAction(
+  ctidTraderAccountId: number, payloadType: number, payload: Record<string, unknown>,
+  clientMsgId: string, clientId: string, clientSecret: string, accessToken: string, isLive: boolean,
+  expectedOrderId?: number, expectedPositionId?: number
+): Promise<CTraderExecutionActionResult> {
+  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+    return new Promise<CTraderExecutionActionResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        ws.removeEventListener('message', handler);
+        reject(new Error('cTrader live execution action timed out without broker acknowledgement.'));
+      }, 15000);
+      const finish = (value: CTraderExecutionActionResult) => {
+        clearTimeout(timer);
+        ws.removeEventListener('message', handler);
+        resolve(value);
+      };
+      const fail = (message: string) => {
+        clearTimeout(timer);
+        ws.removeEventListener('message', handler);
+        reject(new Error(message));
+      };
+      const handler = (event: MessageEvent) => {
+        try {
+          const msg = JSON.parse(event.data.toString());
+          if (msg.payloadType === MSG_ORDER_ERROR_EVENT || msg.payloadType === MSG_ERROR_RES) {
+            const p = msg.payload || {};
+            fail(p.description || p.errorCode || 'cTrader rejected the execution action.');
+            return;
+          }
+          if (msg.payloadType !== MSG_EXECUTION_EVENT) return;
+          const p = msg.payload || {};
+          const order = p.order || {};
+          const position = p.position || {};
+          const orderId = Number(order.orderId ?? p.orderId ?? 0) || undefined;
+          const positionId = Number(position.positionId ?? p.positionId ?? 0) || undefined;
+          if (expectedOrderId !== undefined && orderId !== expectedOrderId) return;
+          if (expectedPositionId !== undefined && positionId !== expectedPositionId) return;
+          finish({ executionType: Number(p.executionType ?? 0), orderId, positionId, raw: msg });
+        } catch {}
+      };
+      ws.addEventListener('message', handler);
+      ws.send(JSON.stringify({ clientMsgId, payloadType, payload }));
+    });
+  });
+}
+
+export async function cancelLiveCTraderOrder(
+  ctidTraderAccountId: number, orderId: number, clientId: string, clientSecret: string,
+  accessToken: string, isLive: boolean
+): Promise<CTraderExecutionActionResult> {
+  return submitLiveCTraderExecutionAction(ctidTraderAccountId, MSG_CANCEL_ORDER_REQ,
+    { ctidTraderAccountId, orderId }, 'gc-cancel-' + orderId + '-' + Date.now(),
+    clientId, clientSecret, accessToken, isLive, orderId);
+}
+
+export async function amendLiveCTraderOrder(
+  ctidTraderAccountId: number, orderId: number,
+  modifications: { volume?: number; limitPrice?: number; stopPrice?: number; stopLoss?: number; takeProfit?: number },
+  clientId: string, clientSecret: string, accessToken: string, isLive: boolean
+): Promise<CTraderExecutionActionResult> {
+  const payload: Record<string, unknown> = { ctidTraderAccountId, orderId };
+  if (modifications.volume !== undefined) payload.volume = Math.round(modifications.volume * 100);
+  if (modifications.limitPrice !== undefined) payload.limitPrice = modifications.limitPrice;
+  if (modifications.stopPrice !== undefined) payload.stopPrice = modifications.stopPrice;
+  if (modifications.stopLoss !== undefined) payload.stopLoss = modifications.stopLoss;
+  if (modifications.takeProfit !== undefined) payload.takeProfit = modifications.takeProfit;
+  return submitLiveCTraderExecutionAction(ctidTraderAccountId, MSG_AMEND_ORDER_REQ, payload,
+    'gc-amend-' + orderId + '-' + Date.now(), clientId, clientSecret, accessToken, isLive, orderId);
+}
+
+export async function amendLiveCTraderPositionSLTP(
+  ctidTraderAccountId: number, positionId: number, stopLoss: number | undefined, takeProfit: number | undefined,
+  clientId: string, clientSecret: string, accessToken: string, isLive: boolean
+): Promise<CTraderExecutionActionResult> {
+  const payload: Record<string, unknown> = { ctidTraderAccountId, positionId };
+  if (stopLoss !== undefined) payload.stopLoss = stopLoss;
+  if (takeProfit !== undefined) payload.takeProfit = takeProfit;
+  return submitLiveCTraderExecutionAction(ctidTraderAccountId, MSG_AMEND_POSITION_SLTP_REQ, payload,
+    'gc-amend-position-' + positionId + '-' + Date.now(), clientId, clientSecret, accessToken, isLive, undefined, positionId);
+}
+
+export async function closeLiveCTraderPosition(
+  ctidTraderAccountId: number, positionId: number, volume: number,
+  clientId: string, clientSecret: string, accessToken: string, isLive: boolean
+): Promise<CTraderExecutionActionResult> {
+  const protocolVolume = Math.round(volume * 100);
+  if (!Number.isSafeInteger(protocolVolume) || protocolVolume <= 0) throw new Error('cTrader close volume must be positive.');
+  return submitLiveCTraderExecutionAction(ctidTraderAccountId, MSG_CLOSE_POSITION_REQ,
+    { ctidTraderAccountId, positionId, volume: protocolVolume },
+    'gc-close-position-' + positionId + '-' + Date.now(), clientId, clientSecret, accessToken, isLive, undefined, positionId);
 }
 
 export interface CTraderOrderSubmission {
