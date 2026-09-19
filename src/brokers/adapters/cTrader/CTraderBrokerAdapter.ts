@@ -54,6 +54,12 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   protected accountData: BrokerAccountInfo | null = null;
   protected openPositions: Map<string, NormalizedPosition> = new Map();
   protected openOrders: Map<string, NormalizedOrder> = new Map();
+  // Conversion metadata changes far less frequently than live prices. Cache the
+  // broker-provided asset map and conversion topology, while still fetching fresh
+  // quotes for every risk decision.
+  private conversionAssetCache: { expiresAt: number; assets: Awaited<ReturnType<typeof fetchCTraderAssets>> } | null = null;
+  private conversionChainCache = new Map<string, { expiresAt: number; chain: Awaited<ReturnType<typeof fetchCTraderConversionSymbols>> }>();
+  private static readonly CONVERSION_METADATA_TTL_MS = 5 * 60 * 1000;
 
   constructor(config: CTraderConfig) {
     super();
@@ -373,7 +379,17 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     const { clientId, clientSecret, accessToken } = this.config;
     if (!clientId || !clientSecret || !accessToken) throw new Error('cTrader credentials unavailable for currency conversion.');
 
-    const assets = await fetchCTraderAssets(raw.ctidTraderAccountId, clientId, clientSecret, accessToken, raw.isLive);
+    const now = Date.now();
+    let assets: Awaited<ReturnType<typeof fetchCTraderAssets>>;
+    if (this.conversionAssetCache && this.conversionAssetCache.expiresAt > now) {
+      assets = this.conversionAssetCache.assets;
+    } else {
+      assets = await fetchCTraderAssets(raw.ctidTraderAccountId, clientId, clientSecret, accessToken, raw.isLive);
+      this.conversionAssetCache = {
+        assets,
+        expiresAt: now + CTraderBrokerAdapter.CONVERSION_METADATA_TTL_MS
+      };
+    }
     const assetByName = new Map(assets.map(asset => [asset.name.toUpperCase(), asset.assetId]));
     const firstAssetId = assetByName.get(from);
     const lastAssetId = assetByName.get(to);
@@ -381,15 +397,25 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       throw new Error(`cTrader asset ID unavailable for ${from} to ${to} conversion.`);
     }
 
-    const chain = await fetchCTraderConversionSymbols(
-      raw.ctidTraderAccountId,
-      firstAssetId,
-      lastAssetId,
-      clientId,
-      clientSecret,
-      accessToken,
-      raw.isLive
-    );
+    const chainKey = `${raw.ctidTraderAccountId}:${firstAssetId}:${lastAssetId}`;
+    const cachedChain = this.conversionChainCache.get(chainKey);
+    const chain = cachedChain && cachedChain.expiresAt > now
+      ? cachedChain.chain
+      : await fetchCTraderConversionSymbols(
+          raw.ctidTraderAccountId,
+          firstAssetId,
+          lastAssetId,
+          clientId,
+          clientSecret,
+          accessToken,
+          raw.isLive
+        );
+    if (!cachedChain || cachedChain.expiresAt <= now) {
+      this.conversionChainCache.set(chainKey, {
+        chain,
+        expiresAt: now + CTraderBrokerAdapter.CONVERSION_METADATA_TTL_MS
+      });
+    }
     if (chain.length === 0) throw new Error(`cTrader returned no conversion chain for ${from} to ${to}.`);
 
     let rate = 1;
