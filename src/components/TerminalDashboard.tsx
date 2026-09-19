@@ -172,9 +172,15 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
   }, [signals]);
 
   const filteredIndices = indices.filter(i => !watchSearch || i.symbol.includes(watchSearch.toUpperCase()));
-  const metrics = summary?.metrics;
-  const equity = metrics?.totalEquity ?? balance;
-  const exposure = equity > 0 ? (summary?.positions.reduce((s, p) => s + Math.abs(Number(p.quantity || 0) * Number(p.currentPrice || 0)), 0) || 0) / equity * 100 : null;
+  const nseAccount = summary?.accounts?.find(a => a.broker === 'FIVE_PAISA');
+  const nseBrokerSummary = (summary as any)?.brokerSummaries?.find((x: any) => x.broker === 'FIVE_PAISA');
+  const nsePositions = (summary?.positions || []).filter((p: any) => p.broker === 'FIVE_PAISA' || p.market === 'INDIAN_EQUITY');
+  const nseOrders = (summary?.orderHistory || []).filter((o: any) => o.broker === 'FIVE_PAISA' || o.market !== 'FOREX');
+  const equity = Number(nseAccount?.equity ?? balance);
+  const accountBalance = Number(nseAccount?.balance ?? balance);
+  const freeMargin = Number(nseAccount?.freeMargin ?? 0);
+  const dailyPnl = Number.isFinite(Number(nseBrokerSummary?.dailyRealizedPnL)) ? Number(nseBrokerSummary.dailyRealizedPnL) : null;
+  const exposure = equity > 0 ? (nsePositions.reduce((s, p) => s + Math.abs(Number(p.quantity || 0) * Number(p.currentPrice || 0)), 0) || 0) / equity * 100 : null;
   const risk = { dailyLimit: -3, riskPerTrade: 1, maxPositions: 5 };
 
   return (
@@ -182,12 +188,12 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
       {isEmergencyHalted && <div className="rounded-lg border border-rose-700 bg-rose-950/80 px-4 py-2 text-xs font-mono text-rose-200">TRADING HALTED — emergency stop is active; new orders are blocked.</div>}
 
       <section className="grid grid-cols-2 xl:grid-cols-6 gap-3">
-        <Kpi label="Live P&L" value={metrics?.dailyRealizedPnL == null ? '—' : money(metrics.dailyRealizedPnL, currency)} sub="Broker-reported realized P&L" tone={pnlClass(metrics?.dailyRealizedPnL)} />
+        <Kpi label="Live P&L" value={dailyPnl == null ? '—' : money(dailyPnl, nseAccount?.currency || currency)} sub="Broker-reported realized P&L" tone={pnlClass(metrics?.dailyRealizedPnL)} />
         <Kpi label="Win Rate" value={metrics?.winRate == null ? '—' : `${metrics.winRate.toFixed(1)}%`} sub="Only calculated from closed trade ledger" />
-        <Kpi label="Total Trades" value={metrics?.totalOrders == null ? '—' : String(metrics.totalOrders)} sub="Live broker order history" />
+        <Kpi label="Total Trades" value={nseBrokerSummary ? String(nseBrokerSummary.orderHistory.length) : '—'} sub="Live broker order history" />
         <Kpi label="Profit Factor" value={metrics?.profitFactor == null ? '—' : metrics.profitFactor.toFixed(2)} sub="Requires realized trade P&L" />
         <Kpi label="Max Drawdown" value={metrics?.maxDrawdown == null ? '—' : `${metrics.maxDrawdown.toFixed(2)}%`} sub="Requires equity history" tone="text-rose-400" />
-        <Kpi label="Account Balance" value={money(equity, currency)} sub={`Available: ${metrics ? money(metrics.totalFreeMargin, currency) : '—'}`} />
+        <Kpi label="Account Balance" value={money(accountBalance, nseAccount?.currency || currency)} sub={`Available: ${nseAccount ? money(freeMargin, nseAccount.currency) : '—'}`} />
       </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-3">
@@ -257,9 +263,9 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
           <div className="space-y-4 text-xs">
             <RiskRow label="Daily Loss Limit" value={`-${risk.dailyLimit.toFixed(2)}%`} />
             <RiskRow label="Risk Per Trade" value={`${risk.riskPerTrade.toFixed(2)}%`} />
-            <RiskRow label="Open Positions" value={`${summary?.positions.length ?? '—'} / ${risk.maxPositions}`} />
+            <RiskRow label="Open Positions" value={`${nsePositions.length} / ${risk.maxPositions}`} />
             <RiskRow label="Account Exposure" value={exposure == null ? '—' : `${exposure.toFixed(1)}%`} />
-            <RiskRow label="Free Margin" value={metrics ? money(metrics.totalFreeMargin, currency) : '—'} />
+            <RiskRow label="Free Margin" value={nseAccount ? money(freeMargin, nseAccount.currency) : '—'} />
           </div>
         </div>
       </section>
