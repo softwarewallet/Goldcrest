@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { executeRun, executeTransaction } from '../database/db';
 
-export type ExecutionIntentState = 'PENDING' | 'IN_FLIGHT' | 'COMPLETED' | 'FAILED';
+export type ExecutionIntentState = 'PENDING' | 'IN_FLIGHT' | 'RECONCILIATION_TIMEOUT' | 'COMPLETED' | 'FAILED';
 
 export interface ExecutionIntentRecord {
   idempotencyKey: string;
