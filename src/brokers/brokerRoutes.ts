@@ -8,7 +8,7 @@ import { BrokerAdapter, BrokerType, NormalizedPosition, NormalizedQuote, Trading
 import { normalizeBrokerError } from './errors';
 import { reconciliationService } from '../services/reconciliationService';
 import { getForexSessionState, getIndianSessionState } from '../markets/common/session';
-import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../services/executionIntentService';
+import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight, getExecutionIntent, resumeExecutionIntentReconciliation } from '../services/executionIntentService';
 import { reconcileExecutionIntent } from '../services/executionReconciliationService';
 import { getSystemConfig } from '../services/configService';
 
@@ -317,6 +317,39 @@ brokerRouter.get('/orders', async (_req: Request, res: Response) => {
     }
   }));
   res.json(results.flat());
+});
+
+brokerRouter.get('/execution/:idempotencyKey', async (req: Request, res: Response) => {
+  try {
+    const key = String(req.params.idempotencyKey || '').trim();
+    if (!key) return res.status(400).json({ error: 'Missing idempotency key.' });
+    const intent = await getExecutionIntent(key);
+    if (!intent) return res.status(404).json({ error: 'Execution intent not found.' });
+    res.json({
+      ...intent,
+      operatorActionRequired: intent.state === 'RECONCILIATION_TIMEOUT' || Boolean((intent.result as any)?.operatorActionRequired),
+      reconciliationState: (intent.result as any)?.reconciliationState || intent.state
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to load execution intent.' });
+  }
+});
+
+brokerRouter.post('/execution/:idempotencyKey/retry-reconciliation', async (req: Request, res: Response) => {
+  try {
+    const key = String(req.params.idempotencyKey || '').trim();
+    if (!key) return res.status(400).json({ error: 'Missing idempotency key.' });
+    const intent = await getExecutionIntent(key);
+    if (!intent) return res.status(404).json({ error: 'Execution intent not found.' });
+    if (intent.state !== 'RECONCILIATION_TIMEOUT') {
+      return res.status(409).json({ error: 'Execution intent is not in RECONCILIATION_TIMEOUT state.', state: intent.state });
+    }
+    await resumeExecutionIntentReconciliation(key);
+    void reconcileExecutionIntent(key);
+    res.json({ success: true, idempotencyKey: key, state: 'IN_FLIGHT' });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to resume reconciliation.' });
+  }
 });
 
 brokerRouter.post('/order', async (req: Request, res: Response) => {
