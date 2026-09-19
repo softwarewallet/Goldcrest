@@ -11,6 +11,7 @@ interface GlobalAppShellProps {
   children: React.ReactNode;
   header: React.ReactNode;
   indianSession: IndianSessionState;
+  indianUnderlyings: any[];
 }
 
 const nav = [
@@ -25,7 +26,7 @@ const nav = [
 ];
 
 export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
-  activeTab, setActiveTab, children, header, indianSession
+  activeTab, setActiveTab, children, header, indianSession, indianUnderlyings
 }) => {
   const [dashboardOpen, setDashboardOpen] = useState(true);
   const isDashboard = activeTab === 'forex_terminal' || activeTab === 'market';
@@ -33,6 +34,17 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
   const goDashboard = (tab: 'forex_terminal' | 'market') => {
     setDashboardOpen(true);
     setActiveTab(tab);
+  };
+
+  const getIndex = (symbol: string) => {
+    const item = indianUnderlyings.find((u: any) => String(u?.symbol || '').toUpperCase() === symbol);
+    const spot = Number(item?.spot ?? item?.currentPrice);
+    const changePercent = Number(item?.changePercent ?? item?.changePct);
+    return {
+      spot: Number.isFinite(spot) ? spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—',
+      change: Number.isFinite(changePercent) ? `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%` : '—',
+      positive: !Number.isFinite(changePercent) || changePercent >= 0
+    };
   };
 
   return (
@@ -136,23 +148,23 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
       >
         <div className="flex items-center gap-2 whitespace-nowrap min-w-[250px]">
           <span className="text-slate-300">NIFTY 50</span>
-          <span className="text-emerald-400 font-semibold">—</span>
-          <span className="text-emerald-400">▲ —</span>
+          <span className="text-emerald-400 font-semibold">{getIndex('NIFTY').spot}</span>
+          <span className={getIndex('NIFTY').positive ? 'text-emerald-400' : 'text-rose-400'}>{getIndex('NIFTY').positive ? '▲' : '▼'} {getIndex('NIFTY').change}</span>
         </div>
         <div className="flex items-center gap-2 whitespace-nowrap min-w-[250px]">
           <span className="text-slate-300">BANKNIFTY</span>
-          <span className="text-emerald-400 font-semibold">—</span>
-          <span className="text-emerald-400">▲ —</span>
+          <span className="text-emerald-400 font-semibold">{getIndex('BANKNIFTY').spot}</span>
+          <span className={getIndex('BANKNIFTY').positive ? 'text-emerald-400' : 'text-rose-400'}>{getIndex('BANKNIFTY').positive ? '▲' : '▼'} {getIndex('BANKNIFTY').change}</span>
         </div>
         <div className="flex items-center gap-2 whitespace-nowrap min-w-[250px]">
           <span className="text-slate-300">SENSEX</span>
-          <span className="text-emerald-400 font-semibold">—</span>
-          <span className="text-emerald-400">▲ —</span>
+          <span className="text-emerald-400 font-semibold">{getIndex('SENSEX').spot}</span>
+          <span className={getIndex('SENSEX').positive ? 'text-emerald-400' : 'text-rose-400'}>{getIndex('SENSEX').positive ? '▲' : '▼'} {getIndex('SENSEX').change}</span>
         </div>
         <div className="flex items-center gap-2 whitespace-nowrap min-w-[250px]">
           <span className="text-slate-300">FINNIFTY</span>
-          <span className="text-emerald-400 font-semibold">—</span>
-          <span className="text-emerald-400">▲ —</span>
+          <span className="text-emerald-400 font-semibold">{getIndex('FINNIFTY').spot}</span>
+          <span className={getIndex('FINNIFTY').positive ? 'text-emerald-400' : 'text-rose-400'}>{getIndex('FINNIFTY').positive ? '▲' : '▼'} {getIndex('FINNIFTY').change}</span>
         </div>
         <div className="ml-auto flex items-center gap-2 whitespace-nowrap">
           <span className={`w-2 h-2 rounded-full ${
