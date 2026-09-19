@@ -9,6 +9,7 @@ import { TradingControlCenter } from './components/TradingControlCenter';
 import { PerformanceResearchCenterView } from './components/PerformanceResearchCenterView';
 import { SettingsHub } from './components/SettingsHub';
 import { TerminalDashboard } from './components/TerminalDashboard';
+import { ForexTerminalDashboard } from './components/ForexTerminalDashboard';
 import { SignalModal } from './components/SignalModal';
 import { DiagnosticsModal } from './components/DiagnosticsModal';
 import { EnvironmentSwitchModal } from './components/EnvironmentSwitchModal';
@@ -290,6 +291,25 @@ export default function App() {
           signals={signals}
           onSelectSignal={(sig) => setSelectedSignal(sig)}
         />
+      ) : activeTab === 'forex_terminal' ? (
+        <ForexTerminalDashboard
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          forexSessions={forexSessions}
+          selectedBroker={selectedBroker}
+          environment={environment}
+          maskedAccount={maskedAccount}
+          balance={balance}
+          currency={currency}
+          isEmergencyHalted={isEmergencyHalted}
+          isRefreshing={isRefreshing}
+          onRefresh={refreshTerminalData}
+          onToggleKillSwitch={handleToggleKillSwitch}
+          candlesMap={candlesMap}
+          forexPairs={forexPairs}
+          signals={signals}
+          onSelectSignal={(sig) => setSelectedSignal(sig)}
+        />
       ) : (
         <Header
           activeTab={activeTab}
@@ -309,7 +329,7 @@ export default function App() {
       )}
 
       {/* Main Terminal Viewport */}
-      {activeTab !== 'market' && (
+      {activeTab !== 'market' && activeTab !== 'forex_terminal' && (
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 space-y-4" style={{ paddingTop: '5px', paddingBottom: '5px' }}>
         {loadingInitial ? (
           <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 font-mono">
