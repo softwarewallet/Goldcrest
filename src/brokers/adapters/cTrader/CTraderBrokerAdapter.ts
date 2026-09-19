@@ -702,40 +702,72 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async modifyOrder(orderId: string, modifications: OrderModification): Promise<NormalizedOrder> {
+    this.syncConfig();
     this.validateCredentials();
-    const order = this.openOrders.get(orderId);
-    if (!order) {
-      throw new BrokerError('ORDER_REJECTED', `Order ${orderId} not found in cTrader`, 'CTRADER', this.environment);
+    if (!this.isLive) throw new BrokerError('ENVIRONMENT_MISMATCH', 'cTrader lifecycle actions require LIVE.', 'CTRADER', this.environment);
+    const raw = await this.resolveRawAccount();
+    const brokerId = Number(String(orderId).replace(/^ctrader-/, ''));
+    if (!Number.isSafeInteger(brokerId) || brokerId <= 0) throw new BrokerError('ORDER_REJECTED', 'Invalid cTrader broker order ID.', 'CTRADER', this.environment);
+
+    const state = await fetchCTraderReconcileState(raw.ctidTraderAccountId, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+    const brokerOrder = state.orders.find((o: any) => Number(o.orderId) === brokerId);
+    if (!brokerOrder) throw new BrokerError('ORDER_REJECTED', 'cTrader pending order was not found in authoritative broker state.', 'CTRADER', this.environment);
+
+    const result = await amendLiveCTraderOrder(raw.ctidTraderAccountId, brokerId, {
+      volume: modifications.quantity,
+      limitPrice: modifications.price,
+      stopPrice: modifications.price,
+      stopLoss: modifications.stopLoss,
+      takeProfit: modifications.takeProfit
+    }, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+
+    if (![2,3,4].includes(result.executionType)) {
+      throw new BrokerError('ORDER_REJECTED', 'cTrader did not confirm the order amendment.', 'CTRADER', this.environment);
     }
 
-    if (modifications.price !== undefined) order.price = modifications.price;
-    if (modifications.stopLoss !== undefined) order.stopLoss = modifications.stopLoss;
-    if (modifications.takeProfit !== undefined) order.takeProfit = modifications.takeProfit;
-
-    this.logAction('MODIFY_ORDER', 'SUCCESS', this.config.accountId || '', { orderId });
-    return order;
+    const refreshed = await this.getOpenOrders();
+    const updated = refreshed.find(o => Number(o.brokerOrderId) === brokerId);
+    if (updated) return updated;
+    throw new BrokerError('ORDER_REJECTED', 'cTrader accepted the amendment but authoritative order state did not contain the order.', 'CTRADER', this.environment);
   }
 
   async cancelOrder(orderId: string): Promise<boolean> {
+    this.syncConfig();
     this.validateCredentials();
-    const order = this.openOrders.get(orderId);
-    if (!order) return false;
-    order.status = 'CANCELLED';
-    this.logAction('CANCEL_ORDER', 'SUCCESS', this.config.accountId || '', { orderId });
+    if (!this.isLive) throw new BrokerError('ENVIRONMENT_MISMATCH', 'cTrader lifecycle actions require LIVE.', 'CTRADER', this.environment);
+    const raw = await this.resolveRawAccount();
+    const brokerId = Number(String(orderId).replace(/^ctrader-/, ''));
+    if (!Number.isSafeInteger(brokerId) || brokerId <= 0) throw new BrokerError('ORDER_REJECTED', 'Invalid cTrader broker order ID.', 'CTRADER', this.environment);
+
+    const state = await fetchCTraderReconcileState(raw.ctidTraderAccountId, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+    if (!state.orders.some((o: any) => Number(o.orderId) === brokerId)) return false;
+
+    const result = await cancelLiveCTraderOrder(raw.ctidTraderAccountId, brokerId, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+    if (result.executionType !== 5) throw new BrokerError('ORDER_REJECTED', 'cTrader did not confirm order cancellation.', 'CTRADER', this.environment);
     return true;
   }
 
   async closePosition(positionId: string, quantity?: number): Promise<boolean> {
+    this.syncConfig();
     this.validateCredentials();
-    const pos = this.openPositions.get(positionId);
-    if (!pos) return false;
-    this.openPositions.delete(positionId);
-    this.logAction('CLOSE_POSITION', 'SUCCESS', this.config.accountId || '', {
-      symbol: pos.symbol,
-      quantity: quantity || pos.quantity
-    });
+    if (!this.isLive) throw new BrokerError('ENVIRONMENT_MISMATCH', 'cTrader lifecycle actions require LIVE.', 'CTRADER', this.environment);
+    const raw = await this.resolveRawAccount();
+    const brokerId = Number(String(positionId).replace(/^ctrader-/, ''));
+    if (!Number.isSafeInteger(brokerId) || brokerId <= 0) throw new BrokerError('ORDER_REJECTED', 'Invalid cTrader position ID.', 'CTRADER', this.environment);
+
+    const state = await fetchCTraderReconcileState(raw.ctidTraderAccountId, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+    const position = state.positions.find((p: any) => Number(p.positionId) === brokerId);
+    if (!position) return false;
+    const rawVolume = Number(position.tradeData?.volume ?? position.volume ?? 0);
+    const available = rawVolume / 100;
+    const closeQty = quantity === undefined ? available : Math.min(Number(quantity), available);
+    if (!Number.isFinite(closeQty) || closeQty <= 0) throw new BrokerError('INVALID_QUANTITY', 'Invalid cTrader close quantity.', 'CTRADER', this.environment);
+
+    const result = await closeLiveCTraderPosition(raw.ctidTraderAccountId, brokerId, closeQty, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+    if (![2,3,11].includes(result.executionType)) throw new BrokerError('ORDER_REJECTED', 'cTrader did not confirm the position close request.', 'CTRADER', this.environment);
     return true;
   }
+
 
   async getOrderStatus(orderId: string): Promise<NormalizedOrder> {
     this.validateCredentials();
