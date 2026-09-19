@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BarChart3, ChevronDown, Clock3, ExternalLink, Info, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
+import { BarChart3, Info, RefreshCw, Search } from 'lucide-react';
 import { Candle, ForexSessionState, TradingSignal } from '../markets/common/types';
 import { BrokerType, OrderRequest, TradingEnvironment } from '../brokers/types';
 
