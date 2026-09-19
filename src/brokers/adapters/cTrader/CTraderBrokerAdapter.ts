@@ -855,7 +855,10 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     if (liveOrder) {
       const orders = await this.getOpenOrders();
       const normalized = orders.find(o => Number(o.brokerOrderId) === brokerId);
-      if (normalized) return normalized;
+      // A pending order has no execution events to reconcile. Once any volume
+      // is filled, continue to the authoritative deal ledger so every broker
+      // execution can be persisted by its native deal ID.
+      if (normalized && Number(normalized.filledQuantity || 0) <= 0) return normalized;
     }
 
     const deals = await fetchCTraderDeals(raw.ctidTraderAccountId, Date.now() - 7 * 24 * 60 * 60 * 1000, Date.now(), this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
