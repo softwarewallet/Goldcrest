@@ -13,7 +13,7 @@ import { ConsolidationEngine, FXRateProvider } from '../accounting/index.ts';
 
 // Safety invariant: research/operations code must never derive this from an environment variable.
 // The system-wide autonomous live-money execution hard-lock is authoritative and immutable.
-export const LIVE_AUTO_EXECUTION_ALLOWED = LIVE_AUTO_EXECUTION_ALLOWED_INVARIANT;
+export const LIVE_AUTO_EXECUTION_ALLOWED: boolean = LIVE_AUTO_EXECUTION_ALLOWED_INVARIANT;
 
 export class LiveTradingGate {
   public static verifySafetyInvariant(): void {
