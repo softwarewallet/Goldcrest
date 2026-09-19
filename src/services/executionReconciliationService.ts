@@ -150,6 +150,11 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
     }
 
     const age = Date.now() - Number(row.created_at || Date.now());
+    if (String(row.state) === 'RECONCILIATION_TIMEOUT' && TERMINAL_STATES.includes(status.status)) {
+      merged.reconciliationState = 'RESOLVED_AFTER_TIMEOUT';
+      merged.operatorActionRequired = false;
+      merged.resolvedAfterTimeoutAt = Date.now();
+    }
     if (age >= MAX_AGE_MS && !TERMINAL_STATES.includes(status.status)) {
       const timedOut = {
         ...merged,
