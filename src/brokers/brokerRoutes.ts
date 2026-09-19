@@ -305,6 +305,11 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       const quantity = Number(position.quantity || 0);
       return sum + (price > 0 && quantity > 0 ? price * quantity : 0);
     }, 0);
+    const proposedReferencePrice = Number(orderReq.price || (orderReq.side === 'BUY' ? quote.ask : quote.bid) || 0);
+    const proposedExposure = proposedReferencePrice > 0 && orderReq.quantity > 0
+      ? proposedReferencePrice * Number(orderReq.quantity)
+      : 0;
+    const totalExposureIncludingOrder = currentExposure + proposedExposure;
     const maxAllowedExposure = Math.max(Number(account.equity || 0), 1);
     const dailyLossLimit = Math.max(
       Number(account.balance || 0) * (Number(getSystemConfig().maxDailyLossPct) / 100),
@@ -318,7 +323,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       isMarketOpen,
       dailyRealizedLoss: await reconciliationService.getDailyLoss(broker, Number(account.balance || 0)),
       dailyLossLimit,
-      totalAccountExposure: currentExposure,
+      totalAccountExposure: totalExposureIncludingOrder,
       maxAllowedExposure,
       activePositionsCount: positions.length,
       maxOpenPositions: 5
