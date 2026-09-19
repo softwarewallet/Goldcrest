@@ -237,6 +237,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     }
 
     setIsPlacingOrder(true);
+    const idempotencyKey = globalThis.crypto.randomUUID();
     addLog('info', `Routing manual order: ${side} ${quantity} ${symbol} via ${market} gateway...`);
 
     try {
@@ -249,13 +250,15 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         price: orderType === 'LIMIT' && price ? Number(price) : undefined,
         stopLoss: stopLoss ? Number(stopLoss) : undefined,
         takeProfit: takeProfit ? Number(takeProfit) : undefined,
-        environment
+        environment,
+        signalId: idempotencyKey
       };
 
       const res = await fetch('/api/brokers/order', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': idempotencyKey
         },
         body: JSON.stringify(payload)
       });
@@ -266,7 +269,11 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         throw new Error(data.error || data.reason || 'Failed to execute order');
       }
 
-      addLog('success', `ORDER COMPLETED SUCCESSFULLY: Ref ID ${data.order?.id || 'sys-tx'} - Dispatched to ${data.broker || 'Live Adapter'}`);
+      const executionStatus = String(data.order?.status || data.executionState || 'UNKNOWN').toUpperCase();
+      addLog(
+        executionStatus === 'FILLED' ? 'success' : 'info',
+        `ORDER ${executionStatus}: Ref ID ${data.order?.id || data.executionId || idempotencyKey} - Dispatched to ${data.broker || 'Live Adapter'}`
+      );
       
       // Instantly trigger re-fetch to show new position/orders
       fetchRealPositions();
@@ -335,6 +342,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   // Execute immediate order placement directly from a planned signal
   const triggerSignalExecution = async (signal: RealSignal) => {
     addLog('nlp', `[SIGNAL DISPATCH] Operator selected immediate override execution for ${signal.instrument}`);
+    const idempotencyKey = `${signal.id}:${globalThis.crypto.randomUUID()}`;
     try {
       const payload = {
         market: signal.market,
@@ -344,12 +352,16 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         quantity: signal.market === 'FOREX' ? 10000 : 25,
         stopLoss: signal.stopLoss,
         takeProfit: signal.target1,
-        environment
+        environment,
+        signalId: idempotencyKey
       };
 
       const res = await fetch('/api/brokers/order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': idempotencyKey
+        },
         body: JSON.stringify(payload)
       });
 
@@ -358,7 +370,11 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         throw new Error(data.error || 'Signal trigger submission rejected');
       }
 
-      addLog('success', `SIGNAL EXECUTED SUCCESSFULLY: Order filled for ${signal.instrument}`);
+      const executionStatus = String(data.order?.status || data.executionState || 'UNKNOWN').toUpperCase();
+      addLog(
+        executionStatus === 'FILLED' ? 'success' : 'info',
+        `SIGNAL ORDER ${executionStatus}: ${signal.instrument} - Ref ID ${data.order?.id || data.executionId || idempotencyKey}`
+      );
       fetchRealPositions();
     } catch (err: any) {
       addLog('error', `Failed to dispatch signal order: ${err.message}`);
