@@ -121,6 +121,12 @@ export class LiveTradingGate {
       failedReasons.push('Condition 13 Failed: Unable to verify existing positions.');
     }
 
+    // Check 13B: Maximum number of simultaneous live positions.
+    const maxOpenPositionsCheckPassed = params.activePositionsCount < params.maxOpenPositions;
+    if (!maxOpenPositionsCheckPassed) {
+      failedReasons.push(`Condition 13B Failed: Maximum open live positions (${params.maxOpenPositions}) reached.`);
+    }
+
     // Check 14: Order parameters validated
     const orderParametersValidated = Boolean(params.order.market && params.order.symbol && params.order.side && params.order.orderType);
     if (!orderParametersValidated) {
