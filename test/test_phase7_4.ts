@@ -100,25 +100,23 @@ export async function runPhase7_4TestSuite() {
     accessToken: 'token_p74_raw_4321',
     accountId: '555666777'
   });
-  let statuses = brokerRegistry.getCredentialStatuses();
-  let cStatus = statuses.find(s => s.broker === 'CTRADER' && s.environment === 'DEMO');
-  assert.strictEqual(cStatus?.configured, true);
-  assert.strictEqual(cStatus?.maskedClientId, '****ient');
-  assert.strictEqual(cStatus?.maskedAccountId, '****6777');
+  const demoCredentialStatus = () => (ctraderAdapter as any).getConfigStatus();
+  let cStatus = demoCredentialStatus();
+  assert.strictEqual(cStatus.configured, true);
+  assert.strictEqual(cStatus.maskedClientId, '****ient');
+  assert.strictEqual(cStatus.maskedAccountId, '****6777');
 
   // Verify partial update does NOT overwrite existing credentials
   brokerRegistry.updateDemoCredentials('CTRADER', {
     clientId: ''
   });
-  statuses = brokerRegistry.getCredentialStatuses();
-  cStatus = statuses.find(s => s.broker === 'CTRADER' && s.environment === 'DEMO');
-  assert.strictEqual(cStatus?.configured, true, 'Partial blank update did not clear existing credentials');
+  cStatus = demoCredentialStatus();
+  assert.strictEqual(cStatus.configured, true, 'Partial blank update did not clear existing credentials');
 
   // Delete credentials test
   brokerRegistry.deleteCredentials('CTRADER', 'DEMO');
-  statuses = brokerRegistry.getCredentialStatuses();
-  cStatus = statuses.find(s => s.broker === 'CTRADER' && s.environment === 'DEMO');
-  assert.strictEqual(cStatus?.configured, false, 'Delete credentials cleared status');
+  cStatus = demoCredentialStatus();
+  assert.strictEqual(cStatus.configured, false, 'Delete credentials cleared status');
 
   // Re-configure for downstream tests
   brokerRegistry.updateDemoCredentials('CTRADER', {
