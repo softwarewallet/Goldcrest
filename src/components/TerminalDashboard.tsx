@@ -256,14 +256,14 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
             <span className="text-slate-700">|</span>
             <span>ENVIRONMENT: <b className="text-rose-400">LIVE</b></span>
             <span className="text-slate-700">|</span>
-            <span>EXECUTION: <b className="text-emerald-400">AUTO (LIVE)</b></span>
+            <span>EXECUTION: <b className="text-amber-400">AUTO-READINESS (LOCKED)</b></span>
             <span className="text-slate-700">|</span>
             <span>DATA: <b className="text-emerald-400">FRESH (LIVE)</b></span>
             <span className="text-slate-700">|</span>
             <span className="text-emerald-400">● CLOCK: 1s REALTIME</span>
           </div>
           <div className="hidden xl:flex items-center gap-1 rounded border border-rose-700 bg-rose-950/50 px-2 py-1 text-rose-300 font-bold">
-            <ShieldCheck className="w-3 h-3" /> LIVE TRADING ({maskedAccount})
+            <ShieldCheck className="w-3 h-3" /> LIVE ACCOUNT ({maskedAccount})
           </div>
         </div>
 
