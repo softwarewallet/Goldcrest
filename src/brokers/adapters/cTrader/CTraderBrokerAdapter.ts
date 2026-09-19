@@ -72,9 +72,16 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
    */
   protected syncConfig(): void {
     const globalConfig = getSystemConfig();
-    // If the global config has a selected account ID, override the adapter's accountId
+    // If the global config has a selected account ID, override the adapter's accountId.
+    // Conversion metadata is account-scoped, so invalidate it if the selected
+    // account changes during the lifetime of this adapter instance.
     if (globalConfig.selectedCtraderAccountId) {
+      const previousAccountId = this.config.accountId;
       this.config.accountId = globalConfig.selectedCtraderAccountId;
+      if (previousAccountId !== this.config.accountId) {
+        this.conversionAssetCache = null;
+        this.conversionChainCache.clear();
+      }
     }
   }
 
