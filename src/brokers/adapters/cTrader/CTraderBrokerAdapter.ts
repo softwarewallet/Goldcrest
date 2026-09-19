@@ -519,10 +519,21 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     );
     return deals.reduce((sum: number, deal: any) => {
       const detail = deal.closePositionDetail || deal.closePositionDetails;
-      const gross = Number(detail?.grossProfit ?? detail?.profit ?? deal.grossProfit ?? deal.profit ?? 0);
-      const commission = Number(detail?.commission ?? deal.commission ?? 0);
-      const swap = Number(detail?.swap ?? deal.swap ?? 0);
-      return sum + (Number.isFinite(gross) ? gross : 0) + (Number.isFinite(commission) ? commission : 0) + (Number.isFinite(swap) ? swap : 0);
+      if (!detail) return sum;
+
+      // cTrader Open API exposes monetary values in integer units. The
+      // close-position detail's moneyDigits specifies the decimal exponent
+      // required to convert them into deposit-currency amounts.
+      const moneyDigits = Number(detail.moneyDigits ?? deal.moneyDigits ?? 0);
+      const divisor = Number.isInteger(moneyDigits) && moneyDigits > 0 ? 10 ** moneyDigits : 1;
+      const gross = Number(detail.grossProfit ?? detail.profit ?? 0) / divisor;
+      const commission = Number(detail.commission ?? 0) / divisor;
+      const swap = Number(detail.swap ?? 0) / divisor;
+
+      return sum
+        + (Number.isFinite(gross) ? gross : 0)
+        + (Number.isFinite(commission) ? commission : 0)
+        + (Number.isFinite(swap) ? swap : 0);
     }, 0);
   }
 
