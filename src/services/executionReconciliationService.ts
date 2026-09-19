@@ -5,7 +5,8 @@ import { BrokerType, NormalizedOrder, OrderStatus } from '../brokers/types';
 import { normalizeBrokerError } from '../brokers/errors';
 import {
   completeExecutionIntent,
-  failExecutionIntent
+  failExecutionIntent,
+  markExecutionIntentReconciliationTimeout
 } from './executionIntentService';
 
 const TERMINAL_STATES: OrderStatus[] = ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'];
@@ -26,7 +27,7 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
     [idempotencyKey]
   );
   const row = rows[0];
-  if (!row || !['PENDING', 'IN_FLIGHT'].includes(String(row.state))) return null;
+  if (!row || !['PENDING', 'IN_FLIGHT', 'RECONCILIATION_TIMEOUT'].includes(String(row.state))) return null;
 
   const stored = parseResult(row.result_json);
   const brokerOrderId = brokerOrderIdFromResult(stored);
@@ -148,6 +149,19 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
       );
     }
 
+    const age = Date.now() - Number(row.created_at || Date.now());
+    if (age >= MAX_AGE_MS && !TERMINAL_STATES.includes(status.status)) {
+      const timedOut = {
+        ...merged,
+        reconciliationTimedOutAt: merged.reconciliationTimedOutAt || Date.now(),
+        reconciliationTimeoutAgeMs: age,
+        reconciliationState: 'RECONCILIATION_TIMEOUT',
+        operatorActionRequired: true
+      };
+      await markExecutionIntentReconciliationTimeout(idempotencyKey, timedOut);
+      return null;
+    }
+
     if (status.status === 'FILLED') {
       // A terminal FILLED state is only durable when the cumulative fill is
       // consistent with the requested quantity. If the broker reports FILLED
@@ -191,6 +205,11 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
 
     if (age >= MAX_AGE_MS) {
       merged.reconciliationTimedOutAt = merged.reconciliationTimedOutAt || Date.now();
+      merged.reconciliationTimeoutAgeMs = age;
+      merged.reconciliationState = 'RECONCILIATION_TIMEOUT';
+      merged.operatorActionRequired = true;
+      await markExecutionIntentReconciliationTimeout(idempotencyKey, merged);
+      return null;
     }
     await executeRun(
       'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?)',
@@ -202,8 +221,8 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
 
 export async function reconcileInFlightExecutionIntents(limit = 100): Promise<void> {
   const rows = await executeQuery<any>(
-    'SELECT idempotency_key FROM execution_intents WHERE state IN (?, ?) ORDER BY updated_at ASC LIMIT ?',
-    ['PENDING', 'IN_FLIGHT', limit]
+    'SELECT idempotency_key FROM execution_intents WHERE state IN (?, ?, ?) ORDER BY updated_at ASC LIMIT ?',
+    ['PENDING', 'IN_FLIGHT', 'RECONCILIATION_TIMEOUT', limit]
   );
   for (const row of rows) {
     try {
