@@ -538,8 +538,9 @@ export class BrokerExecutionCertifier {
           quantity: 100000
         });
       } catch (err: any) {
-        caught = (err instanceof BrokerError && (err.code === 'NOT_SUPPORTED' || (err.code as any) === 'UNSUPPORTED_ORDER_TYPE')) ||
-          (err?.message && String(err.message).toLowerCase().includes('support'));
+        caught =
+          err?.code === 'ENVIRONMENT_MISMATCH' &&
+          String(err?.message || '').includes('cTrader LIVE');
       }
 
       results.push({
