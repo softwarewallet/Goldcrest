@@ -37,6 +37,7 @@ import { LIVE_AUTO_EXECUTION_ALLOWED } from './src/brokers/safety/AutoExecutionE
 // Phase 5 Governance Engine
 import { governanceRouter } from './src/governance/governanceRoutes';
 import { reconciliationService } from './src/services/reconciliationService';
+import { reconcileInFlightExecutionIntents } from './src/services/executionReconciliationService';
 
 // Legacy demo execution is retired; LIVE_ONLY production mode is enforced by the server safety layer.
 import { brokerRegistry } from './src/brokers/registry';
@@ -871,8 +872,11 @@ async function startServer() {
   const server = app.listen(PORT, host, () => {
     console.log(`Goldcrest server listening on http://${host}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
     void captureLiveBrokerReconciliation();
+    void reconcileInFlightExecutionIntents();
     const reconciliationTimer = setInterval(() => void captureLiveBrokerReconciliation(), 5 * 60_000);
+    const executionLifecycleTimer = setInterval(() => void reconcileInFlightExecutionIntents(), 15_000);
     reconciliationTimer.unref?.();
+    executionLifecycleTimer.unref?.();
   });
 
   const shutdown = (signal: string) => {
