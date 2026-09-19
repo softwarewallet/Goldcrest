@@ -211,6 +211,8 @@ export interface BrokerAdapter {
   getOpenOrders(): Promise<NormalizedOrder[]>;
   getOrderHistory(): Promise<NormalizedOrder[]>;
   getQuote(symbol: string): Promise<NormalizedQuote>;
+  /** Optional broker-native conversion path for multi-currency exposure checks. */
+  getAccountCurrencyConversionRate?(fromCurrency: string, toCurrency: string): Promise<number>;
   getHistoricalCandles?(symbol: string, timeframe: string, limit: number): Promise<Array<{ open: number; high: number; low: number; close: number; volume: number; timestamp: number }>>;
   getInstrument(symbol: string): Promise<BrokerInstrument | null>;
   getInstruments(): Promise<BrokerInstrument[]>;
