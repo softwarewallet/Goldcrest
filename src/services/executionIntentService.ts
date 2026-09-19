@@ -96,3 +96,21 @@ export async function resumeExecutionIntentReconciliation(idempotencyKey: string
     ['IN_FLIGHT', Date.now(), idempotencyKey, 'RECONCILIATION_TIMEOUT']
   );
 }
+
+export async function getExecutionIntent(idempotencyKey: string): Promise<ExecutionIntentRecord | undefined> {
+  const rows = await import('../database/db').then(({ executeQuery }) =>
+    executeQuery<any>('SELECT * FROM execution_intents WHERE idempotency_key = ?', [idempotencyKey])
+  );
+  const row = rows[0];
+  if (!row) return undefined;
+  return {
+    idempotencyKey: row.idempotency_key,
+    broker: row.broker,
+    market: row.market,
+    symbol: row.symbol,
+    side: row.side,
+    state: row.state,
+    payload: JSON.parse(row.payload_json || 'null'),
+    result: row.result_json ? JSON.parse(row.result_json) : undefined
+  };
+}
