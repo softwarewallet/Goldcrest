@@ -41,30 +41,20 @@ async function convertForexNotionalToAccountCurrency(
   if (!currencies) throw new Error(`Unable to determine Forex currencies for ${symbol}.`);
   const target = String(accountCurrency || '').toUpperCase();
   if (!target) throw new Error('ACCOUNT_CURRENCY_UNAVAILABLE');
-
-  // Forex position quantity is denominated in base currency. Its notional in
-  // account currency is therefore base quantity converted through base/target.
   if (currencies.base === target) return notional;
 
-  const direct = currencies.base + '/' + target;
-  try {
-    const q = await adapter.getQuote(direct);
-    const rate = Number(q.bid || q.ask || 0);
-    if (rate > 0) return notional * rate;
-  } catch {
-    // Try the inverse pair below.
+  // cTrader exposes an authoritative native conversion-chain API for cases
+  // where no direct BASE/TARGET symbol exists. Do not fall back to guessed or
+  // synthetic cross-pairs on a live safety-gate path.
+  if (typeof adapter.getAccountCurrencyConversionRate !== 'function') {
+    throw new Error('BROKER_NATIVE_CURRENCY_CONVERSION_UNAVAILABLE');
   }
 
-  const inverse = target + '/' + currencies.base;
-  try {
-    const q = await adapter.getQuote(inverse);
-    const rate = Number(q.ask || q.bid || 0);
-    if (rate > 0) return notional / rate;
-  } catch {
-    // Conversion is intentionally fail-closed.
+  const rate = await adapter.getAccountCurrencyConversionRate(currencies.base, target);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    throw new Error(`Authoritative FX conversion returned an invalid rate for ${currencies.base} to ${target}.`);
   }
-
-  throw new Error(`Authoritative FX conversion unavailable for ${currencies.base} to ${target}.`);
+  return notional * rate;
 }
 
 async function calculateAccountCurrencyExposure(
