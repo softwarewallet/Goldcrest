@@ -154,6 +154,33 @@ export class ReconciliationService {
     }));
   }
 
+
+  /**
+   * Returns a conservative broker-balance-based loss measure for the current
+   * local calendar day. Balance excludes unrealized P/L, so a decline from the
+   * first authoritative snapshot of the day is treated as realized/net loss.
+   * If no baseline exists yet, the current balance is treated as the baseline.
+   */
+  public async getDailyLoss(broker: 'CTRADER' | 'FIVE_PAISA', currentBalance: number): Promise<number> {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const rows = await executeQuery<any>(
+      'SELECT account_json FROM broker_reconciliation_snapshots WHERE broker = ? AND environment = ? AND timestamp >= ? AND status = ? ORDER BY timestamp ASC LIMIT 1',
+      [broker, 'LIVE', startOfDay.getTime(), 'CAPTURED']
+    );
+    if (!rows.length) return 0;
+
+    let baselineBalance = Number.NaN;
+    try {
+      const account = JSON.parse(rows[0].account_json || '{}');
+      baselineBalance = Number(account?.balance);
+    } catch {
+      baselineBalance = Number.NaN;
+    }
+    if (!Number.isFinite(baselineBalance) || !Number.isFinite(currentBalance)) return 0;
+    return Math.max(0, baselineBalance - currentBalance);
+  }
+
   public getLocalRecord(id:string){ return this.localRecords.get(id); }
   public getAllLocalRecords(){ return Array.from(this.localRecords.values()); }
 
