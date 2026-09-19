@@ -1,22 +1,5 @@
 import React from 'react';
-import {
-  Activity,
-  ShieldAlert,
-  Cpu,
-  Database,
-  RefreshCw,
-  BarChart2,
-  Globe,
-  Cloud,
-  AlertOctagon,
-  Sliders,
-  DollarSign,
-  CheckSquare,
-  TrendingUp,
-  Target,
-  Layers,
-  Settings
-} from 'lucide-react';
+import { Activity, AlertOctagon, BarChart2, Database, Globe, RefreshCw, ShieldAlert } from 'lucide-react';
 import { ForexSessionState, IndianSessionState } from '../markets/common/types';
 import { BrokerType, TradingEnvironment } from '../brokers/types';
 import { BalanceDisplay } from './BalanceDisplay';
@@ -39,233 +22,142 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
-  setActiveTab,
   forexSessions,
   indianSession,
   onRefresh,
   isRefreshing,
   onOpenDiagnostics,
   environment,
-  onRequestEnvironmentChange,
-  selectedBroker,
   maskedAccount = '****',
   isEmergencyHalted,
   onToggleKillSwitch
 }) => {
-  // Primary unified application areas with direct Control Center, P&L and Operations navigation
-  const tabs = [
-    { id: 'market', label: 'MARKET', icon: TrendingUp },
-    { id: 'control_center', label: 'CONTROL CENTER', icon: Activity },
-    { id: 'signals', label: 'SIGNALS', icon: Target },
-    { id: 'trading', label: 'TRADING', icon: Layers },
-    { id: 'pnl', label: 'P&L & ACCOUNTING', icon: DollarSign },
-    { id: 'research', label: 'RESEARCH (CLOSED)', icon: Cpu },
-    { id: 'settings', label: 'SETTINGS', icon: Settings }
-  ];
-
   const isLive = environment === 'LIVE';
+  const activeArea =
+    activeTab === 'forex_terminal' ? 'FOREX' :
+    activeTab === 'market' ? 'MARKET' :
+    activeTab === 'control_center' ? 'ORDERS' :
+    activeTab === 'trading' ? 'POSITIONS' :
+    activeTab === 'signals' ? 'STRATEGY' :
+    activeTab === 'research' ? 'BACKTEST' :
+    activeTab === 'pnl' ? 'REPORTS' :
+    activeTab === 'settings' ? 'SETTINGS' : 'MARKET';
+
+  const fxOpen = forexSessions.activeSessions.length > 0 && !forexSessions.activeSessions.includes('CLOSED (WEEKEND)');
+  const fxLabel = forexSessions.activeSessions.length ? forexSessions.activeSessions.join(' / ') : 'CLOSED (WEEKEND)';
+  const nseOpen = indianSession.isOpen;
 
   return (
-    <header id="main_terminal_header" className="fixed top-0 left-[222px] right-0 z-40 bg-slate-900 border-b border-slate-800 text-slate-100 select-none">
-      {/* Emergency Halt Banner if Kill Switch is Triggered */}
-      {isEmergencyHalted && (
-        <div id="emergency_halt_banner" className="bg-rose-600 text-white px-4 py-2 text-xs font-mono font-bold flex items-center justify-between animate-pulse">
-          <div className="flex items-center space-x-2">
-            <AlertOctagon className="w-5 h-5 text-white" />
-            <span>TRADING HALTED: EMERGENCY STOP IS ACTIVE. NEW AUTOMATIC AND MANUAL ORDERS ARE BLOCKED.</span>
-          </div>
-          <button
-            onClick={onToggleKillSwitch}
-            className="px-3 py-1 bg-white text-rose-700 rounded font-bold hover:bg-rose-100 transition shadow"
-          >
-            RESUME TRADING
-          </button>
-        </div>
-      )}
-
-      {/* Global Telemetry Status Bar (Always Visible) */}
-      <div id="global_telemetry_bar" className="bg-slate-950 border-b border-slate-800/80 px-4 py-1 text-[11px] font-mono flex flex-wrap items-center justify-between gap-2 text-slate-400">
-        <div className="flex items-center space-x-3 truncate">
-          <span>ACTIVE AREA: <strong className="text-slate-200 uppercase">{activeTab}</strong></span>
+    <header
+      id="main_terminal_header"
+      className="fixed top-0 left-[222px] right-0 z-[50] h-[126px] bg-[#07101a] border-b border-slate-800 text-slate-100 select-none shadow-xl"
+    >
+      <div
+        id="global_telemetry_bar"
+        className="h-7 bg-[#020711] border-b border-slate-800/80 px-4 flex items-center justify-between gap-3 text-[10px] font-mono overflow-hidden"
+      >
+        <div className="flex items-center gap-3 whitespace-nowrap min-w-0">
+          <span>ACTIVE AREA: <b className="text-slate-200">{activeArea}</b></span>
           <span className="text-slate-700">|</span>
-          <span>BROKERS: <strong className="text-slate-200">cTrader + 5paisa</strong></span>
+          <span>BROKERS: <b className="text-slate-200">cTrader + 5paisa</b></span>
           <span className="text-slate-700">|</span>
-          <span>ENVIRONMENT: <strong className={isLive ? 'text-rose-400 font-bold' : environment === 'DEMO' ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>{environment}</strong></span>
+          <span>ENVIRONMENT: <b className="text-rose-400">LIVE</b></span>
           <span className="text-slate-700">|</span>
-          <span>EXECUTION: <strong className="text-emerald-400">AUTO (LIVE)</strong></span>
+          <span>EXECUTION: <b className="text-emerald-400">AUTO (LIVE)</b></span>
           <span className="text-slate-700">|</span>
-          <span>DATA: <strong className="text-emerald-400">FRESH ({environment})</strong></span>
+          <span>DATA: <b className="text-emerald-400">FRESH (LIVE)</b></span>
           <span className="text-slate-700">|</span>
-          <span className="inline-flex items-center space-x-1.5 text-emerald-400 font-semibold" title="Live 1-second clock auto-refreshes time dynamically without manual page refresh">
+          <span className="inline-flex items-center gap-1.5 text-emerald-400 font-semibold">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
             </span>
-            <span>CLOCK: <strong className="text-emerald-300">1s REALTIME</strong></span>
+            CLOCK: <b className="text-emerald-300">1S REALTIME</b>
           </span>
         </div>
-
-        {/* Global Persistent Live / Demo Tag */}
-        <div className="flex items-center space-x-2">
-          {isLive ? (
-            <div className="flex items-center space-x-1.5 bg-rose-950/90 text-rose-300 px-2 py-0.5 rounded border border-rose-600 font-bold animate-pulse">
-              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-              <span>LIVE TRADING</span>
-              <span className="text-rose-400">({maskedAccount})</span>
-            </div>
-          ) : environment === 'DEMO' ? (
-            <div className="flex items-center space-x-1.5 bg-amber-950/80 text-amber-300 px-2 py-0.5 rounded border border-amber-600 font-semibold">
-              <span>DEMO MODE</span>
-              <span className="text-amber-400">({maskedAccount})</span>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-1.5 bg-emerald-950/80 text-emerald-300 px-2 py-0.5 rounded border border-emerald-700 font-semibold">
-              <span>PAPER MODE</span>
-            </div>
-          )}
+        <div className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded border font-bold ${
+          isEmergencyHalted
+            ? 'bg-rose-600 border-rose-400 text-white animate-pulse'
+            : isLive
+              ? 'bg-rose-950/70 border-rose-700 text-rose-300'
+              : 'bg-amber-950/70 border-amber-700 text-amber-300'
+        }`}>
+          <ShieldAlert className="w-3 h-3" />
+          <span>{isEmergencyHalted ? 'TRADING HALTED' : isLive ? 'LIVE TRADING' : environment + ' MODE'}</span>
+          <span>({maskedAccount})</span>
         </div>
       </div>
 
-      {/* Main Navigation & Brand Bar */}
-      <div className="px-4 py-[1px] flex flex-wrap items-center justify-between gap-3">
-        {/* Brand & Market Session Info */}
-        <div className="flex items-center space-x-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold shadow-inner">
-              <BarChart2 className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold tracking-tight text-white leading-tight">
-                Goldcrest Finman - AI Trading
-              </h1>
-              <div className="text-[11px] text-slate-400 font-mono flex items-center space-x-2">
-                <span className="text-emerald-400 font-bold">PRODUCTION TERMINAL</span>
-              </div>
-            </div>
+      <div className="h-[99px] px-4 flex items-center gap-3 overflow-hidden">
+        <div className="flex items-center gap-3 min-w-[265px] shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shadow-inner">
+            <BarChart2 className="w-5 h-5 text-emerald-400" />
           </div>
-
-          {/* Dual LIVE broker balances: cTrader (Forex) + 5paisa (Indian markets) */}
-          <BalanceDisplay environment="LIVE" />
-
-          <div className="flex flex-col space-y-1.5 pl-0 border-l border-slate-800 text-xs font-mono">
-            {/* Forex Sessions Badge */}
-            {(() => {
-              const activeList = forexSessions.activeSessions || [];
-              const isFxOpen = !activeList.includes('CLOSED (WEEKEND)') && activeList.length > 0;
-              return (
-                <div
-                  id="header_fx_session_badge"
-                  title={isFxOpen ? `Forex Market Active: ${activeList.join(', ')}` : 'Forex Market Closed for Weekend'}
-                  className={`flex items-center space-x-1.5 px-2.5 py-0.5 rounded border transition ${
-                    isFxOpen ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
-                  }`}
-                >
-                  <Globe className={`w-3 h-3 ${isFxOpen ? 'text-emerald-400' : 'text-slate-400'}`} />
-                  <span className="text-slate-400 font-semibold">FX:</span>
-                  {isFxOpen ? (
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                  ) : (
-                    <span className="w-2 h-2 rounded-full bg-slate-500" />
-                  )}
-                  <span className="font-medium truncate max-w-[180px]">
-                    {activeList.join(' / ')} {isFxOpen ? '(OPEN)' : ''}
-                  </span>
-                </div>
-              );
-            })()}
-
-            {/* Indian Session Badge (NSE / IST) */}
-            {(() => {
-              const isNseOpen = indianSession.isOpen;
-              return (
-                <div
-                  id="header_nse_session_badge"
-                  title={`NSE Stock Market Hours: 09:15 - 15:30 IST. Current Phase: ${indianSession.currentPhase}`}
-                  className={`flex items-center space-x-1.5 px-2.5 py-0.5 rounded border transition ${
-                    isNseOpen ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
-                  }`}
-                >
-                  <Activity className={`w-3 h-3 ${isNseOpen ? 'text-emerald-400' : 'text-amber-400'}`} />
-                  <span className="text-slate-400 font-semibold">NSE:</span>
-                  {isNseOpen ? (
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                  ) : (
-                    <span className="w-2 h-2 rounded-full bg-amber-500/80" />
-                  )}
-                  <span className="font-medium">
-                    {indianSession.istTime || '09:15-15:30'} ({indianSession.currentPhase})
-                  </span>
-                </div>
-              );
-            })()}
+          <div>
+            <h1 className="text-base font-bold tracking-tight text-white leading-tight">Goldcrest Finman - AI Trading</h1>
+            <div className="text-[10px] text-emerald-400 font-bold font-mono mt-1">PRODUCTION TERMINAL</div>
           </div>
         </div>
 
-        {/* Right Controls: Emergency Stop, Refresh, Settings, Local DB */}
-        <div className="flex items-center space-x-2">
-          {/* Global Kill Switch Button */}
+        <div className="shrink-0">
+          <BalanceDisplay environment="LIVE" />
+        </div>
+
+        <div className="flex flex-col gap-1.5 min-w-[210px] shrink-0">
+          <div
+            id="header_fx_session_badge"
+            className={`h-7 flex items-center gap-1.5 px-2.5 rounded border text-[10px] font-mono ${
+              fxOpen ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+            }`}
+          >
+            <Globe className={`w-3 h-3 ${fxOpen ? 'text-emerald-400' : 'text-slate-500'}`} />
+            <span className="text-slate-400 font-semibold">FX:</span>
+            <span className={`w-2 h-2 rounded-full ${fxOpen ? 'bg-emerald-500' : 'bg-slate-500'}`} />
+            <span className="truncate">{fxLabel}</span>
+          </div>
+          <div
+            id="header_nse_session_badge"
+            className={`h-7 flex items-center gap-1.5 px-2.5 rounded border text-[10px] font-mono ${
+              nseOpen ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+            }`}
+          >
+            <Activity className={`w-3 h-3 ${nseOpen ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <span className="text-slate-400 font-semibold">NSE:</span>
+            <span className={`w-2 h-2 rounded-full ${nseOpen ? 'bg-emerald-500' : 'bg-amber-500/80'}`} />
+            <span>{indianSession.istTime || '—'} ({indianSession.currentPhase})</span>
+          </div>
+        </div>
+
+        <div className="ml-auto flex items-center gap-2 shrink-0">
           <button
             id="btn_emergency_stop"
             onClick={onToggleKillSwitch}
-            className={`flex items-center p-2 rounded text-xs font-bold font-mono transition border ${
-              isEmergencyHalted
-                ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500 animate-pulse'
-                : 'bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border-rose-800'
+            title={isEmergencyHalted ? 'Resume trading' : 'Emergency stop'}
+            className={`w-9 h-9 rounded border flex items-center justify-center transition ${
+              isEmergencyHalted ? 'bg-rose-600 border-rose-400 text-white animate-pulse' : 'bg-rose-950/40 border-rose-800 text-rose-300 hover:bg-rose-900/60'
             }`}
-            title={isEmergencyHalted ? "System Halted - Click to Resume" : "Trigger Emergency Stop: Cancels pending orders, halts new orders"}
           >
             <AlertOctagon className="w-4 h-4" />
           </button>
-
           <button
             id="btn_terminal_refresh"
             onClick={onRefresh}
             disabled={isRefreshing}
-            className="flex items-center p-2 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
-            title="Refresh Quotes and Signals"
+            title="Refresh quotes and signals"
+            className="w-9 h-9 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 flex items-center justify-center"
           >
-            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-emerald-400' : 'text-slate-300'}`} />
           </button>
-
           <button
             id="btn_open_diagnostics"
             onClick={onOpenDiagnostics}
-            className="flex items-center p-2 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
-            title="SQLite Database & System Diagnostics"
+            title="SQLite database and system diagnostics"
+            className="w-9 h-9 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 flex items-center justify-center"
           >
             <Database className="w-4 h-4 text-cyan-400" />
           </button>
         </div>
       </div>
-
-      {/* Primary Unified Navigation Bar (6 Core Areas) */}
-      <nav id="terminal_nav_tabs" className="flex items-center space-x-1 px-4 border-t border-slate-800/80 bg-slate-950/50 overflow-x-auto">
-        {tabs.map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              id={`tab_nav_${tab.id}`}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center space-x-2 px-5 py-2.5 text-xs font-bold tracking-wide transition border-b-2 whitespace-nowrap ${
-                isActive
-                  ? 'border-emerald-500 text-emerald-400 bg-slate-900/90'
-                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-slate-900/40'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </nav>
     </header>
   );
 };
