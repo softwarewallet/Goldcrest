@@ -35,7 +35,8 @@ export const Header: React.FC<HeaderProps> = ({
   const isLive = environment === 'LIVE';
   const activeArea =
     activeTab === 'forex_terminal' ? 'FOREX' :
-    activeTab === 'market' ? 'MARKET' :
+    activeTab === 'market' ? 'NSE' :
+    activeTab === 'market_watch' ? 'MARKET WATCH' :
     activeTab === 'control_center' ? 'ORDERS' :
     activeTab === 'trading' ? 'POSITIONS' :
     activeTab === 'signals' ? 'STRATEGY' :
@@ -50,7 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header
       id="main_terminal_header"
-      className="fixed top-0 left-[222px] right-0 z-[50] h-[126px] bg-[#07101a] border-b border-slate-800 text-slate-100 select-none shadow-xl"
+      className="fixed top-0 left-0 right-0 z-[80] h-[126px] bg-[#07101a] border-b border-slate-800 text-slate-100 select-none shadow-xl"
     >
       <div
         id="global_telemetry_bar"

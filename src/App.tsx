@@ -273,6 +273,8 @@ export default function App() {
     <GlobalAppShell
       activeTab={activeTab}
       setActiveTab={setActiveTab}
+      indianSession={indianSession}
+      indianUnderlyings={indianUnderlyings}
       header={
         <Header
           activeTab={activeTab}
@@ -291,81 +293,118 @@ export default function App() {
         />
       }
     >
-      {/* Main Terminal Viewport */}
-      {activeTab !== 'market' && activeTab !== 'forex_terminal' && (
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 pb-10 space-y-4">
-        {loadingInitial ? (
-          <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 font-mono">
-            <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-            <div className="text-sm text-slate-300">Initializing Quantitative Terminal Engine...</div>
-            <div className="text-xs text-slate-500">Loading Broker Adapters (cTrader + 5paisa), SQLite storage, and Risk Gates</div>
-          </div>
-        ) : (
-          <>
-            {/* 1. MARKET HUB (Forex, Indian, Options Chain, Scanner) */}
-            {(activeTab === 'market' || activeTab === 'forex' || activeTab === 'indian' || activeTab === 'options' || activeTab === 'scanner') && (
-              <MarketHub
-                forexPairs={forexPairs}
-                indianUnderlyings={indianUnderlyings}
-                candlesMap={candlesMap}
-                onSelectSignal={(sig) => setSelectedSignal(sig)}
-                onEnsureCandles={ensureCandlesLoaded}
-                initialOptionSymbol={selectedOptionUnderlying}
-                environment={environment}
-              />
-            )}
+      {/* Fixed global shell content outlet: dashboards and all secondary pages render here. */}
+      {activeTab === 'forex_terminal' ? (
+        <ForexTerminalDashboard
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          forexSessions={forexSessions}
+          selectedBroker={selectedBroker}
+          environment={environment}
+          maskedAccount={maskedAccount}
+          balance={balance}
+          currency={currency}
+          isEmergencyHalted={isEmergencyHalted}
+          isRefreshing={isRefreshing}
+          onRefresh={refreshTerminalData}
+          onToggleKillSwitch={handleToggleKillSwitch}
+          candlesMap={candlesMap}
+          forexPairs={forexPairs}
+          signals={signals}
+          onSelectSignal={(sig) => setSelectedSignal(sig)}
+        />
+      ) : activeTab === 'market' ? (
+        <TerminalDashboard
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          forexSessions={forexSessions}
+          indianSession={indianSession}
+          selectedBroker={selectedBroker}
+          environment={environment}
+          maskedAccount={maskedAccount}
+          balance={balance}
+          currency={currency}
+          isEmergencyHalted={isEmergencyHalted}
+          isRefreshing={isRefreshing}
+          onRefresh={refreshTerminalData}
+          onToggleKillSwitch={handleToggleKillSwitch}
+          candlesMap={candlesMap}
+          indianUnderlyings={indianUnderlyings}
+          signals={signals}
+          onSelectSignal={(sig) => setSelectedSignal(sig)}
+        />
+      ) : (
+        <main className="min-h-[calc(100vh-162px)] w-full px-4 sm:px-6 lg:px-8 py-5 space-y-4 bg-white">
+          {loadingInitial ? (
+            <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 font-mono">
+              <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="text-sm text-slate-600">Initializing Quantitative Terminal Engine...</div>
+              <div className="text-xs text-slate-400">Loading broker adapters, SQLite storage and risk gates</div>
+            </div>
+          ) : (
+            <>
+              {/* Market Watch / scanners */}
+              {activeTab === 'market_watch' && (
+                <MarketHub
+                  forexPairs={forexPairs}
+                  indianUnderlyings={indianUnderlyings}
+                  candlesMap={candlesMap}
+                  onSelectSignal={(sig) => setSelectedSignal(sig)}
+                  onEnsureCandles={ensureCandlesLoaded}
+                  initialOptionSymbol={selectedOptionUnderlying}
+                  environment={environment}
+                />
+              )}
 
-            {/* 2. SIGNALS HUB (All, Forex, Indian, Options, Qualified, Watch, No Trade) */}
-            {activeTab === 'signals' && (
-              <SignalsView
-                signals={signals}
-                onSelectSignal={(sig) => setSelectedSignal(sig)}
-              />
-            )}
+              {activeTab === 'signals' && (
+                <SignalsView
+                  signals={signals}
+                  onSelectSignal={(sig) => setSelectedSignal(sig)}
+                />
+              )}
 
-            {/* 3. TRADING HUB (Paper / Demo / Live Execution, Portfolio & Orders) */}
-            {(activeTab === 'trading' || activeTab === 'paper') && (
-              <TradingHub
-                environment={environment}
-                selectedBroker={selectedBroker}
-                maskedAccount={maskedAccount}
-                balance={balance}
-                currency={currency}
-                isEmergencyHalted={isEmergencyHalted}
-                onRequestEnvironmentChange={handleRequestEnvironmentChange}
-              />
-            )}
+              {(activeTab === 'trading' || activeTab === 'paper') && (
+                <TradingHub
+                  environment={environment}
+                  selectedBroker={selectedBroker}
+                  maskedAccount={maskedAccount}
+                  balance={balance}
+                  currency={currency}
+                  isEmergencyHalted={isEmergencyHalted}
+                  onRequestEnvironmentChange={handleRequestEnvironmentChange}
+                />
+              )}
 
-            {/* 4. P&L & MULTI-CURRENCY ACCOUNTING HUB */}
-            {(activeTab === 'pnl' || activeTab === 'accounting') && (
-              <PerformanceResearchCenterView />
-            )}
+              {(activeTab === 'pnl' || activeTab === 'accounting') && (
+                <PerformanceResearchCenterView />
+              )}
 
-            {/* 5. RESEARCH HUB (ML Models, Walk-Forward, Quant Simulator, Drift, Reports) */}
-            {(activeTab === 'research' || activeTab === 'ml') && (
-              <MLResearchDashboard />
-            )}
+              {(activeTab === 'research' || activeTab === 'ml') && (
+                <MLResearchDashboard />
+              )}
 
-            {/* PRIMARY OPERATIONAL HUB: TRADING CONTROL CENTER (10 Core Operational Sections) */}
-            {(activeTab === 'control_center' || activeTab === 'operations' || activeTab === 'reconciliation' || activeTab === 'reconcile') && (
-              <TradingControlCenter onSelectSignalModal={(sig) => setSelectedSignal(sig)} />
-            )}
+              {(activeTab === 'control_center' || activeTab === 'operations' || activeTab === 'reconciliation' || activeTab === 'reconcile') && (
+                <TradingControlCenter onSelectSignalModal={(sig) => setSelectedSignal(sig)} />
+              )}
 
-            {/* 6. SETTINGS HUB (Broker Connections, Safety Controls, Governance & Readiness Gates) */}
-            {(activeTab === 'settings' || activeTab === 'governance') && (
-              <SettingsHub
-                currentEnvironment={environment}
-                selectedBroker={selectedBroker}
-                onEnvironmentChange={handleRequestEnvironmentChange}
-                onBrokerSelect={handleSelectBroker}
-                onRefreshGlobal={refreshBrokerStatus}
-              />
-            )}
-          </>
-        )}
-      </main>
+              {activeTab === 'alerts' && (
+                <TradingOperationsDashboard initialSubTab="OPS" />
+              )}
+
+              {(activeTab === 'settings' || activeTab === 'governance') && (
+                <SettingsHub
+                  currentEnvironment={environment}
+                  selectedBroker={selectedBroker}
+                  onEnvironmentChange={handleRequestEnvironmentChange}
+                  onBrokerSelect={handleSelectBroker}
+                  onRefreshGlobal={refreshBrokerStatus}
+                />
+              )}
+            </>
+          )}
+        </main>
       )}
-
+ 
       {/* Signal Quantitative Inspection Modal */}
       {selectedSignal && (
         <SignalModal
