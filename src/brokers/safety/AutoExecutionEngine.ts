@@ -16,11 +16,9 @@ import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, mar
  * ============================================================================
  * NON-NEGOTIABLE SAFETY INVARIANT (PHASE 12)
  * ============================================================================
- * Autonomous live-money execution is explicitly enabled only after the full
- * server-side safety gate passes. Broker adapters must submit to authoritative
- * LIVE APIs and return broker-generated identifiers/statuses.
+ * Autonomous live-money execution is permanently disabled in production. Broker adapters may still support explicit operator-controlled live order workflows through the dedicated broker routes.
  */
-export let LIVE_AUTO_EXECUTION_ALLOWED: boolean = true;
+export let LIVE_AUTO_EXECUTION_ALLOWED: boolean = false;
 
 export interface ExecutionPermissionConfig {
   liveConnectionEnabled: boolean;
@@ -33,8 +31,8 @@ class AutoExecutionEngine {
   private permissions: ExecutionPermissionConfig = {
     liveConnectionEnabled: true,
     liveTradingEnabled: true,
-    autoExecutionEnabled: true,
-    autonomousLiveExecutionAllowed: true
+    autoExecutionEnabled: false,
+    autonomousLiveExecutionAllowed: false
   };
 
   getControls(): ExecutionPermissionConfig {
@@ -54,19 +52,23 @@ class AutoExecutionEngine {
       ...updates
     };
     if (updates.autonomousLiveExecutionAllowed !== undefined) {
-      LIVE_AUTO_EXECUTION_ALLOWED = updates.autonomousLiveExecutionAllowed;
+      LIVE_AUTO_EXECUTION_ALLOWED = false;
+      this.permissions.autonomousLiveExecutionAllowed = false;
+    }
+    if (updates.autoExecutionEnabled !== undefined) {
+      this.permissions.autoExecutionEnabled = false;
     }
     return this.getControls();
   }
 
   enableAutomaticExecution(): { success: boolean; code: string; message: string } {
-    this.permissions.autoExecutionEnabled = true;
-    this.permissions.autonomousLiveExecutionAllowed = true;
-    LIVE_AUTO_EXECUTION_ALLOWED = true;
+    this.permissions.autoExecutionEnabled = false;
+    this.permissions.autonomousLiveExecutionAllowed = false;
+    LIVE_AUTO_EXECUTION_ALLOWED = false;
     return {
-      success: true,
-      code: 'AUTONOMOUS_LIVE_EXECUTION_ENABLED',
-      message: 'Autonomous live execution enabled.'
+      success: false,
+      code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
+      message: 'Autonomous live-money execution is permanently disabled. Use the explicit operator order workflow after all live safety gates pass.'
     };
   }
 
