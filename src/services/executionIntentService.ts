@@ -46,11 +46,16 @@ export async function claimExecutionIntent(
   const rows = await executeQuery<any>('SELECT * FROM execution_intents WHERE idempotency_key = ?', [idempotencyKey]);
   const row = rows[0];
   if (!row) throw new Error('EXECUTION_INTENT_NOT_PERSISTED');
+  const storedPayload = JSON.parse(row.payload_json || 'null');
+  if (JSON.stringify(storedPayload) !== JSON.stringify(metadata.payload ?? null)) {
+    throw new Error('IDEMPOTENCY_KEY_PAYLOAD_MISMATCH');
+  }
+
   const claimed = row.claim_token === claimToken;
   return { claimed, existing: {
     idempotencyKey: row.idempotency_key, broker: row.broker, market: row.market,
     symbol: row.symbol, side: row.side, state: row.state,
-    payload: JSON.parse(row.payload_json || 'null'),
+    payload: storedPayload,
     result: row.result_json ? JSON.parse(row.result_json) : undefined
   }};
 }
