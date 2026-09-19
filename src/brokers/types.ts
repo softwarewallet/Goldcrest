@@ -205,6 +205,7 @@ export interface BrokerAdapter {
   closePosition(positionId: string, quantity?: number): Promise<boolean>;
   getOrderStatus(orderId: string): Promise<NormalizedOrder>;
   getTradingStatus(): Promise<BrokerStatus>;
+  getDailyRealizedPnL?(): Promise<number>;
 }
 
 export interface AuditLogEntry {
