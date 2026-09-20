@@ -41,8 +41,8 @@ const GOOGLE_NEWS_RSS_ENDPOINT = 'https://news.google.com/rss/search';
 const MACRO_NEWS_QUERY = [
   '"Federal Reserve"', 'FOMC', 'ECB', '"Bank of Japan"', 'BOJ',
   '"interest rate"', '"rate decision"', 'CPI', 'inflation', 'NFP',
-  '"nonfarm payroll"', 'jobs report', tariff, sanctions, intervention,
-  war, conflict, emergency, "central bank"
+  '"nonfarm payroll"', 'jobs report', 'tariff', 'sanctions', 'intervention',
+  'war', 'conflict', 'emergency', '"central bank"'
 ];
 
 const CURRENCY_NAMES: Record<string, string> = {
