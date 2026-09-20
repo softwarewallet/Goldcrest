@@ -102,9 +102,10 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
   protected validateCredentials(): void {
+    this.syncConfig();
     const { clientId, clientSecret, accessToken, accountId } = this.config;
     if (!clientId || !clientSecret || !accessToken) {
-      this.status = 'AUTHENTICATION_FAILED';
+      this.status = 'DISCONNECTED';
       throw new BrokerError(
         'AUTHENTICATION_FAILED',
         `cTrader ${this.environment} credentials missing. Required: Client ID, Client Secret, and Access Token.`,

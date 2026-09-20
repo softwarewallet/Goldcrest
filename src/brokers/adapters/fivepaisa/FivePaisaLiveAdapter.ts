@@ -26,6 +26,37 @@ export class FivePaisaLiveAdapter extends FivePaisaBrokerAdapter {
     super(config);
   }
 
+  override syncConfig(): void {
+    if (!this.config.appName && (process.env.FIVEPAISA_LIVE_APP_NAME || process.env.FIVE_PAISA_LIVE_APP_NAME)) {
+      this.config.appName = process.env.FIVEPAISA_LIVE_APP_NAME || process.env.FIVE_PAISA_LIVE_APP_NAME;
+    }
+    if (!this.config.userId && (process.env.FIVEPAISA_LIVE_USER_ID || process.env.FIVE_PAISA_LIVE_USER_ID)) {
+      this.config.userId = process.env.FIVEPAISA_LIVE_USER_ID || process.env.FIVE_PAISA_LIVE_USER_ID;
+    }
+    if (!this.config.password && (process.env.FIVEPAISA_LIVE_PASSWORD || process.env.FIVE_PAISA_LIVE_PASSWORD)) {
+      this.config.password = process.env.FIVEPAISA_LIVE_PASSWORD || process.env.FIVE_PAISA_LIVE_PASSWORD;
+    }
+    if (!this.config.userKey && (process.env.FIVEPAISA_LIVE_USER_KEY || process.env.FIVE_PAISA_LIVE_USER_KEY)) {
+      this.config.userKey = process.env.FIVEPAISA_LIVE_USER_KEY || process.env.FIVE_PAISA_LIVE_USER_KEY;
+    }
+    if (!this.config.encryptionKey && (process.env.FIVEPAISA_LIVE_ENCRYPTION_KEY || process.env.FIVE_PAISA_LIVE_ENCRYPTION_KEY)) {
+      this.config.encryptionKey = process.env.FIVEPAISA_LIVE_ENCRYPTION_KEY || process.env.FIVE_PAISA_LIVE_ENCRYPTION_KEY;
+    }
+    if (!this.config.clientCode && (process.env.FIVEPAISA_LIVE_CLIENT_CODE || process.env.FIVE_PAISA_LIVE_CLIENT_CODE)) {
+      this.config.clientCode = process.env.FIVEPAISA_LIVE_CLIENT_CODE || process.env.FIVE_PAISA_LIVE_CLIENT_CODE;
+    }
+    if (!this.config.accessToken && (process.env.FIVEPAISA_LIVE_ACCESS_TOKEN || process.env.FIVE_PAISA_LIVE_ACCESS_TOKEN)) {
+      this.config.accessToken = process.env.FIVEPAISA_LIVE_ACCESS_TOKEN || process.env.FIVE_PAISA_LIVE_ACCESS_TOKEN;
+    }
+    if (!this.config.totpSecret && (process.env.FIVEPAISA_LIVE_TOTP_SECRET || process.env.FIVE_PAISA_LIVE_TOTP_SECRET)) {
+      this.config.totpSecret = process.env.FIVEPAISA_LIVE_TOTP_SECRET || process.env.FIVE_PAISA_LIVE_TOTP_SECRET;
+    }
+    if (!this.config.pin && (process.env.FIVEPAISA_LIVE_PIN || process.env.FIVE_PAISA_LIVE_PIN)) {
+      this.config.pin = process.env.FIVEPAISA_LIVE_PIN || process.env.FIVE_PAISA_LIVE_PIN;
+    }
+    super.syncConfig();
+  }
+
   getConfigStatus() {
     const configured = Boolean(
       this.config.appName &&

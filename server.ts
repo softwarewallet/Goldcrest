@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { timingSafeEqual } from 'node:crypto';
@@ -27,10 +28,12 @@ import { ForexTimeframe } from './src/markets/forex/types';
 // Phase 2B Broker Integration
 import { BrokerError } from './src/brokers/errors';
 import { brokerRouter } from './src/brokers/brokerRoutes';
-import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission } from './src/brokers/safety/AutoExecutionEngine';
+import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission, armAutonomousExecutionGate, lockAutonomousExecutionGate } from './src/brokers/safety/AutoExecutionEngine';
 import { autoTradingService } from './src/services/autoTradingService';
 import { initializeLiveRuntimeLog, getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile, listLiveRuntimeLogFiles, logApplicationAction, liveRuntimeLog } from './src/services/liveRuntimeLog';
 import { fetchLiveForexNews } from './src/services/liveNewsService';
+import { alphaVantageNewsService } from './src/services/alphaVantageNewsService';
+import { marketauxNewsService } from './src/services/marketauxNewsService';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
 // the public research/training API is retired while the research program is closed.
@@ -264,6 +267,47 @@ app.post('/api/auto-trading/abandon-closed-start', operatorAuthRequired, (_req: 
 
 app.post('/api/auto-trading/stop', operatorAuthRequired, (_req: Request, res: Response) => {
   res.json(autoTradingService.stop());
+});
+
+// Explicit Execution Gate Controls
+app.get('/api/execution-gate/status', operatorAuthRequired, (_req: Request, res: Response) => {
+  const permitted = refreshAutonomousExecutionPermission();
+  const autoStatus = autoTradingService.getStatus();
+  res.json({
+    locked: !permitted,
+    unlocked: permitted,
+    state: permitted ? 'UNLOCKED' : 'LOCKED',
+    autoTradingState: autoStatus.state,
+    autonomousPermission: permitted,
+    liveTradingEnabled: process.env.LIVE_TRADING_ENABLED === 'true',
+    productionStrategyApproved: process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true',
+    approvedStrategyId: process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a',
+    timestamp: Date.now()
+  });
+});
+
+app.post('/api/execution-gate/unlock', operatorAuthRequired, (_req: Request, res: Response) => {
+  const result = armAutonomousExecutionGate();
+  const autoStatus = autoTradingService.getStatus();
+  res.json({
+    ...result,
+    locked: !LIVE_AUTO_EXECUTION_ALLOWED,
+    unlocked: LIVE_AUTO_EXECUTION_ALLOWED,
+    autoTradingState: autoStatus.state,
+    timestamp: Date.now()
+  });
+});
+
+app.post('/api/execution-gate/lock', operatorAuthRequired, (_req: Request, res: Response) => {
+  const result = lockAutonomousExecutionGate();
+  const autoStatus = autoTradingService.getStatus();
+  res.json({
+    ...result,
+    locked: true,
+    unlocked: false,
+    autoTradingState: autoStatus.state,
+    timestamp: Date.now()
+  });
 });
 
 app.get('/api/live-log/status', operatorAuthRequired, (_req: Request, res: Response) => {
@@ -1092,6 +1136,88 @@ app.get('/api/forex/news', async (req: Request, res: Response) => {
   }
 });
 
+// 8b. Alpha Vantage Dedicated News & Sentiment Fetch
+app.get('/api/news/alphavantage', async (req: Request, res: Response) => {
+  try {
+    const tickers = typeof req.query.tickers === 'string' ? req.query.tickers : undefined;
+    const topics = typeof req.query.topics === 'string' ? req.query.topics : undefined;
+    const sort = (req.query.sort as 'LATEST' | 'EARLIEST' | 'RELEVANCE') || 'LATEST';
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+
+    // If pairs parameter is provided, use forex-tailored query
+    if (typeof req.query.pairs === 'string') {
+      const pairs = req.query.pairs.split(',').map(p => p.trim()).filter(Boolean);
+      const snapshot = await alphaVantageNewsService.fetchForexNews(pairs, {
+        sort,
+        limit,
+        forceRefresh
+      });
+      return res.json(snapshot);
+    }
+
+    const snapshot = await alphaVantageNewsService.fetchNewsSentiment({
+      tickers,
+      topics,
+      sort,
+      limit,
+      forceRefresh
+    });
+
+    res.json(snapshot);
+  } catch (err: any) {
+    res.status(500).json({
+      error: 'ALPHA_VANTAGE_NEWS_FAILED',
+      message: err?.message || 'Failed to fetch Alpha Vantage news and sentiment.'
+    });
+  }
+});
+
+// 8c. Marketaux Dedicated News & Sentiment Fetch
+app.get('/api/news/marketaux', async (req: Request, res: Response) => {
+  try {
+    const symbols = typeof req.query.symbols === 'string' ? req.query.symbols : undefined;
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const countries = typeof req.query.countries === 'string' ? req.query.countries : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 20;
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+
+    // If pairs parameter is provided, use forex-tailored query
+    if (typeof req.query.pairs === 'string') {
+      const pairs = req.query.pairs.split(',').map(p => p.trim()).filter(Boolean);
+      const snapshot = await marketauxNewsService.fetchForexNews(pairs, {
+        limit,
+        forceRefresh
+      });
+      return res.json(snapshot);
+    }
+
+    const snapshot = await marketauxNewsService.fetchNewsSentiment({
+      symbols,
+      search,
+      countries,
+      limit,
+      forceRefresh
+    });
+
+    res.json(snapshot);
+  } catch (err: any) {
+    res.status(500).json({
+      error: 'MARKETAUX_NEWS_FAILED',
+      message: err?.message || 'Failed to fetch Marketaux news and sentiment.'
+    });
+  }
+});
+
+// 8d. News Service Provider Status
+app.get('/api/news/status', async (_req: Request, res: Response) => {
+  res.json({
+    alphaVantageConfigured: alphaVantageNewsService.isConfigured(),
+    marketauxConfigured: marketauxNewsService.isConfigured(),
+    providers: ['ALPHA_VANTAGE', 'MARKETAUX', 'GDELT_DOC_2', 'GOOGLE_NEWS_RSS']
+  });
+});
+
 // 8. Macroeconomic Events
 app.get('/api/economic-events', async (_req: Request, res: Response) => {
   res.status(503).json({
@@ -1225,7 +1351,10 @@ async function startServer() {
   productionPreflight(productionRuntime);
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : undefined,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

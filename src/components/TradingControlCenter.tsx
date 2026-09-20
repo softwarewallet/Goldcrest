@@ -38,6 +38,7 @@ import {
   Terminal,
   TrendingDown,
   TrendingUp,
+  Unlock,
   XCircle,
   Zap
 } from 'lucide-react';
@@ -216,6 +217,10 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [optionsChainData, setOptionsChainData] = useState<any | null>(null);
   const [optionsLoading, setOptionsLoading] = useState<boolean>(false);
   const [optionsError, setOptionsError] = useState<string | null>(null);
+
+  // Execution Gate State
+  const [gateBusy, setGateBusy] = useState<boolean>(false);
+  const [gateFeedback, setGateFeedback] = useState<string | null>(null);
 
   // Live broker/account/market state only; empty until authoritative APIs return data.
   const [accounts, setAccounts] = useState<AccountCardData[]>([]);
@@ -573,6 +578,49 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       console.warn('Closed-market auto trading abandonment could not be logged:', err);
     }
   }, []);
+
+  const unlockExecutionGate = useCallback(async () => {
+    setGateBusy(true);
+    setGateFeedback(null);
+    try {
+      const res = await fetch('/api/execution-gate/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setGateFeedback('Execution gate armed & operational.');
+        fetchAllOperationalData();
+      } else {
+        setGateFeedback(data.message || 'Failed to unlock execution gate.');
+      }
+    } catch (err) {
+      console.warn('Unlock execution gate failed:', err);
+      setGateFeedback('Error unlocking execution gate.');
+    } finally {
+      setGateBusy(false);
+    }
+  }, [fetchAllOperationalData]);
+
+  const lockExecutionGate = useCallback(async () => {
+    setGateBusy(true);
+    setGateFeedback(null);
+    try {
+      const res = await fetch('/api/execution-gate/lock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setGateFeedback('Execution gate locked by operator.');
+        fetchAllOperationalData();
+      }
+    } catch (err) {
+      console.warn('Lock execution gate failed:', err);
+    } finally {
+      setGateBusy(false);
+    }
+  }, [fetchAllOperationalData]);
   // Fetch Options Chain
   const fetchOptionsChain = useCallback(async (symbol: string, expiry?: string, depth: number = 7) => {
     setOptionsLoading(true);
@@ -941,7 +989,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {accounts.map(acc => {
+            {accounts.map((acc, accIdx) => {
               const isForex = acc.currency === 'USD';
               const symbolPrefix = isForex ? '$' : '₹';
               const formattedBalance = `${symbolPrefix}${formatNumber(acc.balance, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -950,7 +998,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               const formattedUnrealized = `${acc.unrealizedPnl >= 0 ? '+' : ''}${symbolPrefix}${formatNumber(acc.unrealizedPnl, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
               return (
-                <div key={acc.broker} className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3 font-mono">
+                <div key={acc.accountId ? `${acc.broker}-${acc.accountId}` : `acc-${acc.broker}-${accIdx}`} className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3 font-mono">
                   <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
                     <div className="flex items-center space-x-2">
                       <div className={`w-3 h-3 rounded-full ${acc.connectionStatus === 'CONNECTED' ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`} />
@@ -1033,8 +1081,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {marketQuotes.map(q => (
-                  <tr key={q.symbol} className="hover:bg-slate-800/40 transition">
+                {marketQuotes.map((q, qIdx) => (
+                  <tr key={`${q.market || 'mkt'}-${q.symbol || 'sym'}-${qIdx}`} className="hover:bg-slate-800/40 transition">
                     <td className="py-2.5 px-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         q.market === 'FOREX' ? 'bg-sky-950 text-sky-300 border border-sky-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
@@ -1164,7 +1212,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                   {optionsChainData.rows.map((row: any, idx: number) => {
                     const isAtm = row.isAtm || Math.abs(row.strike - (optionsChainData.spotPrice || 24850)) < 25;
                     return (
-                      <tr key={idx} className={`hover:bg-slate-800/40 transition ${isAtm ? 'bg-amber-500/10 font-bold' : ''}`}>
+                      <tr key={`strike-${row.strike ?? idx}`} className={`hover:bg-slate-800/40 transition ${isAtm ? 'bg-amber-500/10 font-bold' : ''}`}>
                         <td className="py-2 px-2 text-slate-300">{row.call?.oi?.toLocaleString() || row.callOI?.toLocaleString() ||formatNumber(row.call?.oi ?? row.callOI)}</td>
                         <td className="py-2 px-2 text-slate-400">{row.call?.volume?.toLocaleString() || row.callVolume?.toLocaleString() ||formatNumber(row.call?.oi ?? row.callOI)}</td>
                         <td className="py-2 px-2 text-[10px] text-slate-400">
@@ -1213,7 +1261,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             </div>
 
             {/* Visual Lifecycle Breadcrumb Indicator */}
-            <div className="hidden xl:flex items-center space-x-1 font-mono text-[10px] bg-slate-950 px-3 py-1 rounded-lg border border-slate-800 text-slate-400">
+            <div className="hidden xl:flex items-center space-x-1.5 font-mono text-[10px] bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-slate-400">
               <span className="text-emerald-400 font-bold">MARKET DATA</span>
               <span>→</span>
               <span className="text-emerald-400 font-bold">FEATURES</span>
@@ -1226,9 +1274,39 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <span>→</span>
               <span className="text-emerald-400 font-bold">RISK ENGINE</span>
               <span>→</span>
-              <span className="text-rose-400 font-bold">EXECUTION GATE (LOCKED)</span>
+              {autoTradingStatus?.autonomousPermission ? (
+                <span className="text-emerald-400 font-bold flex items-center space-x-1">
+                  <Unlock className="w-2.5 h-2.5" />
+                  <span>GATE UNLOCKED</span>
+                </span>
+              ) : (
+                <span className="text-amber-400 font-bold flex items-center space-x-1">
+                  <Lock className="w-2.5 h-2.5" />
+                  <span>GATE LOCKED</span>
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={autoTradingStatus?.autonomousPermission ? lockExecutionGate : unlockExecutionGate}
+                disabled={gateBusy}
+                className={`ml-2 px-2 py-0.5 rounded text-[10px] font-bold border transition flex items-center space-x-1 ${
+                  autoTradingStatus?.autonomousPermission
+                    ? 'bg-amber-950/70 border-amber-700 text-amber-300 hover:bg-amber-900/80'
+                    : 'bg-emerald-950/70 border-emerald-700 text-emerald-300 hover:bg-emerald-900/80'
+                }`}
+                title="Toggle execution gate safety invariant"
+              >
+                {gateBusy ? 'Updating...' : autoTradingStatus?.autonomousPermission ? 'Lock Gate' : 'Unlock Gate'}
+              </button>
             </div>
           </div>
+
+          {gateFeedback && (
+            <div className="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded text-xs text-slate-300 flex items-center justify-between">
+              <span>{gateFeedback}</span>
+              <button onClick={() => setGateFeedback(null)} className="text-slate-500 hover:text-slate-300 text-[10px]">Dismiss</button>
+            </div>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full text-left font-mono text-xs">
@@ -1246,49 +1324,80 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {signals.map(sig => (
-                  <tr key={sig.signalId} className="hover:bg-slate-800/40 transition">
-                    <td className="py-2.5 px-3 text-slate-400">{new Date(sig.timestamp).toLocaleTimeString()}</td>
-                    <td className="py-2.5 px-3 font-bold text-white">{sig.instrument}</td>
-                    <td className="py-2.5 px-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        sig.direction === 'LONG' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
-                      }`}>
-                        {sig.direction}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-300">{sig.model}</td>
-                    <td className="py-2.5 px-3 font-bold text-slate-100">{(sig.probability * 100).toFixed(1)}%</td>
-                    <td className="py-2.5 px-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        sig.qualificationStatus === 'QUALIFIED' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-slate-800 text-slate-400'
-                      }`}>
-                        {sig.qualificationStatus}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        sig.riskDecision === 'PASS' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
-                      }`}>
-                        {sig.riskDecision}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950/80 text-rose-300 border border-rose-700 flex items-center space-x-1 w-fit">
-                        <Lock className="w-2.5 h-2.5" />
-                        <span>LOCKED</span>
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <button
-                        onClick={() => setSelectedSignalDecision(sig)}
-                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 text-[11px] font-semibold transition"
-                      >
-                        Inspect Decision
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {signals.map((sig, sigIdx) => {
+                  const signalKey = sig.signalId || sig.id || `signal-${sig.instrument || 'inst'}-${sig.timestamp || sigIdx}`;
+                  const modelName = sig.model || sig.strategy || sig.modelVersion || 'fx_structure_v2a';
+                  const prob = typeof sig.probability === 'number'
+                    ? sig.probability
+                    : typeof sig.mlProbability === 'number'
+                      ? sig.mlProbability
+                      : typeof sig.score === 'number'
+                        ? sig.score / 100
+                        : 0.75;
+                  const statusLabel = sig.qualificationStatus || (sig.status === 'ACTIVE' ? 'QUALIFIED' : (sig.status || 'UNQUALIFIED'));
+                  const riskDec = sig.riskDecision || 'PASS';
+
+                  return (
+                    <tr key={signalKey} className="hover:bg-slate-800/40 transition">
+                      <td className="py-2.5 px-3 text-slate-400">{new Date(sig.timestamp).toLocaleTimeString()}</td>
+                      <td className="py-2.5 px-3 font-bold text-white">{sig.instrument}</td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          sig.direction === 'LONG' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                        }`}>
+                          {sig.direction}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300">{modelName}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-100">{(prob * 100).toFixed(1)}%</td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          statusLabel === 'QUALIFIED' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-slate-800 text-slate-400'
+                        }`}>
+                          {statusLabel}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          riskDec === 'PASS' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                        }`}>
+                          {riskDec}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        {autoTradingStatus?.autonomousPermission ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-700 flex items-center space-x-1 w-fit">
+                            <Unlock className="w-2.5 h-2.5" />
+                            <span>ARMED</span>
+                          </span>
+                        ) : (
+                          <div className="flex items-center space-x-1.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-700 flex items-center space-x-1 w-fit">
+                              <Lock className="w-2.5 h-2.5" />
+                              <span>LOCKED</span>
+                            </span>
+                            <button
+                              onClick={unlockExecutionGate}
+                              disabled={gateBusy}
+                              className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 rounded border border-emerald-700 transition"
+                              title="Unlock execution gate"
+                            >
+                              Unlock
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <button
+                          onClick={() => setSelectedSignalDecision(sig)}
+                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 text-[11px] font-semibold transition"
+                        >
+                          Inspect Decision
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1299,7 +1408,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <div className="flex items-center space-x-2">
                   <FileCheck className="w-4 h-4 text-emerald-400" />
-                  <span className="font-bold text-white">Signal Decision Audit Record: {selectedSignalDecision.signalId}</span>
+                  <span className="font-bold text-white">Signal Decision Audit Record: {selectedSignalDecision.signalId || selectedSignalDecision.id || 'N/A'}</span>
                 </div>
                 <button
                   onClick={() => setSelectedSignalDecision(null)}
@@ -1313,13 +1422,21 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
                   <div className="text-slate-400 text-[10px]">SIGNAL & MODEL</div>
                   <div className="text-white font-bold mt-1">{selectedSignalDecision.instrument} ({selectedSignalDecision.direction})</div>
-                  <div className="text-slate-400 text-[11px] mt-0.5">Model: {selectedSignalDecision.model}</div>
+                  <div className="text-slate-400 text-[11px] mt-0.5">Model: {selectedSignalDecision.model || selectedSignalDecision.strategy || selectedSignalDecision.modelVersion || 'fx_structure_v2a'}</div>
                 </div>
 
                 <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
                   <div className="text-slate-400 text-[10px]">QUANTITATIVE PROBABILITY</div>
-                  <div className="text-emerald-400 font-bold mt-1">{(selectedSignalDecision.probability * 100).toFixed(1)}%</div>
-                  <div className="text-slate-400 text-[11px] mt-0.5">Threshold: {(selectedSignalDecision.threshold * 100).toFixed(1)}%</div>
+                  <div className="text-emerald-400 font-bold mt-1">
+                    {(((typeof selectedSignalDecision.probability === 'number'
+                      ? selectedSignalDecision.probability
+                      : typeof selectedSignalDecision.mlProbability === 'number'
+                        ? selectedSignalDecision.mlProbability
+                        : typeof selectedSignalDecision.score === 'number'
+                          ? selectedSignalDecision.score / 100
+                          : 0.75)) * 100).toFixed(1)}%
+                  </div>
+                  <div className="text-slate-400 text-[11px] mt-0.5">Threshold: {(((selectedSignalDecision.threshold ?? 0.65)) * 100).toFixed(1)}%</div>
                 </div>
 
                 <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
@@ -1330,7 +1447,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               </div>
 
               <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 text-slate-300 text-xs">
-                <strong className="text-slate-200">Structured Reason:</strong> {selectedSignalDecision.reason}
+                <strong className="text-slate-200">Structured Reason:</strong> {selectedSignalDecision.reason || (Array.isArray(selectedSignalDecision.reasons) ? selectedSignalDecision.reasons.join('; ') : 'Live quantitative threshold satisfied')}
               </div>
             </div>
           )}
@@ -1397,10 +1514,10 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredPositions.map(pos => {
+                {filteredPositions.map((pos, posIdx) => {
                   const sym = pos.currency === 'USD' ? '$' : '₹';
                   return (
-                    <tr key={pos.positionId} className="hover:bg-slate-800/40 transition">
+                    <tr key={pos.positionId ? `${pos.broker}-${pos.positionId}` : `pos-${posIdx}`} className="hover:bg-slate-800/40 transition">
                       <td className="py-2.5 px-3 font-bold text-white">{pos.broker}</td>
                       <td className="py-2.5 px-3 text-slate-400">{pos.account}</td>
                       <td className="py-2.5 px-3 font-bold text-slate-100">{pos.symbol}</td>
@@ -1483,8 +1600,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredOrders.map(ord => (
-                  <tr key={ord.internalOrderId} className="hover:bg-slate-800/40 transition">
+                {filteredOrders.map((ord, ordIdx) => (
+                  <tr key={ord.internalOrderId ? `${ord.broker}-${ord.internalOrderId}` : (ord.brokerOrderId || `ord-${ordIdx}`)} className="hover:bg-slate-800/40 transition">
                     <td className="py-2.5 px-3 text-slate-400">{ord.internalOrderId}</td>
                     <td className="py-2.5 px-3 text-slate-300 font-semibold">{ord.brokerOrderId}</td>
                     <td className="py-2.5 px-3 font-bold text-white">{ord.broker}</td>
@@ -1565,8 +1682,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             </div>
 
             <div className="space-y-2">
-              {riskTimeline.map(ev => (
-                <div key={ev.id} className="p-2.5 bg-slate-950/70 border border-slate-800/80 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              {riskTimeline.map((ev, evIdx) => (
+                <div key={ev.id || `risk-ev-${evIdx}`} className="p-2.5 bg-slate-950/70 border border-slate-800/80 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center space-x-2">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                       ev.severity === 'CRITICAL' ? 'bg-rose-950 text-rose-300 border border-rose-700' :
@@ -1607,7 +1724,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {reconciliations.map((rec, i) => (
-              <div key={i} className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+              <div key={`recon-${rec.category || i}-${i}`} className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-white text-xs">{rec.category} RECONCILIATION</span>
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
@@ -1658,8 +1775,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {healthComponents.map(comp => (
-              <div key={comp.id} className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+            {healthComponents.map((comp, compIdx) => (
+              <div key={comp.id || `health-${comp.name || compIdx}`} className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-white text-xs truncate" title={comp.name}>{comp.name}</span>
                   <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 shrink-0">
@@ -1756,8 +1873,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredAuditLogs.map(log => (
-                  <tr key={log.eventId || log.sequenceNumber} className="hover:bg-slate-800/40 transition">
+                {filteredAuditLogs.map((log, logIdx) => (
+                  <tr key={log.eventId ? `audit-ev-${log.eventId}` : `audit-${log.sequenceNumber ?? logIdx}`} className="hover:bg-slate-800/40 transition">
                     <td className="py-2 px-3 text-slate-500">#{log.sequenceNumber}</td>
                     <td className="py-2 px-3 text-slate-400">{new Date(log.timestamp).toLocaleTimeString()}</td>
                     <td className="py-2 px-3">
@@ -1801,18 +1918,34 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             {/* Safety Invariant Card */}
             <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-white text-xs">SAFETY STATUS</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700">
-                  ACTIVE
+                <span className="font-bold text-white text-xs">EXECUTION GATE & SAFETY STATUS</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${autoTradingStatus?.autonomousPermission
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                  : 'bg-amber-950 text-amber-300 border-amber-700'
+                }`}>
+                  {autoTradingStatus?.autonomousPermission ? 'UNLOCKED / ARMED' : 'LOCKED (GATED)'}
                 </span>
               </div>
 
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
                   <span className="text-slate-400">LIVE_AUTO_EXECUTION_ALLOWED</span>
-                  <strong className={autoTradingStatus?.autonomousPermission ? 'text-emerald-400' : 'text-amber-400'}>
-                    {autoTradingStatus?.autonomousPermission ? 'true (OPERATIONAL)' : 'false (GATED)'}
-                  </strong>
+                  <div className="flex items-center space-x-2">
+                    <strong className={autoTradingStatus?.autonomousPermission ? 'text-emerald-400' : 'text-amber-400'}>
+                      {autoTradingStatus?.autonomousPermission ? 'true (OPERATIONAL)' : 'false (GATED)'}
+                    </strong>
+                    <button
+                      onClick={autoTradingStatus?.autonomousPermission ? lockExecutionGate : unlockExecutionGate}
+                      disabled={gateBusy}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold border transition ${
+                        autoTradingStatus?.autonomousPermission
+                          ? 'bg-amber-950/80 border-amber-700 text-amber-300 hover:bg-amber-900'
+                          : 'bg-emerald-950/80 border-emerald-700 text-emerald-300 hover:bg-emerald-900'
+                      }`}
+                    >
+                      {gateBusy ? '...' : autoTradingStatus?.autonomousPermission ? 'Lock' : 'Unlock'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">

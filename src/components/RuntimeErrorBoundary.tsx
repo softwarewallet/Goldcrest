@@ -39,15 +39,37 @@ export class RuntimeErrorBoundary extends Component<RuntimeErrorBoundaryProps, R
     window.removeEventListener('unhandledrejection', this.handleUnhandledRejection);
   }
 
+  private isIgnoredError(message: string, stack: string, filename?: string): boolean {
+    const text = `${message} ${stack} ${filename || ''}`.toLowerCase();
+    return (
+      text.includes('websocket') ||
+      text.includes('@vite/client') ||
+      text.includes('failed to connect to websocket') ||
+      text.includes('resizeobserver') ||
+      text.includes('script error') ||
+      text.includes('chrome-extension') ||
+      text.includes('moz-extension')
+    );
+  }
+
   private handleWindowError = (event: ErrorEvent): void => {
     if (this.state.hasError) return;
     const error = event.error instanceof Error
       ? event.error
       : new Error(event.message || 'Unhandled browser error');
+    const message = error.message || event.message || '';
+    const stack = error.stack || '';
+    const filename = event.filename || '';
+
+    if (this.isIgnoredError(message, stack, filename)) {
+      console.warn('[Benign Dev/Browser Error Ignored]:', message);
+      return;
+    }
+
     this.setState({
       hasError: true,
-      message: error.message,
-      stack: error.stack || ''
+      message,
+      stack
     });
   };
 
@@ -56,11 +78,16 @@ export class RuntimeErrorBoundary extends Component<RuntimeErrorBoundaryProps, R
     const reason = event.reason instanceof Error
       ? event.reason
       : new Error(typeof event.reason === 'string' ? event.reason : JSON.stringify(event.reason));
-    this.setState({
-      hasError: true,
-      message: reason.message,
-      stack: reason.stack || ''
-    });
+    const message = reason.message || '';
+    const stack = reason.stack || '';
+
+    if (this.isIgnoredError(message, stack)) {
+      console.warn('[Benign Rejection Ignored]:', message);
+      return;
+    }
+
+    // Log unhandled promise rejections without crashing the entire React tree
+    console.warn('[Unhandled Promise Rejection]:', reason);
   };
 
   private reload = (): void => {

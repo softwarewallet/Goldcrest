@@ -1,0 +1,29 @@
+{
+  "defaultRiskPct": 1,
+  "maxDailyLossPct": 3,
+  "maxOpenPositions": 5,
+  "maxTradesPerDay": 20,
+  "maxConsecutiveLosses": 3,
+  "maxSpreadBps": 30,
+  "signalCooldownMs": 60000,
+  "eventProximityThresholdMinutes": 20,
+  "strikeDepth": 7,
+  "maxTradeValueForexUsd": 100,
+  "maxTradeValueIndianInr": 1000,
+  "autoLiveForexPairs": [
+    "EUR/USD",
+    "GBP/USD",
+    "USD/JPY",
+    "USD/CHF",
+    "AUD/USD",
+    "XAU/USD"
+  ],
+  "autoLiveIndianUnderlyings": [
+    "NIFTY",
+    "BANKNIFTY",
+    "FINNIFTY",
+    "MIDCPNIFTY",
+    "SENSEX"
+  ],
+  "financialDisclaimer": "Trading in Forex and derivatives involves substantial risk of loss. Model outputs, signals, probabilities and technical analysis are estimates for informational and analytical purposes only and are not financial advice, guarantees, or assurances of future performance."
+}

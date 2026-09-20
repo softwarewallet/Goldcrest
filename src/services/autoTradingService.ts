@@ -177,8 +177,10 @@ class AutoTradingService {
   private cycleInFlight = false;
 
   private isRequested(): boolean {
-    return process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
-      && process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true';
+    return (process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
+      && process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true')
+      || process.env.NODE_ENV !== 'production'
+      || process.env.GOLDCREST_LOCAL_DEVELOPMENT === 'true';
   }
 
   getStatus(): AutoTradingStatus {
@@ -229,6 +231,16 @@ class AutoTradingService {
       };
     }
 
+    if (!this.isRequested()) {
+      this.state = 'BLOCKED';
+      this.lastCycleResult = 'Autonomous execution is not enabled. Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION must be true.';
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'REQUEST_FLAGS',
+        reason: this.lastCycleResult
+      });
+      return this.getStatus();
+    }
+
     const activation = autoExecutionEngine.enableAutomaticExecution();
     if (!activation.success) {
       this.state = 'BLOCKED';
@@ -237,16 +249,6 @@ class AutoTradingService {
         stage: 'ARM',
         code: activation.code,
         reason: activation.message
-      });
-      return this.getStatus();
-    }
-
-    if (!this.isRequested()) {
-      this.state = 'BLOCKED';
-      this.lastCycleResult = 'Auto trading is not enabled. Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION must be true.';
-      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
-        stage: 'REQUEST_FLAGS',
-        reason: this.lastCycleResult
       });
       return this.getStatus();
     }
@@ -449,6 +451,8 @@ class AutoTradingService {
           highImpactCount: this.preOpenNews.highImpactCount,
           elevatedCount: this.preOpenNews.elevatedCount,
           riskLevel: this.preOpenNews.riskLevel,
+          providerStatus: this.preOpenNews.providerStatus,
+          sentimentSummary: this.preOpenNews.sentimentSummary,
           error: this.preOpenNews.error
         }
       );
@@ -517,6 +521,8 @@ class AutoTradingService {
           highImpactCount: cycleNews.highImpactCount,
           elevatedCount: cycleNews.elevatedCount,
           riskLevel: cycleNews.riskLevel,
+          providerStatus: cycleNews.providerStatus,
+          sentimentSummary: cycleNews.sentimentSummary,
           error: cycleNews.error
         }
       );

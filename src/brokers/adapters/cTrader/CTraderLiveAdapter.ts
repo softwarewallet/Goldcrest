@@ -18,6 +18,22 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
     super(config);
   }
 
+  override syncConfig(): void {
+    if (!this.config.clientId && process.env.CTRADER_LIVE_CLIENT_ID) {
+      this.config.clientId = process.env.CTRADER_LIVE_CLIENT_ID;
+    }
+    if (!this.config.clientSecret && process.env.CTRADER_LIVE_CLIENT_SECRET) {
+      this.config.clientSecret = process.env.CTRADER_LIVE_CLIENT_SECRET;
+    }
+    if (!this.config.accessToken && process.env.CTRADER_LIVE_ACCESS_TOKEN) {
+      this.config.accessToken = process.env.CTRADER_LIVE_ACCESS_TOKEN;
+    }
+    if (!this.config.accountId && process.env.CTRADER_LIVE_ACCOUNT_ID) {
+      this.config.accountId = process.env.CTRADER_LIVE_ACCOUNT_ID;
+    }
+    super.syncConfig();
+  }
+
   updateCredentials(credentials: Partial<CTraderConfig>): void {
     const cleanUpdates = Object.fromEntries(
       Object.entries(credentials).filter(([_, v]) => v !== undefined && v !== null && String(v).trim() !== '')

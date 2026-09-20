@@ -415,90 +415,6 @@ const DASHBOARD_SUMMARY_CACHE_TTL_MS = 30_000;
 let dashboardSummaryCache: { payload: any; expiresAt: number } | null = null;
 let dashboardSummaryInFlight: Promise<any> | null = null;
 
-async function getDashboardSummarySnapshot(): Promise<any> {
-  const now = Date.now();
-  if (dashboardSummaryCache && now < dashboardSummaryCache.expiresAt) {
-    return dashboardSummaryCache.payload;
-  }
-  if (dashboardSummaryInFlight) return dashboardSummaryInFlight;
-
-  dashboardSummaryInFlight = (async () => {
-    const results = await Promise.all(LIVE_BROKERS.map(async (broker) => {
-      const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
-      const [account, positions, openOrders, orderHistory] = await Promise.all([
-        adapter.getAccount(),
-        adapter.getPositions(),
-        adapter.getOpenOrders(),
-        adapter.getOrderHistory()
-      ]);
-      let dailyRealizedPnL: number | null = null;
-      if (typeof adapter.getDailyRealizedPnL === 'function') {
-        try { dailyRealizedPnL = await adapter.getDailyRealizedPnL(); } catch { dailyRealizedPnL = null; }
-      }
-      return { broker, account, positions, openOrders, orderHistory, dailyRealizedPnL };
-    }));
-
-    const accounts = results.map(r => r.account);
-    const positions = results.flatMap(r => r.positions);
-    const openOrders = results.flatMap(r => r.openOrders);
-    const orderHistory = results.flatMap(r => r.orderHistory).sort((a, b) => b.timestamp - a.timestamp);
-    const currencies = Array.from(new Set(accounts.map(a => String(a.currency || '').toUpperCase()).filter(Boolean)));
-    const sameCurrency = currencies.length <= 1;
-    const totalBalance = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.balance || 0), 0) : null;
-    const totalEquity = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.equity || 0), 0) : null;
-    const totalFreeMargin = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.freeMargin || 0), 0) : null;
-    const openPnL = positions.reduce((sum, p) => sum + Number(p.unrealizedPnL || 0), 0);
-    const dailyRealizedPnLValues = results.map(r => r.dailyRealizedPnL).filter((v): v is number => Number.isFinite(v as number));
-    const dailyRealizedPnL = dailyRealizedPnLValues.length
-      ? dailyRealizedPnLValues.reduce((sum, v) => sum + v, 0)
-      : null;
-    const closedHistory = orderHistory.filter(o => ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'].includes(o.status));
-
-    const payload = {
-      accounts,
-      positions,
-      openOrders,
-      orderHistory: orderHistory.slice(0, 100),
-      brokerSummaries: results.map(r => ({
-        broker: r.broker,
-        account: r.account,
-        dailyRealizedPnL: r.dailyRealizedPnL,
-        positionsCount: r.positions.length,
-        openOrdersCount: r.openOrders.length,
-        orderHistory: r.orderHistory.slice(0, 50)
-      })),
-      metrics: {
-        totalBalance,
-        totalEquity,
-        totalFreeMargin,
-        currencies,
-        openPnL,
-        dailyRealizedPnL,
-        totalOrders: closedHistory.length,
-        winRate: null,
-        profitFactor: null,
-        maxDrawdown: null
-      },
-      dataStatus: 'LIVE',
-      generatedAt: Date.now()
-    };
-
-    dashboardSummaryCache = {
-      payload,
-      expiresAt: Date.now() + DASHBOARD_SUMMARY_CACHE_TTL_MS
-    };
-    return payload;
-  })().finally(() => {
-    dashboardSummaryInFlight = null;
-  });
-
-  return dashboardSummaryInFlight;
-}
-
-const DASHBOARD_SUMMARY_CACHE_TTL_MS = 30_000;
-let dashboardSummaryCache: { payload: any; expiresAt: number } | null = null;
-let dashboardSummaryInFlight: Promise<any> | null = null;
-
 async function refreshDashboardSummary(): Promise<any> {
   const status = await getBrokerStatusSnapshot();
   const accountByBroker = new Map(
@@ -520,15 +436,15 @@ async function refreshDashboardSummary(): Promise<any> {
     return { broker, account, positions, openOrders, orderHistory, dailyRealizedPnL };
   }));
 
-  const accounts = results.map(r => r.account);
+  const accounts: any[] = results.map(r => r.account);
   const positions = results.flatMap(r => r.positions);
   const openOrders = results.flatMap(r => r.openOrders);
   const orderHistory = results.flatMap(r => r.orderHistory).sort((a, b) => b.timestamp - a.timestamp);
-  const currencies = Array.from(new Set(accounts.map(a => String(a.currency || '').toUpperCase()).filter(Boolean)));
+  const currencies = Array.from(new Set(accounts.map((a: any) => String(a?.currency || '').toUpperCase()).filter(Boolean)));
   const sameCurrency = currencies.length <= 1;
-  const totalBalance = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.balance || 0), 0) : null;
-  const totalEquity = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.equity || 0), 0) : null;
-  const totalFreeMargin = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.freeMargin || 0), 0) : null;
+  const totalBalance = sameCurrency ? accounts.reduce((sum: number, a: any) => sum + Number(a?.balance || 0), 0) : null;
+  const totalEquity = sameCurrency ? accounts.reduce((sum: number, a: any) => sum + Number(a?.equity || 0), 0) : null;
+  const totalFreeMargin = sameCurrency ? accounts.reduce((sum: number, a: any) => sum + Number(a?.freeMargin || 0), 0) : null;
   const openPnL = positions.reduce((sum, p) => sum + Number(p.unrealizedPnL || 0), 0);
   const dailyRealizedPnLValues = results.map(r => r.dailyRealizedPnL).filter((v): v is number => Number.isFinite(v as number));
   const dailyRealizedPnL = dailyRealizedPnLValues.length

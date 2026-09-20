@@ -476,6 +476,20 @@ function initSchema(db: Database) {
       // Column already exists, ignore
     }
   }
+
+  // Safe migration for signals.ml_probability NOT NULL constraint in preexisting DB
+  try {
+    const tableInfo = db.exec("PRAGMA table_info(signals)");
+    const mlCol = tableInfo[0]?.values?.find((col: any[]) => col[1] === 'ml_probability');
+    if (mlCol && mlCol[3] === 1) {
+      db.run("CREATE TABLE IF NOT EXISTS signals_temp (id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, market TEXT NOT NULL, instrument TEXT NOT NULL, pair TEXT, timeframe TEXT, underlying TEXT, direction TEXT NOT NULL, category TEXT NOT NULL, strategy TEXT NOT NULL, score REAL NOT NULL, ml_probability REAL, entry_preferred REAL NOT NULL, entry_min REAL, entry_max REAL, stop_loss REAL NOT NULL, target1 REAL NOT NULL, target2 REAL NOT NULL, target3 REAL, risk_reward REAL NOT NULL, trend TEXT, market_regime TEXT, session TEXT, status TEXT NOT NULL, data_status TEXT, strategy_version TEXT, model_version TEXT NOT NULL)");
+      db.run("INSERT INTO signals_temp (id, timestamp, market, instrument, pair, timeframe, underlying, direction, category, strategy, score, ml_probability, entry_preferred, entry_min, entry_max, stop_loss, target1, target2, target3, risk_reward, trend, market_regime, session, status, data_status, strategy_version, model_version) SELECT id, timestamp, market, instrument, pair, timeframe, underlying, direction, category, strategy, score, ml_probability, entry_preferred, entry_min, entry_max, stop_loss, target1, target2, target3, risk_reward, trend, market_regime, session, status, data_status, strategy_version, model_version FROM signals");
+      db.run("DROP TABLE signals");
+      db.run("ALTER TABLE signals_temp RENAME TO signals");
+    }
+  } catch (err) {
+    console.warn('Migration for signals table nullability skipped:', err);
+  }
 }
 
 function seedInitialData(db: Database) {

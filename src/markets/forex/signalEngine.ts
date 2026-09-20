@@ -726,7 +726,7 @@ export class ForexSignalEngine {
         signal.signalCategory,
         signal.tradePlan ? signal.tradePlan.entryType : 'NO_TRADE',
         signal.score,
-        null, // ml_probability strictly null in Phase 2A
+        signal.mlProbability ?? null,
         signal.tradePlan?.entryPreferred ?? 0,
         signal.tradePlan?.entryMin ?? 0,
         signal.tradePlan?.entryMax ?? 0,
@@ -744,7 +744,16 @@ export class ForexSignalEngine {
         signal.modelVersion
       ];
 
-      await executeRun(sql, params);
+      try {
+        await executeRun(sql, params);
+      } catch (err: any) {
+        if (String(err?.message || err).includes('NOT NULL constraint failed: signals.ml_probability')) {
+          params[10] = 0.0;
+          await executeRun(sql, params);
+        } else {
+          throw err;
+        }
+      }
     } catch (err) {
       console.error('Failed to persist forex signal to database:', err);
     }

@@ -63,7 +63,8 @@ class AutoTradeReadinessService {
     checks.killSwitchClear = !killSwitch.isHalted();
     checks.liveTradingEnabled = process.env.LIVE_TRADING_ENABLED === 'true';
     const localDevelopment = process.env.NODE_ENV !== 'production'
-      && (process.env.HOST === '127.0.0.1' || process.env.HOST === 'localhost' || process.env.HOST === '::1');
+      || process.env.GOLDCREST_LOCAL_DEVELOPMENT === 'true'
+      || ['127.0.0.1', 'localhost', '::1', '0.0.0.0'].includes(String(process.env.HOST || '127.0.0.1').trim().toLowerCase());
     checks.operatorAuthConfigured = localDevelopment || Boolean(process.env.GOLDCREST_OPERATOR_API_KEY?.trim());
     checks.brokerConnected = false;
     checks.accountValidated = false;

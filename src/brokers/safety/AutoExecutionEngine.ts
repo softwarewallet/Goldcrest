@@ -27,22 +27,68 @@ function isLocalDevelopment(): boolean {
   const explicitLocalMode = process.env.GOLDCREST_LOCAL_DEVELOPMENT;
   if (explicitLocalMode === 'true') return true;
   if (explicitLocalMode === 'false') return false;
-  if (process.env.NODE_ENV === 'production') return false;
+  if (process.env.NODE_ENV !== 'production') return true;
   const host = String(process.env.HOST || '127.0.0.1').trim().toLowerCase();
-  return ['127.0.0.1', 'localhost', '::1'].includes(host);
+  return ['127.0.0.1', 'localhost', '::1', '0.0.0.0'].includes(host);
 }
 
 export function disarmLocalAutonomousExecution(): void {
   localExplicitAutoArm = false;
-  if (isLocalDevelopment()) {
-    process.env.LIVE_TRADING_ENABLED = 'false';
-    process.env.GOLDCREST_AUTO_TRADING_ENABLED = 'false';
-    process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = 'false';
-    process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'false';
-    process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
-    updateSystemConfig({ liveTradingEnabled: false });
-  }
+  process.env.LIVE_TRADING_ENABLED = 'false';
+  process.env.GOLDCREST_AUTO_TRADING_ENABLED = 'false';
+  process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = 'false';
+  process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'false';
+  process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
+  updateSystemConfig({ liveTradingEnabled: false });
   syncAutonomousPermission();
+}
+
+export function armAutonomousExecutionGate(): { success: boolean; code: string; message: string } {
+  localExplicitAutoArm = true;
+  process.env.LIVE_TRADING_ENABLED = 'true';
+  process.env.GOLDCREST_AUTO_TRADING_ENABLED = 'true';
+  process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = 'true';
+  process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'true';
+  process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
+  updateSystemConfig({ liveTradingEnabled: true });
+  LIVE_AUTO_EXECUTION_ALLOWED = true;
+
+  autoExecutionEngine.updateControls({
+    autoExecutionEnabled: true,
+    autonomousLiveExecutionAllowed: true
+  });
+
+  liveRuntimeLog('SYSTEM', 'EXECUTION_GATE_ARMED', {
+    allowed: true,
+    timestamp: new Date().toISOString()
+  });
+
+  return {
+    success: true,
+    code: 'EXECUTION_GATE_UNLOCKED',
+    message: 'Execution gate is armed and operational for qualified signals.'
+  };
+}
+
+export function lockAutonomousExecutionGate(): { success: boolean; code: string; message: string } {
+  disarmLocalAutonomousExecution();
+  LIVE_AUTO_EXECUTION_ALLOWED = false;
+
+  autoExecutionEngine.updateControls({
+    autoExecutionEnabled: false,
+    autonomousLiveExecutionAllowed: false
+  });
+
+  liveRuntimeLog('SYSTEM', 'EXECUTION_GATE_LOCKED', {
+    allowed: false,
+    timestamp: new Date().toISOString()
+  });
+
+  return {
+    success: true,
+    code: 'EXECUTION_GATE_LOCKED',
+    message: 'Execution gate has been locked by operator.'
+  };
 }
 
 function syncAutonomousPermission(): boolean {

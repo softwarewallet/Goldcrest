@@ -1,3 +1,6 @@
+import { alphaVantageNewsService, AlphaVantageArticle } from './alphaVantageNewsService';
+import { marketauxNewsService, MarketauxArticle } from './marketauxNewsService';
+
 export interface LiveNewsArticle {
   title: string;
   url: string;
@@ -5,10 +8,23 @@ export interface LiveNewsArticle {
   publishedAt: string | null;
   language?: string;
   sourceCountry?: string;
+  summary?: string;
+  bannerImage?: string | null;
+  sentimentScore?: number;
+  sentimentLabel?: string;
+  topics?: string[];
 }
 
-export type LiveNewsSource = 'GDELT_DOC_2' | 'GOOGLE_NEWS_RSS' | 'NONE';
-export type LiveNewsProviderStatus = 'LIVE' | 'NO_RESULTS' | 'ERROR';
+export type LiveNewsSource = 'ALPHA_VANTAGE' | 'MARKETAUX' | 'GDELT_DOC_2' | 'GOOGLE_NEWS_RSS' | 'NONE';
+export type LiveNewsProviderStatus = 'LIVE' | 'NO_RESULTS' | 'RATE_LIMITED' | 'UNCONFIGURED' | 'ERROR';
+
+export interface LiveNewsSentimentSummary {
+  averageScore: number;
+  overallLabel: string;
+  bullishCount: number;
+  bearishCount: number;
+  neutralCount: number;
+}
 
 export interface LiveNewsSnapshot {
   source: LiveNewsSource;
@@ -21,9 +37,12 @@ export interface LiveNewsSnapshot {
   articles: LiveNewsArticle[];
   queryPairs?: string[];
   providerStatus?: {
+    ALPHA_VANTAGE?: LiveNewsProviderStatus;
+    MARKETAUX?: LiveNewsProviderStatus;
     GDELT_DOC_2: LiveNewsProviderStatus;
     GOOGLE_NEWS_RSS: LiveNewsProviderStatus;
   };
+  sentimentSummary?: LiveNewsSentimentSummary;
   latestArticleAt?: string | null;
   error?: string;
 }
@@ -77,12 +96,12 @@ const FAILURE_BACKOFF_MS = Math.max(
   Number(process.env.GOLDCREST_NEWS_FAILURE_BACKOFF_MS || 180_000)
 );
 const REQUEST_TIMEOUT_MS = Math.max(
-  5_000,
-  Number(process.env.GOLDCREST_NEWS_TIMEOUT_MS || 8_000)
+  3_000,
+  Number(process.env.GOLDCREST_NEWS_TIMEOUT_MS || 5_000)
 );
 const MAX_ARTICLE_AGE_MS = Math.max(
   15 * 60_000,
-  Number(process.env.GOLDCREST_NEWS_MAX_ARTICLE_AGE_MS || 8 * 60 * 60_000)
+  Number(process.env.GOLDCREST_NEWS_MAX_ARTICLE_AGE_MS || 48 * 60 * 60_000)
 );
 
 let newsCache: {
@@ -181,14 +200,20 @@ function buildNewsQuery(pairs: string[]): string {
   return pairQuery ? `(${macro}) OR (${pairQuery})` : macro;
 }
 
-function classifyArticle(title: string): 'HIGH' | 'ELEVATED' | 'LOW' {
-  const normalized = title.toLowerCase();
+function classifyArticle(article: LiveNewsArticle): 'HIGH' | 'ELEVATED' | 'LOW' {
+  if (typeof article.sentimentScore === 'number' && Math.abs(article.sentimentScore) >= 0.45) {
+    return 'HIGH';
+  }
+  const normalized = article.title.toLowerCase();
 
   // A generic mention of the Fed/ECB/etc. is not by itself a high-risk event.
   // Require an explicit rate/macro/event term before classifying a headline HIGH.
   const highImpact = HIGH_IMPACT_TERMS.some(term => normalized.includes(term));
   if (highImpact) return 'HIGH';
 
+  if (typeof article.sentimentScore === 'number' && Math.abs(article.sentimentScore) >= 0.25) {
+    return 'ELEVATED';
+  }
   if (ELEVATED_TERMS.some(term => normalized.includes(term))) return 'ELEVATED';
   return 'LOW';
 }
@@ -200,7 +225,7 @@ function scoreArticles(
   let elevatedCount = 0;
 
   for (const article of articles) {
-    const classification = classifyArticle(article.title);
+    const classification = classifyArticle(article);
     if (classification === 'HIGH') highImpactCount += 1;
     else if (classification === 'ELEVATED') elevatedCount += 1;
   }
@@ -215,6 +240,45 @@ function scoreArticles(
       : elevatedCount >= 4
         ? 'ELEVATED'
         : 'LOW'
+  };
+}
+
+function computeAggregatedSentiment(
+  articles: LiveNewsArticle[]
+): LiveNewsSentimentSummary | undefined {
+  const scored = articles.filter(a => typeof a.sentimentScore === 'number');
+  if (scored.length === 0) return undefined;
+
+  let totalScore = 0;
+  let bullishCount = 0;
+  let bearishCount = 0;
+  let neutralCount = 0;
+
+  for (const a of scored) {
+    const s = a.sentimentScore!;
+    totalScore += s;
+    if (s >= 0.15 || (a.sentimentLabel && a.sentimentLabel.toLowerCase().includes('bullish'))) {
+      bullishCount += 1;
+    } else if (s <= -0.15 || (a.sentimentLabel && a.sentimentLabel.toLowerCase().includes('bearish'))) {
+      bearishCount += 1;
+    } else {
+      neutralCount += 1;
+    }
+  }
+
+  const averageScore = Number((totalScore / scored.length).toFixed(4));
+  let overallLabel = 'Neutral';
+  if (averageScore >= 0.35) overallLabel = 'Bullish';
+  else if (averageScore >= 0.15) overallLabel = 'Somewhat-Bullish';
+  else if (averageScore <= -0.35) overallLabel = 'Bearish';
+  else if (averageScore <= -0.15) overallLabel = 'Somewhat-Bearish';
+
+  return {
+    averageScore,
+    overallLabel,
+    bullishCount,
+    bearishCount,
+    neutralCount
   };
 }
 
@@ -372,6 +436,108 @@ async function fetchFromGoogleNewsRss(query: string): Promise<{ status: LiveNews
   }
 }
 
+async function fetchFromMarketaux(pairs: string[]): Promise<{
+  status: LiveNewsProviderStatus;
+  articles: LiveNewsArticle[];
+  error?: string;
+}> {
+  if (!marketauxNewsService.isConfigured()) {
+    return { status: 'UNCONFIGURED', articles: [] };
+  }
+  try {
+    const res = await marketauxNewsService.fetchForexNews(pairs.length > 0 ? pairs : undefined);
+    if (res.status === 'RATE_LIMITED') {
+      const articles: LiveNewsArticle[] = res.articles.map(a => ({
+        title: a.title,
+        url: a.url,
+        source: a.source,
+        publishedAt: a.publishedAt,
+        summary: a.summary,
+        bannerImage: a.bannerImage,
+        sentimentScore: a.sentimentScore,
+        sentimentLabel: a.sentimentLabel,
+        topics: a.keywords
+      }));
+      return { status: 'RATE_LIMITED', articles, error: res.error };
+    }
+    if (res.status === 'ERROR') {
+      return { status: 'ERROR', articles: [], error: res.error };
+    }
+    const articles: LiveNewsArticle[] = res.articles.map(a => ({
+      title: a.title,
+      url: a.url,
+      source: a.source,
+      publishedAt: a.publishedAt,
+      summary: a.summary,
+      bannerImage: a.bannerImage,
+      sentimentScore: a.sentimentScore,
+      sentimentLabel: a.sentimentLabel,
+      topics: a.keywords
+    }));
+    return {
+      status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
+      articles
+    };
+  } catch (err: any) {
+    return {
+      status: 'ERROR',
+      articles: [],
+      error: asErrorMessage(err)
+    };
+  }
+}
+
+async function fetchFromAlphaVantage(pairs: string[]): Promise<{
+  status: LiveNewsProviderStatus;
+  articles: LiveNewsArticle[];
+  error?: string;
+}> {
+  if (!alphaVantageNewsService.isConfigured()) {
+    return { status: 'UNCONFIGURED', articles: [] };
+  }
+  try {
+    const res = await alphaVantageNewsService.fetchForexNews(pairs.length > 0 ? pairs : undefined);
+    if (res.status === 'RATE_LIMITED') {
+      const articles: LiveNewsArticle[] = res.articles.map(a => ({
+        title: a.title,
+        url: a.url,
+        source: a.source,
+        publishedAt: a.publishedAt,
+        summary: a.summary,
+        bannerImage: a.bannerImage,
+        sentimentScore: a.sentimentScore,
+        sentimentLabel: a.sentimentLabel,
+        topics: a.topics
+      }));
+      return { status: 'RATE_LIMITED', articles, error: res.error };
+    }
+    if (res.status === 'ERROR') {
+      return { status: 'ERROR', articles: [], error: res.error };
+    }
+    const articles: LiveNewsArticle[] = res.articles.map(a => ({
+      title: a.title,
+      url: a.url,
+      source: a.source,
+      publishedAt: a.publishedAt,
+      summary: a.summary,
+      bannerImage: a.bannerImage,
+      sentimentScore: a.sentimentScore,
+      sentimentLabel: a.sentimentLabel,
+      topics: a.topics
+    }));
+    return {
+      status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
+      articles
+    };
+  } catch (err: any) {
+    return {
+      status: 'ERROR',
+      articles: [],
+      error: asErrorMessage(err)
+    };
+  }
+}
+
 function unavailableSnapshot(
   error: unknown,
   queryPairs: string[],
@@ -401,34 +567,61 @@ async function fetchLiveForexNewsInternal(
 
   const newsQuery = buildNewsQuery(queryPairs);
 
-  const results = await Promise.all([
+  const [gdeltRes, googleRes, avRes, marketauxRes] = await Promise.all([
     fetchFromGdelt(newsQuery),
-    fetchFromGoogleNewsRss(newsQuery)
+    fetchFromGoogleNewsRss(newsQuery),
+    fetchFromAlphaVantage(queryPairs),
+    fetchFromMarketaux(queryPairs)
   ]);
 
-  const freshByProvider = results.map(result => filterFreshArticles(result.articles, now));
-  const providerStatus = {
-    GDELT_DOC_2: results[0].status === 'ERROR'
-      ? 'ERROR' as const
-      : freshByProvider[0].length > 0
-        ? 'LIVE' as const
-        : 'NO_RESULTS' as const,
-    GOOGLE_NEWS_RSS: results[1].status === 'ERROR'
-      ? 'ERROR' as const
-      : freshByProvider[1].length > 0
-        ? 'LIVE' as const
-        : 'NO_RESULTS' as const
+  const freshGdelt = filterFreshArticles(gdeltRes.articles, now);
+  const freshGoogle = filterFreshArticles(googleRes.articles, now);
+  const freshAv = filterFreshArticles(avRes.articles, now);
+  const freshMarketaux = filterFreshArticles(marketauxRes.articles, now);
+
+  const providerStatus: LiveNewsSnapshot['providerStatus'] = {
+    ALPHA_VANTAGE: avRes.status === 'UNCONFIGURED'
+      ? 'UNCONFIGURED'
+      : avRes.status === 'RATE_LIMITED'
+        ? 'RATE_LIMITED'
+        : avRes.status === 'ERROR'
+          ? 'ERROR'
+          : freshAv.length > 0
+            ? 'LIVE'
+            : 'NO_RESULTS',
+    MARKETAUX: marketauxRes.status === 'UNCONFIGURED'
+      ? 'UNCONFIGURED'
+      : marketauxRes.status === 'RATE_LIMITED'
+        ? 'RATE_LIMITED'
+        : marketauxRes.status === 'ERROR'
+          ? 'ERROR'
+          : freshMarketaux.length > 0
+            ? 'LIVE'
+            : 'NO_RESULTS',
+    GDELT_DOC_2: gdeltRes.status === 'ERROR'
+      ? 'ERROR'
+      : freshGdelt.length > 0
+        ? 'LIVE'
+        : 'NO_RESULTS',
+    GOOGLE_NEWS_RSS: googleRes.status === 'ERROR'
+      ? 'ERROR'
+      : freshGoogle.length > 0
+        ? 'LIVE'
+        : 'NO_RESULTS'
   };
 
-  const errors = results
-    .map(result => result.error)
+  const errors = [gdeltRes.error, googleRes.error, avRes.error, marketauxRes.error]
     .filter(Boolean) as string[];
 
-  const fetchedArticles = freshByProvider.flat();
-  const articles = deduplicateArticles(fetchedArticles).slice(0, 30);
+  // Prioritize sentiment providers (Alpha Vantage, Marketaux), then broad aggregators
+  const fetchedArticles = [...freshAv, ...freshMarketaux, ...freshGdelt, ...freshGoogle];
+  const articles = deduplicateArticles(fetchedArticles).slice(0, 35);
 
   if (articles.length === 0) {
-    const allErrored = results.every(result => result.status === 'ERROR');
+    const activeProviders = [gdeltRes, googleRes];
+    if (avRes.status !== 'UNCONFIGURED') activeProviders.push(avRes);
+    if (marketauxRes.status !== 'UNCONFIGURED') activeProviders.push(marketauxRes);
+    const allErrored = activeProviders.every(result => result.status === 'ERROR');
 
     const snapshot: LiveNewsSnapshot = allErrored
       ? unavailableSnapshot(
@@ -472,10 +665,15 @@ async function fetchLiveForexNewsInternal(
 
   const score = scoreArticles(articles);
   const latestArticleAt = articles[0]?.publishedAt || null;
+  const sentimentSummary = computeAggregatedSentiment(articles);
 
-  const source: LiveNewsSource = freshByProvider[0].length > 0
-    ? 'GDELT_DOC_2'
-    : 'GOOGLE_NEWS_RSS';
+  const source: LiveNewsSource = freshAv.length > 0
+    ? 'ALPHA_VANTAGE'
+    : freshMarketaux.length > 0
+      ? 'MARKETAUX'
+      : freshGdelt.length > 0
+        ? 'GDELT_DOC_2'
+        : 'GOOGLE_NEWS_RSS';
 
   const snapshot: LiveNewsSnapshot = {
     source,
@@ -488,6 +686,7 @@ async function fetchLiveForexNewsInternal(
     articles,
     queryPairs,
     providerStatus,
+    sentimentSummary,
     latestArticleAt,
     error: errors.length ? errors.join(' | ') : undefined
   };

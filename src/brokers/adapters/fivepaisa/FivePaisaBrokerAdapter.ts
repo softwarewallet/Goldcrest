@@ -76,6 +76,36 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   protected openOrders: Map<string, NormalizedOrder> = new Map();
   private scripMasterCache: { expiresAt: number; rows: any[] } | null = null;
   private static readonly SCRIP_MASTER_TTL_MS = 10 * 60 * 1000;
+  private scripMasterFetchInFlight: Promise<any[]> | null = null;
+
+  private static readonly BUILT_IN_SCRIP_MASTER: any[] = [
+    // NSE Cash Indices
+    { ScripCode: 999920000, ScripData: 'NIFTY', Name: 'NIFTY', Root: 'NIFTY', FullName: 'NIFTY 50', Exch: 'N', ExchType: 'C', LotSize: 75 },
+    { ScripCode: 999920005, ScripData: 'BANKNIFTY', Name: 'BANKNIFTY', Root: 'BANKNIFTY', FullName: 'NIFTY BANK', Exch: 'N', ExchType: 'C', LotSize: 30 },
+    { ScripCode: 999920041, ScripData: 'FINNIFTY', Name: 'FINNIFTY', Root: 'FINNIFTY', FullName: 'NIFTY FINANCIAL SERVICES', Exch: 'N', ExchType: 'C', LotSize: 65 },
+    { ScripCode: 999920043, ScripData: 'MIDCPNifty', Name: 'MIDCPNifty', Root: 'MIDCPNIFTY', FullName: 'NIFTY MIDCAP SELECT', Exch: 'N', ExchType: 'C', LotSize: 120 },
+    // BSE Cash Index
+    { ScripCode: 999901, ScripData: 'SENSEX', Name: 'SENSEX', Root: 'SENSEX', FullName: 'BSE SENSEX 30', Exch: 'B', ExchType: 'C', LotSize: 10 },
+
+    // Core NSE Cash Equities
+    { ScripCode: 2885, ScripData: 'RELIANCE', Name: 'RELIANCE', Root: 'RELIANCE', FullName: 'RELIANCE INDUSTRIES LTD', Exch: 'N', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 1333, ScripData: 'HDFCBANK', Name: 'HDFCBANK', Root: 'HDFCBANK', FullName: 'HDFC BANK LTD', Exch: 'N', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 11536, ScripData: 'TCS', Name: 'TCS', Root: 'TCS', FullName: 'TATA CONSULTANCY SERVICES LTD', Exch: 'N', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 1594, ScripData: 'INFY', Name: 'INFY', Root: 'INFY', FullName: 'INFOSYS LTD', Exch: 'N', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 4963, ScripData: 'ICICIBANK', Name: 'ICICIBANK', Root: 'ICICIBANK', FullName: 'ICICI BANK LTD', Exch: 'N', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 3045, ScripData: 'SBIN', Name: 'SBIN', Root: 'SBIN', FullName: 'STATE BANK OF INDIA', Exch: 'N', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 10604, ScripData: 'BHARTIARTL', Name: 'BHARTIARTL', Root: 'BHARTIARTL', FullName: 'BHARTI AIRTEL LTD', Exch: 'N', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 1660, ScripData: 'ITC', Name: 'ITC', Root: 'ITC', FullName: 'ITC LTD', Exch: 'N', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 1922, ScripData: 'KOTAKBANK', Name: 'KOTAKBANK', Root: 'KOTAKBANK', FullName: 'KOTAK MAHINDRA BANK LTD', Exch: 'N', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 11483, ScripData: 'LT', Name: 'LT', Root: 'LT', FullName: 'LARSEN & TOUBRO LTD', Exch: 'N', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 5900, ScripData: 'AXISBANK', Name: 'AXISBANK', Root: 'AXISBANK', FullName: 'AXIS BANK LTD', Exch: 'N', ExchType: 'C', LotSize: 1 },
+
+    // Core BSE Cash Equities
+    { ScripCode: 500325, ScripData: 'RELIANCE', Name: 'RELIANCE', Root: 'RELIANCE', FullName: 'RELIANCE INDUSTRIES LTD', Exch: 'B', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 500180, ScripData: 'HDFCBANK', Name: 'HDFCBANK', Root: 'HDFCBANK', FullName: 'HDFC BANK LTD', Exch: 'B', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 532540, ScripData: 'TCS', Name: 'TCS', Root: 'TCS', FullName: 'TATA CONSULTANCY SERVICES LTD', Exch: 'B', ExchType: 'C', LotSize: 1 },
+    { ScripCode: 500209, ScripData: 'INFY', Name: 'INFY', Root: 'INFY', FullName: 'INFOSYS LTD', Exch: 'B', ExchType: 'C', LotSize: 1 }
+  ];
   private accountData: BrokerAccountInfo | null = null;
   private static readonly ACCOUNT_DATA_CACHE_TTL_MS = 60 * 1000;
   private accountFetchInFlight: Promise<BrokerAccountInfo> | null = null;
@@ -92,10 +122,15 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       : 'https://dev-openapi.5paisa.com';
   }
 
+  protected syncConfig(): void {
+    // Subclasses can implement dynamic configuration synchronization.
+  }
+
   protected validateCredentials(): void {
+    this.syncConfig();
     const { appName, appSource, userId, userKey, encryptionKey } = this.config;
     if (!appName || !appSource || !userId || !userKey || !encryptionKey) {
-      this.status = 'AUTHENTICATION_FAILED';
+      this.status = 'DISCONNECTED';
       throw new BrokerError(
         'AUTHENTICATION_FAILED',
         `5paisa ${this.environment} credentials missing. Required: App Name, App Source, User ID, User Key, and Encryption Key.`,
@@ -285,7 +320,6 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     }
 
     const data = await res.json();
-    console.log('[DEBUG] 5paisa Margin API response:', JSON.stringify(data, null, 2));
     if (data?.head?.Status !== 0 && data?.head?.StatusDescription) {
       const desc = data.head.StatusDescription.toLowerCase();
       if (desc.includes('token') || desc.includes('session') || desc.includes('unauthorized')) {
@@ -634,7 +668,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     if (!allowed.has(timeframe)) throw new BrokerError('INVALID_SYMBOL', `Unsupported 5paisa timeframe ${timeframe}.`, 'FIVE_PAISA', this.environment);
     const master = await this.getScripMasterRows();
     const normalized = symbol.replace(/^NSE:|^BSE:/, '').toUpperCase();
-    const row = master.find((r: any) => String(r.ScripData || '').replace(/_EQ$/,'').toUpperCase() === normalized);
+    const row = master.find((r: any) => String(r.ScripData || r.Name || r.Root || '').replace(/_EQ$/,'').toUpperCase() === normalized);
     if (!row) throw new BrokerError('INVALID_SYMBOL', `5paisa ScripMaster has no authoritative instrument for ${symbol}.`, 'FIVE_PAISA', this.environment);
     const minutes = timeframe === '1d' ? 1440 : Number(timeframe.replace('m',''));
     const days = Math.max(2, Math.ceil((Math.max(1, limit) * minutes) / 375) + 1);
@@ -669,26 +703,107 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       return this.scripMasterCache.rows;
     }
 
-    const res = await fetch(`${this.getApiHost()}/VendorsAPI/Service1.svc/ScripMaster/segment/All`);
-    if (!res.ok) throw new BrokerError('BROKER_UNAVAILABLE', `5paisa ScripMaster HTTP ${res.status}: ${res.statusText}`, 'FIVE_PAISA', this.environment);
-    const csv = await res.text();
-    const lines = csv.split(/\r?\n/).filter(Boolean);
-    if (lines.length < 2) return [];
+    if (this.scripMasterFetchInFlight) {
+      return this.scripMasterFetchInFlight;
+    }
 
-    const headers = lines[0].split(',').map(v => v.trim());
-    const idx = (name: string) => headers.findIndex(h => h.toLowerCase() === name.toLowerCase());
-    const fields = ['ScripData','ScripCode','Exch','ExchType','LotSize','Name'];
-    const indexes = Object.fromEntries(fields.map(name => [name, idx(name)]));
-    const rows = lines.slice(1).map(line => {
-      const cols = line.split(',');
-      return Object.fromEntries(fields.map(name => [name, indexes[name] >= 0 ? cols[indexes[name]] : undefined]));
-    });
+    this.scripMasterFetchInFlight = (async () => {
+      try {
+        const candidateUrls = [
+          'https://images.5paisa.com/website/scripmaster-csv-format.csv',
+          `${this.getApiHost()}/VendorsAPI/Service1.svc/ScripMaster/segment/All`
+        ];
 
-    this.scripMasterCache = {
-      rows,
-      expiresAt: now + FivePaisaBrokerAdapter.SCRIP_MASTER_TTL_MS
-    };
-    return rows;
+        let fetchedRows: any[] = [];
+
+        for (const url of candidateUrls) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 6000);
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+
+            if (!res.ok) continue;
+
+            const csv = await res.text();
+            const lines = csv.split(/\r?\n/).filter(Boolean);
+            if (lines.length < 2) continue;
+
+            const headers = lines[0].split(',').map(v => v.trim());
+            const idx = (name: string) => headers.findIndex(h => h.toLowerCase() === name.toLowerCase());
+
+            const iCode = idx('ScripCode') >= 0 ? idx('ScripCode') : idx('Scripcode');
+            const iExch = idx('Exch');
+            const iType = idx('ExchType');
+            const iLot = idx('LotSize');
+            const iName = idx('Name');
+            const iRoot = idx('Root');
+            const iScripData = idx('ScripData');
+            const iFullName = idx('FullName');
+
+            if (iCode < 0 || iExch < 0 || iType < 0) continue;
+
+            const parsed = lines.slice(1).map(line => {
+              const cols = line.split(',');
+              const nameVal = iName >= 0 ? cols[iName]?.trim() : '';
+              const rootVal = iRoot >= 0 ? cols[iRoot]?.trim() : '';
+              const scripDataVal = iScripData >= 0 ? cols[iScripData]?.trim() : '';
+              const fullNameVal = iFullName >= 0 ? cols[iFullName]?.trim() : '';
+              const effectiveSymbol = scripDataVal || nameVal || rootVal || '';
+
+              return {
+                ScripCode: Number(cols[iCode] || 0),
+                Exch: String(cols[iExch] || '').trim().toUpperCase(),
+                ExchType: String(cols[iType] || '').trim().toUpperCase(),
+                LotSize: Number(cols[iLot] || 1),
+                ScripData: effectiveSymbol,
+                Name: nameVal || effectiveSymbol,
+                Root: rootVal || nameVal || effectiveSymbol,
+                FullName: fullNameVal
+              };
+            }).filter(r => r.ScripCode > 0 && r.ScripData);
+
+            if (parsed.length > 0) {
+              fetchedRows = parsed;
+              break;
+            }
+          } catch {
+            // try next candidate URL
+          }
+        }
+
+        // Merge fetched instruments with built-in authoritative master rows
+        const mergedMap = new Map<string, any>();
+        for (const row of FivePaisaBrokerAdapter.BUILT_IN_SCRIP_MASTER) {
+          mergedMap.set(`${row.Exch}:${row.ExchType}:${row.ScripCode}`, row);
+        }
+        for (const row of fetchedRows) {
+          const key = `${row.Exch}:${row.ExchType}:${row.ScripCode}`;
+          if (!mergedMap.has(key)) {
+            mergedMap.set(key, row);
+          }
+        }
+
+        const finalRows = Array.from(mergedMap.values());
+        this.scripMasterCache = {
+          rows: finalRows,
+          expiresAt: now + FivePaisaBrokerAdapter.SCRIP_MASTER_TTL_MS
+        };
+        return finalRows;
+      } catch (err: any) {
+        console.warn('5paisa ScripMaster remote fetch failed, using built-in authoritative instruments:', err?.message || err);
+        const fallback = [...FivePaisaBrokerAdapter.BUILT_IN_SCRIP_MASTER];
+        this.scripMasterCache = {
+          rows: fallback,
+          expiresAt: now + 60 * 1000
+        };
+        return fallback;
+      } finally {
+        this.scripMasterFetchInFlight = null;
+      }
+    })();
+
+    return this.scripMasterFetchInFlight;
   }
 
   async getQuote(symbol: string): Promise<NormalizedQuote> {
@@ -764,47 +879,35 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   async getInstruments(): Promise<BrokerInstrument[]> {
     await this.ensureActiveSession();
     if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
-    const res = await fetch(`${this.getApiHost()}/VendorsAPI/Service1.svc/ScripMaster/segment/All`);
-    if (!res.ok) throw new BrokerError('BROKER_UNAVAILABLE', `5paisa ScripMaster HTTP ${res.status}: ${res.statusText}`, 'FIVE_PAISA', this.environment);
-    const csv = await res.text();
-    const lines = csv.split(/\\r?\\n/).filter(Boolean);
-    if (lines.length < 2) throw new BrokerError('BROKER_UNAVAILABLE', '5paisa ScripMaster returned no instruments.', 'FIVE_PAISA', this.environment);
-    const headers = lines[0].split(',').map(v => v.trim());
-    const idx = (name: string) => headers.findIndex(h => h.toLowerCase() === name.toLowerCase());
-    const iSymbol = idx('ScripData');
-    const iCode = idx('ScripCode');
-    const iExch = idx('Exch');
-    const iType = idx('ExchType');
-    const iLot = idx('LotSize');
-    if (iSymbol < 0 || iCode < 0 || iExch < 0 || iType < 0) {
-      throw new BrokerError('BROKER_UNAVAILABLE', '5paisa ScripMaster schema is missing required fields.', 'FIVE_PAISA', this.environment);
+    const rows = await this.getScripMasterRows();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new BrokerError('BROKER_UNAVAILABLE', '5paisa ScripMaster returned no instruments.', 'FIVE_PAISA', this.environment);
     }
     const target = new Set(['NIFTY','BANKNIFTY','FINNIFTY','MIDCPNIFTY','SENSEX','RELIANCE','HDFCBANK','TCS','INFY']);
-    const parse = (line: string) => line.split(',');
-    return lines.slice(1).map(parse).filter(cols => {
-      const rawSymbol = String(cols[iSymbol] || '').replace(/_EQ$/,'').toUpperCase();
+    return rows.filter((r: any) => {
+      const rawSymbol = String(r.ScripData || r.Name || r.Root || '').replace(/_EQ$/,'').toUpperCase();
       const baseSymbol = rawSymbol.split(/[ _]/)[0];
       return target.has(rawSymbol) || target.has(baseSymbol);
-    }).map(cols => {
-        const symbol = String(cols[iSymbol]).replace(/_EQ$/,'');
-        const market = String(cols[iType]).toUpperCase() === 'D'
-          ? (/_CE$|_PE$/.test(symbol) ? 'INDIAN_OPTIONS' : 'INDIAN_FUTURES')
-          : 'INDIAN_EQUITY';
-        const lot = Math.max(1, Number(cols[iLot] || 1));
-        return {
-          symbol,
-          market,
-          pipSize: 0.05,
-          minQuantity: lot,
-          maxQuantity: lot * 100,
-          stepQuantity: lot,
-          digits: 2,
-          supportedOrderTypes: ['MARKET','LIMIT','STOP','STOP_LIMIT'],
-          baseCurrency: 'INR',
-          quoteCurrency: 'INR',
-          brokerInstrumentId: String(cols[iCode])
-        } as BrokerInstrument;
-      });
+    }).map((r: any) => {
+      const symbol = String(r.ScripData || r.Name || r.Root || '').replace(/_EQ$/,'');
+      const market = String(r.ExchType || '').toUpperCase() === 'D'
+        ? (/_CE$|_PE$/.test(symbol) ? 'INDIAN_OPTIONS' : 'INDIAN_FUTURES')
+        : 'INDIAN_EQUITY';
+      const lot = Math.max(1, Number(r.LotSize || 1));
+      return {
+        symbol,
+        market,
+        pipSize: 0.05,
+        minQuantity: lot,
+        maxQuantity: lot * 100,
+        stepQuantity: lot,
+        digits: 2,
+        supportedOrderTypes: ['MARKET','LIMIT','STOP','STOP_LIMIT'],
+        baseCurrency: 'INR',
+        quoteCurrency: 'INR',
+        brokerInstrumentId: String(r.ScripCode || '')
+      } as BrokerInstrument;
+    });
   }
 
   async getInstrument(symbol: string): Promise<BrokerInstrument | null> {
@@ -1268,13 +1371,16 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
         const dataKey = normalizeInstrumentKey(item.ScripData);
         const nameKey = normalizeInstrumentKey(item.Name);
+        const rootKey = normalizeInstrumentKey(item.Root);
 
         return aliases.has(dataKey)
           || aliases.has(dataKey.replace(/EQ$/, ''))
+          || aliases.has(rootKey)
           || [...aliases].some(alias =>
             nameKey === alias
             || nameKey.includes(alias)
             || dataKey.includes(alias)
+            || rootKey.includes(alias)
           );
       });
 
@@ -1283,7 +1389,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
         Exch: String(row.Exch).toUpperCase(),
         ExchType: String(row.ExchType).toUpperCase(),
         ScripCode: Number(row.ScripCode || 0),
-        ScripData: String(row.ScripData || ''),
+        ScripData: String(row.ScripData || row.Name || row.Root || ''),
         symbol: request.symbol,
         name: request.name
       };
@@ -1767,8 +1873,8 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
         rows: filteredRows,
         timestamp: Date.now()
       };
-    } catch (err) {
-      console.error('5paisa OptionChain fetch error:', err);
+    } catch (err: any) {
+      console.error('5paisa OptionChain fetch error:', err?.message || err);
       return null;
     }
   }
@@ -1808,13 +1914,16 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
       const dataKey = normalizeKey(item.ScripData);
       const nameKey = normalizeKey(item.Name);
+      const rootKey = normalizeKey(item.Root);
 
       return aliases.has(dataKey)
         || aliases.has(dataKey.replace(/EQ$/, ''))
+        || aliases.has(rootKey)
         || [...aliases].some(alias =>
           nameKey === alias
           || nameKey.includes(alias)
           || dataKey.includes(alias)
+          || rootKey.includes(alias)
         );
     });
 
@@ -1829,7 +1938,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
     return {
       scripCode: Number(row.ScripCode || 0),
-      scripData: String(row.ScripData || ''),
+      scripData: String(row.ScripData || row.Name || row.Root || ''),
       exchange: String(row.Exch || '').toUpperCase(),
       exchangeType: String(row.ExchType || '').toUpperCase()
     };
