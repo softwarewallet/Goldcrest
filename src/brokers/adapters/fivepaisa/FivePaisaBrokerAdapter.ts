@@ -506,6 +506,13 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     return trades.map((trade: any) => this.normalizeBrokerTrade(trade));
   }
 
+  async getOrderHistoryRange(fromTimestamp: number, toTimestamp: number): Promise<NormalizedOrder[]> {
+    const rows = await this.getOrderHistory();
+    const from = Math.max(0, Number(fromTimestamp));
+    const to = Math.max(from, Number(toTimestamp));
+    return rows.filter(row => Number(row.timestamp) >= from && Number(row.timestamp) <= to);
+  }
+
   private normalizeBrokerTrade(trade: any): NormalizedOrder {
     const price = Number(trade.TradePrice ?? trade.AveragePrice ?? trade.Price ?? trade.Rate ?? 0);
     const quantity = Math.abs(Number(trade.TradedQty ?? trade.TradeQty ?? trade.Quantity ?? trade.Qty ?? 0));
