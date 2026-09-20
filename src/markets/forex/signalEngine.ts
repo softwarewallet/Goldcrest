@@ -22,14 +22,14 @@ import { calculateIndicators } from './indicators';
 import { analyzeMarketStructure } from './marketStructure';
 import { calculateSupportResistance } from './supportResistance';
 import { analyzeMultiTimeframe } from './multiTimeframe';
-import { ForexDemoProvider, validateCandleDataQuality } from './provider';
+import { ForexDataProvider, ForexDemoProvider, validateCandleDataQuality } from './provider';
 import { getForexSessionState } from '../common/session';
 
 export class ForexSignalEngine {
   private config: ForexSignalEngineConfig;
   private provider: ForexDemoProvider;
 
-  constructor(config: ForexSignalEngineConfig = DEFAULT_FOREX_CONFIG, provider: ForexDemoProvider = new ForexDemoProvider()) {
+  constructor(config: ForexSignalEngineConfig = DEFAULT_FOREX_CONFIG, provider: ForexDataProvider = new ForexDemoProvider()) {
     this.config = config;
     this.provider = provider;
   }
