@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  BarChart3, Bell, BookOpen, CandlestickChart, ChevronDown, ChevronRight,
+  Bell, BookOpen, CandlestickChart, ChevronDown, ChevronRight,
   Grid2X2, ListChecks, Settings, Sparkles, TrendingUp, Activity
 } from 'lucide-react';
 import { IndianSessionState } from '../markets/common/types';
