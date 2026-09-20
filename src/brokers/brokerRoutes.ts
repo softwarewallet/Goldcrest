@@ -26,6 +26,13 @@ let brokerStatusCache: { payload: any; expiresAt: number } | null = null;
 let brokerStatusInFlight: Promise<any> | null = null;
 const lastKnownBrokerAccounts = new Map<BrokerType, any>();
 
+type BrokerCollectionCache = { payload: any[]; expiresAt: number };
+const positionsCache: BrokerCollectionCache = { payload: [], expiresAt: 0 };
+const ordersCache: BrokerCollectionCache = { payload: [], expiresAt: 0 };
+let positionsInFlight: Promise<any[]> | null = null;
+let ordersInFlight: Promise<any[]> | null = null;
+const BROKER_COLLECTION_CACHE_TTL_MS = 15_000;
+
 function resolveMarketBroker(market: string): BrokerType {
   if (market === 'FOREX') return 'CTRADER';
   if (market === 'INDIAN_EQUITY' || market === 'INDIAN_FUTURES' || market === 'INDIAN_OPTIONS') {
@@ -178,9 +185,113 @@ async function persistBrokerAccountSnapshot(account: any): Promise<void> {
     // Persistence failure must never break broker status delivery.
   }
 }
+async function refreshBrokerStatusSnapshot(): Promise<any> {
+  const environment = brokerRegistry.getEnvironment();
+  const controls = autoExecutionEngine.getControls();
+  const haltDetails = killSwitch.getHaltDetails();
+
+  const brokerStatus = await Promise.all(LIVE_BROKERS.map(async (broker) => {
+    try {
+      const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
+      const account = await adapter.getAccount();
+      lastKnownBrokerAccounts.set(broker, account);
+      await persistBrokerAccountSnapshot(account);
+      return { broker, environment: 'LIVE', connected: true, account, error: null, stale: false };
+    } catch (err: any) {
+      const normalized = normalizeBrokerError(err, broker, 'LIVE');
+      const transient = ['RATE_LIMITED', 'TIMEOUT', 'NETWORK_ERROR', 'UNAVAILABLE', 'BROKER_UNAVAILABLE'].includes(normalized.code);
+      const fallback = transient
+        ? (lastKnownBrokerAccounts.get(broker) || await loadPersistedBrokerAccount(broker))
+        : null;
+
+      if (fallback) {
+        lastKnownBrokerAccounts.set(broker, fallback);
+        return {
+          broker,
+          environment: 'LIVE',
+          connected: false,
+          account: fallback,
+          stale: true,
+          lastRefreshError: normalized.message,
+          error: null,
+          code: normalized.code
+        };
+      }
+
+      return {
+        broker,
+        environment: 'LIVE',
+        connected: false,
+        account: null,
+        error: normalized.message,
+        code: normalized.code,
+        stale: false
+      };
+    }
+  }));
+
+  const payload = {
+    environment,
+    routingMode: 'AUTOMATIC_BY_MARKET',
+    selectedBroker: null,
+    brokerRouting: {
+      FOREX: 'CTRADER',
+      INDIAN_EQUITY: 'FIVE_PAISA',
+      INDIAN_FUTURES: 'FIVE_PAISA',
+      INDIAN_OPTIONS: 'FIVE_PAISA'
+    },
+    brokers: brokerStatus,
+    credentials: brokerRegistry.getCredentialStatuses(),
+    controls,
+    emergencyStop: haltDetails,
+    timestamp: Date.now()
+  };
+
+  brokerStatusCache = {
+    payload,
+    expiresAt: Date.now() + BROKER_STATUS_CACHE_TTL_MS
+  };
+  return payload;
+}
+
 async function getBrokerStatusSnapshot(): Promise<any> {
   const now = Date.now();
-  if (brokerStatusCache && now < brokerStatusCache.expiresAt) {
+
+  if (brokerStatusCache) {
+    if (now < brokerStatusCache.expiresAt) {
+      return brokerStatusCache.payload;
+    }
+
+    // Stale-while-revalidate: never make the UI wait for a broker reconnect.
+    // Return the last authoritative snapshot immediately and refresh in the
+    // background. This eliminates header flicker during provider throttling.
+    if (brokerStatusInFlight) {
+      return brokerStatusCache.payload;
+    }
+
+    brokerStatusInFlight = refreshBrokerStatusSnapshot().catch(err => {
+      console.warn('[BROKER_STATUS] background refresh failed:', err?.message || err);
+      return brokerStatusCache?.payload || {
+        environment: 'LIVE',
+        routingMode: 'AUTOMATIC_BY_MARKET',
+        selectedBroker: null,
+        brokers: LIVE_BROKERS.map(broker => ({
+          broker,
+          environment: 'LIVE',
+          connected: false,
+          account: null,
+          error: 'Broker status temporarily unavailable.',
+          stale: true
+        })),
+        credentials: brokerRegistry.getCredentialStatuses(),
+        controls: autoExecutionEngine.getControls(),
+        emergencyStop: killSwitch.getHaltDetails(),
+        timestamp: Date.now()
+      };
+    }).finally(() => {
+      brokerStatusInFlight = null;
+    });
+
     return brokerStatusCache.payload;
   }
 
@@ -188,74 +299,7 @@ async function getBrokerStatusSnapshot(): Promise<any> {
     return brokerStatusInFlight;
   }
 
-  brokerStatusInFlight = (async () => {
-    const environment = brokerRegistry.getEnvironment();
-    const controls = autoExecutionEngine.getControls();
-    const haltDetails = killSwitch.getHaltDetails();
-
-    const brokerStatus = await Promise.all(LIVE_BROKERS.map(async (broker) => {
-      try {
-        const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
-        const account = await adapter.getAccount();
-        lastKnownBrokerAccounts.set(broker, account);
-        await persistBrokerAccountSnapshot(account);
-        return { broker, environment: 'LIVE', connected: true, account, error: null, stale: false };
-      } catch (err: any) {
-        const normalized = normalizeBrokerError(err, broker, 'LIVE');
-        const transient = ['RATE_LIMITED', 'TIMEOUT', 'NETWORK_ERROR', 'UNAVAILABLE', 'BROKER_UNAVAILABLE'].includes(normalized.code);
-        const persisted = transient
-          ? (lastKnownBrokerAccounts.get(broker) || await loadPersistedBrokerAccount(broker))
-          : null;
-
-        if (persisted) {
-          lastKnownBrokerAccounts.set(broker, persisted);
-          return {
-            broker,
-            environment: 'LIVE',
-            connected: false,
-            account: persisted,
-            stale: true,
-            lastRefreshError: normalized.message,
-            error: null,
-            code: normalized.code
-          };
-        }
-
-        return {
-          broker,
-          environment: 'LIVE',
-          connected: false,
-          account: null,
-          error: normalized.message,
-          code: normalized.code,
-          stale: false
-        };
-      }
-    }));
-
-    const payload = {
-      environment,
-      routingMode: 'AUTOMATIC_BY_MARKET',
-      selectedBroker: null,
-      brokerRouting: {
-        FOREX: 'CTRADER',
-        INDIAN_EQUITY: 'FIVE_PAISA',
-        INDIAN_FUTURES: 'FIVE_PAISA',
-        INDIAN_OPTIONS: 'FIVE_PAISA'
-      },
-      brokers: brokerStatus,
-      credentials: brokerRegistry.getCredentialStatuses(),
-      controls,
-      emergencyStop: haltDetails,
-      timestamp: Date.now()
-    };
-
-    brokerStatusCache = {
-      payload,
-      expiresAt: Date.now() + BROKER_STATUS_CACHE_TTL_MS
-    };
-    return payload;
-  })().finally(() => {
+  brokerStatusInFlight = refreshBrokerStatusSnapshot().finally(() => {
     brokerStatusInFlight = null;
   });
 
@@ -464,13 +508,107 @@ async function getDashboardSummarySnapshot(): Promise<any> {
   return dashboardSummaryInFlight;
 }
 
+const DASHBOARD_SUMMARY_CACHE_TTL_MS = 30_000;
+let dashboardSummaryCache: { payload: any; expiresAt: number } | null = null;
+let dashboardSummaryInFlight: Promise<any> | null = null;
+
+async function refreshDashboardSummary(): Promise<any> {
+  const status = await getBrokerStatusSnapshot();
+  const accountByBroker = new Map(
+    (status.brokers || []).map((row: any) => [row.broker, row.account]).filter(([, account]) => Boolean(account))
+  );
+
+  const results = await Promise.all(LIVE_BROKERS.map(async (broker) => {
+    const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
+    const account = accountByBroker.get(broker) || await adapter.getAccount();
+    const [positions, openOrders, orderHistory] = await Promise.all([
+      adapter.getPositions(),
+      adapter.getOpenOrders(),
+      adapter.getOrderHistory()
+    ]);
+    let dailyRealizedPnL: number | null = null;
+    if (typeof adapter.getDailyRealizedPnL === 'function') {
+      try { dailyRealizedPnL = await adapter.getDailyRealizedPnL(); } catch { dailyRealizedPnL = null; }
+    }
+    return { broker, account, positions, openOrders, orderHistory, dailyRealizedPnL };
+  }));
+
+  const accounts = results.map(r => r.account);
+  const positions = results.flatMap(r => r.positions);
+  const openOrders = results.flatMap(r => r.openOrders);
+  const orderHistory = results.flatMap(r => r.orderHistory).sort((a, b) => b.timestamp - a.timestamp);
+  const currencies = Array.from(new Set(accounts.map(a => String(a.currency || '').toUpperCase()).filter(Boolean)));
+  const sameCurrency = currencies.length <= 1;
+  const totalBalance = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.balance || 0), 0) : null;
+  const totalEquity = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.equity || 0), 0) : null;
+  const totalFreeMargin = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.freeMargin || 0), 0) : null;
+  const openPnL = positions.reduce((sum, p) => sum + Number(p.unrealizedPnL || 0), 0);
+  const dailyRealizedPnLValues = results.map(r => r.dailyRealizedPnL).filter((v): v is number => Number.isFinite(v as number));
+  const dailyRealizedPnL = dailyRealizedPnLValues.length
+    ? dailyRealizedPnLValues.reduce((sum, v) => sum + v, 0)
+    : null;
+  const closedHistory = orderHistory.filter(o => ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'].includes(o.status));
+
+  return {
+    accounts,
+    positions,
+    openOrders,
+    orderHistory: orderHistory.slice(0, 100),
+    brokerSummaries: results.map(r => ({
+      broker: r.broker,
+      account: r.account,
+      dailyRealizedPnL: r.dailyRealizedPnL,
+      positionsCount: r.positions.length,
+      openOrdersCount: r.openOrders.length,
+      orderHistory: r.orderHistory.slice(0, 50)
+    })),
+    metrics: {
+      totalBalance,
+      totalEquity,
+      totalFreeMargin,
+      currencies,
+      openPnL,
+      dailyRealizedPnL,
+      totalOrders: closedHistory.length,
+      winRate: null,
+      profitFactor: null,
+      maxDrawdown: null
+    },
+    dataStatus: 'LIVE',
+    generatedAt: Date.now()
+  };
+}
+
 brokerRouter.get('/dashboard-summary', async (_req: Request, res: Response) => {
   try {
-    res.json(await getDashboardSummarySnapshot());
+    const now = Date.now();
+    if (dashboardSummaryCache && now < dashboardSummaryCache.expiresAt) {
+      return res.json(dashboardSummaryCache.payload);
+    }
+    if (dashboardSummaryInFlight) {
+      if (dashboardSummaryCache) return res.json(dashboardSummaryCache.payload);
+      return res.json(await dashboardSummaryInFlight);
+    }
+
+    dashboardSummaryInFlight = refreshDashboardSummary().then(payload => {
+      dashboardSummaryCache = {
+        payload,
+        expiresAt: Date.now() + DASHBOARD_SUMMARY_CACHE_TTL_MS
+      };
+      return payload;
+    }).catch(err => {
+      if (dashboardSummaryCache?.payload) return dashboardSummaryCache.payload;
+      throw err;
+    }).finally(() => {
+      dashboardSummaryInFlight = null;
+    });
+
+    if (dashboardSummaryCache) return res.json(dashboardSummaryCache.payload);
+    return res.json(await dashboardSummaryInFlight);
   } catch (err: any) {
     res.status(503).json({
       error: 'LIVE_DASHBOARD_DATA_UNAVAILABLE',
-      message: err?.message || 'Authoritative live broker dashboard data is unavailable.'
+      message: err?.message || 'Authoritative broker dashboard data is unavailable.'
     });
   }
 });
@@ -533,14 +671,32 @@ brokerRouter.get('/account', async (req: Request, res: Response) => {
 });
 
 brokerRouter.get('/positions', async (_req: Request, res: Response) => {
-  const results = await Promise.all(LIVE_BROKERS.map(async (broker) => {
-    try {
-      return await brokerRegistry.getAdapter(broker, 'LIVE').getPositions();
-    } catch {
-      return [];
+  const now = Date.now();
+  if (now < positionsCache.expiresAt) return res.json(positionsCache.payload);
+  if (positionsInFlight) {
+    if (positionsCache.payload.length) return res.json(positionsCache.payload);
+    return res.json(await positionsInFlight);
+  }
+
+  positionsInFlight = (async () => {
+    const results = await Promise.all(LIVE_BROKERS.map(async broker => {
+      try {
+        return await brokerRegistry.getAdapter(broker, 'LIVE').getPositions();
+      } catch {
+        return [];
+      }
+    }));
+    const payload = results.flat();
+    if (payload.length || positionsCache.payload.length === 0) {
+      positionsCache.payload = payload;
     }
-  }));
-  res.json(results.flat());
+    positionsCache.expiresAt = Date.now() + BROKER_COLLECTION_CACHE_TTL_MS;
+    return positionsCache.payload;
+  })().finally(() => {
+    positionsInFlight = null;
+  });
+
+  return res.json(await positionsInFlight);
 });
 
 brokerRouter.get('/order-history', async (req: Request, res: Response) => {
@@ -625,14 +781,32 @@ brokerRouter.get('/order-history', async (req: Request, res: Response) => {
 });
 
 brokerRouter.get('/orders', async (_req: Request, res: Response) => {
-  const results = await Promise.all(LIVE_BROKERS.map(async (broker) => {
-    try {
-      return await brokerRegistry.getAdapter(broker, 'LIVE').getOpenOrders();
-    } catch {
-      return [];
+  const now = Date.now();
+  if (now < ordersCache.expiresAt) return res.json(ordersCache.payload);
+  if (ordersInFlight) {
+    if (ordersCache.payload.length) return res.json(ordersCache.payload);
+    return res.json(await ordersInFlight);
+  }
+
+  ordersInFlight = (async () => {
+    const results = await Promise.all(LIVE_BROKERS.map(async broker => {
+      try {
+        return await brokerRegistry.getAdapter(broker, 'LIVE').getOpenOrders();
+      } catch {
+        return [];
+      }
+    }));
+    const payload = results.flat();
+    if (payload.length || ordersCache.payload.length === 0) {
+      ordersCache.payload = payload;
     }
-  }));
-  res.json(results.flat());
+    ordersCache.expiresAt = Date.now() + BROKER_COLLECTION_CACHE_TTL_MS;
+    return ordersCache.payload;
+  })().finally(() => {
+    ordersInFlight = null;
+  });
+
+  return res.json(await ordersInFlight);
 });
 
 brokerRouter.get('/execution/:idempotencyKey', async (req: Request, res: Response) => {
