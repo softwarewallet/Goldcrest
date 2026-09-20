@@ -9,7 +9,7 @@ export interface FivePaisaConfig {
   totpSecret?: string;
   pin?: string;
   clientCode?: string;
-  environment: 'DEMO' | 'LIVE';
+  environment: 'LIVE';
   apiHost?: string;
 }
 
