@@ -11,6 +11,7 @@ import { getForexSessionState, getIndianSessionState } from '../markets/common/s
 import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight, getExecutionIntent, resumeExecutionIntentReconciliation } from '../services/executionIntentService';
 import { reconcileExecutionIntent } from '../services/executionReconciliationService';
 import { getSystemConfig } from '../services/configService';
+import { executeQuery, executeRun } from '../database/db';
 
 export const brokerRouter = Router();
 
@@ -24,91 +25,74 @@ const BROKER_STATUS_CACHE_TTL_MS = 60_000;
 let brokerStatusCache: { payload: any; expiresAt: number } | null = null;
 let brokerStatusInFlight: Promise<any> | null = null;
 
-function resolveMarketBroker(market: string): BrokerType {
-  if (market === 'FOREX') return 'CTRADER';
-  if (market === 'INDIAN_EQUITY' || market === 'INDIAN_FUTURES' || market === 'INDIAN_OPTIONS') {
-    return 'FIVE_PAISA';
-  }
-  throw new Error(`Unsupported market: ${market}. No compatible live broker is configured.`);
-}
-
-function forexQuoteCurrencies(symbol: string): { base: string; quote: string } | null {
-  const compact = String(symbol || '').toUpperCase().replace(/[^A-Z]/g, '');
-  if (compact.length !== 6) return null;
-  return { base: compact.slice(0, 3), quote: compact.slice(3, 6) };
-}
-
-async function convertForexNotionalToAccountCurrency(
-  adapter: BrokerAdapter,
-  symbol: string,
-  notional: number,
-  accountCurrency: string
-): Promise<number> {
-  if (!Number.isFinite(notional) || notional < 0) throw new Error('INVALID_EXPOSURE_NOTIONAL');
-  const currencies = forexQuoteCurrencies(symbol);
-  if (!currencies) throw new Error(`Unable to determine Forex currencies for ${symbol}.`);
-  const target = String(accountCurrency || '').toUpperCase();
-  if (!target) throw new Error('ACCOUNT_CURRENCY_UNAVAILABLE');
-  if (currencies.base === target) return notional;
-
-  // cTrader exposes an authoritative native conversion-chain API for cases
-  // where no direct BASE/TARGET symbol exists. Do not fall back to guessed or
-  // derived cross-pairs on a live safety-gate path.
-  if (typeof adapter.getAccountCurrencyConversionRate !== 'function') {
-    throw new Error('BROKER_NATIVE_CURRENCY_CONVERSION_UNAVAILABLE');
-  }
-
-  const rate = await adapter.getAccountCurrencyConversionRate(currencies.base, target);
-  if (!Number.isFinite(rate) || rate <= 0) {
-    throw new Error(`Authoritative FX conversion returned an invalid rate for ${currencies.base} to ${target}.`);
-  }
-  return notional * rate;
-}
-
-async function calculateAccountCurrencyExposure(
-  adapter: BrokerAdapter,
-  positions: NormalizedPosition[],
-  order: OrderRequest,
-  accountCurrency: string,
-  quote: NormalizedQuote
-): Promise<number> {
-  let exposure = 0;
-
-  for (const position of positions) {
-    const quantity = Math.abs(Number(position.quantity || 0));
-    const price = Number(position.currentPrice || position.entryPrice || 0);
-    if (!(quantity > 0 && price > 0)) continue;
-
-    if (order.market !== 'FOREX') {
-      exposure += quantity * price;
-      continue;
-    }
-
-    const currencies = forexQuoteCurrencies(position.symbol);
-    if (!currencies) throw new Error(`Unable to determine Forex currencies for ${position.symbol}.`);
-    const baseNotional = quantity;
-    exposure += await convertForexNotionalToAccountCurrency(adapter, position.symbol, baseNotional, accountCurrency);
-  }
-
-  const proposedQuantity = Math.abs(Number(order.quantity || 0));
-  if (proposedQuantity > 0) {
-    if (order.market !== 'FOREX') {
-      exposure += proposedQuantity * Number(order.price || (order.side === 'BUY' ? quote.ask : quote.bid) || 0);
-    } else {
-      exposure += await convertForexNotionalToAccountCurrency(
-        adapter,
-        order.symbol,
-        proposedQuantity,
-        accountCurrency
+async function loadPersistedBrokerAccount(broker: BrokerType): Promise<any | null> {
+  try {
+    const rows = await executeQuery<any>(
+      'SELECT account_json FROM broker_reconciliation_snapshots WHERE broker = ? AND environment = ? ORDER BY timestamp DESC LIMIT 1',
+      [broker, 'LIVE']
+    );
+    const snapshot = rows[0]?.account_json;
+    if (!snapshot) return null;
+    const account = typeof snapshot === 'string' ? JSON.parse(snapshot) : snapshot;
+    return account && typeof account === 'object' ? account : null;
+  } catch {
+    try {
+      const rows = await executeQuery<any>(
+        'SELECT account_id, account_type, balance, equity, available_margin, used_margin, free_margin, currency, connection_status, server, permissions_json, last_update, is_live_account FROM broker_accounts WHERE broker = ? AND environment = ? ORDER BY last_update DESC LIMIT 1',
+        [broker, 'LIVE']
       );
+      const row = rows[0];
+      if (!row) return null;
+      return {
+        accountId: String(row.account_id),
+        accountType: String(row.account_type || 'LIVE'),
+        balance: Number(row.balance || 0),
+        equity: Number(row.equity || 0),
+        availableMargin: Number(row.available_margin || 0),
+        usedMargin: Number(row.used_margin || 0),
+        freeMargin: Number(row.free_margin || 0),
+        currency: String(row.currency || ''),
+        broker,
+        environment: 'LIVE',
+        connectionStatus: 'CONNECTED',
+        server: row.server || undefined,
+        permissions: row.permissions_json ? JSON.parse(row.permissions_json) : [],
+        lastUpdate: Number(row.last_update || 0),
+        isLiveAccount: Boolean(row.is_live_account)
+      };
+    } catch {
+      return null;
     }
   }
-
-  return exposure;
 }
 
-// Both LIVE broker connections remain active simultaneously. No user broker
-// selection is required; market compatibility determines the adapter.
+async function persistBrokerAccountSnapshot(account: any): Promise<void> {
+  try {
+    await executeRun(
+      'INSERT OR REPLACE INTO broker_accounts (id, broker, environment, account_id, account_type, balance, equity, available_margin, used_margin, free_margin, currency, connection_status, server, permissions_json, last_update, is_live_account) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        `${account.broker}_${account.environment}_${account.accountId}`,
+        account.broker,
+        'LIVE',
+        String(account.accountId || ''),
+        String(account.accountType || 'LIVE'),
+        Number(account.balance || 0),
+        Number(account.equity || 0),
+        Number(account.availableMargin || 0),
+        Number(account.usedMargin || 0),
+        Number(account.freeMargin || 0),
+        String(account.currency || ''),
+        String(account.connectionStatus || 'CONNECTED'),
+        account.server || null,
+        JSON.stringify(account.permissions || []),
+        Number(account.lastUpdate || Date.now()),
+        account.isLiveAccount ? 1 : 0
+      ]
+    );
+  } catch {
+    // Persistence failure must never break broker status delivery.
+  }
+}
 async function getBrokerStatusSnapshot(): Promise<any> {
   const now = Date.now();
   if (brokerStatusCache && now < brokerStatusCache.expiresAt) {
@@ -128,19 +112,22 @@ async function getBrokerStatusSnapshot(): Promise<any> {
       try {
         const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
         const account = await adapter.getAccount();
-        return { broker, environment: 'LIVE', connected: true, account, error: null };
+        await persistBrokerAccountSnapshot(account);
+        return { broker, environment: 'LIVE', connected: true, account, error: null, stale: false };
       } catch (err: any) {
         const normalized = normalizeBrokerError(err, broker, 'LIVE');
-        const previous = brokerStatusCache?.payload?.brokers?.find((item: any) => item.broker === broker);
-        if (normalized.code === 'RATE_LIMITED' && previous?.account) {
-          // Preserve the last broker-confirmed account snapshot when the provider
-          // temporarily throttles a read-only status poll. Do not use this
-          // stale snapshot for order validation; execution still calls the
-          // broker directly.
+        const transient = ['RATE_LIMITED', 'TIMEOUT', 'NETWORK_ERROR', 'UNAVAILABLE', 'BROKER_UNAVAILABLE'].includes(normalized.code);
+        const persisted = transient ? await loadPersistedBrokerAccount(broker) : null;
+
+        if (persisted) {
           return {
-            ...previous,
+            broker,
+            environment: 'LIVE',
+            connected: false,
+            account: persisted,
             stale: true,
             lastRefreshError: normalized.message,
+            error: null,
             code: normalized.code
           };
         }
@@ -151,7 +138,8 @@ async function getBrokerStatusSnapshot(): Promise<any> {
           connected: false,
           account: null,
           error: normalized.message,
-          code: normalized.code
+          code: normalized.code,
+          stale: false
         };
       }
     }));
