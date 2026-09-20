@@ -24,10 +24,12 @@ export let LIVE_AUTO_EXECUTION_ALLOWED: boolean = false;
 let localExplicitAutoArm = false;
 
 function isLocalDevelopment(): boolean {
+  const explicitLocalMode = process.env.GOLDCREST_LOCAL_DEVELOPMENT;
+  if (explicitLocalMode === 'true') return true;
+  if (explicitLocalMode === 'false') return false;
   if (process.env.NODE_ENV === 'production') return false;
-  const explicitLocalMode = process.env.GOLDCREST_LOCAL_DEVELOPMENT === 'true';
-  const host = String(process.env.HOST || '').trim().toLowerCase();
-  return explicitLocalMode || ['127.0.0.1', 'localhost', '::1'].includes(host);
+  const host = String(process.env.HOST || '127.0.0.1').trim().toLowerCase();
+  return ['127.0.0.1', 'localhost', '::1'].includes(host);
 }
 
 export function disarmLocalAutonomousExecution(): void {
