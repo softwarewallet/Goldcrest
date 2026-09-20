@@ -29,6 +29,7 @@ import { Candle, OptionChainStrikeRow, OptionChainSummary, OptionContract } from
 import { evaluateIndianUnderlying, IndianUnderlyingAnalysis } from '../../../markets/india_equity/indiaEngine';
 import { calculateBlackScholesGreeks } from '../../../markets/india_options/greeks';
 import { generateExpiries } from '../../../markets/india_options/expiryEngine';
+import { getSystemConfig } from '../../../services/configService';
 
 function base32Decode(base32: string): Buffer {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -1203,13 +1204,18 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       return [];
     }
 
+    const configuredUniverse = getSystemConfig().autoLiveIndianUnderlyings;
+    const activeSymbols = Array.isArray(configuredUniverse)
+      ? new Set(configuredUniverse.map(symbol => String(symbol).toUpperCase().trim()))
+      : new Set<string>();
+
     const requested = [
       { symbol: 'NIFTY', name: 'Nifty 50', exchange: 'N' },
       { symbol: 'BANKNIFTY', name: 'Nifty Bank', exchange: 'N' },
       { symbol: 'FINNIFTY', name: 'Nifty Financial Services', exchange: 'N' },
       { symbol: 'MIDCPNIFTY', name: 'Nifty Midcap Select', exchange: 'N' },
       { symbol: 'SENSEX', name: 'BSE SENSEX', exchange: 'B' }
-    ];
+    ].filter(item => activeSymbols.size === 0 || activeSymbols.has(item.symbol));
 
     const master = await this.getScripMasterRows();
     const normalizeInstrumentKey = (value: unknown) => String(value || '')
