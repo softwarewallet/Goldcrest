@@ -69,7 +69,7 @@ export class ScannerService {
     return this.indiaProvider.refreshUnderlyings();
   }
 
-  getOptionsScanner(symbol: string = 'NIFTY'): {
+  async getOptionsScanner(symbol: string = 'NIFTY'): Promise<{
     underlying: string;
     spot: number;
     bias: 'Bullish' | 'Bearish' | 'Range-bound';
@@ -77,10 +77,10 @@ export class ScannerService {
     opportunities: OptionsOpportunityCandidate[];
     isBlank?: boolean;
     error?: string;
-  } {
+  }> {
     let chain;
     try {
-      chain = this.optionsProvider.getChain(symbol);
+      chain = await this.optionsProvider.refreshChain(symbol);
     } catch {
       return {
         underlying: symbol,
