@@ -11,7 +11,7 @@ import {
 const status = startLiveRuntimeLog('TEST');
 assert.equal(status.enabled, true);
 assert.ok(fs.existsSync(status.file));
-assert.match(status.file, /goldcrest-live-\\d{4}-\\d{2}-\\d{2}\\.log$/);
+assert.match(status.file, /goldcrest-live-\d{4}-\d{2}-\d{2}\.log$/);
 assert.doesNotMatch(status.file, /goldcrest-live\\.log$/);
 
 liveRuntimeLog('INFO', 'TEST_EVENT', {
