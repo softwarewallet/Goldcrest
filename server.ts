@@ -195,7 +195,7 @@ app.get('/api/live-log/file', operatorAuthRequired, (req: Request, res: Response
 });
 
 
-\nconst liveForexProvider = new LiveForexProvider();
+const liveForexProvider = new LiveForexProvider();
 const forexSignalEngine = new ForexSignalEngine(undefined, liveForexProvider);
 const scannerService = new ScannerService();
 
