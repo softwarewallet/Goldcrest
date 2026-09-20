@@ -67,6 +67,8 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   private symbolCache: { expiresAt: number; accountKey: string; symbols: Awaited<ReturnType<typeof fetchCTraderSymbols>> } | null = null;
   private static readonly RAW_ACCOUNT_CACHE_TTL_MS = 60 * 1000;
   private static readonly SYMBOL_CACHE_TTL_MS = 5 * 60 * 1000;
+  private static readonly ACCOUNT_DATA_CACHE_TTL_MS = 15 * 1000;
+  private accountFetchInFlight: Promise<BrokerAccountInfo> | null = null;
 
   constructor(config: CTraderConfig) {
     super();
@@ -280,7 +282,19 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   async getAccount(): Promise<BrokerAccountInfo> {
     this.syncConfig();
     this.validateCredentials();
-    
+
+    const now = Date.now();
+    if (
+      this.accountData
+      && now - Number(this.accountData.lastUpdate || 0) < CTraderBrokerAdapter.ACCOUNT_DATA_CACHE_TTL_MS
+    ) {
+      return this.accountData;
+    }
+
+    if (this.accountFetchInFlight) {
+      return this.accountFetchInFlight;
+    }
+
     const { clientId, clientSecret, accessToken } = this.config;
     const targetId = this.config.accountId;
 
@@ -293,38 +307,38 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       );
     }
 
-    try {
-      const liveAccounts = await fetchLiveCTraderAccounts(
-        clientId,
-        clientSecret,
-        accessToken,
-        'live'
-      );
-
-      if (!liveAccounts || liveAccounts.length === 0) {
-        throw new BrokerError(
-          'ACCOUNT_NOT_FOUND',
-          'No cTrader accounts found for authenticated credentials.',
-          'CTRADER',
-          this.environment
+    this.accountFetchInFlight = (async () => {
+      try {
+        const liveAccounts = await fetchLiveCTraderAccounts(
+          clientId,
+          clientSecret,
+          accessToken,
+          'live'
         );
-      }
 
-      let matched = undefined;
-      if (targetId) {
-        matched = liveAccounts.find(
-          a => String(a.traderLogin) === String(targetId) || String(a.ctidTraderAccountId) === String(targetId)
-        );
-        if (!matched) {
+        if (!liveAccounts || liveAccounts.length === 0) {
           throw new BrokerError(
             'ACCOUNT_NOT_FOUND',
-            `Configured cTrader account ID ${targetId} was not found among authenticated accounts (${liveAccounts.map(a => a.traderLogin).join(', ')}).`,
+            'No cTrader accounts found for authenticated credentials.',
             'CTRADER',
             this.environment
           );
         }
-      } else {
-        if (liveAccounts.length === 1) {
+
+        let matched: CTraderRawAccount | undefined;
+        if (targetId) {
+          matched = liveAccounts.find(
+            a => String(a.traderLogin) === String(targetId) || String(a.ctidTraderAccountId) === String(targetId)
+          );
+          if (!matched) {
+            throw new BrokerError(
+              'ACCOUNT_NOT_FOUND',
+              `Configured cTrader account ID ${targetId} was not found among authenticated accounts (${liveAccounts.map(a => a.traderLogin).join(', ')}).`,
+              'CTRADER',
+              this.environment
+            );
+          }
+        } else if (liveAccounts.length === 1) {
           matched = liveAccounts[0];
         } else {
           throw new BrokerError(
@@ -334,50 +348,51 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
             this.environment
           );
         }
+
+        const details = await fetchLiveCTraderAccountDetails(
+          matched,
+          clientId,
+          clientSecret,
+          accessToken
+        );
+
+        this.status = 'CONNECTED';
+        const authoritativeAccount: BrokerAccountInfo = {
+          accountId: String(details.traderLogin),
+          accountType: 'LIVE',
+          balance: details.balance,
+          equity: details.equity,
+          availableMargin: details.availableMargin,
+          usedMargin: details.usedMargin,
+          freeMargin: details.freeMargin,
+          currency: details.currency,
+          broker: 'CTRADER',
+          environment: this.environment,
+          connectionStatus: 'CONNECTED',
+          server: details.brokerName || matched.brokerTitleShort || 'cTrader-Live',
+          permissions: ['TRADE', 'READ', 'TRADING'],
+          lastUpdate: Date.now(),
+          isLiveAccount: details.isLive
+        };
+
+        this.accountData = authoritativeAccount;
+        return authoritativeAccount;
+      } catch (err: any) {
+        if (err instanceof BrokerError) throw err;
+        throw new BrokerError(
+          'ACCOUNT_DATA_UNAVAILABLE',
+          `Authoritative cTrader account data retrieval failed: ${err?.message || String(err)}`,
+          'CTRADER',
+          this.environment,
+          err
+        );
       }
+    })().finally(() => {
+      this.accountFetchInFlight = null;
+    });
 
-      const details = await fetchLiveCTraderAccountDetails(
-        matched,
-        clientId,
-        clientSecret,
-        accessToken
-      );
-
-      this.status = 'CONNECTED';
-      const authoritativeAccount: BrokerAccountInfo = {
-        accountId: String(details.traderLogin),
-        accountType: 'LIVE',
-        balance: details.balance,
-        equity: details.equity,
-        availableMargin: details.availableMargin,
-        usedMargin: details.usedMargin,
-        freeMargin: details.freeMargin,
-        currency: details.currency,
-        broker: 'CTRADER',
-        environment: this.environment,
-        connectionStatus: 'CONNECTED',
-        server: details.brokerName || matched.brokerTitleShort || 'cTrader-Live',
-        permissions: ['TRADE', 'READ', 'TRADING'],
-        lastUpdate: Date.now(),
-        isLiveAccount: details.isLive
-      };
-
-      this.accountData = authoritativeAccount;
-      return authoritativeAccount;
-    } catch (err: any) {
-      if (err instanceof BrokerError) {
-        throw err;
-      }
-      throw new BrokerError(
-        'ACCOUNT_DATA_UNAVAILABLE',
-        `Authoritative cTrader account data retrieval failed: ${err?.message || String(err)}`,
-        'CTRADER',
-        this.environment,
-        err
-      );
-    }
+    return this.accountFetchInFlight;
   }
-
   /**
    * Converts a Forex base-currency notional into the cTrader account deposit
    * currency using cTrader's native asset conversion-chain API. This avoids
