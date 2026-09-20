@@ -1286,26 +1286,38 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
     if (scrips.length === 0) return [];
 
-    const endpoints = [
-      `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/MarketFeed`,
-      `${this.getApiHost()}/VendorsAPI/Service1.svc/MarketSnapshot`,
-      `${this.getApiHost()}/VendorsAPI/Service1.svc/MarketFeed`
-    ];
+    const scripPayload = scrips.map(s => ({
+      Exch: s.Exch,
+      ExchType: s.ExchType,
+      ScripCode: s.ScripCode || 0,
+      ScripData: s.ScripData || ''
+    }));
 
-    const payload = {
-      head: this.getApiHead('5PMarkV1'),
-      body: {
-        Count: String(scrips.length),
-        CountData: String(scrips.length),
-        ClientCode: this.config.clientCode || this.config.userId,
-        MarketFeedData: scrips.map(s => ({
-          Exch: s.Exch,
-          ExchType: s.ExchType,
-          ScripCode: s.ScripCode || 0,
-          ScripData: s.ScripData || ''
-        }))
+    // 5paisa documents MarketFeed and MarketSnapshot as separate request
+    // contracts. Use the documented MarketFeedData field for MarketFeed and
+    // the documented Data field for MarketSnapshot.
+    const requests = [
+      {
+        url: `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/MarketFeed`,
+        body: {
+          head: { key: this.config.userKey || '' },
+          body: {
+            ClientCode: this.config.clientCode || this.config.userId,
+            MarketFeedData: scripPayload
+          }
+        }
+      },
+      {
+        url: `${this.getApiHost()}/VendorsAPI/Service1.svc/MarketSnapshot`,
+        body: {
+          head: { key: this.config.userKey || '' },
+          body: {
+            ClientCode: this.config.clientCode || this.config.userId,
+            Data: scripPayload
+          }
+        }
       }
-    };
+    ];
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -1315,12 +1327,12 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       headers['Authorization'] = `Bearer ${this.config.accessToken}`;
     }
 
-    for (const url of endpoints) {
+    for (const request of requests) {
       try {
-        const res = await fetch(url, {
+        const res = await fetch(request.url, {
           method: 'POST',
           headers,
-          body: JSON.stringify(payload)
+          body: JSON.stringify(request.body)
         });
 
         if (res.status === 401 && this.config.totpSecret) {
@@ -1397,7 +1409,57 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       }
     }
 
-    return [];
+    // MarketFeed/MarketSnapshot can legitimately return no current tick data
+    // outside market hours. In that case, recover the broker-reported closing
+    // price from authoritative V2 historical candles so the closed-market
+    // terminal remains populated.
+    const historicalFallback = await Promise.all(
+      scrips.map(async scrip => {
+        try {
+          const candles = await this.getHistoricalCandles(scrip.symbol, '1d', 2);
+          if (!Array.isArray(candles) || candles.length === 0) return null;
+
+          const latest = candles[candles.length - 1];
+          const previous = candles[candles.length - 2] || latest;
+          const spot = Number(latest.close);
+          const prevClose = Number(previous.close);
+          if (!(spot > 0)) return null;
+
+          const high = Number(latest.high || spot);
+          const low = Number(latest.low || spot);
+          const change = Number((spot - prevClose).toFixed(2));
+          const changePercent = Number(((change / (prevClose || spot)) * 100).toFixed(2));
+          const vwap = spot;
+          const vwapDistance = 0;
+
+          const analysis = evaluateIndianUnderlying(
+            scrip.symbol,
+            candles,
+            spot,
+            13.8,
+            1.05
+          );
+
+          return {
+            ...analysis,
+            name: scrip.name,
+            spot,
+            change,
+            changePercent,
+            intradayHigh: high,
+            intradayLow: low,
+            vwap,
+            vwapDistance,
+            vwapStatus: 'AT_VWAP' as const
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    const recovered = historicalFallback.filter(Boolean) as IndianUnderlyingAnalysis[];
+    return recovered;
   }
 
   /**
