@@ -50,7 +50,7 @@ export default function App() {
       const res = await fetch('/api/brokers/status');
       if (res.ok) {
         const data = await res.json();
-        setEnvironment(data.environment || 'LIVE');
+        setEnvironment('LIVE');
         setSelectedBroker(data.selectedBroker || 'CTRADER');
         setIsEmergencyHalted(data.emergencyStop?.isHalted || false);
 
@@ -399,21 +399,6 @@ export default function App() {
       {showDiagnostics && (
         <DiagnosticsModal
           onClose={() => setShowDiagnostics(false)}
-        />
-      )}
-
-      {/* Environment Switch Confirmation Modal */}
-      {pendingEnvSwitch && (
-        <EnvironmentSwitchModal
-          isOpen={!!pendingEnvSwitch}
-          onClose={() => setPendingEnvSwitch(null)}
-          onConfirm={handleConfirmEnvironmentSwitch}
-          currentEnv={environment}
-          targetEnv={pendingEnvSwitch}
-          broker={selectedBroker}
-          maskedAccount={maskedAccount}
-          currency={currency}
-          balance={balance}
         />
       )}
 
