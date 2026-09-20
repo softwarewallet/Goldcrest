@@ -8,6 +8,7 @@ export interface LiveNewsArticle {
 }
 
 export type LiveNewsSource = 'GDELT_DOC_2' | 'GOOGLE_NEWS_RSS' | 'NONE';
+export type LiveNewsProviderStatus = 'LIVE' | 'NO_RESULTS' | 'ERROR';
 
 export interface LiveNewsSnapshot {
   source: LiveNewsSource;
@@ -18,7 +19,18 @@ export interface LiveNewsSnapshot {
   elevatedCount: number;
   riskLevel: 'HIGH' | 'ELEVATED' | 'LOW' | 'UNAVAILABLE';
   articles: LiveNewsArticle[];
+  queryPairs?: string[];
+  providerStatus?: {
+    GDELT_DOC_2: LiveNewsProviderStatus;
+    GOOGLE_NEWS_RSS: LiveNewsProviderStatus;
+  };
+  latestArticleAt?: string | null;
   error?: string;
+}
+
+export interface LiveNewsFetchOptions {
+  pairs?: string[];
+  forceRefresh?: boolean;
 }
 
 const GDELT_ENDPOINT = process.env.GOLDCREST_GDELT_DOC_URL
@@ -26,37 +38,164 @@ const GDELT_ENDPOINT = process.env.GOLDCREST_GDELT_DOC_URL
 
 const GOOGLE_NEWS_RSS_ENDPOINT = 'https://news.google.com/rss/search';
 
-const NEWS_QUERIES = [
-  '(forex OR currency OR "foreign exchange" OR USD OR EUR OR GBP OR JPY OR "Federal Reserve" OR ECB OR "Bank of Japan" OR inflation OR CPI OR NFP)',
-  '("interest rate" OR "rate decision" OR tariff OR sanctions OR intervention OR "central bank") (USD OR EUR OR GBP OR JPY OR forex OR currency)'
+const MACRO_NEWS_QUERY = [
+  '"Federal Reserve"', 'FOMC', 'ECB', '"Bank of Japan"', 'BOJ',
+  '"interest rate"', '"rate decision"', 'CPI', 'inflation', 'NFP',
+  '"nonfarm payroll"', 'jobs report', tariff, sanctions, intervention,
+  war, conflict, emergency, "central bank"
 ];
 
+const CURRENCY_NAMES: Record<string, string> = {
+  USD: 'dollar',
+  EUR: 'euro',
+  GBP: 'pound',
+  JPY: 'yen',
+  CHF: 'franc',
+  AUD: 'australian dollar',
+  NZD: 'new zealand dollar',
+  CAD: 'canadian dollar'
+};
+
 const HIGH_IMPACT_TERMS = [
-  'federal reserve', 'fed', 'ecb', 'bank of japan', 'boj', 'interest rate',
-  'rate decision', 'cpi', 'inflation', 'nonfarm payroll', 'nfp', 'jobs report',
-  'tariff', 'sanction', 'intervention', 'war', 'conflict', 'emergency'
+  'fomc', 'federal reserve', 'rate decision', 'interest rate', 'rate hike',
+  'rate cut', 'rate hold', 'cpi', 'inflation', 'nonfarm payroll',
+  'nfp', 'jobs report', 'tariff', 'sanction', 'intervention',
+  'war', 'conflict', 'emergency', 'bank of japan', 'boj', 'ecb'
 ];
 
 const ELEVATED_TERMS = [
   'central bank', 'pmi', 'retail sales', 'gdp', 'employment', 'yield',
-  'treasury', 'dollar', 'euro', 'pound', 'yen', 'currency'
+  'treasury', 'dollar', 'euro', 'pound', 'yen', 'franc', 'currency'
 ];
 
-const CACHE_TTL_MS = Math.max(60_000, Number(process.env.GOLDCREST_NEWS_CACHE_TTL_MS || 120_000));
-const FAILURE_BACKOFF_MS = Math.max(60_000, Number(process.env.GOLDCREST_NEWS_FAILURE_BACKOFF_MS || 300_000));
-const REQUEST_TIMEOUT_MS = Math.max(8_000, Number(process.env.GOLDCREST_NEWS_TIMEOUT_MS || 15_000));
+const CACHE_TTL_MS = Math.max(
+  30_000,
+  Number(process.env.GOLDCREST_NEWS_CACHE_TTL_MS || 90_000)
+);
+const FAILURE_BACKOFF_MS = Math.max(
+  60_000,
+  Number(process.env.GOLDCREST_NEWS_FAILURE_BACKOFF_MS || 180_000)
+);
+const REQUEST_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.GOLDCREST_NEWS_TIMEOUT_MS || 8_000)
+);
+const MAX_ARTICLE_AGE_MS = Math.max(
+  15 * 60_000,
+  Number(process.env.GOLDCREST_NEWS_MAX_ARTICLE_AGE_MS || 8 * 60 * 60_000)
+);
 
-let newsCache: { snapshot: LiveNewsSnapshot; expiresAt: number } | null = null;
-let unavailableBackoffUntil = 0;
+let newsCache: {
+  key: string;
+  snapshot: LiveNewsSnapshot;
+  expiresAt: number;
+} | null = null;
+
+let unavailableBackoff: {
+  key: string;
+  until: number;
+} | null = null;
+
+let inFlight: {
+  key: string;
+  promise: Promise<LiveNewsSnapshot>;
+} | null = null;
+
+function asErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === 'AbortError') return 'Live news request timed out.';
+    return error.message;
+  }
+  return String(error);
+}
+
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/<!\[CDATA\[/gi, '')
+    .replace(/\]\]>/gi, '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&#(x[0-9a-f]+|[0-9]+);/gi, (_match, code: string) => {
+      const numeric = code.toLowerCase().startsWith('x')
+        ? parseInt(code.slice(1), 16)
+        : parseInt(code, 10);
+      return Number.isFinite(numeric) ? String.fromCodePoint(numeric) : '';
+    })
+    .trim();
+}
+
+function normalizePublishedAt(value: unknown): string | null {
+  const raw = decodeXmlEntities(String(value ?? '').trim());
+  if (!raw) return null;
+
+  const gdeltMatch = raw.match(/^(\d{8})T?(\d{6})Z?$/i);
+  if (gdeltMatch) {
+    const [, date, time] = gdeltMatch;
+    const iso = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T${time.slice(0, 2)}:${time.slice(2, 4)}:${time.slice(4, 6)}Z`;
+    const parsed = Date.parse(iso);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+  }
+
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function normalizePair(pair: string): string {
+  const normalized = pair.toUpperCase().trim().replace(/\\/g, '/');
+  if (normalized.includes('/')) {
+    const [base, quote] = normalized.split('/');
+    return base && quote ? `${base}/${quote}` : normalized;
+  }
+  if (normalized.length === 6) return `${normalized.slice(0, 3)}/${normalized.slice(3)}`;
+  return normalized;
+}
+
+function normalizePairs(pairs: string[] | undefined): string[] {
+  if (!Array.isArray(pairs)) return [];
+  return [...new Set(
+    pairs
+      .map(value => normalizePair(String(value)))
+      .filter(pair => /^[A-Z]{3}\/[A-Z]{3}$/.test(pair))
+  )].sort();
+}
+
+function buildPairQuery(pairs: string[]): string {
+  if (pairs.length === 0) return '';
+
+  const pairClauses = pairs.map(pair => {
+    const [base, quote] = pair.split('/');
+    const baseName = CURRENCY_NAMES[base] || base;
+    const quoteName = CURRENCY_NAMES[quote] || quote;
+    return `((${base} OR "${baseName}") (${quote} OR "${quoteName}"))`;
+  });
+
+  return pairClauses.join(' OR ');
+}
+
+function buildNewsQuery(pairs: string[]): string {
+  const macro = `(${MACRO_NEWS_QUERY.join(' OR ')})`;
+  const pairQuery = buildPairQuery(pairs);
+  return pairQuery ? `(${macro}) OR (${pairQuery})` : macro;
+}
 
 function classifyArticle(title: string): 'HIGH' | 'ELEVATED' | 'LOW' {
   const normalized = title.toLowerCase();
-  if (HIGH_IMPACT_TERMS.some(term => normalized.includes(term))) return 'HIGH';
+
+  // A generic mention of the Fed/ECB/etc. is not by itself a high-risk event.
+  // Require an explicit rate/macro/event term before classifying a headline HIGH.
+  const highImpact = HIGH_IMPACT_TERMS.some(term => normalized.includes(term));
+  if (highImpact) return 'HIGH';
+
   if (ELEVATED_TERMS.some(term => normalized.includes(term))) return 'ELEVATED';
   return 'LOW';
 }
 
-function scoreArticles(articles: LiveNewsArticle[]): Pick<LiveNewsSnapshot, 'highImpactCount' | 'elevatedCount' | 'riskLevel'> {
+function scoreArticles(
+  articles: LiveNewsArticle[]
+): Pick<LiveNewsSnapshot, 'highImpactCount' | 'elevatedCount' | 'riskLevel'> {
   let highImpactCount = 0;
   let elevatedCount = 0;
 
@@ -69,9 +208,11 @@ function scoreArticles(articles: LiveNewsArticle[]): Pick<LiveNewsSnapshot, 'hig
   return {
     highImpactCount,
     elevatedCount,
-    riskLevel: highImpactCount >= 3
+    // A single fresh, explicitly high-impact macro headline is sufficient to
+    // pause autonomous entries. This keeps the safety gate conservative.
+    riskLevel: highImpactCount > 0
       ? 'HIGH'
-      : (highImpactCount > 0 || elevatedCount >= 4)
+      : elevatedCount >= 4
         ? 'ELEVATED'
         : 'LOW'
   };
@@ -79,33 +220,76 @@ function scoreArticles(articles: LiveNewsArticle[]): Pick<LiveNewsSnapshot, 'hig
 
 function parseGdeltArticles(payload: any): LiveNewsArticle[] {
   const rows = Array.isArray(payload?.articles) ? payload.articles : [];
+
   return rows
     .map((row: any) => ({
-      title: String(row?.title || '').trim(),
-      url: String(row?.url || row?.urlMobile || '').trim(),
-      source: String(row?.domain || row?.sourceCountry || 'GDELT').trim(),
-      publishedAt: row?.seendate ? String(row.seendate) : null,
-      language: row?.language ? String(row.language) : undefined,
-      sourceCountry: row?.sourcecountry ? String(row.sourcecountry) : undefined
+      title: decodeXmlEntities(String(row?.title || '')),
+      url: decodeXmlEntities(String(row?.url || row?.urlMobile || '')),
+      source: decodeXmlEntities(String(row?.domain || row?.sourceCountry || 'GDELT')),
+      publishedAt: normalizePublishedAt(row?.seendate),
+      language: row?.language ? decodeXmlEntities(String(row.language)) : undefined,
+      sourceCountry: row?.sourcecountry
+        ? decodeXmlEntities(String(row.sourcecountry))
+        : undefined
     }))
     .filter((article: LiveNewsArticle) => Boolean(article.title && article.url));
 }
 
+function readXmlTag(block: string, tag: string): string {
+  const match = block.match(
+    new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i')
+  );
+  return match ? decodeXmlEntities(match[1]) : '';
+}
+
 function parseGoogleNewsRss(xml: string): LiveNewsArticle[] {
-  const items = xml.match(/<item>[\s\S]*?<\/item>/gi) || [];
-  return items.map(item => {
-    const readTag = (tag: string) => {
-      const match = item.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'));
-      return match ? match[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : '';
-    };
+  const items = xml.match(/<item\\b[\\s\\S]*?<\\/item>/gi) || [];
 
-    const title = readTag('title');
-    const url = readTag('link');
-    const source = readTag('source') || 'Google News';
-    const publishedAt = readTag('pubDate') || null;
+  return items
+    .map(item => ({
+      title: readXmlTag(item, 'title'),
+      url: readXmlTag(item, 'link'),
+      source: readXmlTag(item, 'source') || 'Google News',
+      publishedAt: normalizePublishedAt(readXmlTag(item, 'pubDate'))
+    }))
+    .filter(article => Boolean(article.title && article.url));
+}
 
-    return { title, url, source, publishedAt };
-  }).filter(article => Boolean(article.title && article.url));
+function filterFreshArticles(articles: LiveNewsArticle[], now: number): LiveNewsArticle[] {
+  return articles.filter(article => {
+    if (!article.publishedAt) return false;
+    const timestamp = Date.parse(article.publishedAt);
+    if (!Number.isFinite(timestamp)) return false;
+
+    const age = now - timestamp;
+    return age >= -5 * 60_000 && age <= MAX_ARTICLE_AGE_MS;
+  });
+}
+
+function deduplicateArticles(articles: LiveNewsArticle[]): LiveNewsArticle[] {
+  const ranked = [...articles].sort((a, b) => {
+    const aTime = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+    const bTime = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+    return bTime - aTime;
+  });
+
+  const byKey = new Map<string, LiveNewsArticle>();
+  for (const article of ranked) {
+    const titleKey = article.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+
+    const urlKey = article.url
+      .toLowerCase()
+      .replace(/[?#].*$/, '')
+      .replace(/\\/$/, '');
+
+    const key = `${titleKey}|${urlKey}`;
+    if (!byKey.has(key)) byKey.set(key, article);
+  }
+
+  return [...byKey.values()];
 }
 
 async function fetchText(url: URL): Promise<string> {
@@ -117,7 +301,8 @@ async function fetchText(url: URL): Promise<string> {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Goldcrest/2.0 live-market-news',
-        'Accept': 'application/json, application/rss+xml, application/xml, text/xml, text/plain, */*'
+        'Accept': 'application/json, application/rss+xml, application/xml, text/xml, text/plain, */*',
+        'Cache-Control': 'no-cache'
       }
     });
 
@@ -131,52 +316,69 @@ async function fetchText(url: URL): Promise<string> {
   }
 }
 
-async function fetchFromGdelt(): Promise<LiveNewsArticle[]> {
-  for (const query of NEWS_QUERIES) {
-    const url = new URL(GDELT_ENDPOINT);
-    url.searchParams.set('query', query);
-    url.searchParams.set('mode', 'artlist');
-    url.searchParams.set('format', 'json');
-    url.searchParams.set('timespan', process.env.GOLDCREST_NEWS_TIMESPAN || '24h');
-    url.searchParams.set('maxrecords', process.env.GOLDCREST_NEWS_MAX_RECORDS || '30');
-    url.searchParams.set('sort', 'datedesc');
+async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string }> {
+  const url = new URL(GDELT_ENDPOINT);
+  url.searchParams.set('query', query);
+  url.searchParams.set('mode', 'artlist');
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('timespan', process.env.GOLDCREST_NEWS_TIMESPAN || '6h');
+  url.searchParams.set('maxrecords', process.env.GOLDCREST_NEWS_MAX_RECORDS || '50');
+  url.searchParams.set('sort', 'datedesc');
+
+  try {
+    const text = await fetchText(url);
+    let payload: any;
 
     try {
-      const text = await fetchText(url);
-      let payload: any;
-      try {
-        payload = JSON.parse(text);
-      } catch {
-        throw new Error('GDELT returned a non-JSON response.');
-      }
-
-      const articles = parseGdeltArticles(payload);
-      if (articles.length > 0) return articles;
-    } catch (error: any) {
-      // Try the next narrower query before failing the provider.
-      if (query === NEWS_QUERIES[NEWS_QUERIES.length - 1]) {
-        throw error;
-      }
+      payload = JSON.parse(text);
+    } catch {
+      throw new Error('GDELT returned a non-JSON response.');
     }
+
+    const articles = parseGdeltArticles(payload);
+    return {
+      status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
+      articles
+    };
+  } catch (error) {
+    return {
+      status: 'ERROR',
+      articles: [],
+      error: asErrorMessage(error)
+    };
   }
-
-  return [];
 }
 
-async function fetchFromGoogleNewsRss(): Promise<LiveNewsArticle[]> {
+async function fetchFromGoogleNewsRss(query: string): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string }> {
   const url = new URL(GOOGLE_NEWS_RSS_ENDPOINT);
-  url.searchParams.set('q', 'forex OR currency OR "Federal Reserve" OR ECB OR inflation OR CPI OR NFP');
-  url.searchParams.set('hl', 'en-US');
-  url.searchParams.set('gl', 'US');
-  url.searchParams.set('ceid', 'US:en');
+  url.searchParams.set('q', `${query} when:12h`);
+  url.searchParams.set('hl', process.env.GOLDCREST_NEWS_LANGUAGE || 'en-US');
+  url.searchParams.set('gl', process.env.GOLDCREST_NEWS_COUNTRY || 'US');
+  url.searchParams.set('ceid', `${process.env.GOLDCREST_NEWS_COUNTRY || 'US'}:${(process.env.GOLDCREST_NEWS_LANGUAGE || 'en').split('-')[0]}`);
 
-  const xml = await fetchText(url);
-  return parseGoogleNewsRss(xml);
+  try {
+    const xml = await fetchText(url);
+    const articles = parseGoogleNewsRss(xml);
+    return {
+      status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
+      articles
+    };
+  } catch (error) {
+    return {
+      status: 'ERROR',
+      articles: [],
+      error: asErrorMessage(error)
+    };
+  }
 }
 
-function unavailableSnapshot(error: unknown, source: LiveNewsSource = 'NONE'): LiveNewsSnapshot {
+function unavailableSnapshot(
+  error: unknown,
+  queryPairs: string[],
+  providerStatus: LiveNewsSnapshot['providerStatus']
+): LiveNewsSnapshot {
   return {
-    source,
+    source: 'NONE',
     fetchedAt: new Date().toISOString(),
     status: 'UNAVAILABLE',
     articleCount: 0,
@@ -184,85 +386,155 @@ function unavailableSnapshot(error: unknown, source: LiveNewsSource = 'NONE'): L
     elevatedCount: 0,
     riskLevel: 'UNAVAILABLE',
     articles: [],
-    error: error instanceof Error ? error.message : String(error)
+    queryPairs,
+    providerStatus,
+    error: asErrorMessage(error)
   };
 }
 
-export async function fetchLiveForexNews(): Promise<LiveNewsSnapshot> {
+async function fetchLiveForexNewsInternal(
+  options: LiveNewsFetchOptions
+): Promise<LiveNewsSnapshot> {
   const now = Date.now();
+  const queryPairs = normalizePairs(options.pairs);
+  const queryKey = queryPairs.join(',');
 
-  if (newsCache && now < newsCache.expiresAt) {
-    return newsCache.snapshot;
-  }
+  const newsQuery = buildNewsQuery(queryPairs);
 
-  if (now < unavailableBackoffUntil && newsCache?.snapshot.status === 'UNAVAILABLE') {
-    return newsCache.snapshot;
-  }
+  const results = await Promise.all([
+    fetchFromGdelt(newsQuery),
+    fetchFromGoogleNewsRss(newsQuery)
+  ]);
 
-  try {
-    let articles: LiveNewsArticle[] = [];
-    let source: LiveNewsSource = 'GDELT_DOC_2';
-    let primaryError: string | undefined;
+  const providerStatus = {
+    GDELT_DOC_2: results[0].status,
+    GOOGLE_NEWS_RSS: results[1].status
+  };
 
-    try {
-      articles = await fetchFromGdelt();
-    } catch (error: any) {
-      primaryError = error?.message || String(error);
-    }
+  const errors = results
+    .map(result => result.error)
+    .filter(Boolean) as string[];
 
-    if (articles.length === 0) {
-      try {
-        articles = await fetchFromGoogleNewsRss();
-        source = 'GOOGLE_NEWS_RSS';
-      } catch (error: any) {
-        const secondaryError = error?.message || String(error);
-        const combinedError = primaryError
-          ? `GDELT: ${primaryError}; Google News RSS: ${secondaryError}`
-          : `Google News RSS: ${secondaryError}`;
+  const fetchedArticles = results.flatMap(result => result.articles);
+  const freshArticles = filterFreshArticles(fetchedArticles, now);
+  const articles = deduplicateArticles(freshArticles).slice(0, 30);
 
-        const snapshot = unavailableSnapshot(combinedError, 'NONE');
-        newsCache = { snapshot, expiresAt: now + Math.min(CACHE_TTL_MS, FAILURE_BACKOFF_MS) };
-        unavailableBackoffUntil = now + FAILURE_BACKOFF_MS;
-        return snapshot;
-      }
-    }
+  if (articles.length === 0) {
+    const allErrored = results.every(result => result.status === 'ERROR');
 
-    if (articles.length === 0) {
-      const snapshot: LiveNewsSnapshot = {
-        source,
-        fetchedAt: new Date().toISOString(),
-        status: 'NO_RESULTS',
-        articleCount: 0,
-        highImpactCount: 0,
-        elevatedCount: 0,
-        riskLevel: 'LOW',
-        articles: []
-      };
-      newsCache = { snapshot, expiresAt: now + CACHE_TTL_MS };
-      return snapshot;
-    }
+    const snapshot: LiveNewsSnapshot = allErrored
+      ? unavailableSnapshot(
+          errors.join(' | ') || 'All live news providers failed.',
+          queryPairs,
+          providerStatus
+        )
+      : {
+          source: 'NONE',
+          fetchedAt: new Date().toISOString(),
+          status: 'NO_RESULTS',
+          articleCount: 0,
+          highImpactCount: 0,
+          elevatedCount: 0,
+          riskLevel: 'LOW',
+          articles: [],
+          queryPairs,
+          providerStatus,
+          error: errors.length ? errors.join(' | ') : undefined
+        };
 
-    const deduped = Array.from(new Map(articles.map(article => [article.url, article])).values()).slice(0, 30);
-    const score = scoreArticles(deduped);
-
-    const snapshot: LiveNewsSnapshot = {
-      source,
-      fetchedAt: new Date().toISOString(),
-      status: 'LIVE',
-      articleCount: deduped.length,
-      highImpactCount: score.highImpactCount,
-      elevatedCount: score.elevatedCount,
-      riskLevel: score.riskLevel,
-      articles: deduped.slice(0, 20)
+    newsCache = {
+      key: queryKey,
+      snapshot,
+      expiresAt: now + (snapshot.status === 'UNAVAILABLE'
+        ? Math.min(CACHE_TTL_MS, FAILURE_BACKOFF_MS)
+        : CACHE_TTL_MS)
     };
 
-    newsCache = { snapshot, expiresAt: now + CACHE_TTL_MS };
-    unavailableBackoffUntil = 0;
-    return snapshot;
-  } catch (error: any) {
-    const snapshot = unavailableSnapshot(error, 'NONE');
-    newsCache = { snapshot, expiresAt: now + Math.min(CACHE_TTL_MS, FAILURE_BACKOFF_MS) };
-    unavailableBackoffUntil = now + FAILURE_BACKOFF_MS;
+    if (snapshot.status === 'UNAVAILABLE') {
+      unavailableBackoff = {
+        key: queryKey,
+        until: now + FAILURE_BACKOFF_MS
+      };
+    } else {
+      unavailableBackoff = null;
+    }
+
     return snapshot;
   }
+
+  const score = scoreArticles(articles);
+  const latestArticleAt = articles[0]?.publishedAt || null;
+
+  const source: LiveNewsSource = results[0].articles.length > 0
+    ? 'GDELT_DOC_2'
+    : 'GOOGLE_NEWS_RSS';
+
+  const snapshot: LiveNewsSnapshot = {
+    source,
+    fetchedAt: new Date().toISOString(),
+    status: 'LIVE',
+    articleCount: articles.length,
+    highImpactCount: score.highImpactCount,
+    elevatedCount: score.elevatedCount,
+    riskLevel: score.riskLevel,
+    articles,
+    queryPairs,
+    providerStatus,
+    latestArticleAt,
+    error: errors.length ? errors.join(' | ') : undefined
+  };
+
+  newsCache = {
+    key: queryKey,
+    snapshot,
+    expiresAt: now + CACHE_TTL_MS
+  };
+  unavailableBackoff = null;
+  return snapshot;
+}
+
+export async function fetchLiveForexNews(
+  options: LiveNewsFetchOptions = {}
+): Promise<LiveNewsSnapshot> {
+  const queryPairs = normalizePairs(options.pairs);
+  const key = queryPairs.join(',');
+  const now = Date.now();
+  const forceRefresh = options.forceRefresh === true;
+
+  if (!forceRefresh && newsCache && newsCache.key === key && now < newsCache.expiresAt) {
+    return newsCache.snapshot;
+  }
+
+  if (
+    !forceRefresh
+    && unavailableBackoff
+    && unavailableBackoff.key === key
+    && now < unavailableBackoff.until
+    && newsCache?.key === key
+    && newsCache.snapshot.status === 'UNAVAILABLE'
+  ) {
+    return newsCache.snapshot;
+  }
+
+  if (!forceRefresh && inFlight?.key === key) {
+    return inFlight.promise;
+  }
+
+  const promise = fetchLiveForexNewsInternal(options)
+    .finally(() => {
+      if (inFlight?.promise === promise) inFlight = null;
+    });
+
+  inFlight = { key, promise };
+  return promise;
+}
+
+/**
+ * Test-only cache reset used by deterministic provider/parser tests.
+ * It is harmless in production and avoids global fetch state leaking between tests.
+ */
+export function resetLiveForexNewsCacheForTest(): void {
+  newsCache = null;
+  unavailableBackoff = null;
+  inFlight = null;
 }
