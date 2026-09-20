@@ -64,6 +64,14 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   const [maxIndianInr, setMaxIndianInr] = useState(20000);
   const [savingLimits, setSavingLimits] = useState(false);
   const [limitMessage, setLimitMessage] = useState('');
+  const [autoLiveForexPairs, setAutoLiveForexPairs] = useState<string[]>([
+    'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD'
+  ]);
+  const [autoLiveIndianUnderlyings, setAutoLiveIndianUnderlyings] = useState<string[]>([
+    'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'
+  ]);
+  const [savingUniverse, setSavingUniverse] = useState(false);
+  const [universeMessage, setUniverseMessage] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -88,6 +96,12 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         }
         if (Number.isFinite(Number(config.maxTradeValueIndianInr))) {
           setMaxIndianInr(Number(config.maxTradeValueIndianInr));
+        }
+        if (Array.isArray(config.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0) {
+          setAutoLiveForexPairs(config.autoLiveForexPairs);
+        }
+        if (Array.isArray(config.autoLiveIndianUnderlyings)) {
+          setAutoLiveIndianUnderlyings(config.autoLiveIndianUnderlyings);
         }
       }
     } finally {
@@ -224,6 +238,114 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                 {savingLimits ? 'SAVING…' : 'SAVE TRADE LIMITS'}
               </button>
               {limitMessage && <span className="text-[10px] text-slate-400 font-mono">{limitMessage}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-slate-900 border border-cyan-900/60 rounded-xl p-5">
+        <div className="flex items-start gap-3">
+          <Sliders className="w-5 h-5 text-cyan-400 mt-0.5" />
+          <div className="flex-1">
+            <div className="text-sm font-bold text-white">Auto Live Working Universe</div>
+            <p className="text-xs text-slate-400 mt-1">
+              Select the Forex pairs and NSE/BSE index instruments that Goldcrest should actively monitor and prepare.
+              Selection is persisted in SQLite and survives restarts. Auto Live uses the selected Forex pairs for its autonomous Forex evaluation loop.
+            </p>
+
+            <div className="grid xl:grid-cols-2 gap-5 mt-4">
+              <div>
+                <div className="text-[10px] uppercase text-slate-500 font-mono mb-2">Forex / cTrader</div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','AUD/JPY','EUR/AUD','GBP/AUD','XAU/USD'].map(pair => {
+                    const checked = autoLiveForexPairs.includes(pair);
+                    return (
+                      <label key={pair} className={`flex items-center gap-2 px-3 py-2 rounded border cursor-pointer ${
+                        checked ? 'border-emerald-700 bg-emerald-950/30 text-emerald-300' : 'border-slate-800 bg-slate-950 text-slate-400'
+                      }`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setAutoLiveForexPairs(prev =>
+                            checked ? prev.filter(item => item !== pair) : [...prev, pair]
+                          )}
+                        />
+                        <span className="font-mono text-xs">{pair}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[10px] uppercase text-slate-500 font-mono mb-2">NSE / BSE Working Instruments</div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {[
+                    ['NIFTY', 'NIFTY 50', 'NSE'],
+                    ['BANKNIFTY', 'NIFTY BANK', 'NSE'],
+                    ['FINNIFTY', 'NIFTY FINANCIAL SERVICES', 'NSE'],
+                    ['MIDCPNIFTY', 'NIFTY MIDCAP SELECT', 'NSE'],
+                    ['SENSEX', 'BSE SENSEX 30', 'BSE']
+                  ].map(([symbol, label, exchange]) => {
+                    const checked = autoLiveIndianUnderlyings.includes(symbol);
+                    return (
+                      <label key={symbol} className={`flex items-center gap-2 px-3 py-2 rounded border cursor-pointer ${
+                        checked ? 'border-emerald-700 bg-emerald-950/30 text-emerald-300' : 'border-slate-800 bg-slate-950 text-slate-400'
+                      }`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setAutoLiveIndianUnderlyings(prev =>
+                            checked ? prev.filter(item => item !== symbol) : [...prev, symbol]
+                          )}
+                        />
+                        <span className="font-mono text-xs">{symbol}</span>
+                        <span className="text-[9px] text-slate-600 ml-auto">{exchange}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 mt-4">
+              <button
+                type="button"
+                disabled={savingUniverse || autoLiveForexPairs.length === 0}
+                onClick={async () => {
+                  if (autoLiveForexPairs.length === 0) {
+                    setUniverseMessage('Select at least one Forex pair.');
+                    return;
+                  }
+                  setSavingUniverse(true);
+                  setUniverseMessage('');
+                  try {
+                    const res = await fetch('/api/config', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        autoLiveForexPairs,
+                        autoLiveIndianUnderlyings
+                      })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Failed to save working universe.');
+                    setUniverseMessage('Working universe saved to SQLite. Auto Live will use the selected Forex pairs.');
+                    onRefreshGlobal?.();
+                  } catch (err: any) {
+                    setUniverseMessage(err.message || 'Failed to save working universe.');
+                  } finally {
+                    setSavingUniverse(false);
+                  }
+                }}
+                className="px-4 py-2 rounded bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold"
+              >
+                {savingUniverse ? 'SAVING…' : 'SAVE WORKING UNIVERSE'}
+              </button>
+              <span className="text-[10px] text-slate-500 font-mono">
+                {autoLiveForexPairs.length} Forex · {autoLiveIndianUnderlyings.length} NSE/BSE selected
+              </span>
+              {universeMessage && <span className="text-[10px] text-slate-400 font-mono">{universeMessage}</span>}
             </div>
           </div>
         </div>
