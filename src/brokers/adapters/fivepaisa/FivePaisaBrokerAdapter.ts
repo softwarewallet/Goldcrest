@@ -365,7 +365,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
         environment: this.environment,
         connected: false,
         account: maskedClient,
-        accountType: this.isLive ? 'LIVE' : 'DEMO',
+        accountType: 'LIVE',
         error: err.message,
         timestamp: Date.now(),
         latency: Date.now() - start
@@ -400,7 +400,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
 
     return {
       accountId: maskIdentifier(this.config.clientCode || this.config.userId || '5P_ACC'),
-      accountType: this.isLive ? 'LIVE' : 'DEMO',
+      accountType: 'LIVE',
       balance,
       equity,
       availableMargin,
