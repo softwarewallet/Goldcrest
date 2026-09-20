@@ -357,7 +357,12 @@ export default function App() {
               )}
 
               {(activeTab === 'pnl' || activeTab === 'accounting') && (
-                <TradingControlCenter initialSection="ACCOUNT_OVERVIEW" onSelectSignalModal={(sig) => setSelectedSignal(sig)} />
+                <TradingControlCenter
+                initialSection="ACCOUNT_OVERVIEW"
+                onSelectSignalModal={(sig) => setSelectedSignal(sig)}
+                autoTradingStatus={autoTradingStatus}
+                onAutoTradingStatusChange={setAutoTradingStatus}
+              />
               )}
 
               {(activeTab === 'research' || activeTab === 'ml') && (
@@ -367,7 +372,11 @@ export default function App() {
               )}
 
               {(activeTab === 'control_center' || activeTab === 'operations' || activeTab === 'reconciliation' || activeTab === 'reconcile') && (
-                <TradingControlCenter onSelectSignalModal={(sig) => setSelectedSignal(sig)} />
+                <TradingControlCenter
+                onSelectSignalModal={(sig) => setSelectedSignal(sig)}
+                autoTradingStatus={autoTradingStatus}
+                onAutoTradingStatusChange={setAutoTradingStatus}
+              />
               )}
 
               {activeTab === 'alerts' && (
