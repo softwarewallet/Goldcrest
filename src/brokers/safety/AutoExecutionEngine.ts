@@ -12,14 +12,28 @@ import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
 import { autoTradeReadinessService } from './AutoTradeReadiness';
 import { logBrokerAction } from '../auditLog';
 import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../../services/executionIntentService';
+import { getSystemConfig } from '../../services/configService';
 
 /**
- * ============================================================================
- * NON-NEGOTIABLE SAFETY INVARIANT (PHASE 12)
- * ============================================================================
- * Autonomous live-money execution is permanently disabled in production. Broker adapters may still support explicit operator-controlled live order workflows through the dedicated broker routes.
+ * Autonomous live execution is an explicit, server-side opt-in.
+ * It remains disabled unless both auto-trading flags are enabled and the
+ * configured strategy is calibrated/qualified.
  */
 export let LIVE_AUTO_EXECUTION_ALLOWED: boolean = false;
+
+function syncAutonomousPermission(): boolean {
+  const config = getSystemConfig();
+  const requested = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
+    && process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true';
+  const calibrated = !/UNCALIBRATED/i.test(String(config.modelStatus || ''));
+  const allowed = requested && config.liveTradingEnabled && calibrated && !killSwitch.isHalted();
+  LIVE_AUTO_EXECUTION_ALLOWED = allowed;
+  return allowed;
+}
+
+export function refreshAutonomousExecutionPermission(): boolean {
+  return syncAutonomousPermission();
+}
 
 export interface ExecutionPermissionConfig {
   liveConnectionEnabled: boolean;
@@ -37,6 +51,7 @@ class AutoExecutionEngine {
   };
 
   getControls(): ExecutionPermissionConfig {
+    syncAutonomousPermission();
     return {
       ...this.permissions,
       autoExecutionEnabled: this.permissions.autoExecutionEnabled,
@@ -52,24 +67,29 @@ class AutoExecutionEngine {
       ...this.permissions,
       ...updates
     };
-    if (updates.autonomousLiveExecutionAllowed !== undefined) {
-      LIVE_AUTO_EXECUTION_ALLOWED = false;
-      this.permissions.autonomousLiveExecutionAllowed = false;
-    }
-    if (updates.autoExecutionEnabled !== undefined) {
-      this.permissions.autoExecutionEnabled = false;
+    if (updates.autonomousLiveExecutionAllowed !== undefined || updates.autoExecutionEnabled !== undefined) {
+      syncAutonomousPermission();
+      this.permissions.autoExecutionEnabled = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true';
+      this.permissions.autonomousLiveExecutionAllowed = LIVE_AUTO_EXECUTION_ALLOWED;
     }
     return this.getControls();
   }
 
   enableAutomaticExecution(): { success: boolean; code: string; message: string } {
-    this.permissions.autoExecutionEnabled = false;
-    this.permissions.autonomousLiveExecutionAllowed = false;
-    LIVE_AUTO_EXECUTION_ALLOWED = false;
+    const allowed = syncAutonomousPermission();
+    this.permissions.autoExecutionEnabled = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true';
+    this.permissions.autonomousLiveExecutionAllowed = allowed;
+    if (!allowed) {
+      return {
+        success: false,
+        code: 'AUTONOMOUS_LIVE_EXECUTION_NOT_READY',
+        message: 'Autonomous execution is not enabled or the live strategy is not currently qualified. Set both auto-trading flags and use a calibrated strategy.'
+      };
+    }
     return {
-      success: false,
-      code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
-      message: 'Autonomous live-money execution is permanently disabled. Use the explicit operator order workflow after all live safety gates pass.'
+      success: true,
+      code: 'AUTONOMOUS_LIVE_EXECUTION_ARMED',
+      message: 'Autonomous live execution is armed behind the server-side readiness and broker safety gates.'
     };
   }
 
@@ -182,8 +202,9 @@ class AutoExecutionEngine {
     }
 
     // Stage 4: Autonomous live execution permission boundary.
-    // This remains permanently disabled until a separately reviewed safety
-    // milestone explicitly changes the invariant.
+    // Permission is evaluated at the moment of dispatch and can never bypass
+    // the readiness checks above.
+    syncAutonomousPermission();
     if (!LIVE_AUTO_EXECUTION_ALLOWED) {
       logBrokerAction({
         source: 'SAFETY_GATE',
