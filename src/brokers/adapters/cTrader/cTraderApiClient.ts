@@ -60,6 +60,25 @@ const MSG_SYMBOLS_FOR_CONVERSION_RES = 2119;
 const MSG_ERROR_RES = 2142;
 
 /**
+ * Goldcrest always presents cTrader as its LIVE broker adapter. The actual
+ * cTrader Open API endpoint is configurable so a broker test account can be
+ * exercised with the same application flows before the account is promoted
+ * to the broker's real-money environment.
+ */
+function getCTraderWsHost(): string {
+  const configured = String(process.env.CTRADER_LIVE_API_HOST || '').trim();
+  return configured || 'wss://live.ctraderapi.com:5036';
+}
+
+function isAuthoritativeLiveHost(host: string): boolean {
+  try {
+    return new URL(host).hostname.toLowerCase() === 'live.ctraderapi.com';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Executes a WebSocket request flow against the cTrader Open API (port 5036 JSON interface)
  */
 export async function fetchLiveCTraderAccounts(
@@ -68,7 +87,7 @@ export async function fetchLiveCTraderAccounts(
   accessToken: string,
   preferredHost: 'live' = 'live'
 ): Promise<CTraderRawAccount[]> {
-  const hosts = ['wss://live.ctraderapi.com:5036'];
+  const hosts = [getCTraderWsHost()];
 
   let lastError: Error | null = null;
 
@@ -152,10 +171,10 @@ export async function fetchLiveCTraderAccountDetails(
   clientSecret: string,
   accessToken: string
 ): Promise<CTraderRealTraderDetails> {
-  const host = 'wss://live.ctraderapi.com:5036';
+  const host = getCTraderWsHost();
 
-  if (!rawAccount.isLive) {
-    return Promise.reject(new Error(`cTrader account ${rawAccount.ctidTraderAccountId} is not marked LIVE by Open API. The LIVE runtime cannot authenticate a non-LIVE account.`));
+  if (isAuthoritativeLiveHost(host) && !rawAccount.isLive) {
+    return Promise.reject(new Error(`cTrader account ${rawAccount.ctidTraderAccountId} is not marked LIVE by Open API. The configured LIVE broker endpoint requires a LIVE cTrader account.`));
   }
 
   return new Promise<CTraderRealTraderDetails>((resolve, reject) => {
@@ -284,7 +303,7 @@ export async function fetchLiveCTraderAccountDetails(
           const code = String(msg.payload?.errorCode || '').toUpperCase();
           const description = String(msg.payload?.description || '').trim();
           if (code === 'CANT_ROUTE_REQUEST' || description.toLowerCase().includes('cannot route request') || description.toLowerCase().includes('no environment connection')) {
-            reject(new Error(`cTrader Open API cannot route LIVE account ${rawAccount.ctidTraderAccountId} to the broker environment. Verify that this account is LIVE and its broker server is connected to the cTrader Open API LIVE proxy. (CANT_ROUTE_REQUEST)`));
+            reject(new Error(`cTrader Open API cannot route account ${rawAccount.ctidTraderAccountId} through the configured broker endpoint. Verify that the account, access token, and configured cTrader endpoint belong to the same broker environment. (CANT_ROUTE_REQUEST)`));
           } else {
             reject(new Error(`cTrader Account Error: ${JSON.stringify(msg.payload)}`));
           }
