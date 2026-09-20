@@ -893,10 +893,23 @@ app.get(['/api/signals', '/api/signals/all'], async (req: Request, res: Response
 });
 
 // 8. Live Forex News
-app.get('/api/forex/news', async (_req: Request, res: Response) => {
+app.get('/api/forex/news', async (req: Request, res: Response) => {
   try {
-    const news = await fetchLiveForexNews();
-    res.json(news);
+    const configuredPairs = getSystemConfig().autoLiveForexPairs;
+    const requestedPairs = typeof req.query.pairs === 'string'
+      ? req.query.pairs
+        .split(',')
+        .map(value => value.trim())
+        .filter(Boolean)
+      : configuredPairs;
+
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    const news = await fetchLiveForexNews({
+      pairs: requestedPairs,
+      forceRefresh
+    });
+
+    res.status(news.status === 'UNAVAILABLE' ? 503 : 200).json(news);
   } catch (err: any) {
     res.status(503).json({
       error: 'LIVE_FOREX_NEWS_UNAVAILABLE',
