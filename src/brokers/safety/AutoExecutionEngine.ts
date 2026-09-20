@@ -251,7 +251,23 @@ class AutoExecutionEngine {
         };
       }
 
-      const placedOrder = await adapter.placeOrder(order);
+      const autonomousPlacer = (adapter as BrokerAdapter & {
+        placeAutonomousOrder?: (request: OrderRequest) => Promise<NormalizedOrder>;
+      }).placeAutonomousOrder;
+
+      if (typeof autonomousPlacer !== 'function') {
+        await failExecutionIntent(idempotencyKey, {
+          status: 'REJECTED',
+          rejectionReason: 'Broker adapter does not expose the guarded autonomous-order capability.'
+        } as NormalizedOrder);
+        return {
+          executed: false,
+          code: 'AUTONOMOUS_ORDER_PATH_UNAVAILABLE',
+          reason: 'Broker adapter does not expose the guarded autonomous-order capability.'
+        };
+      }
+
+      const placedOrder = await autonomousPlacer.call(adapter, order);
 
       if (placedOrder.status === 'FILLED') {
         await completeExecutionIntent(idempotencyKey, placedOrder);
