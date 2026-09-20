@@ -78,7 +78,9 @@ class AutoTradeReadinessService {
     checks.tradeFrequencyLimit = false;
     checks.consecutiveLossLimit = false;
     checks.spreadLimit = false;
-    checks.strategyCalibrated = !/UNCALIBRATED/i.test(String(config.modelStatus || ''));
+    const approvedStrategyId = String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim();
+    const productionStrategyApproved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true';
+    checks.strategyCalibrated = productionStrategyApproved && String(order.strategyId || '').trim() === approvedStrategyId;
 
     try {
       checks.brokerConnected = (await adapter.getTradingStatus()) === 'CONNECTED';
@@ -213,7 +215,7 @@ class AutoTradeReadinessService {
       ['tradeFrequencyLimit', 'Maximum daily trade count reached.'],
       ['consecutiveLossLimit', 'Maximum consecutive-loss limit reached.'],
       ['spreadLimit', 'Current spread exceeds the configured safety threshold.'],
-      ['strategyCalibrated', 'Strategy/model is still marked uncalibrated.']
+      ['strategyCalibrated', 'Production strategy approval is not enabled for this strategy version.']
     ] as const;
 
     for (const [key, message] of orderedChecks) {
