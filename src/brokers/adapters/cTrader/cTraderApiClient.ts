@@ -104,7 +104,7 @@ export async function fetchLiveCTraderAccounts(
               const accList: CTraderRawAccount[] = msg.payload?.ctidTraderAccount || [];
               // LIVE-only runtime: only accounts explicitly marked live may be
               // authenticated on the live Open API endpoint. cTrader separates
-              // live and demo environments at the proxy layer.
+              // separate account environments at the proxy layer.
               const liveAccounts = accList.filter(account => account.isLive === true);
               if (accList.length > 0 && liveAccounts.length === 0) {
                 reject(new Error('cTrader returned accounts, but none are LIVE accounts. Select a LIVE cTrader account and obtain its LIVE access token.'));
