@@ -57,7 +57,7 @@ export const OptionsScannerView: React.FC = () => {
             <div>
               <div className="font-bold text-amber-200 text-sm">5paisa API Connection Required</div>
               <div className="text-amber-300/80 mt-0.5">
-                Options quantitative scanners and spread analyzers require active 5paisa API market feeds. Synthetic dummy setups are disabled.
+                Options quantitative scanners and spread analyzers require active 5paisa API market feeds. Placeholder setups are disabled.
               </div>
             </div>
           </div>
@@ -241,7 +241,7 @@ export const OptionsScannerView: React.FC = () => {
             <AlertCircle className="w-8 h-8 text-amber-400/80" />
             <div className="text-sm font-semibold text-slate-200">No Options Opportunities Found (Blank State)</div>
             <div className="text-xs text-slate-500 max-w-md">
-              5paisa connection is required to scan live option chain setups. Synthetic dummy setups are disabled.
+              5paisa connection is required to scan live option chain setups. Placeholder setups are disabled.
             </div>
           </div>
         </div>
