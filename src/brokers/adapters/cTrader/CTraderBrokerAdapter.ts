@@ -658,11 +658,17 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getOrderHistory(): Promise<NormalizedOrder[]> {
+    const toTimestamp = Date.now();
+    return this.getOrderHistoryRange(toTimestamp - 7 * 24 * 60 * 60 * 1000, toTimestamp);
+  }
+
+  async getOrderHistoryRange(fromTimestamp: number, toTimestamp: number): Promise<NormalizedOrder[]> {
     this.syncConfig();
     this.validateCredentials();
     const raw = await this.resolveRawAccount();
-    const from = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const deals = await fetchCTraderDeals(raw.ctidTraderAccountId, from, Date.now(), this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+    const safeFrom = Math.max(0, Number(fromTimestamp));
+    const safeTo = Math.max(safeFrom, Number(toTimestamp));
+    const deals = await fetchCTraderDeals(raw.ctidTraderAccountId, safeFrom, safeTo, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
     return deals.map((deal: any) => {
       const status = Number(deal.dealStatus) === 2 ? 'FILLED' : 'REJECTED';
       const side = Number(deal.tradeSide) === 2 ? 'SELL' : 'BUY';
