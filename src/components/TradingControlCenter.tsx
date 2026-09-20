@@ -214,464 +214,16 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [optionsLoading, setOptionsLoading] = useState<boolean>(false);
   const [optionsError, setOptionsError] = useState<string | null>(null);
 
-  // Accounts Data
-  const [accounts, setAccounts] = useState<AccountCardData[]>([
-    {
-      broker: 'CTRADER',
-      accountId: '****1234',
-      accountStatus: 'ACTIVE',
-      connectionStatus: 'CONNECTED',
-      currency: 'USD',
-      balance: 100000.0,
-      equity: 100480.0,
-      availableMargin: 98500.0,
-      usedMargin: 1980.0,
-      marginLevelPct: 5074.7,
-      unrealizedPnl: 480.0,
-      realizedPnl: 1250.0,
-      lastSyncTimestamp: Date.now() - 4000,
-      freshness: 'LIVE',
-      source: 'cTrader Open API v2 (WebSocket)'
-    },
-    {
-      broker: 'FIVE_PAISA',
-      accountId: '****5678',
-      accountStatus: 'ACTIVE',
-      connectionStatus: 'CONNECTED',
-      currency: 'INR',
-      balance: 500000.0,
-      equity: 503200.0,
-      availableMargin: 465000.0,
-      usedMargin: 38200.0,
-      marginLevelPct: 1317.2,
-      unrealizedPnl: 3200.0,
-      realizedPnl: 8450.0,
-      lastSyncTimestamp: Date.now() - 5000,
-      freshness: 'LIVE',
-      source: '5paisa OpenAPI Client (HTTPS/REST)'
-    }
-  ]);
-
-  // Market Quotes Data
-  const [marketQuotes, setMarketQuotes] = useState<MarketQuoteItem[]>([
-    {
-      market: 'FOREX',
-      symbol: 'EUR/USD',
-      bid: 1.0845,
-      ask: 1.08458,
-      ltp: 1.08454,
-      spreadPipsOrPts: 0.8,
-      change24h: 0.0018,
-      changePercent24h: 0.17,
-      timestamp: Date.now() - 2000,
-      timeframe: 'M15',
-      status: 'OPEN',
-      freshness: 'LIVE'
-    },
-    {
-      market: 'FOREX',
-      symbol: 'GBP/USD',
-      bid: 1.2912,
-      ask: 1.29132,
-      ltp: 1.29126,
-      spreadPipsOrPts: 1.2,
-      change24h: -0.0024,
-      changePercent24h: -0.19,
-      timestamp: Date.now() - 3000,
-      timeframe: 'M15',
-      status: 'OPEN',
-      freshness: 'LIVE'
-    },
-    {
-      market: 'FOREX',
-      symbol: 'USD/JPY',
-      bid: 154.205,
-      ask: 154.218,
-      ltp: 154.211,
-      spreadPipsOrPts: 1.3,
-      change24h: 0.45,
-      changePercent24h: 0.29,
-      timestamp: Date.now() - 2500,
-      timeframe: 'M15',
-      status: 'OPEN',
-      freshness: 'LIVE'
-    },
-    {
-      market: 'INDIA_EQUITY',
-      symbol: 'NIFTY',
-      bid: 24850.2,
-      ask: 24851.8,
-      ltp: 24851.0,
-      spreadPipsOrPts: 1.6,
-      change24h: 112.5,
-      changePercent24h: 0.45,
-      volume24h: 14820000,
-      timestamp: Date.now() - 4000,
-      timeframe: 'M15',
-      status: 'OPEN',
-      freshness: 'LIVE'
-    },
-    {
-      market: 'INDIA_EQUITY',
-      symbol: 'BANKNIFTY',
-      bid: 51240.0,
-      ask: 51243.5,
-      ltp: 51242.0,
-      spreadPipsOrPts: 3.5,
-      change24h: -85.0,
-      changePercent24h: -0.17,
-      volume24h: 8930000,
-      timestamp: Date.now() - 4500,
-      timeframe: 'M15',
-      status: 'OPEN',
-      freshness: 'LIVE'
-    }
-  ]);
-
-  // Positions Data
-  const [positions, setPositions] = useState<PositionItem[]>([
-    {
-      positionId: 'POS_CT_9901',
-      broker: 'CTRADER',
-      account: '****1234',
-      symbol: 'EUR/USD',
-      side: 'BUY',
-      quantity: 100000,
-      entryPrice: 1.0841,
-      currentPrice: 1.08454,
-      unrealizedPnl: 440.0,
-      realizedPnl: 0.0,
-      currency: 'USD',
-      openedAt: Date.now() - 3600000 * 2,
-      brokerSyncStatus: 'SYNCED',
-      reconciliationStatus: 'MATCH'
-    },
-    {
-      positionId: 'POS_5P_4421',
-      broker: 'FIVE_PAISA',
-      account: '****5678',
-      symbol: 'NIFTY 24900 CE',
-      side: 'BUY',
-      quantity: 150,
-      entryPrice: 142.5,
-      currentPrice: 164.0,
-      unrealizedPnl: 3225.0,
-      realizedPnl: 0.0,
-      currency: 'INR',
-      openedAt: Date.now() - 3600000 * 3,
-      brokerSyncStatus: 'SYNCED',
-      reconciliationStatus: 'MATCH'
-    }
-  ]);
-
-  // Orders Data
-  const [orders, setOrders] = useState<OrderItem[]>([
-    {
-      internalOrderId: 'ORD_INT_1092',
-      brokerOrderId: 'CT_BROKER_88421',
-      account: '****1234',
-      broker: 'CTRADER',
-      instrument: 'EUR/USD',
-      side: 'BUY',
-      quantity: 100000,
-      price: 1.0841,
-      status: 'FILLED',
-      createdAt: Date.now() - 3600000 * 2.1,
-      updatedAt: Date.now() - 3600000 * 2,
-      reconciliationState: 'MATCH'
-    },
-    {
-      internalOrderId: 'ORD_INT_1093',
-      brokerOrderId: '5P_BROKER_77192',
-      account: '****5678',
-      broker: 'FIVE_PAISA',
-      instrument: 'NIFTY 24900 CE',
-      side: 'BUY',
-      quantity: 150,
-      price: 142.5,
-      status: 'FILLED',
-      createdAt: Date.now() - 3600000 * 3.1,
-      updatedAt: Date.now() - 3600000 * 3,
-      reconciliationState: 'MATCH'
-    },
-    {
-      internalOrderId: 'ORD_INT_1094',
-      brokerOrderId: 'CT_BROKER_88435',
-      account: '****1234',
-      broker: 'CTRADER',
-      instrument: 'GBP/USD',
-      side: 'SELL',
-      quantity: 50000,
-      price: 1.2915,
-      status: 'CANCELLED',
-      createdAt: Date.now() - 3600000 * 4,
-      updatedAt: Date.now() - 3600000 * 3.9,
-      reconciliationState: 'MATCH',
-      rejectionReason: 'Operator cancelled order before broker fill'
-    }
-  ]);
-
-  // Signals Data
-  const [signals, setSignals] = useState<any[]>([
-    {
-      signalId: 'SIG_FX_2026_0901',
-      timestamp: Date.now() - 600000,
-      market: 'FOREX',
-      instrument: 'EUR/USD',
-      timeframe: 'M15',
-      direction: 'LONG',
-      model: 'gbt_forex_v1.0.0',
-      probability: 0.742,
-      threshold: 0.65,
-      qualificationStatus: 'QUALIFIED',
-      regime: 'TRENDING_BULLISH',
-      confidenceScore: 0.88,
-      riskDecision: 'PASS',
-      executionGateState: 'LOCKED',
-      reason: 'Confluence of EMA stack alignment, positive RSI momentum (58.4), and GBT prediction exceeding qualification threshold (74.2% > 65.0%).',
-      features: { rsi: 58.4, emaDiff: '+0.00042', vwapDistance: '+0.00021' },
-      riskParams: { riskPct: 1.0, maxLossUsd: 1000, stopLoss: 1.0825, takeProfit: 1.0885 }
-    },
-    {
-      signalId: 'SIG_IN_2026_0902',
-      timestamp: Date.now() - 1200000,
-      market: 'INDIA_OPTIONS',
-      instrument: 'NIFTY 24900 CE',
-      timeframe: 'M15',
-      direction: 'LONG',
-      model: 'gbt_forex_v1.0.0',
-      probability: 0.685,
-      threshold: 0.65,
-      qualificationStatus: 'QUALIFIED',
-      regime: 'HIGH_OI_BREAKOUT',
-      confidenceScore: 0.81,
-      riskDecision: 'PASS',
-      executionGateState: 'LOCKED',
-      reason: 'Call OI unwinding at 24800, spot crossing VWAP upwards, options Greek delta +0.52 favorable for delta expansion.',
-      features: { pcr: 1.15, maxPain: 24800, delta: 0.52 },
-      riskParams: { riskPct: 1.0, maxLossInr: 5000, stopLoss: 110.0, takeProfit: 195.0 }
-    },
-    {
-      signalId: 'SIG_FX_2026_0903',
-      timestamp: Date.now() - 1800000,
-      market: 'FOREX',
-      instrument: 'USD/JPY',
-      timeframe: 'M15',
-      direction: 'SHORT',
-      model: 'gbt_forex_v1.0.0',
-      probability: 0.592,
-      threshold: 0.65,
-      qualificationStatus: 'REJECTED',
-      regime: 'RANGE_BOUND',
-      confidenceScore: 0.54,
-      riskDecision: 'REJECTED',
-      executionGateState: 'LOCKED',
-      reason: 'Model probability 59.2% is below strict 65.0% qualification threshold. Sub-optimal risk/reward geometry.',
-      features: { rsi: 49.1, emaDiff: '-0.00008', vwapDistance: '-0.00004' },
-      riskParams: { riskPct: 1.0, maxLossUsd: 1000, stopLoss: 154.6, takeProfit: 153.5 }
-    }
-  ]);
-
-  // Risk Event Timeline
-  const [riskTimeline, setRiskTimeline] = useState<RiskTimelineEvent[]>([
-    {
-      id: 'RTE_01',
-      timestamp: Date.now() - 300000,
-      broker: 'CTRADER',
-      account: '****1234',
-      instrument: 'EUR/USD',
-      eventType: 'SIGNAL QUALIFIED',
-      reason: 'Signal SIG_FX_2026_0901 scored 74.2% probability (> 65.0% threshold).',
-      severity: 'INFO'
-    },
-    {
-      id: 'RTE_02',
-      timestamp: Date.now() - 280000,
-      broker: 'CTRADER',
-      account: '****1234',
-      instrument: 'EUR/USD',
-      eventType: 'RISK APPROVED',
-      reason: 'Exposure check passed. Trade risk $79.00 <= 1.0% account equity ($1,000.00).',
-      severity: 'INFO'
-    },
-    {
-      id: 'RTE_03',
-      timestamp: Date.now() - 260000,
-      broker: 'CTRADER',
-      account: '****1234',
-      instrument: 'EUR/USD',
-      eventType: 'EXECUTION GATE BLOCKED',
-      reason: 'LIVE_AUTO_EXECUTION_ALLOWED === false. Autonomous live dispatch prevented.',
-      severity: 'WARNING'
-    },
-    {
-      id: 'RTE_04',
-      timestamp: Date.now() - 1500000,
-      broker: 'CTRADER',
-      account: '****1234',
-      instrument: 'USD/JPY',
-      eventType: 'RISK REJECTED',
-      reason: 'Signal SIG_FX_2026_0903 rejected: probability 59.2% below 65.0% threshold.',
-      severity: 'INFO'
-    }
-  ]);
-
-  // Reconciliation Comparisons
-  const [reconciliations, setReconciliations] = useState<ReconciliationComparison[]>([
-    {
-      category: 'BALANCE',
-      brokerValue: '$100,000.00 USD / ₹500,000.00 INR',
-      internalValue: '$100,000.00 USD / ₹500,000.00 INR',
-      firestoreValue: '$100,000.00 USD / ₹500,000.00 INR',
-      status: 'MATCH',
-      quantityDiff: 0,
-      priceDiff: 0,
-      currencyDiff: 'None (USD/INR isolated)',
-      details: 'All balances across broker APIs, internal ledgers, and Firestore match to 0.001 precision.'
-    },
-    {
-      category: 'POSITIONS',
-      brokerValue: '2 Active Positions (1 FX, 1 IN)',
-      internalValue: '2 Active Positions (1 FX, 1 IN)',
-      firestoreValue: '2 Active Positions (1 FX, 1 IN)',
-      status: 'MATCH',
-      quantityDiff: 0,
-      priceDiff: 0,
-      currencyDiff: 'None',
-      details: 'cTrader EUR/USD 100,000 lots matched. 5paisa NIFTY 24900 CE 150 qty matched.'
-    },
-    {
-      category: 'ORDERS',
-      brokerValue: '3 Orders (2 FILLED, 1 CANCELLED)',
-      internalValue: '3 Orders (2 FILLED, 1 CANCELLED)',
-      firestoreValue: '3 Orders (2 FILLED, 1 CANCELLED)',
-      status: 'MATCH',
-      quantityDiff: 0,
-      priceDiff: 0,
-      currencyDiff: 'None',
-      details: 'All order IDs and terminal states reconciled with 0 missing records.'
-    },
-    {
-      category: 'PNL',
-      brokerValue: 'Unrealized: +$480 USD / +₹3,200 INR',
-      internalValue: 'Unrealized: +$480 USD / +₹3,200 INR',
-      firestoreValue: 'Unrealized: +$480 USD / +₹3,200 INR',
-      status: 'MATCH',
-      quantityDiff: 0,
-      priceDiff: 0,
-      currencyDiff: 'None',
-      details: 'Live tick valuation aligned with broker mark-to-market calculations.'
-    }
-  ]);
-
-  // System Health Components
-  const [healthComponents, setHealthComponents] = useState<SystemHealthComponent[]>([
-    {
-      id: 'ctrader_api',
-      name: 'cTrader Open API',
-      status: 'HEALTHY',
-      lastSuccessTimestamp: Date.now() - 2000,
-      latencyMs: 78,
-      errorCount24h: 0,
-      requestCount24h: 1420,
-      successCount24h: 1420,
-      failedCount24h: 0,
-      timeoutCount24h: 0,
-      rateLimitEvents24h: 0
-    },
-    {
-      id: 'fivepaisa_api',
-      name: '5paisa OpenAPI Client',
-      status: 'HEALTHY',
-      lastSuccessTimestamp: Date.now() - 3000,
-      latencyMs: 95,
-      errorCount24h: 0,
-      requestCount24h: 890,
-      successCount24h: 890,
-      failedCount24h: 0,
-      timeoutCount24h: 0,
-      rateLimitEvents24h: 0
-    },
-    {
-      id: 'market_data_engine',
-      name: 'Market Data Ingestion Engine',
-      status: 'HEALTHY',
-      lastSuccessTimestamp: Date.now() - 1000,
-      latencyMs: 14,
-      errorCount24h: 0,
-      requestCount24h: 3600,
-      successCount24h: 3600,
-      failedCount24h: 0,
-      timeoutCount24h: 0,
-      rateLimitEvents24h: 0
-    },
-    {
-      id: 'options_data_engine',
-      name: '5paisa Options Data Adapter',
-      status: 'HEALTHY',
-      lastSuccessTimestamp: Date.now() - 4000,
-      latencyMs: 110,
-      errorCount24h: 0,
-      requestCount24h: 420,
-      successCount24h: 420,
-      failedCount24h: 0,
-      timeoutCount24h: 0,
-      rateLimitEvents24h: 0
-    },
-    {
-      id: 'firestore_db',
-      name: 'Firestore Database Cluster',
-      status: 'HEALTHY',
-      lastSuccessTimestamp: Date.now() - 5000,
-      latencyMs: 42,
-      errorCount24h: 0,
-      requestCount24h: 510,
-      successCount24h: 510,
-      failedCount24h: 0,
-      timeoutCount24h: 0,
-      rateLimitEvents24h: 0
-    },
-    {
-      id: 'model_service',
-      name: 'GBT Forex Production Model Service (v1.0.0)',
-      status: 'HEALTHY',
-      lastSuccessTimestamp: Date.now() - 2500,
-      latencyMs: 18,
-      errorCount24h: 0,
-      requestCount24h: 680,
-      successCount24h: 680,
-      failedCount24h: 0,
-      timeoutCount24h: 0,
-      rateLimitEvents24h: 0
-    },
-    {
-      id: 'risk_engine',
-      name: 'Quantitative Risk & Safety Engine',
-      status: 'HEALTHY',
-      lastSuccessTimestamp: Date.now() - 1500,
-      latencyMs: 8,
-      errorCount24h: 0,
-      requestCount24h: 920,
-      successCount24h: 920,
-      failedCount24h: 0,
-      timeoutCount24h: 0,
-      rateLimitEvents24h: 0
-    },
-    {
-      id: 'reconciliation_engine',
-      name: 'Three-Way Reconciliation Engine',
-      status: 'HEALTHY',
-      lastSuccessTimestamp: Date.now() - 6000,
-      latencyMs: 35,
-      errorCount24h: 0,
-      requestCount24h: 240,
-      successCount24h: 240,
-      failedCount24h: 0,
-      timeoutCount24h: 0,
-      rateLimitEvents24h: 0
-    }
-  ]);
-
+  // All operational data starts empty and is populated only from authoritative LIVE APIs.
+  const [accounts, setAccounts] = useState<AccountCardData[]>([]);
+  const [marketQuotes, setMarketQuotes] = useState<MarketQuoteItem[]>([]);
+  const [positions, setPositions] = useState<PositionItem[]>([]);
+  const [orders, setOrders] = useState<OrderItem[]>([]);
+  const [signals, setSignals] = useState<any[]>([]);
+  const [riskTimeline, setRiskTimeline] = useState<RiskTimelineEvent[]>([]);
+  const [reconciliations, setReconciliations] = useState<ReconciliationComparison[]>([]);
+  const [healthComponents, setHealthComponents] = useState<SystemHealthComponent[]>([]);
+  
   // Audit Logs Data
   const [auditLogs, setAuditLogs] = useState<ImmutableAuditEvent[]>([]);
 
@@ -686,76 +238,116 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         positionsRes,
         ordersRes,
         reconRes,
-        healthRes,
         autoTradingRes
       ] = await Promise.all([
-        fetch('/api/brokers/status').catch(() => null),
-        fetch('/api/brokers/accounts').catch(() => null),
-        fetch('/api/governance/audit-logs?limit=100').catch(() => null),
-        fetch('/api/brokers/positions').catch(() => null),
-        fetch('/api/brokers/orders').catch(() => null),
-        fetch('/api/governance/reconciliation/positions').catch(() => null),
-        fetch('/api/governance/status').catch(() => null),
-        fetch('/api/auto-trading/status').catch(() => null)
+        fetch('/api/brokers/status', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/brokers/accounts', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/governance/audit-logs?limit=100', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/brokers/positions', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/brokers/orders', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/governance/reconciliation/positions', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/auto-trading/status', { cache: 'no-store' }).catch(() => null)
       ]);
 
-      if (autoTradingRes && autoTradingRes.ok) {
-        const autoData = await autoTradingRes.json();
-        setAutoTradingStatus(autoData);
+      if (autoTradingRes?.ok) {
+        setAutoTradingStatus(await autoTradingRes.json());
       }
 
-      if (auditLogsRes && auditLogsRes.ok) {
+      if (auditLogsRes?.ok) {
         const logs = await auditLogsRes.json();
-        if (Array.isArray(logs) && logs.length > 0) {
-          setAuditLogs(logs);
-        }
+        if (Array.isArray(logs)) setAuditLogs(logs);
       }
 
-      if (brokerStatusRes && brokerStatusRes.ok) {
-        const bStatus = await brokerStatusRes.json();
-        if (bStatus.activeAccount) {
-          setAccounts(prev => [
-            {
-              broker: bStatus.selectedBroker || 'CTRADER',
-              accountId: bStatus.activeAccount.accountId || '****1234',
+      if (accountsRes?.ok) {
+        const liveAccounts = await accountsRes.json();
+        if (Array.isArray(liveAccounts)) {
+          const mapped: AccountCardData[] = liveAccounts
+            .filter((account: any) => String(account?.environment || 'LIVE') === 'LIVE')
+            .map((account: any) => ({
+              broker: account.broker,
+              accountId: account.accountId || '****',
               accountStatus: 'ACTIVE',
-              connectionStatus: 'CONNECTED',
-              currency: bStatus.activeAccount.currency || 'USD',
-              balance: bStatus.activeAccount.balance || 100000.0,
-              equity: bStatus.activeAccount.equity || bStatus.activeAccount.balance || 100000.0,
-              availableMargin: bStatus.activeAccount.marginFree || 98500.0,
-              usedMargin: bStatus.activeAccount.marginUsed || 1500.0,
-              marginLevelPct: bStatus.activeAccount.marginLevel || 5000.0,
-              unrealizedPnl: bStatus.activeAccount.unrealizedPnl || 0.0,
-              realizedPnl: bStatus.activeAccount.realizedPnl || 0.0,
-              lastSyncTimestamp: Date.now(),
+              connectionStatus: account.connectionStatus === 'CONNECTED' ? 'CONNECTED' : 'ERROR',
+              currency: account.currency === 'INR' ? 'INR' : 'USD',
+              balance: Number(account.balance),
+              equity: Number(account.equity),
+              availableMargin: Number(account.availableMargin ?? account.freeMargin),
+              usedMargin: Number(account.usedMargin ?? 0),
+              marginLevelPct: undefined,
+              unrealizedPnl: undefined as any,
+              realizedPnl: undefined as any,
+              lastSyncTimestamp: Number(account.lastUpdate || Date.now()),
               freshness: 'LIVE',
-              source: `${bStatus.selectedBroker} Live Broker Adapter`
-            },
-            prev.find(a => a.broker === 'FIVE_PAISA') || {
-              broker: 'FIVE_PAISA',
-              accountId: '****5678',
-              accountStatus: 'ACTIVE',
-              connectionStatus: 'CONNECTED',
-              currency: 'INR',
-              balance: 500000.0,
-              equity: 503200.0,
-              availableMargin: 465000.0,
-              usedMargin: 38200.0,
-              marginLevelPct: 1317.2,
-              unrealizedPnl: 3200.0,
-              realizedPnl: 8450.0,
-              lastSyncTimestamp: Date.now(),
-              freshness: 'LIVE',
-              source: '5paisa OpenAPI Client (HTTPS/REST)'
-            }
-          ]);
+              source: account.broker === 'CTRADER' ? 'cTrader LIVE API' : '5paisa LIVE API'
+            }))
+            .filter((account: any) =>
+              Number.isFinite(account.balance) &&
+              Number.isFinite(account.equity) &&
+              Number.isFinite(account.availableMargin)
+            );
+          setAccounts(mapped);
+        } else {
+          setAccounts([]);
         }
+      } else {
+        setAccounts([]);
+      }
+
+      if (positionsRes?.ok) {
+        const livePositions = await positionsRes.json();
+        setPositions(Array.isArray(livePositions) ? livePositions : []);
+      } else {
+        setPositions([]);
+      }
+
+      if (ordersRes?.ok) {
+        const liveOrders = await ordersRes.json();
+        setOrders(Array.isArray(liveOrders) ? liveOrders : []);
+      } else {
+        setOrders([]);
+      }
+
+      if (reconRes?.ok) {
+        const recon = await reconRes.json();
+        if (recon && !recon.error && recon.category) {
+          setReconciliations([recon]);
+        } else {
+          setReconciliations([]);
+        }
+      } else {
+        setReconciliations([]);
+      }
+
+      if (brokerStatusRes?.ok) {
+        const status = await brokerStatusRes.json();
+        const brokerRows = Array.isArray(status?.brokers) ? status.brokers : [];
+        setHealthComponents(
+          brokerRows.map((row: any) => ({
+            id: String(row.broker || '').toLowerCase(),
+            name: row.broker === 'CTRADER' ? 'cTrader LIVE API' : row.broker === 'FIVE_PAISA' ? '5paisa LIVE API' : String(row.broker || 'LIVE Broker'),
+            status: row.connected ? 'HEALTHY' : 'ERROR',
+            lastSuccessTimestamp: row.connected ? Date.now() : 0,
+            latencyMs: 0,
+            errorCount24h: row.connected ? 0 : 1,
+            requestCount24h: 0,
+            successCount24h: row.connected ? 1 : 0,
+            failedCount24h: row.connected ? 0 : 1,
+            timeoutCount24h: 0,
+            rateLimitEvents24h: 0
+          }))
+        );
+      } else {
+        setHealthComponents([]);
       }
 
       setLastRefreshedAt(Date.now());
     } catch (err) {
-      console.warn('Control Center refresh encountered minor background note:', err);
+      console.warn('Control Center live data refresh failed:', err);
+      setAccounts([]);
+      setPositions([]);
+      setOrders([]);
+      setReconciliations([]);
+      setHealthComponents([]);
     } finally {
       setIsRefreshing(false);
     }
