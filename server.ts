@@ -195,14 +195,8 @@ app.get('/api/live-log/file', operatorAuthRequired, (req: Request, res: Response
 });
 
 
-
-const forexProviderV2 = new ForexDemoProvider();
-const forexSignalEngine = new ForexSignalEngine(undefined, forexProviderV2);
-
-const forexProvider = new LegacyForexProvider();
-const indiaProvider = new IndianMarketDemoProvider();
-const optionsProvider = new OptionsChainDemoProvider();
-const economicProvider = new EconomicCalendarDemoProvider();
+\nconst liveForexProvider = new LiveForexProvider();
+const forexSignalEngine = new ForexSignalEngine(undefined, liveForexProvider);
 const scannerService = new ScannerService();
 
 function extractForexPair(req: Request): string {
@@ -280,7 +274,6 @@ app.get('/api/status', (req: Request, res: Response) => {
     dataStatus: config.dataStatus,
     modelStatus: config.modelStatus,
     tradingMode: config.tradingMode,
-    isDemo: false,
     timestamp: Date.now()
   });
 });
@@ -524,14 +517,6 @@ app.post('/api/forex/explain', async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-});
-
-// Legacy paper-tracking endpoints are retired in LIVE_ONLY mode.
-app.all(['/api/forex/paper', '/api/forex/paper/*', '/api/paper', '/api/paper/*'], (_req: Request, res: Response) => {
-  return res.status(410).json({
-    error: 'LIVE_ONLY',
-    message: 'Paper trading and simulated portfolio endpoints are retired. Use live broker telemetry.'
-  });
 });
 
 

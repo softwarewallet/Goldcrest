@@ -13,7 +13,6 @@ import {
   Minus,
   AlertTriangle,
   ChevronRight,
-  CheckCircle2,
   XCircle,
   Sparkles,
   ShieldAlert,
@@ -475,16 +474,6 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
                   </span>
                 </div>
 
-                {analysis.tradePlan && (
-                  <button
-                    onClick={}
-                    disabled={}
-                    className="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded font-mono text-xs flex items-center space-x-1.5 transition"
-                  >
-                    <BookmarkPlus className="w-3.5 h-3.5" />
-                    <span>Track as Paper Analysis</span>
-                  </button>
-                )}
               </div>
 
               {/* Numerical Execution Levels */}

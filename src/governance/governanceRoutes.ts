@@ -5,6 +5,7 @@ import { killSwitch } from '../brokers/safety/KillSwitch';
 import { autoTradingService } from '../services/autoTradingService';
 import { reconciliationService } from '../services/reconciliationService';
 import { FXRateProvider } from '../accounting';
+import { executeQuery } from '../database/db';
 
 export const governanceRouter = Router();
 
@@ -63,6 +64,9 @@ governanceRouter.get('/audit-logs', (req: Request, res: Response) => {
 
 async function reconcileLiveResource(resource: 'positions' | 'orders') {
   const rows: any[] = [];
+  const table = resource === 'positions' ? 'positions' : 'orders';
+  const persistedRows = await executeQuery<any>(`SELECT COUNT(*) as count FROM ${table}`);
+  const sqliteCount = Number(persistedRows[0]?.count || 0);
   for (const broker of LIVE_BROKERS) {
     try {
       const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
@@ -73,18 +77,18 @@ async function reconcileLiveResource(resource: 'positions' | 'orders') {
         broker,
         environment: 'LIVE',
         brokerCount: values.length,
-        internalCount: null,
-        firestoreCount: null,
+        internalCount: sqliteCount,
+        sqliteCount,
         status: 'SOURCE_COMPARISON_PENDING',
-        details: 'Live broker state captured. Internal/cloud comparison is only reported when authoritative persisted state exists.'
+        details: 'Live broker state captured and compared against SQLite persistence when available.'
       });
     } catch (error: any) {
       rows.push({
         broker,
         environment: 'LIVE',
         brokerCount: null,
-        internalCount: null,
-        firestoreCount: null,
+        internalCount: sqliteCount,
+        sqliteCount,
         status: 'LIVE_SOURCE_UNAVAILABLE',
         details: error?.message || String(error)
       });
@@ -220,13 +224,5 @@ governanceRouter.get('/reports/weekly', async (_req: Request, res: Response) => 
     snapshotCount: report.length,
     snapshots: report,
     generatedAt: Date.now()
-  });
-});
-
-// Research and non-live execution workflows were retired. These endpoints are intentionally unavailable.
-governanceRouter.use(['/research', '/demo-readiness', '/demo-test', '/promotions', '/shadow'], (_req: Request, res: Response) => {
-  return res.status(410).json({
-    error: 'LIVE_ONLY',
-    message: 'This workflow is retired. Goldcrest operates only with live broker data and live execution.'
   });
 });

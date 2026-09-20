@@ -168,7 +168,7 @@ interface ReconciliationComparison {
   category: 'BALANCE' | 'POSITIONS' | 'ORDERS' | 'TRADES_FILLS' | 'PNL';
   brokerValue: string | number;
   internalValue: string | number;
-  firestoreValue: string | number;
+  sqliteCount: string | number;
   status: 'MATCH' | 'MINOR_DELAY' | 'MATERIAL_MISMATCH' | 'SOURCE_UNAVAILABLE';
   quantityDiff?: number;
   priceDiff?: number;
@@ -1498,14 +1498,14 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         </div>
       )}
 
-      {/* SECTION 8: RECONCILIATION CENTER (Broker API ↔ Internal Ledger ↔ Firestore) */}
+      {/* SECTION 8: RECONCILIATION CENTER (Broker API ↔ SQLite Ledger) */}
       {(activeSection === 'ALL_OVERVIEW' || activeSection === 'RECONCILIATION') && (
         <div id="section_reconciliation" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3 font-mono text-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
             <div>
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Three-Way Reconciliation (Broker ↔ Ledger ↔ Firestore)</span>
+                <span>Broker ↔ SQLite Reconciliation</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
                 Deterministic comparison verifying zero data drift across all persistence layers
@@ -1536,8 +1536,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                     <div className="text-slate-200 truncate mt-0.5">{rec.internalValue}</div>
                   </div>
                   <div>
-                    <div className="text-slate-500 text-[9px]">FIRESTORE</div>
-                    <div className="text-slate-200 truncate mt-0.5">{rec.firestoreValue}</div>
+                    <div className="text-slate-500 text-[9px]">SQLITE</div>
+                    <div className="text-slate-200 truncate mt-0.5">{rec.sqliteCount}</div>
                   </div>
                 </div>
 
@@ -1645,7 +1645,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 <option value="ORDER">ORDER</option>
                 <option value="POSITION">POSITION</option>
                 <option value="RECONCILIATION">RECONCILIATION</option>
-                <option value="FIRESTORE">FIRESTORE</option>
+                <option value="SQLITE">SQLITE</option>
                 <option value="CONFIGURATION">CONFIGURATION</option>
                 <option value="SECURITY">SECURITY</option>
                 <option value="SAFETY">SAFETY</option>
