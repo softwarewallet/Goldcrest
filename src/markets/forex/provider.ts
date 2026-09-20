@@ -2,6 +2,7 @@ import { DataSourceStatus } from '../common/types';
 import { FOREX_PAIRS, ForexPairConfig, getForexPairConfig } from './instruments';
 import { ForexCandle, ForexMarketStatus, ForexQuote, ForexTimeframe } from './types';
 import { getForexSessionState } from '../common/session';
+import { brokerRegistry } from '../../brokers/registry';
 
 export interface ForexDataProvider {
   getQuote(pair: string): Promise<ForexQuote> | ForexQuote;
@@ -11,142 +12,102 @@ export interface ForexDataProvider {
   getMarketStatus(): Promise<ForexMarketStatus> | ForexMarketStatus;
 }
 
-const TIMEFRAME_MINUTES: Record<ForexTimeframe, number> = {
-  '1M': 1,
-  '5M': 5,
-  '15M': 15,
-  '30M': 30,
-  '1H': 60,
-  '4H': 240,
-  'Daily': 1440
-};
+export class LiveForexProvider implements ForexDataProvider {
+  readonly providerName = 'CTRADER_LIVE_PROVIDER';
+  readonly status: DataSourceStatus = 'LIVE';
+  readonly isLive = true;
 
-export class ForexDemoProvider implements ForexDataProvider {
-  readonly providerName = 'DEMO_PROVIDER_V2';
-  readonly status: DataSourceStatus = 'DEMO';
-  readonly isDemo = true;
+  private candles = new Map<string, ForexCandle[]>();
+  private quotes = new Map<string, ForexQuote>();
 
-  // Realistically grounded base prices for pairs
-  private basePrices: Record<string, number> = {
-    'EUR/USD': 1.08450,
-    'GBP/USD': 1.29820,
-    'USD/JPY': 152.450,
-    'USD/CHF': 0.88720,
-    'AUD/USD': 0.65420,
-    'USD/CAD': 1.38540,
-    'NZD/USD': 0.59240,
-    'EUR/GBP': 0.83540,
-    'EUR/JPY': 165.350,
-    'GBP/JPY': 197.900,
-    'AUD/JPY': 99.720,
-    'EUR/AUD': 1.65820,
-    'GBP/AUD': 1.98450,
-    'XAU/USD': 2685.50
-  };
-
-  /**
-   * Generates realistic candles for a given timeframe with synthetic micro-trends,
-   * realistic bid/ask spreads, and volume.
-   */
-  getCandles(pair: string, timeframe: ForexTimeframe = '15M', limit: number = 80): ForexCandle[] {
+  async refreshPair(pair: string): Promise<void> {
     const config = getForexPairConfig(pair);
-    const base = this.basePrices[config.symbol] ?? 1.1000;
-    const intervalMinutes = TIMEFRAME_MINUTES[timeframe] || 15;
-    const intervalMs = intervalMinutes * 60 * 1000;
+    const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
 
-    // Volatility scales with sqrt of timeframe duration
-    const tfFactor = Math.sqrt(intervalMinutes / 15);
-    const baseVol = config.pipSize === 0.01 ? 0.0025 : 0.0012;
-    const volatility = baseVol * tfFactor;
-
-    // Directional bias based on pair profile
-    const trendBias = config.symbol.includes('EUR') ? 0.0002 : config.symbol.includes('JPY') ? 0.0003 : -0.0001;
-
-    const candles: ForexCandle[] = [];
-    const now = Date.now();
-    let currentClose = base;
-
-    const spreadPips = config.typicalSpreadPips;
-    const spreadValue = spreadPips * config.pipSize;
-
-    for (let i = limit - 1; i >= 0; i--) {
-      const timestamp = now - i * intervalMs;
-      // Realistic sinusoidal cyclical movement + macro trend drift
-      const cycle = Math.sin(i * 0.35) * volatility + Math.cos(i * 0.12) * (volatility * 0.5);
-      const drift = trendBias * ((limit - i) / limit);
-      const totalPctChange = cycle + drift;
-
-      const open = currentClose;
-      const close = Number((open * (1 + totalPctChange)).toFixed(config.digits));
-      const wickExt = Math.abs(totalPctChange * 0.45) + (config.pipSize * 3);
-      const high = Number((Math.max(open, close) + wickExt).toFixed(config.digits));
-      const low = Number((Math.min(open, close) - wickExt).toFixed(config.digits));
-
-      // Realistic tick volume that surges around breakout points
-      const baseTickVol = Math.round(1200 * tfFactor);
-      const cycleTickVol = Math.round(Math.abs(Math.sin(i * 0.5)) * 2800 * tfFactor);
-      const volume = baseTickVol + cycleTickVol;
-
-      const halfSpread = spreadValue / 2;
-      const bid = Number((close - halfSpread).toFixed(config.digits));
-      const ask = Number((close + halfSpread).toFixed(config.digits));
-
-      candles.push({
-        pair: config.symbol,
-        timeframe,
-        timestamp,
-        open,
-        high,
-        low,
-        close,
-        bid,
-        ask,
-        spread: spreadPips,
-        volume,
-        tickVolume: volume,
-        provider: this.providerName,
-        dataStatus: this.status
-      });
-
-      currentClose = close;
+    if (!adapter.getHistoricalCandles) {
+      throw new Error('Authoritative cTrader historical market-data capability is unavailable.');
     }
 
-    return candles;
-  }
+    const timeframes: ForexTimeframe[] = ['5M', '15M', '1H', '4H', 'Daily'];
+    const rows = await Promise.all(
+      timeframes.map(async timeframe => ({
+        timeframe,
+        data: await adapter.getHistoricalCandles!(config.symbol, timeframe, 80)
+      }))
+    );
 
-  getLatestCandle(pair: string, timeframe: ForexTimeframe = '15M'): ForexCandle {
-    const candles = this.getCandles(pair, timeframe, 2);
-    return candles[candles.length - 1];
-  }
+    for (const row of rows) {
+      if (!Array.isArray(row.data) || row.data.length < 35) {
+        throw new Error(`Insufficient live ${row.timeframe} candle history for ${config.symbol}.`);
+      }
 
-  getQuote(pair: string): ForexQuote {
-    const config = getForexPairConfig(pair);
-    const candles = this.getCandles(pair, '15M', 96); // 24h of 15m candles
-    const latest = candles[candles.length - 1];
-    const open24h = candles[0].open;
+      const candles = row.data.map((c: any) => ({
+        pair: config.symbol,
+        timeframe: row.timeframe,
+        timestamp: Number(c.timestamp),
+        open: Number(c.open),
+        high: Number(c.high),
+        low: Number(c.low),
+        close: Number(c.close),
+        volume: Number(c.volume || 0),
+        tickVolume: Number(c.volume || 0),
+        provider: this.providerName,
+        dataStatus: this.status
+      } satisfies ForexCandle));
 
-    const change = latest.close - open24h;
-    const changePips = change / config.pipSize;
-    const changePct = (change / open24h) * 100;
+      this.candles.set(`${config.symbol}:${row.timeframe}`, candles);
+    }
 
-    const high24h = Math.max(...candles.map(c => c.high));
-    const low24h = Math.min(...candles.map(c => c.low));
+    const quote = await adapter.getQuote(config.symbol);
+    if (quote.status !== 'FRESH' || Date.now() - quote.timestamp >= 10_000) {
+      throw new Error(`Live quote for ${config.symbol} is stale or delayed.`);
+    }
 
-    return {
+    const primary = this.candles.get(`${config.symbol}:15M`) || [];
+    const latest = primary[primary.length - 1];
+    const open24h = primary[0]?.open ?? latest?.close ?? quote.ask;
+    const high24h = primary.length ? Math.max(...primary.map(c => c.high)) : quote.ask;
+    const low24h = primary.length ? Math.min(...primary.map(c => c.low)) : quote.bid;
+    const mid = (quote.bid + quote.ask) / 2;
+
+    this.quotes.set(config.symbol, {
       pair: config.symbol,
-      timestamp: latest.timestamp,
-      bid: latest.bid,
-      ask: latest.ask,
-      spreadPips: config.typicalSpreadPips,
+      timestamp: quote.timestamp,
+      bid: quote.bid,
+      ask: quote.ask,
+      spreadPips: quote.spread * (config.symbol.includes('JPY') ? 100 : 10000),
       digits: config.digits,
       pipSize: config.pipSize,
-      changePips24h: Number(changePips.toFixed(1)),
-      changePercent24h: Number(changePct.toFixed(2)),
+      changePips24h: Number(((mid - open24h) / config.pipSize).toFixed(1)),
+      changePercent24h: Number((((mid - open24h) / open24h) * 100).toFixed(2)),
       high24h: Number(high24h.toFixed(config.digits)),
       low24h: Number(low24h.toFixed(config.digits)),
       provider: this.providerName,
       dataStatus: this.status
-    };
+    });
+  }
+
+  getCandles(pair: string, timeframe: ForexTimeframe = '15M', limit = 80): ForexCandle[] {
+    const config = getForexPairConfig(pair);
+    const rows = this.candles.get(`${config.symbol}:${timeframe}`) || [];
+    if (!rows.length) {
+      throw new Error(`Live cTrader candle cache is empty for ${config.symbol} ${timeframe}; refreshPair() is required.`);
+    }
+    return rows.slice(Math.max(0, rows.length - limit));
+  }
+
+  getLatestCandle(pair: string, timeframe: ForexTimeframe = '15M'): ForexCandle {
+    const rows = this.getCandles(pair, timeframe, 1);
+    return rows[rows.length - 1];
+  }
+
+  getQuote(pair: string): ForexQuote {
+    const config = getForexPairConfig(pair);
+    const quote = this.quotes.get(config.symbol);
+    if (!quote) {
+      throw new Error(`Live cTrader quote cache is empty for ${config.symbol}; refreshPair() is required.`);
+    }
+    return quote;
   }
 
   getAvailablePairs(): ForexPairConfig[] {
@@ -155,29 +116,19 @@ export class ForexDemoProvider implements ForexDataProvider {
 
   getMarketStatus(): ForexMarketStatus {
     const session = getForexSessionState();
-    const utcDate = new Date();
-    const day = utcDate.getUTCDay();
-    const hour = utcDate.getUTCHours();
-
-    // Forex markets close Friday 21:00 UTC and reopen Sunday 21:00 UTC
-    let isWeekend = false;
-    if (day === 6) isWeekend = true;
-    if (day === 5 && hour >= 21) isWeekend = true;
-    if (day === 0 && hour < 21) isWeekend = true;
-
     return {
-      isOpen: !isWeekend,
-      status: isWeekend ? 'WEEKEND' : 'OPEN',
-      activeSessions: session.activeSessions,
+      isOpen: !session.activeSessions.includes('CLOSED (WEEKEND)'),
+      status: session.activeSessions.includes('CLOSED (WEEKEND)') ? 'WEEKEND' : 'OPEN',
+      activeSessions: [...session.activeSessions],
       currentSession: session.activeSessions.join(' / ') || 'Interbank Electronic Off-Peak',
       isLondonNyOverlap: session.isLondonNyOverlap,
-      serverUtcTime: utcDate.toISOString()
+      serverUtcTime: new Date().toISOString()
     };
   }
 }
 
 /**
- * Validates data quality of candle arrays
+ * Validates the structure and freshness of an authoritative live candle series.
  */
 export function validateCandleDataQuality(candles: ForexCandle[]): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
@@ -191,40 +142,25 @@ export function validateCandleDataQuality(candles: ForexCandle[]): { isValid: bo
 
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
-
-    // Invalid OHLC values
-    if (c.high < c.low) {
-      errors.push(`Candle at ${i} has High (${c.high}) < Low (${c.low})`);
-    }
+    if (c.high < c.low) errors.push(`Candle at ${i} has High (${c.high}) < Low (${c.low})`);
     if (c.open <= 0 || c.high <= 0 || c.low <= 0 || c.close <= 0) {
       errors.push(`Candle at ${i} has non-positive price (Close: ${c.close})`);
     }
     if (c.open > c.high || c.open < c.low || c.close > c.high || c.close < c.low) {
       errors.push(`Candle at ${i} has Open or Close outside High/Low range`);
     }
-
-    // Duplicate timestamps
-    if (seenTimestamps.has(c.timestamp)) {
-      errors.push(`Duplicate timestamp detected: ${c.timestamp}`);
-    }
+    if (seenTimestamps.has(c.timestamp)) errors.push(`Duplicate timestamp detected: ${c.timestamp}`);
     seenTimestamps.add(c.timestamp);
-
-    // Out-of-order timestamps
     if (i > 0 && c.timestamp <= prevTimestamp) {
       errors.push(`Out of order timestamp at bar ${i}: current ${c.timestamp} <= prev ${prevTimestamp}`);
     }
     prevTimestamp = c.timestamp;
   }
 
-  // Check freshness (stale data check: latest candle older than 48 hours unless weekend)
-  const now = Date.now();
   const latestTs = candles[candles.length - 1].timestamp;
-  if (now - latestTs > 48 * 60 * 60 * 1000) {
-    errors.push(`Stale market data: latest candle is older than 48 hours`);
+  if (Date.now() - latestTs > 48 * 60 * 60 * 1000) {
+    errors.push('Stale market data: latest candle is older than 48 hours');
   }
 
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
+  return { isValid: errors.length === 0, errors };
 }
