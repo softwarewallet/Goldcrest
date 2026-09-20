@@ -76,6 +76,9 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   protected openOrders: Map<string, NormalizedOrder> = new Map();
   private scripMasterCache: { expiresAt: number; rows: any[] } | null = null;
   private static readonly SCRIP_MASTER_TTL_MS = 10 * 60 * 1000;
+  private accountData: BrokerAccountInfo | null = null;
+  private static readonly ACCOUNT_DATA_CACHE_TTL_MS = 15 * 1000;
+  private accountFetchInFlight: Promise<BrokerAccountInfo> | null = null;
 
   constructor(config: FivePaisaConfig) {
     super();
@@ -380,46 +383,55 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getAccount(): Promise<BrokerAccountInfo> {
-    await this.authenticate();
-
-    let balance = 0;
-    let equity = 0;
-    let availableMargin = 0;
-    let usedMargin = 0;
-    let freeMargin = 0;
-
-    try {
-      const margin = await this.fetchMarginFromApi();
-      balance = margin.balance;
-      equity = margin.equity;
-      availableMargin = margin.availableMargin;
-      usedMargin = margin.usedMargin;
-      freeMargin = margin.freeMargin;
-      this.status = 'CONNECTED';
-    } catch (err: any) {
-      this.lastError = err.message;
-      throw normalizeBrokerError(err, 'FIVE_PAISA', this.environment);
+    const now = Date.now();
+    if (
+      this.accountData
+      && now - Number(this.accountData.lastUpdate || 0) < FivePaisaBrokerAdapter.ACCOUNT_DATA_CACHE_TTL_MS
+    ) {
+      return this.accountData;
     }
 
-    return {
-      accountId: maskIdentifier(this.config.clientCode || this.config.userId || '5P_ACC'),
-      accountType: 'LIVE',
-      balance,
-      equity,
-      availableMargin,
-      usedMargin,
-      freeMargin,
-      currency: 'INR',
-      broker: 'FIVE_PAISA',
-      environment: this.environment,
-      connectionStatus: this.status,
-      server: '5paisa-Xstream-OpenAPI-Live',
-      permissions: ['NSE_EQUITY', 'NSE_FNO', 'BSE_EQUITY', 'BSE_FNO'],
-      lastUpdate: Date.now(),
-      isLiveAccount: this.isLive
-    };
-  }
+    if (this.accountFetchInFlight) {
+      return this.accountFetchInFlight;
+    }
 
+    this.accountFetchInFlight = (async () => {
+      await this.authenticate();
+
+      try {
+        const margin = await this.fetchMarginFromApi();
+        this.status = 'CONNECTED';
+
+        const account: BrokerAccountInfo = {
+          accountId: maskIdentifier(this.config.clientCode || this.config.userId || '5P_ACC'),
+          accountType: 'LIVE',
+          balance: margin.balance,
+          equity: margin.equity,
+          availableMargin: margin.availableMargin,
+          usedMargin: margin.usedMargin,
+          freeMargin: margin.freeMargin,
+          currency: 'INR',
+          broker: 'FIVE_PAISA',
+          environment: this.environment,
+          connectionStatus: this.status,
+          server: '5paisa-Xstream-OpenAPI-Live',
+          permissions: ['NSE_EQUITY', 'NSE_FNO', 'BSE_EQUITY', 'BSE_FNO'],
+          lastUpdate: Date.now(),
+          isLiveAccount: this.isLive
+        };
+
+        this.accountData = account;
+        return account;
+      } catch (err: any) {
+        this.lastError = err.message;
+        throw normalizeBrokerError(err, 'FIVE_PAISA', this.environment);
+      }
+    })().finally(() => {
+      this.accountFetchInFlight = null;
+    });
+
+    return this.accountFetchInFlight;
+  }
   async getBalance(): Promise<number> {
     const account = await this.getAccount();
     return account.balance;
