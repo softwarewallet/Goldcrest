@@ -42,6 +42,14 @@ import { reconcileInFlightExecutionIntents } from './src/services/executionRecon
 // Legacy demo execution is retired; LIVE_ONLY production mode is enforced by the server safety layer.
 import { brokerRegistry } from './src/brokers/registry';
 
+const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
+// npm run dev is an explicit local development command. Do not let a stale
+// NODE_ENV=production value in .env accidentally switch this process into the
+// production preflight path.
+if (invokedByNpmDev) {
+  process.env.NODE_ENV = 'development';
+}
+
 dotenv.config();
 
 // Local development uses the same LIVE execution pipeline for end-to-end
@@ -861,10 +869,12 @@ async function captureLiveBrokerReconciliation(): Promise<void> {
 }
 
 async function startServer() {
-  // Strict preflight enforcement applies only to production deployments.
-  // Local development uses the same LIVE execution pipeline but must be able
-  // to boot with the operator-triggered local Auto Live arm flow.
-  productionPreflight(process.env.NODE_ENV === 'production');
+  // Strict preflight enforcement applies only to an actual production launch.
+  // npm run dev is always treated as local development even when .env contains
+  // a stale NODE_ENV=production value.
+  const productionRuntime = process.env.npm_lifecycle_event !== 'dev'
+    && process.env.NODE_ENV === 'production';
+  productionPreflight(productionRuntime);
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
