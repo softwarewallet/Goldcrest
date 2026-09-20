@@ -179,17 +179,21 @@ interface ReconciliationComparison {
 interface TradingControlCenterProps {
   initialSection?: ControlCenterSection;
   onSelectSignalModal?: (signal: TradingSignal) => void;
+  autoTradingStatus?: any | null;
+  onAutoTradingStatusChange?: (status: any) => void;
 }
 
 export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   initialSection = 'ALL_OVERVIEW',
-  onSelectSignalModal
+  onSelectSignalModal,
+  autoTradingStatus: parentAutoTradingStatus = null,
+  onAutoTradingStatusChange
 }) => {
   const [activeSection, setActiveSection] = useState<ControlCenterSection>(initialSection);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<number>(Date.now());
   const [selectedSignalDecision, setSelectedSignalDecision] = useState<any | null>(null);
-  const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(null);
+  const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(parentAutoTradingStatus);
   const [autoTradingBusy, setAutoTradingBusy] = useState(false);
   const [closedMarketPrompt, setClosedMarketPrompt] = useState<any | null>(null);
 
@@ -255,7 +259,14 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       ]);
 
       if (autoTradingRes?.ok) {
-        setAutoTradingStatus(await autoTradingRes.json());
+        const nextStatus = await autoTradingRes.json();
+        setAutoTradingStatus(nextStatus);
+        onAutoTradingStatusChange?.(nextStatus);
+      } else if (parentAutoTradingStatus) {
+        // App-level status is the canonical browser-wide state. Keep the
+        // Control Center synchronized even when a transient telemetry request
+        // fails during page navigation/remount.
+        setAutoTradingStatus(parentAutoTradingStatus);
       }
 
       if (brokerStatusRes?.ok) {
@@ -510,6 +521,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       }
 
       setAutoTradingStatus(data);
+      onAutoTradingStatusChange?.(data);
       if (!res.ok) {
         console.warn(
           'Auto trading control rejected:',
@@ -534,6 +546,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       });
       const data = await res.json().catch(() => ({}));
       setAutoTradingStatus(data);
+      onAutoTradingStatusChange?.(data);
       if (!res.ok) {
         console.warn(
           'Confirmed auto trading start rejected:',
@@ -587,6 +600,12 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       setOptionsLoading(false);
     }
   }, [optionsExpiry]);
+
+  useEffect(() => {
+    if (parentAutoTradingStatus) {
+      setAutoTradingStatus(parentAutoTradingStatus);
+    }
+  }, [parentAutoTradingStatus]);
 
   useEffect(() => {
     fetchAllOperationalData();
