@@ -67,7 +67,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   private symbolCache: { expiresAt: number; accountKey: string; symbols: Awaited<ReturnType<typeof fetchCTraderSymbols>> } | null = null;
   private static readonly RAW_ACCOUNT_CACHE_TTL_MS = 60 * 1000;
   private static readonly SYMBOL_CACHE_TTL_MS = 5 * 60 * 1000;
-  private static readonly ACCOUNT_DATA_CACHE_TTL_MS = 15 * 1000;
+  private static readonly ACCOUNT_DATA_CACHE_TTL_MS = 60 * 1000;
   private accountFetchInFlight: Promise<BrokerAccountInfo> | null = null;
 
   constructor(config: CTraderConfig) {
