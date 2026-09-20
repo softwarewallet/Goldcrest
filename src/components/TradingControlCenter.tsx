@@ -1067,6 +1067,20 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               {autoTradingBusy ? 'Working...' : ['RUNNING', 'PREPARING'].includes(autoTradingStatus?.state) ? 'STOP AUTO LIVE' : 'START AUTO LIVE'}
             </button>
 
+            {autoTradingStatus?.state === 'PREPARING' && autoTradingStatus?.preOpenPreparation && (
+              <div className="flex items-center gap-2 px-2.5 py-1 rounded border border-amber-800 bg-amber-950/50 text-[10px] font-mono text-amber-200">
+                <Clock className="w-3 h-3 text-amber-400" />
+                <span>
+                  PRE-OPEN: {autoTradingStatus.preOpenPreparation.trendPairsEvaluated}/{autoTradingStatus.pairs?.length || 0} TRENDS
+                  {' · NEWS: '}
+                  {autoTradingStatus.preOpenPreparation.news?.status || 'PENDING'}
+                  {autoTradingStatus.preOpenPreparation.news?.riskLevel && autoTradingStatus.preOpenPreparation.news.riskLevel !== 'UNAVAILABLE'
+                    ? ` / ${autoTradingStatus.preOpenPreparation.news.riskLevel}`
+                    : ''}
+                </span>
+              </div>
+            )}
+
             {autoTradingStatus?.lastCycleResult && (
               <div
                 className={`max-w-[420px] px-2.5 py-1 rounded border text-[10px] font-mono ${
