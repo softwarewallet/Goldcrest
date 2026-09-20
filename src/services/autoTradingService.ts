@@ -155,22 +155,43 @@ class AutoTradingService {
   }
 
   start(): AutoTradingStatus {
+    liveRuntimeLog('SYSTEM', 'AUTO_TRADING_START_ATTEMPT', {
+      previousState: this.state,
+      requestedFlags: {
+        autoTrading: process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true',
+        autonomousLiveExecution: process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true'
+      }
+    });
+
     const activation = autoExecutionEngine.enableAutomaticExecution();
     if (!activation.success) {
       this.state = 'BLOCKED';
       this.lastCycleResult = activation.message;
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'ARM',
+        code: activation.code,
+        reason: activation.message
+      });
       return this.getStatus();
     }
 
     if (!this.isRequested()) {
       this.state = 'BLOCKED';
       this.lastCycleResult = 'Auto trading is not enabled. Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION must be true.';
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'REQUEST_FLAGS',
+        reason: this.lastCycleResult
+      });
       return this.getStatus();
     }
 
     if (!getSystemConfig().liveTradingEnabled) {
       this.state = 'BLOCKED';
       this.lastCycleResult = 'LIVE_TRADING_ENABLED is not true.';
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'LIVE_TRADING_CONFIG',
+        reason: this.lastCycleResult
+      });
       return this.getStatus();
     }
 
@@ -178,6 +199,10 @@ class AutoTradingService {
     if (!permission) {
       this.state = 'BLOCKED';
       this.lastCycleResult = 'Autonomous execution is not currently permitted. The strategy must be calibrated and the safety controls must pass.';
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'AUTONOMOUS_PERMISSION',
+        reason: this.lastCycleResult
+      });
       return this.getStatus();
     }
 
