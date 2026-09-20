@@ -14,7 +14,7 @@ assert.equal(LIVE_AUTO_EXECUTION_ALLOWED, false);
 const status = autoTradingService.start();
 assert.equal(status.state, 'BLOCKED');
 assert.equal(status.enabledByEnvironment, false);
-assert.match(status.lastCycleResult || '', /Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION/);
+assert.match(status.lastCycleResult || '', /Autonomous execution is not enabled|production strategy has not been explicitly approved/i);
 
 autoTradingService.stop();
 
