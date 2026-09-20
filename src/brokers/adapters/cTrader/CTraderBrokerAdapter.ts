@@ -160,7 +160,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         environment: this.environment,
         connected: false,
         account: maskIdentifier(this.config.accountId),
-        accountType: this.isLive ? 'LIVE' : 'DEMO',
+        accountType: 'LIVE',
         error: err.message,
         timestamp: Date.now(),
         latency: Date.now() - start
