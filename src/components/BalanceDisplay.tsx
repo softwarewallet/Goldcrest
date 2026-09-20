@@ -37,103 +37,75 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = () => {
   const fetchBalances = async () => {
     setLoading({ CTRADER: true, FIVE_PAISA: true });
 
-    const loadBrokerAccount = async (broker: BrokerType, retries = 3): Promise<BrokerAccountInfo> => {
-      for (let i = 0; i < retries; i++) {
-        try {
-          const response = await fetch(
-            `/api/brokers/account?broker=${encodeURIComponent(broker)}&environment=LIVE`,
-            {
-              headers: { Accept: 'application/json' },
-              cache: 'no-store'
-            }
-          );
+    try {
+      // Use the shared broker-status snapshot rather than making two additional
+      // broker account calls from the header. The server coalesces/caches this
+      // endpoint, preventing UI refresh loops from triggering broker throttling.
+      const response = await fetch('/api/brokers/status', {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store'
+      });
 
-          const data = await response.json().catch(() => ({}));
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(data?.error || data?.message || `Broker status request failed (HTTP ${response.status})`));
+      }
 
-          if (!response.ok) {
-            const message =
-              data?.error ||
-              data?.message ||
-              `Broker account request failed (HTTP ${response.status})`;
-            throw new Error(String(message));
+      const nextAccounts: Record<BrokerType, BrokerAccountInfo | null> = {
+        CTRADER: null,
+        FIVE_PAISA: null
+      };
+      const nextErrors: Record<BrokerType, string | null> = {
+        CTRADER: null,
+        FIVE_PAISA: null
+      };
+      const now = Date.now();
+
+      for (const broker of BROKERS) {
+        const row = Array.isArray(data?.brokers)
+          ? data.brokers.find((item: any) => item?.broker === broker)
+          : null;
+
+        if (row?.account && row.account.broker === broker) {
+          nextAccounts[broker] = row.account as BrokerAccountInfo;
+          continue;
+        }
+
+        const message = String(row?.error || row?.lastRefreshError || '');
+        nextErrors[broker] = message || `${broker} live account data unavailable`;
+
+        // Keep the last known account visible during a transient provider
+        // throttle. The displayed account may be stale, but it is never used
+        // by order execution/safety validation.
+        if (row?.code === 'RATE_LIMITED' || row?.lastRefreshError) {
+          const previousAccount = accounts[broker];
+          if (previousAccount) {
+            nextAccounts[broker] = previousAccount;
+            continue;
           }
-
-          if (data?.error) {
-            throw new Error(String(data.error));
-          }
-
-          const account =
-            data?.account ||
-            (Array.isArray(data?.accounts)
-              ? data.accounts.find((item: any) => item?.broker === broker)
-              : undefined) ||
-            (data?.broker === broker ? data : undefined);
-
-          if (!account) {
-            throw new Error(`${broker} returned HTTP 200 without account data.`);
-          }
-
-          if (account.broker && account.broker !== broker) {
-            throw new Error(`Unexpected broker account returned: ${account.broker}`);
-          }
-
-          if (!Number.isFinite(Number(account.balance))) {
-            throw new Error(`${broker} returned an invalid live balance.`);
-          }
-
-          return account as BrokerAccountInfo;
-        } catch (err: any) {
-          if (i === retries - 1) throw err;
-          await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1))); // Exponential backoff
         }
       }
-      throw new Error('Retries exhausted');
-    };
 
-    const results = await Promise.all(
-      BROKERS.map(async (broker) => {
-        try {
-          const account = await loadBrokerAccount(broker);
-          return { broker, account, error: null as string | null };
-        } catch (err: any) {
-          return {
-            broker,
-            account: null,
-            error: err?.message || `${broker} live account data unavailable`
-          };
-        }
-      })
-    );
-
-    const nextAccounts: Record<BrokerType, BrokerAccountInfo | null> = {
-      CTRADER: null,
-      FIVE_PAISA: null
-    };
-    const nextErrors: Record<BrokerType, string | null> = {
-      CTRADER: null,
-      FIVE_PAISA: null
-    };
-    const now = Date.now();
-
-    for (const result of results) {
-      nextAccounts[result.broker] = result.account;
-      nextErrors[result.broker] = result.error;
+      setAccounts(nextAccounts);
+      setErrors(nextErrors);
+      setLastUpdated(prev => ({
+        CTRADER: nextAccounts.CTRADER ? now : prev.CTRADER,
+        FIVE_PAISA: nextAccounts.FIVE_PAISA ? now : prev.FIVE_PAISA
+      }));
+    } catch (err: any) {
+      // Preserve the last authoritative broker snapshot during a transient
+      // server/provider failure instead of replacing it with blank cards.
+      setErrors(prev => ({
+        CTRADER: prev.CTRADER || err?.message || 'Broker status temporarily unavailable',
+        FIVE_PAISA: prev.FIVE_PAISA || err?.message || 'Broker status temporarily unavailable'
+      }));
+    } finally {
+      setLoading({ CTRADER: false, FIVE_PAISA: false });
     }
-
-    setAccounts(nextAccounts);
-    setErrors(nextErrors);
-    setLastUpdated(prev => ({
-      ...prev,
-      CTRADER: nextAccounts.CTRADER ? now : prev.CTRADER,
-      FIVE_PAISA: nextAccounts.FIVE_PAISA ? now : prev.FIVE_PAISA
-    }));
-
-    setLoading({ CTRADER: false, FIVE_PAISA: false });
   };
-
   useEffect(() => {
     fetchBalances();
-    const interval = setInterval(fetchBalances, 120000);
+    const interval = setInterval(fetchBalances, 60000);
     return () => clearInterval(interval);
   }, []);
 
