@@ -70,8 +70,6 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
             <span className={`px-2 py-0.5 rounded font-bold ${
               isLive
                 ? 'bg-rose-950 text-rose-400 border border-rose-700'
-                : environment === 'DEMO'
-                ? 'bg-amber-950 text-amber-300 border border-amber-700'
                 : 'bg-emerald-950 text-emerald-400 border border-emerald-700'
             }`}>
               {environment} MODE
