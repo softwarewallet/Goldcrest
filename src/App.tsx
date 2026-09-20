@@ -356,11 +356,13 @@ export default function App() {
               )}
 
               {(activeTab === 'pnl' || activeTab === 'accounting') && (
-                <PerformanceResearchCenterView />
+                <TradingControlCenter initialSection="ACCOUNT_OVERVIEW" onSelectSignalModal={(sig) => setSelectedSignal(sig)} />
               )}
 
               {(activeTab === 'research' || activeTab === 'ml') && (
-                <MLResearchDashboard />
+                <div className="rounded-lg border border-slate-800 bg-slate-900 p-6 text-sm text-slate-300">
+                  Research and ML training interfaces are retired from the LIVE production runtime.
+                </div>
               )}
 
               {(activeTab === 'control_center' || activeTab === 'operations' || activeTab === 'reconciliation' || activeTab === 'reconcile') && (
