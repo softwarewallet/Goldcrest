@@ -28,6 +28,13 @@ function isLocalDevelopment(): boolean {
 
 export function disarmLocalAutonomousExecution(): void {
   localExplicitAutoArm = false;
+  if (isLocalDevelopment()) {
+    process.env.LIVE_TRADING_ENABLED = 'false';
+    process.env.GOLDCREST_AUTO_TRADING_ENABLED = 'false';
+    process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = 'false';
+    process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'false';
+    process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
+  }
   syncAutonomousPermission();
 }
 
@@ -106,6 +113,10 @@ class AutoExecutionEngine {
     if (isLocalDevelopment()) {
       localExplicitAutoArm = true;
       process.env.LIVE_TRADING_ENABLED = 'true';
+      process.env.GOLDCREST_AUTO_TRADING_ENABLED = 'true';
+      process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = 'true';
+      process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'true';
+      process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
     }
     const allowed = syncAutonomousPermission();
 
