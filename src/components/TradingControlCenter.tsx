@@ -908,7 +908,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
 
             <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-slate-950 border border-slate-800 text-slate-300">
               <span className="text-slate-500">MODEL:</span>
-              <strong className="text-slate-200">gbt_forex_v1.0.0</strong>
+              <strong className="text-slate-200">fx_structure_v2a</strong>
             </div>
 
             <div className={\`flex items-center space-x-1.5 px-2.5 py-1 rounded border font-bold \${autoTradingStatus?.autonomousPermission
@@ -1880,16 +1880,16 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
                   <span className="text-slate-400">Production Model:</span>
                   <div className="text-right">
-                    <strong className="text-emerald-400">gbt_forex_v1.0.0</strong>
-                    <div className="text-[10px] text-slate-500">Active / Production</div>
+                    <strong className="text-emerald-400">fx_structure_v2a</strong>
+                    <div className="text-[10px] text-slate-500">Deterministic strategy / approval-gated</div>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
                   <span className="text-slate-400">Research Candidate:</span>
                   <div className="text-right">
-                    <strong className="text-amber-400">gbt_forex_v1.1.0_candidate</strong>
-                    <div className="text-[10px] text-slate-500">CLOSED / RESEARCH ONLY / NOT PROMOTED</div>
+                    <strong className="text-amber-400">ML BASELINE</strong>
+                    <div className="text-[10px] text-slate-500">Uncalibrated / not used for autonomous execution</div>
                   </div>
                 </div>
               </div>
