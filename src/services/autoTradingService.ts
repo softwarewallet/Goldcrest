@@ -66,7 +66,7 @@ class LiveForexSignalProvider implements ForexDataProvider {
       high24h: 0,
       low24h: 0,
       provider: this.providerName,
-      dataStatus: quote.status
+      dataStatus: 'LIVE'
     });
   }
 
