@@ -185,7 +185,7 @@ export const ForexTerminalDashboard: React.FC<ForexTerminalDashboardProps> = ({
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-3">
         <div className="rounded-xl border border-slate-800 bg-[#080d12] overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between"><h3 className="font-semibold text-sm">Signals</h3><span className="text-[10px] text-slate-500">LIVE QUANTITATIVE FEED</span></div>
-          {relatedSignals.map(s => <button key={s.id} onClick={() => onSelectSignal(s)} className="w-full text-left grid grid-cols-[90px_1fr_80px_80px] px-4 py-2.5 border-t border-slate-800/70 text-xs"><span>{s.direction}</span><span>{s.pair || s.instrument}</span><span>{s.strategy}</span><span className="text-emerald-400">{Number(s.score).toFixed(1)}</span></button>)}
+          {relatedSignals.map(s => <button key={s.id} onClick={() => onSelectSignal(s)} className="w-full text-left grid grid-cols-[90px_1fr_80px_80px] px-4 py-2.5 border-t border-slate-800/70 text-xs"><span>{s.direction}</span><span>{(s as any).pair || (s as any).instrument || '—'}</span><span>{s.strategy}</span><span className="text-emerald-400">{Number(s.score).toFixed(1)}</span></button>)}
           {!relatedSignals.length && <div className="p-5 text-xs text-slate-600">No live Forex signals returned.</div>}
         </div>
 
