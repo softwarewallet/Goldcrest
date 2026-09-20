@@ -24,6 +24,7 @@ const LIVE_BROKERS: BrokerType[] = ['CTRADER', 'FIVE_PAISA'];
 const BROKER_STATUS_CACHE_TTL_MS = 60_000;
 let brokerStatusCache: { payload: any; expiresAt: number } | null = null;
 let brokerStatusInFlight: Promise<any> | null = null;
+const lastKnownBrokerAccounts = new Map<BrokerType, any>();
 
 function resolveMarketBroker(market: string): BrokerType {
   if (market === 'FOREX') return 'CTRADER';
@@ -196,14 +197,18 @@ async function getBrokerStatusSnapshot(): Promise<any> {
       try {
         const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
         const account = await adapter.getAccount();
+        lastKnownBrokerAccounts.set(broker, account);
         await persistBrokerAccountSnapshot(account);
         return { broker, environment: 'LIVE', connected: true, account, error: null, stale: false };
       } catch (err: any) {
         const normalized = normalizeBrokerError(err, broker, 'LIVE');
         const transient = ['RATE_LIMITED', 'TIMEOUT', 'NETWORK_ERROR', 'UNAVAILABLE', 'BROKER_UNAVAILABLE'].includes(normalized.code);
-        const persisted = transient ? await loadPersistedBrokerAccount(broker) : null;
+        const persisted = transient
+          ? (lastKnownBrokerAccounts.get(broker) || await loadPersistedBrokerAccount(broker))
+          : null;
 
         if (persisted) {
+          lastKnownBrokerAccounts.set(broker, persisted);
           return {
             broker,
             environment: 'LIVE',
@@ -475,43 +480,55 @@ brokerRouter.get('/account', async (req: Request, res: Response) => {
 
   try {
     if (requestedBroker) {
-      const adapter = brokerRegistry.getAdapter(requestedBroker, 'LIVE');
-      const tradingStatus = await adapter.getTradingStatus();
-      console.log(`[DEBUG] Adapter for ${requestedBroker}:`, adapter?.broker, tradingStatus);
-      const account = await adapter.getAccount();
-      console.log(`[DEBUG] Account for ${requestedBroker}:`, JSON.stringify(account, null, 2));
-      return res.json(account);
+      if (!LIVE_BROKERS.includes(requestedBroker)) {
+        return res.status(400).json({ error: 'Allowed live brokers: CTRADER, FIVE_PAISA' });
+      }
+
+      // Reuse the same account snapshot as the header/status endpoint. This
+      // prevents independent UI surfaces from opening their own broker session.
+      const status = await getBrokerStatusSnapshot();
+      const row = status.brokers?.find((item: any) => item.broker === requestedBroker);
+
+      if (row?.account) {
+        return res.json(row.account);
+      }
+
+      const cached = lastKnownBrokerAccounts.get(requestedBroker);
+      if (cached) {
+        return res.json({
+          ...cached,
+          stale: true,
+          lastRefreshError: row?.error || row?.lastRefreshError || 'Broker account refresh temporarily unavailable.'
+        });
+      }
+
+      return res.status(503).json({
+        error: row?.error || 'LIVE_ACCOUNT_UNAVAILABLE',
+        code: row?.code || 'BROKER_UNAVAILABLE'
+      });
     }
 
-    const accounts = await Promise.all(LIVE_BROKERS.map(async (broker) => {
-      try {
-        return await brokerRegistry.getAdapter(broker, 'LIVE').getAccount();
-      } catch {
-        return null;
-      }
-    }));
-
-    res.json({
+    const status = await getBrokerStatusSnapshot();
+    return res.json({
       routingMode: 'AUTOMATIC_BY_MARKET',
-      accounts: accounts.filter(Boolean)
+      accounts: (status.brokers || [])
+        .map((row: any) => row.account)
+        .filter(Boolean)
     });
   } catch (err: any) {
     const broker = requestedBroker || 'CTRADER';
     const normalized = normalizeBrokerError(err, broker, 'LIVE');
-    const transient = ['RATE_LIMITED', 'TIMEOUT', 'NETWORK_ERROR', 'UNAVAILABLE', 'BROKER_UNAVAILABLE'].includes(normalized.code);
+    const cached = requestedBroker ? lastKnownBrokerAccounts.get(requestedBroker) : null;
 
-    if (requestedBroker && transient) {
-      const persisted = await loadPersistedBrokerAccount(requestedBroker);
-      if (persisted) {
-        return res.json({
-          ...persisted,
-          stale: true,
-          lastRefreshError: normalized.message
-        });
-      }
+    if (requestedBroker && cached) {
+      return res.json({
+        ...cached,
+        stale: true,
+        lastRefreshError: normalized.message
+      });
     }
 
-    res.status(500).json({ error: normalized.message, code: normalized.code });
+    return res.status(503).json({ error: normalized.message, code: normalized.code });
   }
 });
 
