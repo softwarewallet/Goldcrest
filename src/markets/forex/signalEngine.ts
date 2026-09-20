@@ -23,7 +23,7 @@ import { calculateIndicators } from './indicators';
 import { analyzeMarketStructure } from './marketStructure';
 import { calculateSupportResistance } from './supportResistance';
 import { analyzeMultiTimeframe } from './multiTimeframe';
-import { ForexDemoProvider, validateCandleDataQuality } from './provider';
+import { LiveForexProvider, validateCandleDataQuality } from './provider';
 import { getForexSessionState } from '../common/session';
 
 interface SyncForexDataProvider {
@@ -40,7 +40,7 @@ export class ForexSignalEngine {
   private config: ForexSignalEngineConfig;
   private provider: SyncForexDataProvider;
 
-  constructor(config: ForexSignalEngineConfig = DEFAULT_FOREX_CONFIG, provider: SyncForexDataProvider = new ForexDemoProvider()) {
+  constructor(config: ForexSignalEngineConfig = DEFAULT_FOREX_CONFIG, provider: SyncForexDataProvider = new LiveForexProvider()) {
     this.config = config;
     this.provider = provider;
   }
