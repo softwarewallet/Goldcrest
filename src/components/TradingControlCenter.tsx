@@ -190,6 +190,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<number>(Date.now());
   const [selectedSignalDecision, setSelectedSignalDecision] = useState<any | null>(null);
+  const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(null);
 
   // Filter States
   const [positionBrokerFilter, setPositionBrokerFilter] = useState<string>('ALL');
@@ -683,7 +684,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         positionsRes,
         ordersRes,
         reconRes,
-        healthRes
+        healthRes,
+        autoTradingRes
       ] = await Promise.all([
         fetch('/api/brokers/status').catch(() => null),
         fetch('/api/brokers/accounts').catch(() => null),
@@ -691,8 +693,14 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         fetch('/api/brokers/positions').catch(() => null),
         fetch('/api/brokers/orders').catch(() => null),
         fetch('/api/governance/reconciliation/positions').catch(() => null),
-        fetch('/api/governance/status').catch(() => null)
+        fetch('/api/governance/status').catch(() => null),
+        fetch('/api/auto-trading/status').catch(() => null)
       ]);
+
+      if (autoTradingRes && autoTradingRes.ok) {
+        const autoData = await autoTradingRes.json();
+        setAutoTradingStatus(autoData);
+      }
 
       if (auditLogsRes && auditLogsRes.ok) {
         const logs = await auditLogsRes.json();
