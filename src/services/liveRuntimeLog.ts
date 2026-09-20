@@ -25,6 +25,10 @@ function getDailyLogFile(date = getLogDate()): string {
 
 let enabled = false;
 
+export function initializeLiveRuntimeLog(source = 'APPLICATION_START'): { enabled: boolean; file: string } {
+  return startLiveRuntimeLog(source);
+}
+
 function ensureLogFile(date = getLogDate()): string {
   fs.mkdirSync(LOG_DIR, { recursive: true });
   const logFile = getDailyLogFile(date);
@@ -109,6 +113,10 @@ export function getLiveRuntimeLogStatus(): {
 
 export function liveRuntimeLog(level: LiveLogLevel, event: string, details?: unknown): void {
   writeLine(level, event, details);
+}
+
+export function logApplicationAction(event: string, details?: unknown): void {
+  liveRuntimeLog('SYSTEM', event, details);
 }
 
 export function getLiveRuntimeLogFile(date = getLogDate()): string {
