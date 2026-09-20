@@ -296,7 +296,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         const rows = Array.isArray(livePositions) ? livePositions : [];
         setPositions(rows
           .filter((p: any) => p?.environment === 'LIVE')
-          .map((p: any) => ({
+          .map((p: any): PositionItem => ({
             positionId: String(p.id || p.brokerPositionId || ''),
             broker: p.broker,
             account: String(p.accountId || p.account || '****'),
@@ -322,7 +322,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         const rows = Array.isArray(liveOrders) ? liveOrders : [];
         setOrders(rows
           .filter((o: any) => o?.environment === 'LIVE')
-          .map((o: any) => ({
+          .map((o: any): OrderItem => ({
             internalOrderId: String(o.id || ''),
             brokerOrderId: String(o.brokerOrderId || o.id || ''),
             account: String(o.accountId || o.account || '****'),
