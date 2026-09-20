@@ -289,7 +289,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         clientId,
         clientSecret,
         accessToken,
-        this.isLive ? 'live' : 'demo'
+        'live'
       );
 
       if (!liveAccounts || liveAccounts.length === 0) {
@@ -486,7 +486,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       clientId!,
       clientSecret!,
       accessToken!,
-      this.isLive ? 'live' : 'demo'
+      'live'
     );
     if (!liveAccounts || liveAccounts.length === 0) {
       throw new BrokerError('ACCOUNT_NOT_FOUND', 'No cTrader accounts found.', 'CTRADER', this.environment);
