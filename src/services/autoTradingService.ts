@@ -349,6 +349,27 @@ class AutoTradingService {
 
   private async runPreOpenPreparation(marketGate: AutoLiveMarketGate): Promise<void> {
     if (this.state !== 'PREPARING' || this.cycleInFlight) return;
+
+    const sinceLastPreparation = this.lastPreOpenPreparedAt
+      ? Date.now() - this.lastPreOpenPreparedAt
+      : Number.POSITIVE_INFINITY;
+    const hasFreshNews = this.preOpenNews?.status === 'LIVE';
+    const hasFreshPreparation =
+      sinceLastPreparation < PREOPEN_PREPARATION_MIN_INTERVAL_MS
+      && this.preOpenStatus === 'READY'
+      && hasFreshNews;
+
+    if (hasFreshPreparation) {
+      this.lastCycleResult = `Pre-open preparation is already fresh (${Math.round(sinceLastPreparation / 1000)}s old). Auto Live remains armed.`;
+      liveRuntimeLog('INFO', 'PREOPEN_PREPARATION_SKIPPED_FRESH', {
+        ageMs: sinceLastPreparation,
+        minIntervalMs: PREOPEN_PREPARATION_MIN_INTERVAL_MS,
+        newsStatus: this.preOpenNews?.status,
+        newsFetchedAt: this.preOpenNews?.fetchedAt
+      });
+      return;
+    }
+
     this.cycleInFlight = true;
     this.preOpenStatus = 'RUNNING';
 
@@ -369,22 +390,9 @@ class AutoTradingService {
         return;
       }
 
-      const sinceLastPreparation = this.lastPreOpenPreparedAt
-        ? Date.now() - this.lastPreOpenPreparedAt
-        : Number.POSITIVE_INFINITY;
-      if (
-        sinceLastPreparation < PREOPEN_PREPARATION_MIN_INTERVAL_MS
-        && String(this.preOpenStatus) === 'READY'
-      ) {
-        this.lastCycleResult = `Pre-open preparation is already fresh (${Math.round(sinceLastPreparation / 1000)}s old). Auto Live remains armed.`;
-        liveRuntimeLog('INFO', 'PREOPEN_PREPARATION_SKIPPED_FRESH', {
-          ageMs: sinceLastPreparation,
-          minIntervalMs: PREOPEN_PREPARATION_MIN_INTERVAL_MS
-        });
-        return;
-      }
-
-      const newsPromise = fetchLiveForexNews();
+      const newsPromise = fetchLiveForexNews({
+        pairs: getConfiguredAutoForexPairs()
+      });
       const trendResultsRaw = await mapWithConcurrency(
         getConfiguredAutoForexPairs(),
         PREOPEN_PAIR_CONCURRENCY,
@@ -493,7 +501,9 @@ class AutoTradingService {
       // Live news is an execution input, not just a display metric. The
       // deterministic technical strategy can only enter a new trade when a
       // current authoritative news snapshot is available.
-      const cycleNews = await fetchLiveForexNews();
+      const cycleNews = await fetchLiveForexNews({
+        pairs: getConfiguredAutoForexPairs()
+      });
       this.preOpenNews = cycleNews;
       this.preOpenStatus = cycleNews.status === 'LIVE' ? 'READY' : 'UNAVAILABLE';
 
