@@ -380,6 +380,7 @@ class AutoTradingService {
 
       this.preOpenTrendPairsEvaluated = trendResults.length;
       this.preOpenNews = await fetchLiveForexNews();
+      this.preOpenStatus = this.preOpenNews.status === 'LIVE' ? 'READY' : 'UNAVAILABLE';
 
       liveRuntimeLog(
         this.preOpenNews.status === 'UNAVAILABLE' ? 'WARN' : 'INFO',
@@ -437,6 +438,56 @@ class AutoTradingService {
       if (!refreshAutonomousExecutionPermission()) {
         this.state = 'BLOCKED';
         this.lastCycleResult = 'Autonomous permission was withdrawn before cycle execution.';
+        return;
+      }
+
+      // Live news is an execution input, not just a display metric. The
+      // deterministic technical strategy can only enter a new trade when a
+      // current authoritative news snapshot is available.
+      const cycleNews = await fetchLiveForexNews();
+      this.preOpenNews = cycleNews;
+      this.preOpenStatus = cycleNews.status === 'LIVE' ? 'READY' : 'UNAVAILABLE';
+
+      liveRuntimeLog(
+        cycleNews.status === 'LIVE' ? 'INFO' : 'WARN',
+        'LIVE_NEWS_CYCLE_INPUT',
+        {
+          source: cycleNews.source,
+          status: cycleNews.status,
+          articleCount: cycleNews.articleCount,
+          highImpactCount: cycleNews.highImpactCount,
+          elevatedCount: cycleNews.elevatedCount,
+          riskLevel: cycleNews.riskLevel,
+          error: cycleNews.error
+        }
+      );
+
+      if (cycleNews.status !== 'LIVE') {
+        this.lastActions = AUTO_PAIRS.map(pair => ({
+          pair,
+          result: 'BLOCKED',
+          reason: 'Authoritative live news feed is unavailable; autonomous entry is blocked until fresh news is available.'
+        }));
+        this.lastCycleResult = 'Auto Live cycle blocked: authoritative live news is unavailable. No new trade is submitted.';
+        liveRuntimeLog('WARN', 'AUTO_TRADING_BLOCKED_NEWS_UNAVAILABLE', {
+          status: cycleNews.status,
+          source: cycleNews.source,
+          error: cycleNews.error
+        });
+        return;
+      }
+
+      if (cycleNews.riskLevel === 'HIGH') {
+        this.lastActions = AUTO_PAIRS.map(pair => ({
+          pair,
+          result: 'BLOCKED',
+          reason: 'High-impact live news risk detected; new autonomous entries are paused for this cycle.'
+        }));
+        this.lastCycleResult = 'Auto Live cycle blocked: high-impact live news risk detected. No new trade is submitted.';
+        liveRuntimeLog('WARN', 'AUTO_TRADING_BLOCKED_HIGH_IMPACT_NEWS', {
+          articleCount: cycleNews.articleCount,
+          highImpactCount: cycleNews.highImpactCount
+        });
         return;
       }
 
