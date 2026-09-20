@@ -1,8 +1,8 @@
 export type MarketType = 'FOREX' | 'INDIA_EQUITY' | 'INDIA_OPTIONS';
 
-export type DataSourceStatus = 'DEMO' | 'LIVE' | 'DELAYED' | 'STALE' | 'UNKNOWN';
+export type DataSourceStatus = 'LIVE' | 'DELAYED' | 'STALE' | 'UNKNOWN';
 
-export type TradingMode = 'PAPER' | 'LIVE';
+export type TradingMode = 'LIVE';
 
 export type SignalDirection = 'BUY' | 'SELL' | 'WAIT' | 'NO_TRADE';
 
