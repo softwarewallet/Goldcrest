@@ -422,18 +422,53 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
           currentHash: ''
         })));
 
-        setRiskTimeline(rows.slice(0, 20).map((log: any, index: number) => ({
-          id: log.id || `RISK_${index}`,
-          timestamp: Number(log.timestamp || Date.now()),
-          broker: log.broker || 'CTRADER',
-          account: log.account || '****',
-          instrument: log.symbol,
-          eventType: String(log.action || '').toUpperCase().includes('RISK')
-            ? (log.result === 'FAILURE' || log.result === 'BLOCKED' ? 'RISK REJECTED' : 'RISK APPROVED')
-            : 'EXECUTION GATE BLOCKED',
-          reason: log.error || log.action || 'Live broker event',
-          severity: log.result === 'FAILURE' ? 'CRITICAL' : log.result === 'BLOCKED' ? 'WARNING' : 'INFO'
-        })));
+        const riskRows = rows.filter((log: any) => {
+          const action = String(log.action || '').toUpperCase();
+          return action.includes('RISK')
+            || action.includes('REJECT')
+            || action.includes('BLOCK')
+            || action.includes('LIMIT')
+            || action.includes('KILL')
+            || action.includes('STALE')
+            || action.includes('RECONCILIATION')
+            || action.includes('EXECUTION_GATE')
+            || action.includes('EXECUTION_');
+        });
+
+        setRiskTimeline(riskRows.slice(0, 20).map((log: any, index: number) => {
+          const action = String(log.action || '').toUpperCase();
+          const isBlocked = log.result === 'BLOCKED' || action.includes('BLOCK');
+          const isFailure = log.result === 'FAILURE' || action.includes('REJECT') || action.includes('FAIL');
+          const isLimit = action.includes('LIMIT');
+
+          let eventType: RiskTimelineEvent['eventType'] = 'RISK APPROVED';
+          if (isLimit) {
+            eventType = 'LIMIT REACHED';
+          } else if (isFailure) {
+            eventType = action.includes('STALE')
+              ? 'STALE DATA'
+              : action.includes('RECONCILIATION')
+                ? 'RECONCILIATION FAILURE'
+                : 'RISK REJECTED';
+          } else if (isBlocked) {
+            eventType = 'EXECUTION GATE BLOCKED';
+          } else if (action.includes('STALE')) {
+            eventType = 'STALE DATA';
+          } else if (action.includes('RECONCILIATION')) {
+            eventType = 'RECONCILIATION FAILURE';
+          }
+
+          return {
+            id: log.id || `RISK_${index}`,
+            timestamp: Number(log.timestamp || Date.now()),
+            broker: log.broker || 'CTRADER',
+            account: log.account || '****',
+            instrument: log.symbol,
+            eventType,
+            reason: log.error || log.action || 'Live risk event',
+            severity: isFailure ? 'CRITICAL' : isBlocked || isLimit ? 'WARNING' : 'INFO'
+          };
+        }));
       }
 
       const reconRows: ReconciliationComparison[] = [];
