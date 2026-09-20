@@ -19,7 +19,7 @@ function sanitize(value: unknown): string {
   if (value === null || value === undefined) return '';
   const raw = typeof value === 'string' ? value : JSON.stringify(value);
   return raw
-    .replace(/(?:client[_ -]?secret|secret|access[_ -]?token|api[_ -]?key|password|user[_ -]?key|encryption[_ -]?key|totp[_ -]?secret|pin)\s*[:=]\s*[^,;\s\]}]+/gi, '$1=[REDACTED]')
+    .replace(/((?:client[_ -]?secret|secret|access[_ -]?token|api[_ -]?key|password|user[_ -]?key|encryption[_ -]?key|totp[_ -]?secret|pin))\s*[:=]\s*[^,;\s\]}]+/gi, '$1=[REDACTED]')
     .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, 'Bearer [REDACTED]')
     .replace(/[A-Za-z0-9+/=_-]{32,}/g, token => token.length > 40 ? '[REDACTED_TOKEN]' : token);
 }
