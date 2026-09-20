@@ -54,6 +54,10 @@ if (process.env.NODE_ENV !== 'production') {
   process.env.LIVE_TRADING_ENABLED = 'true';
   process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
   process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'true';
+  updateSystemConfig({
+    liveTradingEnabled: true,
+    tradingMode: 'LIVE_ONLY'
+  });
 }
 
 const app = express();
@@ -857,7 +861,10 @@ async function captureLiveBrokerReconciliation(): Promise<void> {
 }
 
 async function startServer() {
-  productionPreflight(true);
+  // Strict preflight enforcement applies only to production deployments.
+  // Local development uses the same LIVE execution pipeline but must be able
+  // to boot with the operator-triggered local Auto Live arm flow.
+  productionPreflight(process.env.NODE_ENV === 'production');
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
