@@ -38,12 +38,20 @@ const LiveRuntimeLogSettings: React.FC = () => {
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [files, setFiles] = useState<Array<{ date: string; file: string; sizeBytes: number; lastModifiedAt: string | null }>>([]);
 
   const refresh = async () => {
     try {
-      const res = await fetch('/api/live-log/status');
+      const [res, filesRes] = await Promise.all([
+        fetch('/api/live-log/status'),
+        fetch('/api/live-log/files')
+      ]);
       const data = await res.json();
       if (res.ok) setStatus(data);
+      if (filesRes.ok) {
+        const archive = await filesRes.json();
+        setFiles(Array.isArray(archive.files) ? archive.files : []);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to read log status.');
     }
@@ -73,8 +81,9 @@ const LiveRuntimeLogSettings: React.FC = () => {
     }
   };
 
-  const openLog = () => {
-    window.open('/api/live-log/file', '_blank', 'noopener,noreferrer');
+  const openLog = (date?: string) => {
+    const query = date ? `?date=${encodeURIComponent(date)}` : '';
+    window.open(`/api/live-log/file${query}`, '_blank', 'noopener,noreferrer');
   };
 
   const sizeLabel = status ? `${(status.sizeBytes / 1024).toFixed(1)} KB` : '—';
@@ -146,10 +155,37 @@ const LiveRuntimeLogSettings: React.FC = () => {
         </div>
       </div>
 
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-bold text-white">Daily Audit Archive</div>
+            <p className="text-xs text-slate-500 mt-1">Each calendar date is stored as a separate text file for long-term auditability.</p>
+          </div>
+          <span className="text-[10px] font-mono text-slate-500">{files.length} day{files.length === 1 ? '' : 's'}</span>
+        </div>
+        <div className="mt-4 space-y-2 max-h-64 overflow-y-auto">
+          {files.length === 0 ? (
+            <div className="text-xs text-slate-500 font-mono p-3 bg-slate-950 border border-slate-800 rounded-lg">No daily runtime log files yet.</div>
+          ) : files.map(item => (
+            <div key={item.date} className="flex items-center justify-between gap-3 p-3 bg-slate-950 border border-slate-800 rounded-lg">
+              <div className="min-w-0">
+                <div className="text-xs text-slate-200 font-mono">{item.date}</div>
+                <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                  {(item.sizeBytes / 1024).toFixed(1)} KB · {item.lastModifiedAt ? new Date(item.lastModifiedAt).toLocaleString() : '—'}
+                </div>
+              </div>
+              <button onClick={() => openLog(item.date)} className="shrink-0 px-3 py-1.5 rounded bg-slate-800 border border-slate-700 text-slate-200 text-[10px] font-bold">
+                OPEN {item.date}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="bg-cyan-950/20 border border-cyan-900 rounded-xl p-4 text-xs text-slate-300">
         <div className="font-bold text-cyan-300">Audit workflow</div>
         <div className="mt-2 font-mono text-[11px] leading-5">
-          START LIVE LOG → run your live test → STOP LIVE LOG → provide <span className="text-cyan-300">logs/goldcrest-live.log</span> for audit.
+          START LIVE LOG → run your live test → STOP LIVE LOG → provide the relevant <span className="text-cyan-300">logs/goldcrest-live-YYYY-MM-DD.log</span> file for audit.
         </div>
       </div>
     </div>
