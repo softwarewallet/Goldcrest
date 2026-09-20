@@ -22,14 +22,25 @@ import { calculateIndicators } from './indicators';
 import { analyzeMarketStructure } from './marketStructure';
 import { calculateSupportResistance } from './supportResistance';
 import { analyzeMultiTimeframe } from './multiTimeframe';
-import { ForexDataProvider, ForexDemoProvider, validateCandleDataQuality } from './provider';
+import { ForexDemoProvider, validateCandleDataQuality } from './provider';
 import { getForexSessionState } from '../common/session';
+import { ForexMarketStatus } from './types';
+
+interface SyncForexDataProvider {
+  readonly providerName: string;
+  readonly status: DataSourceStatus;
+  readonly isDemo: boolean;
+  getCandles(pair: string, timeframe: ForexTimeframe, limit?: number): ForexCandle[];
+  getLatestCandle(pair: string, timeframe: ForexTimeframe): ForexCandle;
+  getAvailablePairs(): ForexPairConfig[];
+  getMarketStatus(): ForexMarketStatus;
+}
 
 export class ForexSignalEngine {
   private config: ForexSignalEngineConfig;
-  private provider: ForexDataProvider;
+  private provider: SyncForexDataProvider;
 
-  constructor(config: ForexSignalEngineConfig = DEFAULT_FOREX_CONFIG, provider: ForexDataProvider = new ForexDemoProvider()) {
+  constructor(config: ForexSignalEngineConfig = DEFAULT_FOREX_CONFIG, provider: SyncForexDataProvider = new ForexDemoProvider()) {
     this.config = config;
     this.provider = provider;
   }
