@@ -952,7 +952,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           </div>
           <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
             <span className="px-3 py-1 rounded-lg border bg-rose-950/80 text-rose-300 border-rose-800 font-bold">
-              {environment === 'LIVE' ? 'LIVE BROKER ACCOUNT' : 'LIVE DEMO GATE'}
+              'LIVE BROKER ACCOUNT'
             </span>
             <span className="px-3 py-1 rounded-lg border bg-emerald-950/80 text-emerald-300 border-emerald-800 font-bold flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> AUTONOMOUS EXECUTION: ENABLED
