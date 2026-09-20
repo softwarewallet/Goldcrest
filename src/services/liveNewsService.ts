@@ -406,18 +406,26 @@ async function fetchLiveForexNewsInternal(
     fetchFromGoogleNewsRss(newsQuery)
   ]);
 
+  const freshByProvider = results.map(result => filterFreshArticles(result.articles, now));
   const providerStatus = {
-    GDELT_DOC_2: results[0].status,
-    GOOGLE_NEWS_RSS: results[1].status
+    GDELT_DOC_2: results[0].status === 'ERROR'
+      ? 'ERROR' as const
+      : freshByProvider[0].length > 0
+        ? 'LIVE' as const
+        : 'NO_RESULTS' as const,
+    GOOGLE_NEWS_RSS: results[1].status === 'ERROR'
+      ? 'ERROR' as const
+      : freshByProvider[1].length > 0
+        ? 'LIVE' as const
+        : 'NO_RESULTS' as const
   };
 
   const errors = results
     .map(result => result.error)
     .filter(Boolean) as string[];
 
-  const fetchedArticles = results.flatMap(result => result.articles);
-  const freshArticles = filterFreshArticles(fetchedArticles, now);
-  const articles = deduplicateArticles(freshArticles).slice(0, 30);
+  const fetchedArticles = freshByProvider.flat();
+  const articles = deduplicateArticles(fetchedArticles).slice(0, 30);
 
   if (articles.length === 0) {
     const allErrored = results.every(result => result.status === 'ERROR');
@@ -465,7 +473,7 @@ async function fetchLiveForexNewsInternal(
   const score = scoreArticles(articles);
   const latestArticleAt = articles[0]?.publishedAt || null;
 
-  const source: LiveNewsSource = results[0].articles.length > 0
+  const source: LiveNewsSource = freshByProvider[0].length > 0
     ? 'GDELT_DOC_2'
     : 'GOOGLE_NEWS_RSS';
 
@@ -516,7 +524,9 @@ export async function fetchLiveForexNews(
     return newsCache.snapshot;
   }
 
-  if (!forceRefresh && inFlight?.key === key) {
+  // Never start overlapping provider requests for the same working universe.
+  // A forced refresh shares an already-running fetch rather than creating a duplicate load.
+  if (inFlight?.key === key) {
     return inFlight.promise;
   }
 
