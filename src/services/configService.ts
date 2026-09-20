@@ -18,6 +18,8 @@ export interface SystemConfig {
   strikeDepth: number;
   maxTradeValueForexUsd: number;
   maxTradeValueIndianInr: number;
+  autoLiveForexPairs: string[];
+  autoLiveIndianUnderlyings: string[];
   financialDisclaimer: string;
 }
 
@@ -38,6 +40,8 @@ let activeConfig: SystemConfig = {
   strikeDepth: 7,
   maxTradeValueForexUsd: 200,
   maxTradeValueIndianInr: 20000,
+  autoLiveForexPairs: ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD'],
+  autoLiveIndianUnderlyings: ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'],
   financialDisclaimer:
     'Trading in Forex and derivatives involves substantial risk of loss. Model outputs, signals, probabilities and technical analysis are estimates for informational and analytical purposes only and are not financial advice, guarantees, or assurances of future performance.'
 };
