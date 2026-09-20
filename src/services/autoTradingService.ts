@@ -1,7 +1,6 @@
 import { ForexDataProvider } from '../markets/forex/provider';
 import { ForexCandle, ForexMarketStatus, ForexQuote, ForexTimeframe } from '../markets/forex/types';
 import { FOREX_PAIRS, getForexPairConfig } from '../markets/forex/instruments';
-import { INDIAN_UNDERLYINGS } from '../markets/india_equity/underlyings';
 import { ForexSignalEngine } from '../markets/forex/signalEngine';
 import { getForexSessionState } from '../markets/common/session';
 import { getAutoLiveMarketGate, AutoLiveMarketGate } from './marketOpenGate';
@@ -143,6 +142,7 @@ export interface AutoTradingStatus {
   autonomousPermission: boolean;
   intervalMs: number;
   pairs: string[];
+  indianUnderlyings: string[];
   lastCycleAt: number | null;
   lastCycleResult: string | null;
   lastActions: Array<{
