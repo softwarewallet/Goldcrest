@@ -22,7 +22,6 @@ import { calculateIndicators } from './src/markets/forex/indicators';
 import { analyzeMarketStructure } from './src/markets/forex/marketStructure';
 import { calculateSupportResistance } from './src/markets/forex/supportResistance';
 import { analyzeMultiTimeframe } from './src/markets/forex/multiTimeframe';
-import { paperSignalTracker } from './src/markets/forex/paperTracker';
 import { explainForexAnalysis } from './src/services/geminiExplainer';
 import { ForexTimeframe } from './src/markets/forex/types';
 
