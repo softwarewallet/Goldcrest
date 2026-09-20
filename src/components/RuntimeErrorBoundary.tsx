@@ -7,7 +7,7 @@ interface RuntimeErrorBoundaryState {
 }
 
 export class RuntimeErrorBoundary extends React.Component<
-  React.PropsWithChildren,
+  React.PropsWithChildren<Record<string, never>>,
   RuntimeErrorBoundaryState
 > {
   state: RuntimeErrorBoundaryState = {
