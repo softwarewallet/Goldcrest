@@ -911,9 +911,12 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <strong className="text-slate-200">gbt_forex_v1.0.0</strong>
             </div>
 
-            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-emerald-950/80 border border-emerald-700 text-emerald-300 font-bold">
-              <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>LIVE_AUTO_EXECUTION: true</span>
+            <div className={\`flex items-center space-x-1.5 px-2.5 py-1 rounded border font-bold \${autoTradingStatus?.autonomousPermission
+              ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
+              : 'bg-amber-950/70 border-amber-700 text-amber-300'
+            }\`}>
+              <Zap className="w-3.5 h-3.5" />
+              <span>AUTO LIVE: {autoTradingStatus?.state || 'UNKNOWN'}</span>
             </div>
 
             <button
@@ -1824,8 +1827,11 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <ShieldAlert className="w-4 h-4 text-rose-400" />
               <span>Execution Safety Invariant & Model Governance</span>
             </h3>
-            <span className="text-rose-400 font-bold text-xs bg-rose-950/80 px-2.5 py-1 rounded border border-rose-700">
-              AUTONOMOUS LIVE EXECUTION LOCKED
+            <span className={\`font-bold text-xs px-2.5 py-1 rounded border \${autoTradingStatus?.autonomousPermission
+              ? 'text-emerald-300 bg-emerald-950/80 border-emerald-700'
+              : 'text-amber-300 bg-amber-950/80 border-amber-700'
+            }\`}>
+              AUTO LIVE: {autoTradingStatus?.state || 'UNKNOWN'}
             </span>
           </div>
 
@@ -1842,7 +1848,9 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
                   <span className="text-slate-400">LIVE_AUTO_EXECUTION_ALLOWED</span>
-                  <strong className="text-emerald-400">true (OPERATIONAL)</strong>
+                  <strong className={autoTradingStatus?.autonomousPermission ? 'text-emerald-400' : 'text-amber-400'}>
+                    {autoTradingStatus?.autonomousPermission ? 'true (OPERATIONAL)' : 'false (GATED)'}
+                  </strong>
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
@@ -1852,7 +1860,9 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
                   <span className="text-slate-400">Live Execution Authorized:</span>
-                  <strong className="text-emerald-400">YES (Autonomous Allowed)</strong>
+                  <strong className={autoTradingStatus?.autonomousPermission ? 'text-emerald-400' : 'text-amber-400'}>
+                    {autoTradingStatus?.autonomousPermission ? 'YES' : 'NO'}
+                  </strong>
                 </div>
               </div>
             </div>
