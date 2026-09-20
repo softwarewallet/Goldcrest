@@ -77,7 +77,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   private scripMasterCache: { expiresAt: number; rows: any[] } | null = null;
   private static readonly SCRIP_MASTER_TTL_MS = 10 * 60 * 1000;
   private accountData: BrokerAccountInfo | null = null;
-  private static readonly ACCOUNT_DATA_CACHE_TTL_MS = 15 * 1000;
+  private static readonly ACCOUNT_DATA_CACHE_TTL_MS = 60 * 1000;
   private accountFetchInFlight: Promise<BrokerAccountInfo> | null = null;
 
   constructor(config: FivePaisaConfig) {
