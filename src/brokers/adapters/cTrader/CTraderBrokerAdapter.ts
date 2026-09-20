@@ -41,7 +41,7 @@ export interface CTraderConfig {
   clientSecret?: string;
   accessToken?: string;
   accountId?: string;
-  environment: 'DEMO' | 'LIVE';
+  environment: 'LIVE';
   apiHost?: string;
 }
 
@@ -223,7 +223,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
 
           results.push({
             accountId: String(details.traderLogin),
-            accountType: details.isLive ? 'LIVE' : 'DEMO',
+            accountType: 'LIVE',
             balance: details.balance,
             equity: details.equity,
             availableMargin: details.availableMargin,
@@ -233,7 +233,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
             broker: 'CTRADER',
             environment: this.environment,
             connectionStatus: 'CONNECTED',
-            server: details.brokerName || raw.brokerTitleShort || (details.isLive ? 'cTrader-Live' : 'cTrader-Demo'),
+            server: details.brokerName || raw.brokerTitleShort || 'cTrader-Live',
             permissions: ['TRADE', 'READ', 'TRADING'],
             lastUpdate: Date.now(),
             isLiveAccount: details.isLive
@@ -347,7 +347,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         broker: 'CTRADER',
         environment: this.environment,
         connectionStatus: 'CONNECTED',
-        server: details.brokerName || matched.brokerTitleShort || (details.isLive ? 'cTrader-Live' : 'cTrader-Demo'),
+        server: details.brokerName || matched.brokerTitleShort || 'cTrader-Live',
         permissions: ['TRADE', 'READ', 'TRADING'],
         lastUpdate: Date.now(),
         isLiveAccount: details.isLive
