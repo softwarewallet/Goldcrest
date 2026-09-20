@@ -25,6 +25,90 @@ const BROKER_STATUS_CACHE_TTL_MS = 60_000;
 let brokerStatusCache: { payload: any; expiresAt: number } | null = null;
 let brokerStatusInFlight: Promise<any> | null = null;
 
+function resolveMarketBroker(market: string): BrokerType {
+  if (market === 'FOREX') return 'CTRADER';
+  if (market === 'INDIAN_EQUITY' || market === 'INDIAN_FUTURES' || market === 'INDIAN_OPTIONS') {
+    return 'FIVE_PAISA';
+  }
+  throw new Error(`Unsupported market: ${market}. No compatible live broker is configured.`);
+}
+
+function forexQuoteCurrencies(symbol: string): { base: string; quote: string } | null {
+  const compact = String(symbol || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (compact.length !== 6) return null;
+  return { base: compact.slice(0, 3), quote: compact.slice(3, 6) };
+}
+
+async function convertForexNotionalToAccountCurrency(
+  adapter: BrokerAdapter,
+  symbol: string,
+  notional: number,
+  accountCurrency: string
+): Promise<number> {
+  if (!Number.isFinite(notional) || notional < 0) throw new Error('INVALID_EXPOSURE_NOTIONAL');
+  const currencies = forexQuoteCurrencies(symbol);
+  if (!currencies) throw new Error(`Unable to determine Forex currencies for ${symbol}.`);
+  const target = String(accountCurrency || '').toUpperCase();
+  if (!target) throw new Error('ACCOUNT_CURRENCY_UNAVAILABLE');
+  if (currencies.base === target) return notional;
+
+  // cTrader exposes an authoritative native conversion-chain API for cases
+  // where no direct BASE/TARGET symbol exists. Do not fall back to guessed or
+  // derived cross-pairs on a live safety-gate path.
+  if (typeof adapter.getAccountCurrencyConversionRate !== 'function') {
+    throw new Error('BROKER_NATIVE_CURRENCY_CONVERSION_UNAVAILABLE');
+  }
+
+  const rate = await adapter.getAccountCurrencyConversionRate(currencies.base, target);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    throw new Error(`Authoritative FX conversion returned an invalid rate for ${currencies.base} to ${target}.`);
+  }
+  return notional * rate;
+}
+
+async function calculateAccountCurrencyExposure(
+  adapter: BrokerAdapter,
+  positions: NormalizedPosition[],
+  order: OrderRequest,
+  accountCurrency: string,
+  quote: NormalizedQuote
+): Promise<number> {
+  let exposure = 0;
+
+  for (const position of positions) {
+    const quantity = Math.abs(Number(position.quantity || 0));
+    const price = Number(position.currentPrice || position.entryPrice || 0);
+    if (!(quantity > 0 && price > 0)) continue;
+
+    if (order.market !== 'FOREX') {
+      exposure += quantity * price;
+      continue;
+    }
+
+    const currencies = forexQuoteCurrencies(position.symbol);
+    if (!currencies) throw new Error(`Unable to determine Forex currencies for ${position.symbol}.`);
+    const baseNotional = quantity;
+    exposure += await convertForexNotionalToAccountCurrency(adapter, position.symbol, baseNotional, accountCurrency);
+  }
+
+  const proposedQuantity = Math.abs(Number(order.quantity || 0));
+  if (proposedQuantity > 0) {
+    if (order.market !== 'FOREX') {
+      exposure += proposedQuantity * Number(order.price || (order.side === 'BUY' ? quote.ask : quote.bid) || 0);
+    } else {
+      exposure += await convertForexNotionalToAccountCurrency(
+        adapter,
+        order.symbol,
+        proposedQuantity,
+        accountCurrency
+      );
+    }
+  }
+
+  return exposure;
+}
+
+
 async function loadPersistedBrokerAccount(broker: BrokerType): Promise<any | null> {
   try {
     const rows = await executeQuery<any>(
