@@ -369,6 +369,87 @@ brokerRouter.get('/positions', async (_req: Request, res: Response) => {
   res.json(results.flat());
 });
 
+brokerRouter.get('/order-history', async (req: Request, res: Response) => {
+  const now = new Date();
+  const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const defaultTo = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+  const from = Number.isFinite(Number(req.query.from)) ? Number(req.query.from) : defaultFrom;
+  const to = Number.isFinite(Number(req.query.to)) ? Number(req.query.to) : defaultTo;
+  const direction = String(req.query.direction || 'ALL').toUpperCase();
+  const requestedBroker = String(req.query.broker || '').toUpperCase();
+
+  if (!(from >= 0 && to >= from)) {
+    return res.status(400).json({ error: 'Invalid history date range.' });
+  }
+  if (direction !== 'ALL' && direction !== 'BUY' && direction !== 'SELL') {
+    return res.status(400).json({ error: 'Direction must be ALL, BUY, or SELL.' });
+  }
+  if (requestedBroker && !LIVE_BROKERS.includes(requestedBroker as BrokerType)) {
+    return res.status(400).json({ error: 'Broker must be CTRADER or FIVE_PAISA.' });
+  }
+
+  try {
+    const brokers = requestedBroker
+      ? [requestedBroker as BrokerType]
+      : LIVE_BROKERS;
+
+    const results = await Promise.all(brokers.map(async broker => {
+      const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
+      const history = adapter.getOrderHistoryRange
+        ? await adapter.getOrderHistoryRange(from, to)
+        : await adapter.getOrderHistory();
+
+      return history
+        .filter(order => Number(order.timestamp) >= from && Number(order.timestamp) <= to)
+        .filter(order => direction === 'ALL' || order.side === direction)
+        .map(order => {
+          const closingPrice = Number(order.averageFillPrice ?? order.price ?? 0);
+          const closingQuantity = Number(order.filledQuantity ?? order.quantity ?? 0);
+          const closingVolume = closingPrice > 0 && closingQuantity > 0
+            ? closingPrice * closingQuantity
+            : null;
+
+          return {
+            id: order.id,
+            broker: order.broker,
+            environment: order.environment,
+            symbol: order.symbol,
+            openingDirection: order.side,
+            closingTime: order.timestamp,
+            entryPrice: Number(order.price ?? 0) || null,
+            closingPrice: closingPrice > 0 ? closingPrice : null,
+            closingQuantity: closingQuantity > 0 ? closingQuantity : null,
+            closingVolume,
+            swap: null,
+            commission: Number(order.commission ?? 0) || null,
+            netAmount: null,
+            balance: null,
+            orderStatus: order.status,
+            brokerOrderId: order.brokerOrderId || null,
+            signalId: order.signalId || null,
+            strategyId: order.strategyId || null
+          };
+        });
+    }));
+
+    const rows = results.flat().sort((a, b) => Number(b.closingTime) - Number(a.closingTime));
+    res.json({
+      environment: 'LIVE',
+      from,
+      to,
+      direction,
+      rows,
+      count: rows.length,
+      sources: brokers
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_ORDER_HISTORY_UNAVAILABLE',
+      message: err?.message || 'Authoritative live order history is unavailable.'
+    });
+  }
+});
+
 brokerRouter.get('/orders', async (_req: Request, res: Response) => {
   const results = await Promise.all(LIVE_BROKERS.map(async (broker) => {
     try {
