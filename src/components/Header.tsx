@@ -16,6 +16,7 @@ interface HeaderProps {
   onRequestEnvironmentChange: (env: TradingEnvironment) => void;
   selectedBroker: BrokerType;
   maskedAccount?: string;
+  autoTradingStatus?: { state?: string; autonomousPermission?: boolean } | null;
   isEmergencyHalted: boolean;
   onToggleKillSwitch: () => void;
 }
@@ -29,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenDiagnostics,
   environment,
   maskedAccount = '****',
+  autoTradingStatus,
   isEmergencyHalted,
   onToggleKillSwitch
 }) => {
@@ -64,7 +66,9 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="text-slate-700">|</span>
           <span>ENVIRONMENT: <b className="text-rose-400">LIVE</b></span>
           <span className="text-slate-700">|</span>
-          <span>EXECUTION: <b className="text-amber-400">AUTO-READINESS (LOCKED)</b></span>
+          <span>EXECUTION: <b className={autoTradingStatus?.autonomousPermission ? 'text-emerald-400' : 'text-amber-400'}>
+            {autoTradingStatus?.autonomousPermission ? 'AUTO-LIVE (RUNNING)' : 'AUTO-READINESS (GATED)'}
+          </b></span>
           <span className="text-slate-700">|</span>
           <span>DATA: <b className="text-emerald-400">FRESH (LIVE)</b></span>
           <span className="text-slate-700">|</span>
