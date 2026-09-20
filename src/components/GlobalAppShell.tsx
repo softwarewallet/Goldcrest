@@ -19,7 +19,6 @@ const nav = [
   { id: 'trading', label: 'Positions', icon: CandlestickChart },
   { id: 'control_center', label: 'Orders', icon: ListChecks },
   { id: 'signals', label: 'Strategy', icon: Sparkles },
-  { id: 'research', label: 'Backtest', icon: BarChart3 },
   { id: 'pnl', label: 'Reports', icon: BookOpen },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'settings', label: 'Settings', icon: Settings }
