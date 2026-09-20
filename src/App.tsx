@@ -5,6 +5,7 @@ import { SignalsView } from './components/SignalsView';
 import { TradingHub } from './components/TradingHub';
 import { TradingOperationsDashboard } from './components/TradingOperationsDashboard';
 import { TradingControlCenter } from './components/TradingControlCenter';
+import { HistoryPage } from './components/HistoryPage';
 import { SettingsHub } from './components/SettingsHub';
 import { TerminalDashboard } from './components/TerminalDashboard';
 import { ForexTerminalDashboard } from './components/ForexTerminalDashboard';
@@ -371,6 +372,10 @@ export default function App() {
 
               {activeTab === 'alerts' && (
                 <TradingOperationsDashboard initialSubTab="OPS" />
+              )}
+
+              {activeTab === 'history' && (
+                <HistoryPage />
               )}
 
               {(activeTab === 'settings' || activeTab === 'governance') && (
