@@ -28,7 +28,17 @@ function syncAutonomousPermission(): boolean {
   const approvedStrategyId = String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim();
   const approved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
     && approvedStrategyId === 'fx_structure_v2a';
-  const allowed = requested && config.liveTradingEnabled && approved && !killSwitch.isHalted();
+  const ctraderConfigured = Boolean(
+    process.env.CTRADER_LIVE_CLIENT_ID?.trim()
+    && process.env.CTRADER_LIVE_CLIENT_SECRET?.trim()
+    && process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim()
+    && process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
+  );
+  const allowed = requested
+    && config.liveTradingEnabled
+    && approved
+    && ctraderConfigured
+    && !killSwitch.isHalted();
   LIVE_AUTO_EXECUTION_ALLOWED = allowed;
   return allowed;
 }
