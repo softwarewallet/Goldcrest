@@ -613,7 +613,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
 
     const interval = setInterval(() => {
       fetchAllOperationalData();
-    }, 15000);
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [fetchAllOperationalData, fetchOptionsChain, optionsUnderlying, optionsExpiry, optionsStrikeRange]);
