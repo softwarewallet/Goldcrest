@@ -1,0 +1,58 @@
+# Goldcrest Auto-Live Runtime
+
+Goldcrest currently supports autonomous live execution for the deterministic Forex strategy `fx_structure_v2a` through cTrader LIVE. Indian/5paisa automation remains separate until an authoritative live Indian strategy engine is wired; the existing 5paisa live adapter is available for guarded autonomous routing.
+
+## Local / private runtime
+
+Keep Goldcrest bound to loopback for private desktop use:
+
+    NODE_ENV=development
+    HOST=127.0.0.1
+    PORT=3000
+
+The localhost operator-login screen is bypassed only for non-production loopback requests. Production still requires the operator session.
+
+## Runtime gates
+
+Autonomous execution is effective only when all of these are true:
+
+    LIVE_TRADING_ENABLED=true
+    GOLDCREST_AUTO_TRADING_ENABLED=true
+    GOLDCREST_AUTONOMOUS_LIVE_EXECUTION=true
+    GOLDCREST_PRODUCTION_STRATEGY_ID=fx_structure_v2a
+    GOLDCREST_PRODUCTION_STRATEGY_APPROVED=true
+    GOLDCREST_AUTO_TRADING_START_ON_BOOT=true
+
+cTrader LIVE credentials and a valid GOLDCREST_OPERATOR_API_KEY are also required.
+
+## Current safety limits
+
+The application defaults remain:
+
+- risk per trade: 1%
+- maximum daily loss: 3%
+- maximum simultaneous positions: 5
+- maximum trades per day: 20
+- maximum consecutive losses: 3
+- maximum spread: 30 bps
+- maximum Forex trade notional: $200
+
+The maximum Forex notional must be compatible with the broker's minimum order size. Goldcrest fails closed when the configured maximum is too small to satisfy the broker minimum rather than increasing the order silently.
+
+## Auto-trading loop
+
+The service refreshes live cTrader data, evaluates the multi-timeframe Forex strategy, checks the current bid/ask against the strategy entry zone, calculates quantity from risk and broker constraints, then sends the order through the full Goldcrest safety chain:
+
+Signal -> validator -> live gate -> readiness -> autonomous permission -> durable execution intent -> broker -> reconciliation.
+
+The loop does not use synthetic candles or synthetic quotes.
+
+## Operational controls
+
+Authenticated local API endpoints:
+
+    GET  /api/auto-trading/status
+    POST /api/auto-trading/start
+    POST /api/auto-trading/stop
+
+The loop also refuses to continue when the emergency kill switch is active or autonomous permission is withdrawn.
