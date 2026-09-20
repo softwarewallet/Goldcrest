@@ -1,6 +1,6 @@
 import { executeQuery, executeRun } from '../database/db';
 
-export type ExecutionEnvironment = 'PAPER' | 'DEMO' | 'SANDBOX' | 'LIVE';
+export type ExecutionEnvironment = 'LIVE';
 export type TraceStatus = 'PENDING' | 'EXECUTED' | 'RECONCILED' | 'RECONCILIATION_MISMATCH' | 'FAILED';
 
 export enum OperationType {
