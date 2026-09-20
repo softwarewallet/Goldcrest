@@ -64,7 +64,7 @@ export function apiRateLimit(req: Request, res: Response, next: NextFunction): v
   next();
 }
 
-export export function blockLegacyTradingModes(req: Request, _res: Response, next: NextFunction): void {
+export function blockLegacyTradingModes(req: Request, _res: Response, next: NextFunction): void {
   // Unsupported historical routes naturally return 404/405. Runtime trading is LIVE_ONLY.
   next();
 }
