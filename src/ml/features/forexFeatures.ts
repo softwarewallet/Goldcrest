@@ -117,7 +117,7 @@ export function extractForexFeaturesAtTimestamp(
 
   const trendStrength = structure.trendStrength || (adx14 > 25 ? (adx14 - 25) / 25 : 0.2);
   const volatilityPips = atr / pipSize;
-  const spreadPips = 1.2; // demo baseline spread
+  const spreadPips = 1.2; // configured baseline spread
 
   // Session flags derived point-in-time from UTC timestamp
   const date = new Date(targetTimestamp);
