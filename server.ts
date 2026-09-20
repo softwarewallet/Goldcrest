@@ -528,23 +528,77 @@ app.get('/api/forex/pairs', async (req: Request, res: Response) => {
   try {
     const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
     const instruments = await adapter.getInstruments();
+
     const pairsWithQuotes = await Promise.all(instruments.map(async inst => {
-      const quote = await adapter.getQuote(inst.symbol);
-      return {
-        ...inst,
-        baseCurrency: inst.symbol.split('/')[0],
-        quoteCurrency: inst.symbol.split('/')[1] || '',
-        bid: quote.bid,
-        ask: quote.ask,
-        spreadPips: Number((quote.spread * (inst.symbol.includes('JPY') ? 100 : 10000)).toFixed(1)),
-        changePips24h: undefined,
-        changePercent24h: undefined,
-        high24h: undefined,
-        low24h: undefined,
-        dataStatus: quote.status,
-        dataSource: quote.source
-      };
+      try {
+        const quote = await adapter.getQuote(inst.symbol);
+        return {
+          ...inst,
+          baseCurrency: inst.symbol.split('/')[0],
+          quoteCurrency: inst.symbol.split('/')[1] || '',
+          bid: quote.bid,
+          ask: quote.ask,
+          spreadPips: Number((quote.spread * (inst.symbol.includes('JPY') ? 100 : 10000)).toFixed(1)),
+          changePips24h: undefined,
+          changePercent24h: undefined,
+          high24h: undefined,
+          low24h: undefined,
+          dataStatus: quote.status,
+          dataSource: quote.source
+        };
+      } catch (quoteErr: any) {
+        // Closed Forex sessions can legitimately have no current spot event.
+        // Keep the terminal populated with the latest authoritative cTrader
+        // historical close instead of failing the entire instrument list.
+        try {
+          if (!adapter.getHistoricalCandles) throw quoteErr;
+          const candles = await adapter.getHistoricalCandles(inst.symbol, '15M', 2);
+          const last = candles?.[candles.length - 1];
+          const previous = candles?.[candles.length - 2] || last;
+          const close = Number(last?.close || 0);
+          if (!(close > 0)) throw quoteErr;
+
+          const previousClose = Number(previous?.close || close);
+          const change = close - previousClose;
+          const divisor = inst.symbol.includes('JPY') ? 100 : 10000;
+
+          return {
+            ...inst,
+            baseCurrency: inst.symbol.split('/')[0],
+            quoteCurrency: inst.symbol.split('/')[1] || '',
+            bid: close,
+            ask: close,
+            spreadPips: 0,
+            changePips24h: Number((change * divisor).toFixed(1)),
+            changePercent24h: previousClose > 0
+              ? Number(((change / previousClose) * 100).toFixed(2))
+              : undefined,
+            high24h: Number.isFinite(Number(last?.high)) ? Number(last.high) : close,
+            low24h: Number.isFinite(Number(last?.low)) ? Number(last.low) : close,
+            dataStatus: 'DELAYED',
+            dataSource: 'CTRADER_HISTORICAL_CLOSE',
+            dataError: quoteErr?.message || String(quoteErr)
+          };
+        } catch (historyErr: any) {
+          return {
+            ...inst,
+            baseCurrency: inst.symbol.split('/')[0],
+            quoteCurrency: inst.symbol.split('/')[1] || '',
+            bid: undefined,
+            ask: undefined,
+            spreadPips: undefined,
+            changePips24h: undefined,
+            changePercent24h: undefined,
+            high24h: undefined,
+            low24h: undefined,
+            dataStatus: 'UNKNOWN',
+            dataSource: 'CTRADER_LIVE_API_UNAVAILABLE',
+            dataError: historyErr?.message || quoteErr?.message || String(quoteErr)
+          };
+        }
+      }
     }));
+
     return res.json(pairsWithQuotes);
   } catch (err: any) {
     return res.status(503).json({
