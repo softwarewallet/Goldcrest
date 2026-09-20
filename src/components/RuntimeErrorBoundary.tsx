@@ -28,6 +28,40 @@ export class RuntimeErrorBoundary extends React.Component<
     console.error('[GOLDCREST_RUNTIME_ERROR]', error, info.componentStack);
   }
 
+  componentDidMount(): void {
+    window.addEventListener('error', this.handleWindowError);
+    window.addEventListener('unhandledrejection', this.handleUnhandledRejection);
+  }
+
+  componentWillUnmount(): void {
+    window.removeEventListener('error', this.handleWindowError);
+    window.removeEventListener('unhandledrejection', this.handleUnhandledRejection);
+  }
+
+  private handleWindowError = (event: ErrorEvent): void => {
+    if (this.state.hasError) return;
+    const error = event.error instanceof Error
+      ? event.error
+      : new Error(event.message || 'Unhandled browser error');
+    this.setState({
+      hasError: true,
+      message: error.message,
+      stack: error.stack || ''
+    });
+  };
+
+  private handleUnhandledRejection = (event: PromiseRejectionEvent): void => {
+    if (this.state.hasError) return;
+    const reason = event.reason instanceof Error
+      ? event.reason
+      : new Error(typeof event.reason === 'string' ? event.reason : JSON.stringify(event.reason));
+    this.setState({
+      hasError: true,
+      message: reason.message,
+      stack: reason.stack || ''
+    });
+  };
+
   private reload = (): void => {
     window.location.reload();
   };
