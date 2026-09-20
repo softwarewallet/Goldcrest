@@ -30,6 +30,7 @@ import { brokerRouter } from './src/brokers/brokerRoutes';
 import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission } from './src/brokers/safety/AutoExecutionEngine';
 import { autoTradingService } from './src/services/autoTradingService';
 import { initializeLiveRuntimeLog, getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile, listLiveRuntimeLogFiles, logApplicationAction, liveRuntimeLog } from './src/services/liveRuntimeLog';
+import { fetchLiveForexNews } from './src/services/liveNewsService';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
 // the public research/training API is retired while the research program is closed.
@@ -836,6 +837,19 @@ app.get(['/api/signals', '/api/signals/all'], async (req: Request, res: Response
     res.status(503).json({
       error: err?.code || 'LIVE_SIGNAL_DATA_UNAVAILABLE',
       message: err?.message || 'Live signal data is unavailable from the configured brokers.'
+    });
+  }
+});
+
+// 8. Live Forex News
+app.get('/api/forex/news', async (_req: Request, res: Response) => {
+  try {
+    const news = await fetchLiveForexNews();
+    res.json(news);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_FOREX_NEWS_UNAVAILABLE',
+      message: err?.message || 'Live Forex news is unavailable.'
     });
   }
 });
