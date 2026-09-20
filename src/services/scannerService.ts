@@ -1,5 +1,8 @@
 import { TradingSignal } from '../markets/common/types';
-import { ForexDemoProvider, IndianMarketDemoProvider, OptionsChainDemoProvider } from './providers';
+import { LiveIndianMarketProvider, LiveOptionsChainProvider } from './providers';
+import { LiveForexProvider } from '../markets/forex/provider';
+import { ForexSignalEngine } from '../markets/forex/signalEngine';
+import { FOREX_PAIRS } from '../markets/forex/instruments';
 import { calculateStrategyPayoff, OptionStrategyType } from '../markets/india_options/strategySkeleton';
 
 export interface OptionsOpportunityCandidate {
@@ -23,16 +26,47 @@ export interface OptionsOpportunityCandidate {
 }
 
 export class ScannerService {
-  private forexProvider = new ForexDemoProvider();
-  private indiaProvider = new IndianMarketDemoProvider();
-  private optionsProvider = new OptionsChainDemoProvider();
+  private forexProvider = new LiveForexProvider();
+  private forexSignalEngine = new ForexSignalEngine(undefined, this.forexProvider);
+  private indiaProvider = new LiveIndianMarketProvider();
+  private optionsProvider = new LiveOptionsChainProvider();
 
-  getForexScanner() {
-    return this.forexProvider.getPairsOverview();
+  async getForexScanner() {
+    const rows = await Promise.all(
+      FOREX_PAIRS.map(async pair => {
+        try {
+          await this.forexProvider.refreshPair(pair.symbol);
+          const signal = await this.forexSignalEngine.generateSignal(pair.symbol);
+          return {
+            symbol: pair.symbol,
+            bid: this.forexProvider.getQuote(pair.symbol).bid,
+            ask: this.forexProvider.getQuote(pair.symbol).ask,
+            spreadPips: this.forexProvider.getQuote(pair.symbol).spreadPips,
+            changePips24h: this.forexProvider.getQuote(pair.symbol).changePips24h,
+            changePercent24h: this.forexProvider.getQuote(pair.symbol).changePercent24h,
+            signal,
+            dataStatus: 'LIVE' as const
+          };
+        } catch (error: any) {
+          return {
+            symbol: pair.symbol,
+            bid: 0,
+            ask: 0,
+            spreadPips: 0,
+            changePips24h: 0,
+            changePercent24h: 0,
+            signal: null,
+            dataStatus: 'UNAVAILABLE' as const,
+            error: error?.message || String(error)
+          };
+        }
+      })
+    );
+    return rows;
   }
 
-  getIndianMarketScanner() {
-    return this.indiaProvider.getUnderlyingsOverview();
+  async getIndianMarketScanner() {
+    return this.indiaProvider.refreshUnderlyings();
   }
 
   getOptionsScanner(symbol: string = 'NIFTY'): {
@@ -44,7 +78,20 @@ export class ScannerService {
     isBlank?: boolean;
     error?: string;
   } {
-    const chain = this.optionsProvider.getChain(symbol);
+    let chain;
+    try {
+      chain = this.optionsProvider.getChain(symbol);
+    } catch {
+      return {
+        underlying: symbol,
+        spot: 0,
+        bias: 'Range-bound',
+        pcr: 0,
+        opportunities: [],
+        isBlank: true,
+        error: '5paisa LIVE option-chain data is not yet loaded.'
+      };
+    }
     const underlyings = this.indiaProvider.getUnderlyingsOverview();
     const underlyingData = underlyings.find(u => u.symbol === symbol);
 
@@ -233,9 +280,15 @@ export class ScannerService {
     };
   }
 
-  getAllSignals(): TradingSignal[] {
-    const forex = this.getForexScanner().map(p => p.signal);
-    const india = this.getIndianMarketScanner().map(u => u.signal);
+  async getAllSignals(): Promise<TradingSignal[]> {
+    const forex = (await this.getForexScanner())
+      .map(p => p.signal)
+      .filter(Boolean) as TradingSignal[];
+
+    const india = (await this.getIndianMarketScanner())
+      .map((u: any) => u.signal)
+      .filter(Boolean) as TradingSignal[];
+
     return [...forex, ...india];
   }
 }
