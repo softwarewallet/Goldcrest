@@ -29,7 +29,8 @@ import { ForexTimeframe } from './src/markets/forex/types';
 // Phase 2B Broker Integration
 import { BrokerError } from './src/brokers/errors';
 import { brokerRouter } from './src/brokers/brokerRoutes';
-import { LIVE_AUTO_EXECUTION_ALLOWED } from './src/brokers/safety/AutoExecutionEngine';
+import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission } from './src/brokers/safety/AutoExecutionEngine';
+import { autoTradingService } from './src/services/autoTradingService';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
 // the public research/training API is retired while the research program is closed.
@@ -50,6 +51,9 @@ let databaseReady = false;
 
 function productionPreflight(enforce = false): { ok: boolean; checks: Record<string, string> } {
   const checks: Record<string, string> = {};
+  refreshAutonomousExecutionPermission();
+  const autoTradingRequested = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true';
+  const autonomousRequested = process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true';
   const operatorKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
   const ctraderConfigured = Boolean(
     process.env.CTRADER_LIVE_CLIENT_ID?.trim() &&
@@ -65,9 +69,17 @@ function productionPreflight(enforce = false): { ok: boolean; checks: Record<str
   );
   checks.operatorAuth = operatorKey ? 'CONFIGURED' : 'MISSING';
   checks.liveBroker = ctraderConfigured || fivePaisaConfigured ? 'CONFIGURED' : 'MISSING';
-  checks.autonomousExecution = LIVE_AUTO_EXECUTION_ALLOWED === false ? 'DISABLED' : 'INVALID';
+  checks.autonomousExecution = LIVE_AUTO_EXECUTION_ALLOWED
+    ? 'ENABLED'
+    : (autoTradingRequested || autonomousRequested ? 'BLOCKED' : 'DISABLED');
   checks.tradingMode = getSystemConfig().tradingMode;
-  const ok = Boolean(operatorKey) && (ctraderConfigured || fivePaisaConfigured) && LIVE_AUTO_EXECUTION_ALLOWED === false && getSystemConfig().tradingMode === 'LIVE_ONLY';
+  const autoConfigValid = !autoTradingRequested && !autonomousRequested
+    ? true
+    : LIVE_AUTO_EXECUTION_ALLOWED;
+  const ok = Boolean(operatorKey)
+    && (ctraderConfigured || fivePaisaConfigured)
+    && autoConfigValid
+    && getSystemConfig().tradingMode === 'LIVE_ONLY';
   if (!ok && enforce && process.env.NODE_ENV === 'production') {
     throw new Error(`Production preflight failed: ${Object.entries(checks).filter(([, value]) => value !== 'CONFIGURED' && value !== 'DISABLED' && value !== 'LIVE_ONLY').map(([key]) => key).join(', ') || 'invalid safety configuration'}`);
   }
@@ -126,6 +138,20 @@ app.use('/api/ml', operatorAuthRequired, (_req: Request, res: Response) => {
   });
 });
 app.use('/api/governance', operatorAuthRequired, governanceRouter);
+
+app.get('/api/auto-trading/status', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.json(autoTradingService.getStatus());
+});
+
+app.post('/api/auto-trading/start', operatorAuthRequired, (_req: Request, res: Response) => {
+  const status = autoTradingService.start();
+  res.status(status.state === 'BLOCKED' ? 409 : 200).json(status);
+});
+
+app.post('/api/auto-trading/stop', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.json(autoTradingService.stop());
+});
+
 
 
 const forexProviderV2 = new ForexDemoProvider();
@@ -908,6 +934,10 @@ async function startServer() {
     void reconcileInFlightExecutionIntents();
     const reconciliationTimer = setInterval(() => void captureLiveBrokerReconciliation(), 5 * 60_000);
     const executionLifecycleTimer = setInterval(() => void reconcileInFlightExecutionIntents(), 15_000);
+    if (process.env.GOLDCREST_AUTO_TRADING_START_ON_BOOT === 'true') {
+      const autoStatus = autoTradingService.start();
+      console.log(`Goldcrest auto-trading startup: ${autoStatus.state} - ${autoStatus.lastCycleResult || ''}`);
+    }
     reconciliationTimer.unref?.();
     executionLifecycleTimer.unref?.();
   });
