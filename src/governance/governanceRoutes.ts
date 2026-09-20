@@ -110,22 +110,30 @@ governanceRouter.get('/live-health', async (_req: Request, res: Response) => {
     const now = Date.now();
     try {
       const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
-      const result = await adapter.testConnection();
-      const tradingStatus = await adapter.getTradingStatus().catch(() => 'UNKNOWN');
-      const healthy = result.connected && tradingStatus === 'CONNECTED';
+      // Health polling must not masquerade as an operator "TEST_CONNECTION".
+      // The Control Center polls this endpoint continuously, so using
+      // adapter.testConnection() here was generating a new audit record on
+      // every poll. Account retrieval + trading status are authoritative
+      // connectivity checks without polluting the action audit ledger.
+      const healthStartedAt = Date.now();
+      const [account, tradingStatus] = await Promise.all([
+        adapter.getAccount(),
+        adapter.getTradingStatus().catch(() => 'UNKNOWN')
+      ]);
+      const healthy = Boolean(account?.accountId) && tradingStatus === 'CONNECTED';
       return {
         id: `${broker.toLowerCase()}_live_api`,
         name: broker === 'CTRADER' ? 'cTrader LIVE API' : '5paisa LIVE API',
-        status: healthy ? 'HEALTHY' : result.connected ? 'DEGRADED' : 'ERROR',
-        lastSuccessTimestamp: healthy ? Number(result.timestamp || now) : 0,
-        latencyMs: Number(result.latency || 0),
+        status: healthy ? 'HEALTHY' : account ? 'DEGRADED' : 'ERROR',
+        lastSuccessTimestamp: healthy ? Number(account.lastUpdate || now) : 0,
+        latencyMs: Date.now() - healthStartedAt,
         errorCount24h: undefined,
         requestCount24h: undefined,
         successCount24h: undefined,
         failedCount24h: undefined,
         timeoutCount24h: undefined,
         rateLimitEvents24h: undefined,
-        currentFailureState: healthy ? undefined : String(result.error || `Trading status: ${tradingStatus}`)
+        currentFailureState: healthy ? undefined : `Trading status: ${tradingStatus}`
       };
     } catch (error: any) {
       return {
