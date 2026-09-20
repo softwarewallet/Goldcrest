@@ -291,8 +291,18 @@ brokerRouter.post('/credentials/live', (req: Request, res: Response) => {
   });
 });
 
-brokerRouter.get('/dashboard-summary', async (_req: Request, res: Response) => {
-  try {
+const DASHBOARD_SUMMARY_CACHE_TTL_MS = 30_000;
+let dashboardSummaryCache: { payload: any; expiresAt: number } | null = null;
+let dashboardSummaryInFlight: Promise<any> | null = null;
+
+async function getDashboardSummarySnapshot(): Promise<any> {
+  const now = Date.now();
+  if (dashboardSummaryCache && now < dashboardSummaryCache.expiresAt) {
+    return dashboardSummaryCache.payload;
+  }
+  if (dashboardSummaryInFlight) return dashboardSummaryInFlight;
+
+  dashboardSummaryInFlight = (async () => {
     const results = await Promise.all(LIVE_BROKERS.map(async (broker) => {
       const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
       const [account, positions, openOrders, orderHistory] = await Promise.all([
@@ -311,9 +321,7 @@ brokerRouter.get('/dashboard-summary', async (_req: Request, res: Response) => {
     const accounts = results.map(r => r.account);
     const positions = results.flatMap(r => r.positions);
     const openOrders = results.flatMap(r => r.openOrders);
-    const orderHistory = results.flatMap(r => r.orderHistory)
-      .sort((a, b) => b.timestamp - a.timestamp);
-
+    const orderHistory = results.flatMap(r => r.orderHistory).sort((a, b) => b.timestamp - a.timestamp);
     const currencies = Array.from(new Set(accounts.map(a => String(a.currency || '').toUpperCase()).filter(Boolean)));
     const sameCurrency = currencies.length <= 1;
     const totalBalance = sameCurrency ? accounts.reduce((sum, a) => sum + Number(a.balance || 0), 0) : null;
@@ -324,9 +332,9 @@ brokerRouter.get('/dashboard-summary', async (_req: Request, res: Response) => {
     const dailyRealizedPnL = dailyRealizedPnLValues.length
       ? dailyRealizedPnLValues.reduce((sum, v) => sum + v, 0)
       : null;
-
     const closedHistory = orderHistory.filter(o => ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'].includes(o.status));
-    res.json({
+
+    const payload = {
       accounts,
       positions,
       openOrders,
@@ -353,11 +361,27 @@ brokerRouter.get('/dashboard-summary', async (_req: Request, res: Response) => {
       },
       dataStatus: 'LIVE',
       generatedAt: Date.now()
-    });
+    };
+
+    dashboardSummaryCache = {
+      payload,
+      expiresAt: Date.now() + DASHBOARD_SUMMARY_CACHE_TTL_MS
+    };
+    return payload;
+  })().finally(() => {
+    dashboardSummaryInFlight = null;
+  });
+
+  return dashboardSummaryInFlight;
+}
+
+brokerRouter.get('/dashboard-summary', async (_req: Request, res: Response) => {
+  try {
+    res.json(await getDashboardSummarySnapshot());
   } catch (err: any) {
     res.status(503).json({
       error: 'LIVE_DASHBOARD_DATA_UNAVAILABLE',
-      message: err?.message || 'Authoritative broker dashboard data is unavailable.'
+      message: err?.message || 'Authoritative live broker dashboard data is unavailable.'
     });
   }
 });
