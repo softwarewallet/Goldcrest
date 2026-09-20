@@ -11,23 +11,19 @@ const BROKERS: BrokerType[] = ['CTRADER', 'FIVE_PAISA'];
 export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'LIVE' }) => {
   const [accounts, setAccounts] = useState<Record<BrokerType, BrokerAccountInfo | null>>({
     CTRADER: null,
-    FIVE_PAISA: null,
-    PAPER: null
+    FIVE_PAISA: null
   });
   const [errors, setErrors] = useState<Record<BrokerType, string | null>>({
     CTRADER: null,
-    FIVE_PAISA: null,
-    PAPER: null
+    FIVE_PAISA: null
   });
   const [loading, setLoading] = useState<Record<BrokerType, boolean>>({
     CTRADER: false,
-    FIVE_PAISA: false,
-    PAPER: false
+    FIVE_PAISA: false
   });
   const [lastUpdated, setLastUpdated] = useState<Record<BrokerType, number | null>>({
     CTRADER: null,
-    FIVE_PAISA: null,
-    PAPER: null
+    FIVE_PAISA: null
   });
 
   // TOTP Modal State
@@ -39,7 +35,7 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
   const [totpSuccess, setTotpSuccess] = useState<string | null>(null);
 
   const fetchBalances = async () => {
-    setLoading({ CTRADER: true, FIVE_PAISA: true, PAPER: false });
+    setLoading({ CTRADER: true, FIVE_PAISA: true });
 
     const loadBrokerAccount = async (broker: BrokerType, retries = 3): Promise<BrokerAccountInfo> => {
       for (let i = 0; i < retries; i++) {
@@ -111,13 +107,11 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
 
     const nextAccounts: Record<BrokerType, BrokerAccountInfo | null> = {
       CTRADER: null,
-      FIVE_PAISA: null,
-      PAPER: null
+      FIVE_PAISA: null
     };
     const nextErrors: Record<BrokerType, string | null> = {
       CTRADER: null,
-      FIVE_PAISA: null,
-      PAPER: null
+      FIVE_PAISA: null
     };
     const now = Date.now();
 
@@ -134,7 +128,7 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = ({ environment = 'L
       FIVE_PAISA: nextAccounts.FIVE_PAISA ? now : prev.FIVE_PAISA
     }));
 
-    setLoading({ CTRADER: false, FIVE_PAISA: false, PAPER: false });
+    setLoading({ CTRADER: false, FIVE_PAISA: false });
   };
 
   useEffect(() => {
