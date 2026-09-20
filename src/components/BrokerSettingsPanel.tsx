@@ -281,7 +281,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         </div>
       </div>
 
-      <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2"><Database className="w-3 h-3" /> Environment enforced by server: LIVE_ONLY. No paper/demo credential workflow is exposed.</div>
+      <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2"><Database className="w-3 h-3" /> Environment enforced by server: LIVE_ONLY. Only LIVE credentials are supported.</div>
     </div>
   );
 };
