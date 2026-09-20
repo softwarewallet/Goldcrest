@@ -24,10 +24,10 @@ export class FeatureEngine {
     timeframe: string,
     timestamp: number,
     features: Record<string, number>,
-    environment: EnvironmentType = 'DEMO',
+    environment: EnvironmentType = 'LIVE',
     signalId?: string,
     strategyId?: string,
-    dataSource: string = 'REALTIME_DEMO_PROVIDER'
+    dataSource: string = 'REALTIME_LIVE_PROVIDER'
   ): FeatureSnapshot {
     const featureSnapshotId = `feat_snap_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
