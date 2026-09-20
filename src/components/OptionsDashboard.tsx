@@ -98,7 +98,7 @@ export const OptionsDashboard: React.FC<OptionsDashboardProps> = ({
             <div>
               <div className="font-bold text-amber-200 text-sm">5paisa API Connection Required</div>
               <div className="text-amber-300/80 mt-0.5">
-                Options Chain, Open Interest, and Black-Scholes Greeks stream directly from the 5paisa Developer API. Synthetic dummy data is disabled. When 5paisa is not connected, data is displayed as blank.
+                Options Chain, Open Interest, and Black-Scholes Greeks stream directly from the 5paisa Developer API. Placeholder data is disabled. When 5paisa is not connected, data is displayed as blank.
               </div>
             </div>
           </div>
