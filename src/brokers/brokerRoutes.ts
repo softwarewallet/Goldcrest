@@ -45,7 +45,7 @@ async function convertForexNotionalToAccountCurrency(
 
   // cTrader exposes an authoritative native conversion-chain API for cases
   // where no direct BASE/TARGET symbol exists. Do not fall back to guessed or
-  // synthetic cross-pairs on a live safety-gate path.
+  // derived cross-pairs on a live safety-gate path.
   if (typeof adapter.getAccountCurrencyConversionRate !== 'function') {
     throw new Error('BROKER_NATIVE_CURRENCY_CONVERSION_UNAVAILABLE');
   }
@@ -438,7 +438,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
     }
 
     // Pre-flight check: a live order requires an authoritative, fresh broker quote.
-    // Never substitute hard-coded or synthetic prices on an autonomous execution path.
+    // Never substitute hard-coded or substitute prices on an autonomous execution path.
     let quote;
     try {
       quote = await adapter.getQuote(orderReq.symbol);
