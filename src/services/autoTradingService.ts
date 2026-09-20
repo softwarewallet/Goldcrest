@@ -3,6 +3,8 @@ import { ForexCandle, ForexMarketStatus, ForexQuote, ForexTimeframe } from '../m
 import { FOREX_PAIRS, getForexPairConfig } from '../markets/forex/instruments';
 import { ForexSignalEngine } from '../markets/forex/signalEngine';
 import { getForexSessionState } from '../markets/common/session';
+import { getAutoLiveMarketGate, AutoLiveMarketGate } from './marketOpenGate';
+import { fetchLiveForexNews, LiveNewsSnapshot } from './liveNewsService';
 import { brokerRegistry } from '../brokers/registry';
 import { autoExecutionEngine, refreshAutonomousExecutionPermission, disarmLocalAutonomousExecution } from '../brokers/safety/AutoExecutionEngine';
 import { autoTradeReadinessService } from '../brokers/safety/AutoTradeReadiness';
@@ -106,7 +108,7 @@ class LiveForexSignalProvider implements ForexDataProvider {
   }
 }
 
-export type AutoTradingState = 'STOPPED' | 'RUNNING' | 'BLOCKED';
+export type AutoTradingState = 'STOPPED' | 'PREPARING' | 'RUNNING' | 'BLOCKED';
 
 export interface AutoTradingStatus {
   state: AutoTradingState;
@@ -123,6 +125,14 @@ export interface AutoTradingStatus {
     reason?: string;
     orderId?: string;
   }>;
+  marketGate: AutoLiveMarketGate;
+  preOpenPreparation: {
+    lastPreparedAt: number | null;
+    trendPairsEvaluated: number;
+    news: LiveNewsSnapshot | null;
+    status: 'IDLE' | 'RUNNING' | 'READY' | 'UNAVAILABLE';
+  };
+  requiresClosedMarketConfirmation?: boolean;
 }
 
 class AutoTradingService {
@@ -133,6 +143,10 @@ class AutoTradingService {
   private lastCycleAt: number | null = null;
   private lastCycleResult: string | null = null;
   private lastActions: AutoTradingStatus['lastActions'] = [];
+  private lastPreOpenPreparedAt: number | null = null;
+  private preOpenTrendPairsEvaluated = 0;
+  private preOpenNews: LiveNewsSnapshot | null = null;
+  private preOpenStatus: 'IDLE' | 'RUNNING' | 'READY' | 'UNAVAILABLE' = 'IDLE';
   private cycleInFlight = false;
 
   private isRequested(): boolean {
@@ -150,27 +164,72 @@ class AutoTradingService {
       pairs: [...AUTO_PAIRS],
       lastCycleAt: this.lastCycleAt,
       lastCycleResult: this.lastCycleResult,
-      lastActions: [...this.lastActions]
+      lastActions: [...this.lastActions],
+      marketGate: getAutoLiveMarketGate(),
+      preOpenPreparation: {
+        lastPreparedAt: this.lastPreOpenPreparedAt,
+        trendPairsEvaluated: this.preOpenTrendPairsEvaluated,
+        news: this.preOpenNews,
+        status: this.preOpenStatus
+      }
     };
   }
 
-  start(): AutoTradingStatus {
+  start(options: { confirmWhenClosed?: boolean } = {}): AutoTradingStatus {
+    const marketGate = getAutoLiveMarketGate();
+
+    liveRuntimeLog('SYSTEM', 'AUTO_TRADING_START_ATTEMPT', {
+      previousState: this.state,
+      requestedFlags: {
+        autoTrading: process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true',
+        autonomousLiveExecution: process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true'
+      },
+      marketGate,
+      confirmWhenClosed: Boolean(options.confirmWhenClosed)
+    });
+
+    if (marketGate.bothMarketsClosed && !options.confirmWhenClosed) {
+      const message = 'Markets are closed, do you still want to start Auto Live';
+      this.lastCycleResult = message;
+      liveRuntimeLog('INFO', 'AUTO_TRADING_CLOSED_MARKET_CONFIRMATION_REQUIRED', {
+        message,
+        marketGate
+      });
+      return {
+        ...this.getStatus(),
+        requiresClosedMarketConfirmation: true
+      };
+    }
+
     const activation = autoExecutionEngine.enableAutomaticExecution();
     if (!activation.success) {
       this.state = 'BLOCKED';
       this.lastCycleResult = activation.message;
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'ARM',
+        code: activation.code,
+        reason: activation.message
+      });
       return this.getStatus();
     }
 
     if (!this.isRequested()) {
       this.state = 'BLOCKED';
       this.lastCycleResult = 'Auto trading is not enabled. Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION must be true.';
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'REQUEST_FLAGS',
+        reason: this.lastCycleResult
+      });
       return this.getStatus();
     }
 
     if (!getSystemConfig().liveTradingEnabled) {
       this.state = 'BLOCKED';
       this.lastCycleResult = 'LIVE_TRADING_ENABLED is not true.';
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'LIVE_TRADING_CONFIG',
+        reason: this.lastCycleResult
+      });
       return this.getStatus();
     }
 
@@ -178,21 +237,49 @@ class AutoTradingService {
     if (!permission) {
       this.state = 'BLOCKED';
       this.lastCycleResult = 'Autonomous execution is not currently permitted. The strategy must be calibrated and the safety controls must pass.';
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'AUTONOMOUS_PERMISSION',
+        reason: this.lastCycleResult
+      });
       return this.getStatus();
     }
 
     if (this.timer) return this.getStatus();
 
-    this.state = 'RUNNING';
-    this.lastCycleResult = 'Auto-trading loop started.';
-    liveRuntimeLog('SYSTEM', 'AUTO_TRADING_STARTED', { intervalMs: AUTO_INTERVAL_MS, pairs: AUTO_PAIRS });
-    void this.runCycle();
+    if (marketGate.anyMarketOpen) {
+      this.state = 'RUNNING';
+      this.lastCycleResult = 'Auto-trading loop started.';
+      liveRuntimeLog('SYSTEM', 'AUTO_TRADING_STARTED', {
+        intervalMs: AUTO_INTERVAL_MS,
+        pairs: AUTO_PAIRS,
+        marketGate
+      });
+      void this.runCycle();
+    } else {
+      this.state = 'PREPARING';
+      this.lastCycleResult = 'Markets are closed. Auto Live is armed; pre-open preparation is running and the system will begin evaluating trades as soon as a supported market opens.';
+      this.preOpenStatus = 'RUNNING';
+      liveRuntimeLog('SYSTEM', 'AUTO_TRADING_PRE_OPEN_ARMED', {
+        intervalMs: AUTO_INTERVAL_MS,
+        pairs: AUTO_PAIRS,
+        marketGate
+      });
+      void this.runScheduledCycle();
+    }
 
     this.timer = setInterval(() => {
-      void this.runCycle();
+      void this.runScheduledCycle();
     }, AUTO_INTERVAL_MS);
     this.timer.unref?.();
 
+    return this.getStatus();
+  }
+
+  abandonClosedMarketStart(): AutoTradingStatus {
+    this.lastCycleResult = 'Auto Live start abandoned while markets were closed.';
+    liveRuntimeLog('INFO', 'AUTO_TRADING_CLOSED_MARKET_START_ABANDONED', {
+      marketGate: getAutoLiveMarketGate()
+    });
     return this.getStatus();
   }
 
@@ -206,6 +293,130 @@ class AutoTradingService {
     liveRuntimeLog('SYSTEM', 'AUTO_TRADING_STOPPED', { reason });
     disarmLocalAutonomousExecution();
     return this.getStatus();
+  }
+
+  private async runScheduledCycle(): Promise<void> {
+    if (!['PREPARING', 'RUNNING'].includes(this.state) || this.cycleInFlight) return;
+
+    const marketGate = getAutoLiveMarketGate();
+
+    if (marketGate.bothMarketsClosed) {
+      if (this.state === 'RUNNING') {
+        this.state = 'PREPARING';
+        this.lastCycleResult = 'Markets closed. Auto Live remains armed and has returned to pre-open preparation.';
+        liveRuntimeLog('INFO', 'AUTO_TRADING_MARKET_CLOSED_PREPARATION_RESUMED', { marketGate });
+      }
+      await this.runPreOpenPreparation(marketGate);
+      return;
+    }
+
+    if (this.state === 'PREPARING') {
+      this.state = 'RUNNING';
+      this.lastCycleResult = 'A supported market is now open. Auto Live is moving from preparation to live signal evaluation.';
+      liveRuntimeLog('SYSTEM', 'AUTO_TRADING_MARKET_OPENED', { marketGate });
+    }
+
+    await this.runCycle();
+  }
+
+  private async runPreOpenPreparation(marketGate: AutoLiveMarketGate): Promise<void> {
+    if (this.state !== 'PREPARING' || this.cycleInFlight) return;
+    this.cycleInFlight = true;
+    this.preOpenStatus = 'RUNNING';
+
+    try {
+      if (killSwitch.isHalted()) {
+        this.state = 'BLOCKED';
+        this.lastCycleResult = 'Emergency kill switch is active.';
+        this.preOpenStatus = 'UNAVAILABLE';
+        liveRuntimeLog('WARN', 'AUTO_TRADING_PRE_OPEN_BLOCKED', { reason: this.lastCycleResult });
+        return;
+      }
+
+      if (!refreshAutonomousExecutionPermission()) {
+        this.state = 'BLOCKED';
+        this.lastCycleResult = 'Autonomous permission was withdrawn during pre-open preparation.';
+        this.preOpenStatus = 'UNAVAILABLE';
+        liveRuntimeLog('WARN', 'AUTO_TRADING_PRE_OPEN_BLOCKED', { reason: this.lastCycleResult });
+        return;
+      }
+
+      const trendResults: Array<{
+        pair: string;
+        trend: string;
+        strength: number;
+        regime: string;
+        alignment: string;
+        score: number;
+      }> = [];
+
+      for (const pair of AUTO_PAIRS) {
+        try {
+          await this.provider.refreshPair(pair);
+          const analysis = this.signalEngine.analyzePair(pair);
+          trendResults.push({
+            pair,
+            trend: analysis.trend.direction,
+            strength: analysis.trend.strength,
+            regime: analysis.regime,
+            alignment: analysis.multiTimeframe.alignment,
+            score: analysis.signal.score
+          });
+          liveRuntimeLog('INFO', 'PREOPEN_TREND_EVALUATED', {
+            pair,
+            trend: analysis.trend.direction,
+            strength: analysis.trend.strength,
+            regime: analysis.regime,
+            alignment: analysis.multiTimeframe.alignment,
+            signalScore: analysis.signal.score
+          });
+        } catch (error: any) {
+          liveRuntimeLog('WARN', 'PREOPEN_TREND_UNAVAILABLE', {
+            pair,
+            error: error?.message || String(error)
+          });
+        }
+      }
+
+      this.preOpenTrendPairsEvaluated = trendResults.length;
+      this.preOpenNews = await fetchLiveForexNews();
+
+      liveRuntimeLog(
+        this.preOpenNews.status === 'UNAVAILABLE' ? 'WARN' : 'INFO',
+        'PREOPEN_NEWS_EVALUATED',
+        {
+          source: this.preOpenNews.source,
+          status: this.preOpenNews.status,
+          articleCount: this.preOpenNews.articleCount,
+          highImpactCount: this.preOpenNews.highImpactCount,
+          elevatedCount: this.preOpenNews.elevatedCount,
+          riskLevel: this.preOpenNews.riskLevel,
+          error: this.preOpenNews.error
+        }
+      );
+
+      this.lastPreOpenPreparedAt = Date.now();
+      this.preOpenStatus = this.preOpenNews.status === 'UNAVAILABLE'
+        ? 'UNAVAILABLE'
+        : 'READY';
+      this.lastCycleResult = this.preOpenNews.status === 'UNAVAILABLE'
+        ? `Pre-open trend preparation completed for ${trendResults.length} pairs, but live news is unavailable. No trade is placed until the normal execution gates pass.`
+        : `Pre-open preparation completed: ${trendResults.length} live Forex pairs evaluated and live news checked. Waiting for a supported market to open.`;
+
+      liveRuntimeLog('INFO', 'PREOPEN_PREPARATION_COMPLETED', {
+        marketGate,
+        trendPairsEvaluated: trendResults.length,
+        newsStatus: this.preOpenNews.status,
+        newsRiskLevel: this.preOpenNews.riskLevel,
+        preparedAt: this.lastPreOpenPreparedAt
+      });
+    } catch (error: any) {
+      this.preOpenStatus = 'UNAVAILABLE';
+      this.lastCycleResult = error?.message || String(error);
+      liveRuntimeLog('ERROR', 'AUTO_TRADING_PRE_OPEN_ERROR', { error: this.lastCycleResult });
+    } finally {
+      this.cycleInFlight = false;
+    }
   }
 
   private async runCycle(): Promise<void> {
@@ -231,7 +442,8 @@ class AutoTradingService {
 
       const session = getForexSessionState();
       if (session.activeSessions.includes('CLOSED (WEEKEND)')) {
-        this.lastCycleResult = 'Market closed; no orders evaluated.';
+        this.state = 'PREPARING';
+        this.lastCycleResult = 'Forex market closed; pre-open preparation resumed.';
         liveRuntimeLog('INFO', 'AUTO_TRADING_MARKET_CLOSED', { session: session.activeSessions });
         return;
       }

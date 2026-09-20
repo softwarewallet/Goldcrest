@@ -16,12 +16,13 @@
     "test:quant_review": "tsx test/test_quantitative_performance_review.ts",
     "test:exp_2026_research_004": "tsx test/test_exp_2026_research_004.ts",
     "test:exp_2026_research_008": "tsx test/test_exp_2026_research_008.ts",
-    "test": "tsx test/run_tests.ts && tsx test/test_live_runtime_log.ts && tsx test/test_local_operator_bypass.ts && tsx test/test_auto_trading_orchestrator.ts && tsx test/test_phase2b.ts && tsx test/test_phase3.ts && tsx test/test_phase7.ts && tsx test/test_phase7_1.ts && tsx test/test_phase7_2.ts && tsx test/test_phase7_3.ts && tsx test/test_phase7_4.ts && tsx test/test_phase8_1_adversarial.ts && tsx test/test_phase8_2_integrity.ts && tsx test/test_phase8_3_robustness.ts && tsx test/test_phase8_4_real_data_walkforward.ts && tsx test/test_phase8_5_broker_execution_certification.ts && tsx test/test_phase11_multi_currency_accounting.ts && tsx test/test_fx_rate_integrity.ts && tsx test/test_quantitative_performance_review.ts && tsx test/test_exp_2026_research_004.ts && tsx test/test_exp_2026_research_008.ts",
+    "test": "tsx test/run_tests.ts && tsx test/test_live_runtime_log.ts && tsx test/test_auto_live_market_gate.ts && tsx test/test_local_operator_bypass.ts && tsx test/test_auto_trading_orchestrator.ts && tsx test/test_phase2b.ts && tsx test/test_phase3.ts && tsx test/test_phase7.ts && tsx test/test_phase7_1.ts && tsx test/test_phase7_2.ts && tsx test/test_phase7_3.ts && tsx test/test_phase7_4.ts && tsx test/test_phase8_1_adversarial.ts && tsx test/test_phase8_2_integrity.ts && tsx test/test_phase8_3_robustness.ts && tsx test/test_phase8_4_real_data_walkforward.ts && tsx test/test_phase8_5_broker_execution_certification.ts && tsx test/test_phase11_multi_currency_accounting.ts && tsx test/test_fx_rate_integrity.ts && tsx test/test_quantitative_performance_review.ts && tsx test/test_exp_2026_research_004.ts && tsx test/test_exp_2026_research_008.ts",
     "start:prod": "NODE_ENV=production node dist/server.cjs",
     "prestart:prod": "npm run build",
     "test:auto_trading_orchestrator": "tsx test/test_auto_trading_orchestrator.ts",
     "test:local_operator_bypass": "tsx test/test_local_operator_bypass.ts",
-    "test:live_runtime_log": "tsx test/test_live_runtime_log.ts"
+    "test:live_runtime_log": "tsx test/test_live_runtime_log.ts",
+    "test:auto_live_market_gate": "tsx test/test_auto_live_market_gate.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -154,9 +154,17 @@ app.get('/api/auto-trading/status', operatorAuthRequired, (_req: Request, res: R
   res.json(autoTradingService.getStatus());
 });
 
-app.post('/api/auto-trading/start', operatorAuthRequired, (_req: Request, res: Response) => {
-  const status = autoTradingService.start();
-  res.status(status.state === 'BLOCKED' ? 409 : 200).json(status);
+app.post('/api/auto-trading/start', operatorAuthRequired, (req: Request, res: Response) => {
+  const confirmWhenClosed = req.body?.confirmWhenClosed === true;
+  const status = autoTradingService.start({ confirmWhenClosed });
+  const statusCode = status.requiresClosedMarketConfirmation
+    ? 409
+    : (status.state === 'BLOCKED' ? 409 : 200);
+  return res.status(statusCode).json(status);
+});
+
+app.post('/api/auto-trading/abandon-closed-start', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.json(autoTradingService.abandonClosedMarketStart());
 });
 
 app.post('/api/auto-trading/stop', operatorAuthRequired, (_req: Request, res: Response) => {
@@ -967,6 +975,10 @@ async function startServer() {
   // Goldcrest is a private/local application; loopback is the safe default.
   // Remote binding must be explicitly configured via HOST.
   const host = process.env.HOST || '127.0.0.1';
+  const localDevelopmentHost = ['127.0.0.1', 'localhost', '::1'].includes(String(host).trim().toLowerCase());
+  if (process.env.NODE_ENV !== 'production') {
+    process.env.GOLDCREST_LOCAL_DEVELOPMENT = localDevelopmentHost ? 'true' : 'false';
+  }
   const server = app.listen(PORT, host, () => {
     console.log(`Goldcrest server listening on http://${host}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
     void captureLiveBrokerReconciliation();

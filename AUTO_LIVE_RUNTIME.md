@@ -39,6 +39,25 @@ The application defaults remain:
 
 The maximum Forex notional must be compatible with the broker's minimum order size. Goldcrest fails closed when the configured maximum is too small to satisfy the broker minimum rather than increasing the order silently.
 
+## Market-open confirmation and pre-open preparation
+
+Before Auto Live is armed, Goldcrest checks the current session state for both supported markets:
+
+    cTrader / Forex
+    5paisa / Indian markets
+
+If at least one supported market is open, the normal Auto Live loop can start.
+
+If both markets are closed, the Start control returns the exact confirmation prompt:
+
+    Markets are closed, do you still want to start Auto Live
+
+Selecting **No** abandons the start request. Selecting **Yes** arms Auto Live in `PREPARING` state rather than submitting an order.
+
+While `PREPARING`, Goldcrest repeatedly refreshes live cTrader market data and evaluates multi-timeframe trend/structure across the configured Forex pairs. It also checks live macro-news coverage through the GDELT DOC 2.0 source and records headline risk indicators in the runtime audit log. No order is submitted during the preparation phase.
+
+When a supported market session opens, the service moves from `PREPARING` into the live execution cycle and the existing signal, risk, readiness, execution-intent, broker, and reconciliation gates still apply.
+
 ## Auto-trading loop
 
 The service refreshes live cTrader data, evaluates the multi-timeframe Forex strategy, checks the current bid/ask against the strategy entry zone, calculates quantity from risk and broker constraints, then sends the order through the full Goldcrest safety chain:

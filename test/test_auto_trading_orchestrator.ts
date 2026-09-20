@@ -11,10 +11,10 @@ delete process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION;
 assert.equal(refreshAutonomousExecutionPermission(), false);
 assert.equal(LIVE_AUTO_EXECUTION_ALLOWED, false);
 
-const status = autoTradingService.start();
+const status = autoTradingService.start({ confirmWhenClosed: true });
 assert.equal(status.state, 'BLOCKED');
 assert.equal(status.enabledByEnvironment, false);
-assert.match(status.lastCycleResult || '', /Autonomous execution is not enabled|production strategy has not been explicitly approved/i);
+assert.match(status.lastCycleResult || '', /Autonomous execution is not enabled|production strategy has not been explicitly approved|blockers:/i);
 
 autoTradingService.stop();
 

@@ -192,6 +192,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [selectedSignalDecision, setSelectedSignalDecision] = useState<any | null>(null);
   const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(null);
   const [autoTradingBusy, setAutoTradingBusy] = useState(false);
+  const [closedMarketPrompt, setClosedMarketPrompt] = useState<any | null>(null);
 
   // Filter States
   const [positionBrokerFilter, setPositionBrokerFilter] = useState<string>('ALL');
@@ -763,19 +764,70 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const toggleAutoTrading = useCallback(async () => {
     setAutoTradingBusy(true);
     try {
-      const shouldStop = autoTradingStatus?.state === 'RUNNING';
+      const shouldStop = ['RUNNING', 'PREPARING'].includes(autoTradingStatus?.state);
       const res = await fetch(shouldStop ? '/api/auto-trading/stop' : '/api/auto-trading/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
       const data = await res.json().catch(() => ({}));
+
+      if (data?.requiresClosedMarketConfirmation) {
+        setClosedMarketPrompt(data);
+        setAutoTradingStatus(data);
+        return;
+      }
+
       setAutoTradingStatus(data);
+      if (!res.ok) {
+        console.warn(
+          'Auto trading control rejected:',
+          data?.lastCycleResult || data?.message || data?.error || res.statusText
+        );
+      }
     } catch (err) {
       console.warn('Auto trading control failed:', err);
     } finally {
       setAutoTradingBusy(false);
     }
   }, [autoTradingStatus?.state]);
+
+  const confirmClosedMarketAutoLive = useCallback(async () => {
+    setAutoTradingBusy(true);
+    setClosedMarketPrompt(null);
+    try {
+      const res = await fetch('/api/auto-trading/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmWhenClosed: true })
+      });
+      const data = await res.json().catch(() => ({}));
+      setAutoTradingStatus(data);
+      if (!res.ok) {
+        console.warn(
+          'Confirmed auto trading start rejected:',
+          data?.lastCycleResult || data?.message || data?.error || res.statusText
+        );
+      }
+    } catch (err) {
+      console.warn('Confirmed auto trading start failed:', err);
+    } finally {
+      setAutoTradingBusy(false);
+    }
+  }, []);
+
+  const abandonClosedMarketAutoLive = useCallback(async () => {
+    setClosedMarketPrompt(null);
+    try {
+      const res = await fetch('/api/auto-trading/abandon-closed-start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json().catch(() => ({}));
+      setAutoTradingStatus(data);
+    } catch (err) {
+      console.warn('Closed-market auto trading abandonment could not be logged:', err);
+    }
+  }, []);
   // Fetch Options Chain
   const fetchOptionsChain = useCallback(async (symbol: string, expiry?: string, depth: number = 7) => {
     setOptionsLoading(true);
@@ -892,6 +944,76 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
 
   return (
     <div id="trading_control_center_main" className="space-y-4">
+      {closedMarketPrompt && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+          <div className="w-full max-w-lg bg-slate-900 border border-amber-700/80 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Markets Closed</h3>
+              </div>
+              <button
+                onClick={abandonClosedMarketAutoLive}
+                className="text-slate-500 hover:text-white text-lg leading-none"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 font-mono text-xs">
+              <div className="text-base font-semibold text-amber-200">
+                Markets are closed, do you still want to start Auto Live
+              </div>
+              <p className="text-slate-400 leading-relaxed">
+                Selecting <strong className="text-white">Yes</strong> will arm Auto Live and keep the system in
+                <strong className="text-amber-300"> PREPARING</strong> state. Before a supported market opens,
+                Goldcrest will refresh live market trends and check live macro-news conditions. No order is
+                submitted during this preparation phase.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-slate-500 text-[10px]">FOREX / cTRADER</div>
+                  <div className={closedMarketPrompt.marketGate?.forex?.isOpen ? 'text-emerald-400 font-bold mt-1' : 'text-amber-300 font-bold mt-1'}>
+                    {closedMarketPrompt.marketGate?.forex?.isOpen ? 'OPEN' : 'CLOSED'}
+                  </div>
+                  <div className="text-slate-500 text-[10px] mt-1">
+                    {closedMarketPrompt.marketGate?.forex?.sessions?.join(' / ') || 'Session unavailable'}
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-slate-500 text-[10px]">INDIA / 5PAISA</div>
+                  <div className={closedMarketPrompt.marketGate?.india?.isOpen ? 'text-emerald-400 font-bold mt-1' : 'text-amber-300 font-bold mt-1'}>
+                    {closedMarketPrompt.marketGate?.india?.isOpen ? 'OPEN' : 'CLOSED'}
+                  </div>
+                  <div className="text-slate-500 text-[10px] mt-1">
+                    {closedMarketPrompt.marketGate?.india?.phase || 'Session unavailable'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={abandonClosedMarketAutoLive}
+                  disabled={autoTradingBusy}
+                  className="px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800 font-bold disabled:opacity-50"
+                >
+                  No — Abandon
+                </button>
+                <button
+                  onClick={confirmClosedMarketAutoLive}
+                  disabled={autoTradingBusy}
+                  className="px-4 py-2 rounded-lg border border-emerald-600 bg-emerald-950/70 text-emerald-300 hover:bg-emerald-900/70 font-bold disabled:opacity-50"
+                >
+                  Yes — Start Auto Live
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1. MASTER OPERATIONAL HEADER & NAVIGATION BAR */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -942,8 +1064,37 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               className="px-3 py-1 rounded border text-xs font-bold transition disabled:opacity-50 bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800"
               title="Explicitly start or stop autonomous live trading"
             >
-              {autoTradingBusy ? 'Working...' : autoTradingStatus?.state === 'RUNNING' ? 'STOP AUTO LIVE' : 'START AUTO LIVE'}
+              {autoTradingBusy ? 'Working...' : ['RUNNING', 'PREPARING'].includes(autoTradingStatus?.state) ? 'STOP AUTO LIVE' : 'START AUTO LIVE'}
             </button>
+
+            {autoTradingStatus?.state === 'PREPARING' && autoTradingStatus?.preOpenPreparation && (
+              <div className="flex items-center gap-2 px-2.5 py-1 rounded border border-amber-800 bg-amber-950/50 text-[10px] font-mono text-amber-200">
+                <Clock className="w-3 h-3 text-amber-400" />
+                <span>
+                  PRE-OPEN: {autoTradingStatus.preOpenPreparation.trendPairsEvaluated}/{autoTradingStatus.pairs?.length || 0} TRENDS
+                  {' · NEWS: '}
+                  {autoTradingStatus.preOpenPreparation.news?.status || 'PENDING'}
+                  {autoTradingStatus.preOpenPreparation.news?.riskLevel && autoTradingStatus.preOpenPreparation.news.riskLevel !== 'UNAVAILABLE'
+                    ? ` / ${autoTradingStatus.preOpenPreparation.news.riskLevel}`
+                    : ''}
+                </span>
+              </div>
+            )}
+
+            {autoTradingStatus?.lastCycleResult && (
+              <div
+                className={`max-w-[420px] px-2.5 py-1 rounded border text-[10px] font-mono ${
+                  autoTradingStatus.state === 'BLOCKED'
+                    ? 'bg-amber-950/70 border-amber-700 text-amber-200'
+                    : autoTradingStatus.state === 'RUNNING'
+                      ? 'bg-emerald-950/60 border-emerald-700 text-emerald-200'
+                      : 'bg-slate-900 border-slate-700 text-slate-300'
+                }`}
+                title={autoTradingStatus.lastCycleResult}
+              >
+                {autoTradingStatus.lastCycleResult}
+              </div>
+            )}
 
             <button
               onClick={fetchAllOperationalData}
