@@ -210,6 +210,7 @@ export interface BrokerAdapter {
   getPositions(): Promise<NormalizedPosition[]>;
   getOpenOrders(): Promise<NormalizedOrder[]>;
   getOrderHistory(): Promise<NormalizedOrder[]>;
+  getOrderHistoryRange?(fromTimestamp: number, toTimestamp: number): Promise<NormalizedOrder[]>;
   getQuote(symbol: string): Promise<NormalizedQuote>;
   /** Optional broker-native conversion path for multi-currency exposure checks. */
   getAccountCurrencyConversionRate?(fromCurrency: string, toCurrency: string): Promise<number>;
