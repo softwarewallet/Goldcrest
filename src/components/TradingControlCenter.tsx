@@ -598,11 +598,19 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
     });
   }, [auditLogs, auditCategoryFilter, auditSearchQuery]);
 
-  const formatMarketValue = (value: number | null | undefined, market: MarketQuoteItem['market'], symbol: string) => {
+  const formatNumber = (value: unknown, options?: Intl.NumberFormatOptions): string => {
     const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return '—';
+    return Number.isFinite(numeric) ? numeric.toLocaleString(undefined, options) : '—';
+  };
+
+  const formatFixed = (value: unknown, digits: number): string => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric.toFixed(digits) : '—';
+  };
+
+  const formatMarketValue = (value: number | null | undefined, market: MarketQuoteItem['market'], symbol: string) => {
     const digits = market === 'FOREX' && !symbol.includes('JPY') ? 5 : 2;
-    return numeric.toFixed(digits);
+    return formatFixed(value, digits);
   };
 
   // Calculate Freshness Badge Style
@@ -1087,25 +1095,25 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                     const isAtm = row.isAtm || Math.abs(row.strike - (optionsChainData.spotPrice || 24850)) < 25;
                     return (
                       <tr key={idx} className={`hover:bg-slate-800/40 transition ${isAtm ? 'bg-amber-500/10 font-bold' : ''}`}>
-                        <td className="py-2 px-2 text-slate-300">{row.call?.oi?.toLocaleString() || row.callOI?.toLocaleString() || '-'}</td>
-                        <td className="py-2 px-2 text-slate-400">{row.call?.volume?.toLocaleString() || row.callVolume?.toLocaleString() || '-'}</td>
+                        <td className="py-2 px-2 text-slate-300">{row.call?.oi?.toLocaleString() || row.callOI?.toLocaleString() ||formatNumber(row.call?.oi ?? row.callOI)}</td>
+                        <td className="py-2 px-2 text-slate-400">{row.call?.volume?.toLocaleString() || row.callVolume?.toLocaleString() ||formatNumber(row.call?.oi ?? row.callOI)}</td>
                         <td className="py-2 px-2 text-[10px] text-slate-400">
-                          {row.call?.bid ? `${row.call.bid}/${row.call.ask}` : '-'}
+                          {row.call?.bid ? `${row.call.bid}/${row.call.ask}` :formatNumber(row.call?.oi ?? row.callOI)}
                         </td>
                         <td className="py-2 px-2 text-emerald-400 border-r border-slate-800">
-                          ₹{row.call?.ltp?.toFixed(2) || row.callLtp?.toFixed(2) || '-'}
+                          ₹{row.call?.ltp?.toFixed(2) || row.callLtp?.toFixed(2) ||formatNumber(row.call?.oi ?? row.callOI)}
                         </td>
                         <td className={`py-2 px-2 font-bold ${isAtm ? 'text-amber-300 bg-amber-950/40' : 'text-white'}`}>
                           {row.strike}
                         </td>
                         <td className="py-2 px-2 text-rose-400 border-l border-slate-800">
-                          ₹{row.put?.ltp?.toFixed(2) || row.putLtp?.toFixed(2) || '-'}
+                          ₹{row.put?.ltp?.toFixed(2) || row.putLtp?.toFixed(2) ||formatNumber(row.call?.oi ?? row.callOI)}
                         </td>
                         <td className="py-2 px-2 text-[10px] text-slate-400">
-                          {row.put?.bid ? `${row.put.bid}/${row.put.ask}` : '-'}
+                          {row.put?.bid ? `${row.put.bid}/${row.put.ask}` :formatNumber(row.call?.oi ?? row.callOI)}
                         </td>
-                        <td className="py-2 px-2 text-slate-400">{row.put?.volume?.toLocaleString() || row.putVolume?.toLocaleString() || '-'}</td>
-                        <td className="py-2 px-2 text-slate-300">{row.put?.oi?.toLocaleString() || row.putOI?.toLocaleString() || '-'}</td>
+                        <td className="py-2 px-2 text-slate-400">{row.put?.volume?.toLocaleString() || row.putVolume?.toLocaleString() ||formatNumber(row.call?.oi ?? row.callOI)}</td>
+                        <td className="py-2 px-2 text-slate-300">{row.put?.oi?.toLocaleString() || row.putOI?.toLocaleString() ||formatNumber(row.call?.oi ?? row.callOI)}</td>
                       </tr>
                     );
                   })}
