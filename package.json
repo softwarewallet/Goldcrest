@@ -47,7 +47,9 @@
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7"
   },
   "engines": {
     "node": ">=24.21.0 <25"
