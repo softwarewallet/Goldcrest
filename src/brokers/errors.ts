@@ -31,7 +31,9 @@ export function normalizeBrokerError(err: any, broker: string, environment: stri
 
   let code: BrokerErrorCode = 'UNKNOWN_ERROR';
 
-  if (msg.includes('autonomous_live_execution_disabled') || msg.includes('live execution disabled') || msg.includes('autonomous execution')) {
+  if (msg.includes('cant_route_request') || msg.includes('cannot route request') || msg.includes('no environment connection')) {
+    code = 'BROKER_UNAVAILABLE';
+  } else if (msg.includes('autonomous_live_execution_disabled') || msg.includes('live execution disabled') || msg.includes('autonomous execution')) {
     code = 'AUTONOMOUS_LIVE_EXECUTION_DISABLED';
   } else if (msg.includes('account_identity_mismatch') || msg.includes('identity mismatch')) {
     code = 'ACCOUNT_IDENTITY_MISMATCH';
