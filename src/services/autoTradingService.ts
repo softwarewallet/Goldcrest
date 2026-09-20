@@ -132,6 +132,7 @@ class AutoTradingService {
   private lastCycleAt: number | null = null;
   private lastCycleResult: string | null = null;
   private lastActions: AutoTradingStatus['lastActions'] = [];
+  private cycleInFlight = false;
 
   private isRequested(): boolean {
     return process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
@@ -197,7 +198,8 @@ class AutoTradingService {
   }
 
   private async runCycle(): Promise<void> {
-    if (this.state !== 'RUNNING') return;
+    if (this.state !== 'RUNNING' || this.cycleInFlight) return;
+    this.cycleInFlight = true;
 
     this.lastCycleAt = Date.now();
     this.lastActions = [];
@@ -228,6 +230,8 @@ class AutoTradingService {
       this.lastCycleResult = 'Cycle completed.';
     } catch (error: any) {
       this.lastCycleResult = error?.message || String(error);
+    } finally {
+      this.cycleInFlight = false;
     }
   }
 
