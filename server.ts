@@ -714,21 +714,10 @@ app.get(['/api/signals', '/api/signals/all'], async (req: Request, res: Response
 
 // 8. Macroeconomic Events
 app.get('/api/economic-events', async (_req: Request, res: Response) => {
-  const news = await fetchLiveForexNews();
-  const now = Date.now();
-  const events = news.articles.map((article, index) => ({
-    id: `LIVE_NEWS_${now}_${index}`,
-    title: article.title,
-    currency: 'USD',
-    impact: news.highImpactCount > 0 && index < news.highImpactCount ? 'HIGH' : 'MEDIUM',
-    timestamp: article.publishedAt ? Date.parse(article.publishedAt) || now : now,
-    minutesUntil: article.publishedAt ? Math.round((Date.parse(article.publishedAt) - now) / 60000) : 0,
-    blocksNewEntry: false,
-    source: article.source,
-    url: article.url,
-    dataStatus: news.status
-  }));
-  res.json(events);
+  res.status(503).json({
+    error: 'LIVE_MACRO_EVENTS_UNAVAILABLE',
+    message: 'No authoritative live macroeconomic event feed is configured.'
+  });
 });
 
 // 9. Database Stats & Diagnostics
