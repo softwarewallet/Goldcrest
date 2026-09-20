@@ -307,22 +307,3 @@ export interface CompletePairAnalysisResponse {
   warnings: string[];
 }
 
-export interface PaperSignalTrackingRecord {
-  id: string;
-  signalId: string;
-  pair: string;
-  direction: 'BUY' | 'SELL';
-  entryPrice: number;
-  currentPrice: number;
-  stopLoss: number;
-  tp1: number;
-  tp2: number;
-  tp3: number;
-  unrealizedPnlPips: number;
-  unrealizedPnlUsd: number;
-  status: 'ACTIVE' | 'TP1_HIT' | 'TP2_HIT' | 'TP3_HIT' | 'STOPPED' | 'INVALIDATED';
-  exitCondition: string | null;
-  entryTimestamp: number;
-  lastUpdatedTimestamp: number;
-  exitTimestamp: number | null;
-}
