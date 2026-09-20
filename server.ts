@@ -157,11 +157,14 @@ app.post('/api/auto-trading/start', operatorAuthRequired, (req: Request, res: Re
   // host even though the operator is connecting from the same machine.
   // Detect loopback requests explicitly so the local auto-live arm path is
   // deterministic and does not depend on the HOST environment variable.
-  if (process.env.NODE_ENV !== 'production' && process.env.GOLDCREST_LOCAL_DEVELOPMENT !== 'false') {
+  if (process.env.NODE_ENV !== 'production') {
     const requestHost = String(req.headers.host || '').split(':')[0].trim().toLowerCase();
     const remoteAddress = String(req.socket.remoteAddress || req.ip || '').toLowerCase().replace(/^::ffff:/, '');
     const loopbackRequest = ['127.0.0.1', 'localhost', '::1'].includes(requestHost) ||
       ['127.0.0.1', 'localhost', '::1'].includes(remoteAddress);
+    // The server may bind to 0.0.0.0 while the operator still connects from
+    // loopback. In that case the startup host check can have marked local
+    // development as false; the request itself is the authoritative signal.
     if (loopbackRequest) process.env.GOLDCREST_LOCAL_DEVELOPMENT = 'true';
   }
 
