@@ -154,9 +154,17 @@ app.get('/api/auto-trading/status', operatorAuthRequired, (_req: Request, res: R
   res.json(autoTradingService.getStatus());
 });
 
-app.post('/api/auto-trading/start', operatorAuthRequired, (_req: Request, res: Response) => {
-  const status = autoTradingService.start();
-  res.status(status.state === 'BLOCKED' ? 409 : 200).json(status);
+app.post('/api/auto-trading/start', operatorAuthRequired, (req: Request, res: Response) => {
+  const confirmWhenClosed = req.body?.confirmWhenClosed === true;
+  const status = autoTradingService.start({ confirmWhenClosed });
+  const statusCode = status.requiresClosedMarketConfirmation
+    ? 409
+    : (status.state === 'BLOCKED' ? 409 : 200);
+  return res.status(statusCode).json(status);
+});
+
+app.post('/api/auto-trading/abandon-closed-start', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.json(autoTradingService.abandonClosedMarketStart());
 });
 
 app.post('/api/auto-trading/stop', operatorAuthRequired, (_req: Request, res: Response) => {
