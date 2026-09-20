@@ -40,6 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
     activeTab === 'market' ? 'NSE' :
     activeTab === 'market_watch' ? 'MARKET WATCH' :
     activeTab === 'control_center' ? 'ORDERS' :
+    activeTab === 'history' ? 'HISTORY' :
     activeTab === 'trading' ? 'POSITIONS' :
     activeTab === 'signals' ? 'STRATEGY' :
     activeTab === 'research' ? 'BACKTEST' :
