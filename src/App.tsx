@@ -39,6 +39,12 @@ export default function App() {
   const [balance, setBalance] = useState<number>(0);
   const [isEmergencyHalted, setIsEmergencyHalted] = useState<boolean>(false);
   const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(null);
+  const [activeForexUniverse, setActiveForexUniverse] = useState<string[]>([
+    'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD'
+  ]);
+  const [activeIndianUniverse, setActiveIndianUniverse] = useState<string[]>([
+    'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'
+  ]);
 
   // Order confirmation modal; Goldcrest operates in LIVE_ONLY mode.
   const [pendingOrder, setPendingOrder] = useState<OrderRequest | null>(null);
@@ -90,16 +96,41 @@ export default function App() {
         console.warn('Failed to refresh broker status:', err);
       });
 
-      const [fxPairs, inUnder, sigs, autoStatus] = await Promise.all([
+      const [fxPairs, inUnder, sigs, autoStatus, config] = await Promise.all([
         safeFetchJson('/api/forex/pairs'),
         safeFetchJson('/api/india/underlyings'),
         safeFetchJson('/api/signals/all'),
         safeFetchJson('/api/auto-trading/status', null),
+        safeFetchJson('/api/config', null),
         brokerPromise
       ]);
 
-      if (Array.isArray(fxPairs) && fxPairs.length > 0) setForexPairs(fxPairs);
-      if (Array.isArray(inUnder) && inUnder.length > 0) setIndianUnderlyings(inUnder);
+      if (config && typeof config === 'object') {
+        if (Array.isArray(config.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0) {
+          setActiveForexUniverse(config.autoLiveForexPairs);
+        }
+        if (Array.isArray(config.autoLiveIndianUnderlyings)) {
+          setActiveIndianUniverse(config.autoLiveIndianUnderlyings);
+        }
+      }
+
+      const selectedForex = Array.isArray(config?.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0
+        ? new Set(config.autoLiveForexPairs.map((symbol: any) => String(symbol).toUpperCase()))
+        : null;
+      const selectedIndia = Array.isArray(config?.autoLiveIndianUnderlyings)
+        ? new Set(config.autoLiveIndianUnderlyings.map((symbol: any) => String(symbol).toUpperCase()))
+        : null;
+
+      if (Array.isArray(fxPairs) && fxPairs.length > 0) {
+        setForexPairs(selectedForex
+          ? fxPairs.filter((row: any) => selectedForex.has(String(row?.symbol || '').toUpperCase()))
+          : fxPairs);
+      }
+      if (Array.isArray(inUnder) && inUnder.length > 0) {
+        setIndianUnderlyings(selectedIndia
+          ? inUnder.filter((row: any) => selectedIndia.has(String(row?.symbol || '').toUpperCase()))
+          : inUnder);
+      }
       if (Array.isArray(sigs)) setSignals(sigs);
       if (autoStatus && typeof autoStatus === 'object') setAutoTradingStatus(autoStatus);
 
