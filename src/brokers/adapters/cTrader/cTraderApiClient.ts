@@ -66,11 +66,9 @@ export async function fetchLiveCTraderAccounts(
   clientId: string,
   clientSecret: string,
   accessToken: string,
-  preferredHost: 'live' | 'demo' = 'live'
+  preferredHost: 'live' = 'live'
 ): Promise<CTraderRawAccount[]> {
-  const hosts = preferredHost === 'live'
-    ? ['wss://live.ctraderapi.com:5036']
-    : ['wss://demo.ctraderapi.com:5036'];
+  const hosts = ['wss://live.ctraderapi.com:5036'];
 
   let lastError: Error | null = null;
 
@@ -146,9 +144,7 @@ export async function fetchLiveCTraderAccountDetails(
   clientSecret: string,
   accessToken: string
 ): Promise<CTraderRealTraderDetails> {
-  const host = rawAccount.isLive
-    ? 'wss://live.ctraderapi.com:5036'
-    : 'wss://demo.ctraderapi.com:5036';
+  const host = 'wss://live.ctraderapi.com:5036';
 
   return new Promise<CTraderRealTraderDetails>((resolve, reject) => {
     const ws = new WebSocket(host);
@@ -424,9 +420,7 @@ async function withAuthenticatedAccount<T>(
   isLive: boolean,
   fn: (ws: WebSocket) => Promise<T>
 ): Promise<T> {
-  const hosts = isLive
-    ? ['wss://live.ctraderapi.com:5036']
-    : ['wss://demo.ctraderapi.com:5036'];
+  const hosts = ['wss://live.ctraderapi.com:5036'];
 
   let lastError: any = null;
 
