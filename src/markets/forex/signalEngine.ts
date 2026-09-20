@@ -6,6 +6,7 @@ import {
   EntryType,
   EntryZone,
   ForexCandle,
+  ForexMarketStatus,
   ForexSignal,
   ForexTimeframe,
   MarketRegimeType,
@@ -24,7 +25,6 @@ import { calculateSupportResistance } from './supportResistance';
 import { analyzeMultiTimeframe } from './multiTimeframe';
 import { ForexDemoProvider, validateCandleDataQuality } from './provider';
 import { getForexSessionState } from '../common/session';
-import { ForexMarketStatus } from './types';
 
 interface SyncForexDataProvider {
   readonly providerName: string;
