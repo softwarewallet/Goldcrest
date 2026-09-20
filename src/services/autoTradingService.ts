@@ -1,6 +1,7 @@
 import { ForexDataProvider } from '../markets/forex/provider';
 import { ForexCandle, ForexMarketStatus, ForexQuote, ForexTimeframe } from '../markets/forex/types';
 import { FOREX_PAIRS, getForexPairConfig } from '../markets/forex/instruments';
+import { INDIAN_UNDERLYINGS } from '../markets/india_equity/underlyings';
 import { ForexSignalEngine } from '../markets/forex/signalEngine';
 import { getForexSessionState } from '../markets/common/session';
 import { getAutoLiveMarketGate, AutoLiveMarketGate } from './marketOpenGate';
@@ -18,9 +19,18 @@ const AUTO_INTERVAL_MS = Math.max(
   Number(process.env.GOLDCREST_AUTO_TRADING_INTERVAL_MS || 60_000)
 );
 
-const AUTO_PAIRS = FOREX_PAIRS
+const DEFAULT_AUTO_FOREX_PAIRS = FOREX_PAIRS
   .filter(pair => pair.quoteCurrency === 'USD')
   .map(pair => pair.symbol);
+
+function getConfiguredAutoForexPairs(): string[] {
+  const configured = getSystemConfig().autoLiveForexPairs;
+  if (!Array.isArray(configured) || configured.length === 0) return [...DEFAULT_AUTO_FOREX_PAIRS];
+  const supported = new Set(FOREX_PAIRS.map(pair => pair.symbol.toUpperCase()));
+  return [...new Set(configured
+    .map(symbol => String(symbol).toUpperCase().trim())
+    .filter(symbol => supported.has(symbol)))];
+}
 
 // Pre-open preparation is background work. Keep the operator-facing arm fast,
 // avoid repeating the same broker history fetch every minute, and bound
@@ -178,7 +188,8 @@ class AutoTradingService {
       enabledByEnvironment: this.isRequested(),
       autonomousPermission,
       intervalMs: AUTO_INTERVAL_MS,
-      pairs: [...AUTO_PAIRS],
+      pairs: getConfiguredAutoForexPairs(),
+      indianUnderlyings: [...getSystemConfig().autoLiveIndianUnderlyings],
       lastCycleAt: this.lastCycleAt,
       lastCycleResult: this.lastCycleResult,
       lastActions: [...this.lastActions],
@@ -268,7 +279,7 @@ class AutoTradingService {
       this.lastCycleResult = 'Auto-trading loop started.';
       liveRuntimeLog('SYSTEM', 'AUTO_TRADING_STARTED', {
         intervalMs: AUTO_INTERVAL_MS,
-        pairs: AUTO_PAIRS,
+        pairs: getConfiguredAutoForexPairs(),
         marketGate
       });
       void this.runCycle();
@@ -375,7 +386,7 @@ class AutoTradingService {
 
       const newsPromise = fetchLiveForexNews();
       const trendResultsRaw = await mapWithConcurrency(
-        AUTO_PAIRS,
+        getConfiguredAutoForexPairs(),
         PREOPEN_PAIR_CONCURRENCY,
         async pair => {
           try {
@@ -501,7 +512,7 @@ class AutoTradingService {
       );
 
       if (cycleNews.status !== 'LIVE') {
-        this.lastActions = AUTO_PAIRS.map(pair => ({
+        this.lastActions = getConfiguredAutoForexPairs().map(pair => ({
           pair,
           result: 'BLOCKED',
           reason: 'Authoritative live news feed is unavailable; autonomous entry is blocked until fresh news is available.'
@@ -516,7 +527,7 @@ class AutoTradingService {
       }
 
       if (cycleNews.riskLevel === 'HIGH') {
-        this.lastActions = AUTO_PAIRS.map(pair => ({
+        this.lastActions = getConfiguredAutoForexPairs().map(pair => ({
           pair,
           result: 'BLOCKED',
           reason: 'High-impact live news risk detected; new autonomous entries are paused for this cycle.'
@@ -537,7 +548,7 @@ class AutoTradingService {
         return;
       }
 
-      for (const pair of AUTO_PAIRS) {
+      for (const pair of getConfiguredAutoForexPairs()) {
         await this.evaluatePair(pair);
       }
 
