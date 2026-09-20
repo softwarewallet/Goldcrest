@@ -548,7 +548,13 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       return cached.symbols;
     }
 
-    const symbols = await this.getCachedCTraderSymbols(raw);
+    const symbols = await fetchCTraderSymbols(
+      raw.ctidTraderAccountId,
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      raw.isLive
+    );
     this.symbolCache = {
       accountKey,
       symbols,
