@@ -38,6 +38,8 @@ const ELEVATED_TERMS = [
   'treasury', 'dollar', 'euro', 'pound', 'yen', 'currency'
 ];
 
+let newsCache: { snapshot: LiveNewsSnapshot; expiresAt: number } | null = null;
+
 function classifyArticle(title: string): 'HIGH' | 'ELEVATED' | 'LOW' {
   const normalized = title.toLowerCase();
   if (HIGH_IMPACT_TERMS.some(term => normalized.includes(term))) return 'HIGH';
@@ -60,6 +62,10 @@ function parseArticles(payload: any): LiveNewsArticle[] {
 }
 
 export async function fetchLiveForexNews(): Promise<LiveNewsSnapshot> {
+  if (newsCache && Date.now() < newsCache.expiresAt) {
+    return newsCache.snapshot;
+  }
+
   const url = new URL(GDELT_ENDPOINT);
   url.searchParams.set('query', QUERY);
   url.searchParams.set('mode', 'artlist');
@@ -97,7 +103,7 @@ export async function fetchLiveForexNews(): Promise<LiveNewsSnapshot> {
         ? 'ELEVATED'
         : 'LOW';
 
-    return {
+    const snapshot: LiveNewsSnapshot = {
       source: 'GDELT_DOC_2',
       fetchedAt: new Date().toISOString(),
       status: articles.length ? 'LIVE' : 'NO_RESULTS',
@@ -107,6 +113,8 @@ export async function fetchLiveForexNews(): Promise<LiveNewsSnapshot> {
       riskLevel: articles.length ? riskLevel : 'LOW',
       articles: articles.slice(0, 20)
     };
+    newsCache = { snapshot, expiresAt: Date.now() + 120_000 };
+    return snapshot;
   } catch (error: any) {
     return {
       source: 'GDELT_DOC_2',
