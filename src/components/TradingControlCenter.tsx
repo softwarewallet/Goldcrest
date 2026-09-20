@@ -770,6 +770,12 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       });
       const data = await res.json().catch(() => ({}));
       setAutoTradingStatus(data);
+      if (!res.ok) {
+        console.warn(
+          'Auto trading control rejected:',
+          data?.lastCycleResult || data?.message || data?.error || res.statusText
+        );
+      }
     } catch (err) {
       console.warn('Auto trading control failed:', err);
     } finally {
@@ -944,6 +950,21 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             >
               {autoTradingBusy ? 'Working...' : autoTradingStatus?.state === 'RUNNING' ? 'STOP AUTO LIVE' : 'START AUTO LIVE'}
             </button>
+
+            {autoTradingStatus?.lastCycleResult && (
+              <div
+                className={`max-w-[420px] px-2.5 py-1 rounded border text-[10px] font-mono ${
+                  autoTradingStatus.state === 'BLOCKED'
+                    ? 'bg-amber-950/70 border-amber-700 text-amber-200'
+                    : autoTradingStatus.state === 'RUNNING'
+                      ? 'bg-emerald-950/60 border-emerald-700 text-emerald-200'
+                      : 'bg-slate-900 border-slate-700 text-slate-300'
+                }`}
+                title={autoTradingStatus.lastCycleResult}
+              >
+                {autoTradingStatus.lastCycleResult}
+              </div>
+            )}
 
             <button
               onClick={fetchAllOperationalData}
