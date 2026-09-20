@@ -143,8 +143,22 @@ export function issueOperatorSession(configuredKey: string): string {
   return makeOperatorSession(configuredKey, Date.now() + OPERATOR_SESSION_TTL_MS);
 }
 
+function isLocalDevelopmentRequest(req: Request): boolean {
+  if (process.env.NODE_ENV === 'production') return false;
+  const address = String(req.socket.remoteAddress || req.ip || '').toLowerCase();
+  return address === '127.0.0.1'
+    || address === '::1'
+    || address === '::ffff:127.0.0.1';
+}
+
 export function operatorAuthRequired(req: Request, res: Response, next: NextFunction): void {
   const configuredKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
+  if (isLocalDevelopmentRequest(req)) {
+    // Local development stays frictionless while production keeps the full operator session gate.
+    next();
+    return;
+  }
+
   if (!configuredKey) {
     // If operator auth key is not configured, pass through so dev/preview environment works seamlessly
     next();
