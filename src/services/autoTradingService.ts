@@ -361,7 +361,10 @@ class AutoTradingService {
       const sinceLastPreparation = this.lastPreOpenPreparedAt
         ? Date.now() - this.lastPreOpenPreparedAt
         : Number.POSITIVE_INFINITY;
-      if (sinceLastPreparation < PREOPEN_PREPARATION_MIN_INTERVAL_MS && this.preOpenStatus === 'READY') {
+      if (
+        sinceLastPreparation < PREOPEN_PREPARATION_MIN_INTERVAL_MS
+        && String(this.preOpenStatus) === 'READY'
+      ) {
         this.lastCycleResult = `Pre-open preparation is already fresh (${Math.round(sinceLastPreparation / 1000)}s old). Auto Live remains armed.`;
         liveRuntimeLog('INFO', 'PREOPEN_PREPARATION_SKIPPED_FRESH', {
           ageMs: sinceLastPreparation,
@@ -371,7 +374,7 @@ class AutoTradingService {
       }
 
       const newsPromise = fetchLiveForexNews();
-      const trendResults = (await mapWithConcurrency(
+      const trendResultsRaw = await mapWithConcurrency(
         AUTO_PAIRS,
         PREOPEN_PAIR_CONCURRENCY,
         async pair => {
@@ -402,14 +405,16 @@ class AutoTradingService {
             return null;
           }
         }
-      )).filter((item): item is {
+      );
+
+      const trendResults = trendResultsRaw.filter(Boolean) as Array<{
         pair: string;
         trend: string;
         strength: number;
         regime: string;
         alignment: string;
         score: number;
-      } => item !== null);
+      }>;
 
       this.preOpenTrendPairsEvaluated = trendResults.length;
       this.preOpenNews = await newsPromise;
