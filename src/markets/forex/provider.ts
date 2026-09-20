@@ -47,9 +47,38 @@ export class LiveForexProvider implements LiveForexDataProvider {
       }))
     );
 
-    const liveQuote = await adapter.getQuote(config.symbol);
-    if (liveQuote.status !== 'FRESH' || Date.now() - liveQuote.timestamp >= 10_000) {
-      throw new Error(`Live quote for ${config.symbol} is stale or delayed.`);
+    const marketStatus = this.getMarketStatus();
+    let liveQuote: any = null;
+    let quoteDataStatus: ForexCandle['dataStatus'] = 'DELAYED';
+
+    // Historical trendbars remain authoritative when the market is closed.
+    // Weekend/closed sessions may have no new spot events, so preserve the
+    // broker-reported last close for charting and analysis instead of blanking it.
+    if (marketStatus.isOpen) {
+      try {
+        const quote = await adapter.getQuote(config.symbol);
+        if (
+          quote.status === 'FRESH'
+          && Date.now() - quote.timestamp < 10_000
+          && quote.bid > 0
+          && quote.ask > 0
+        ) {
+          liveQuote = quote;
+          quoteDataStatus = 'LIVE';
+        }
+      } catch {
+        // Keep historical data available. The execution engine separately
+        // enforces a fresh broker quote at the order-dispatch boundary.
+      }
+    }
+
+    const quoteCandles = rows.find(row => row.timeframe === '15M')?.data || [];
+    const latestHistoricalClose = Array.isArray(quoteCandles) && quoteCandles.length > 0
+      ? Number(quoteCandles[quoteCandles.length - 1].close)
+      : 0;
+
+    if (!liveQuote && !(latestHistoricalClose > 0)) {
+      throw new Error(`No authoritative cTrader price is available for ${config.symbol}.`);
     }
 
     for (const row of rows) {
@@ -65,42 +94,44 @@ export class LiveForexProvider implements LiveForexDataProvider {
         high: Number(candle.high),
         low: Number(candle.low),
         close: Number(candle.close),
-        // cTrader historical bars provide OHLCV; current executable bid/ask is
-        // supplied separately by getQuote(). Historical bid/ask are therefore
-        // represented at bar close without inventing prices.
-        bid: Number(candle.close),
-        ask: Number(candle.close),
-        spread: 0,
+        // Historical bars provide OHLCV. When an executable live quote is
+        // unavailable, bid/ask are anchored to the broker-reported bar close
+        // and marked DELAYED rather than being presented as a live quote.
+        bid: Number(liveQuote?.bid ?? candle.close),
+        ask: Number(liveQuote?.ask ?? candle.close),
+        spread: Number(liveQuote ? (liveQuote.ask - liveQuote.bid) : 0),
         volume: Number(candle.volume || 0),
         tickVolume: Number(candle.volume || 0),
-        provider: this.providerName,
-        dataStatus: this.status,
+        provider: liveQuote ? this.providerName : 'CTRADER_HISTORICAL_CLOSE',
+        dataStatus: liveQuote && row.timeframe === '15M' ? 'LIVE' : quoteDataStatus,
       }));
 
       this.candles.set(`${config.symbol}:${row.timeframe}`, candles);
     }
 
-    const quoteCandles = this.candles.get(`${config.symbol}:15M`) || [];
     const first = quoteCandles[0];
     const latest = quoteCandles[quoteCandles.length - 1];
+    const closePrice = latestHistoricalClose;
     const change = latest && first ? latest.close - first.open : 0;
     const changePips = change / config.pipSize;
     const changePct = first?.open ? (change / first.open) * 100 : 0;
 
     this.quotes.set(config.symbol, {
       pair: config.symbol,
-      timestamp: liveQuote.timestamp,
-      bid: liveQuote.bid,
-      ask: liveQuote.ask,
-      spreadPips: liveQuote.spread * (config.symbol.includes('JPY') ? 100 : 10000),
+      timestamp: liveQuote?.timestamp ?? Number(latest?.timestamp || Date.now()),
+      bid: liveQuote?.bid ?? closePrice,
+      ask: liveQuote?.ask ?? closePrice,
+      spreadPips: liveQuote
+        ? liveQuote.spread * (config.symbol.includes('JPY') ? 100 : 10000)
+        : 0,
       digits: config.digits,
       pipSize: config.pipSize,
       changePips24h: Number(changePips.toFixed(1)),
       changePercent24h: Number(changePct.toFixed(2)),
-      high24h: quoteCandles.length ? Math.max(...quoteCandles.map(c => c.high)) : liveQuote.ask,
-      low24h: quoteCandles.length ? Math.min(...quoteCandles.map(c => c.low)) : liveQuote.bid,
-      provider: this.providerName,
-      dataStatus: this.status,
+      high24h: quoteCandles.length ? Math.max(...quoteCandles.map(c => c.high)) : closePrice,
+      low24h: quoteCandles.length ? Math.min(...quoteCandles.map(c => c.low)) : closePrice,
+      provider: liveQuote ? this.providerName : 'CTRADER_HISTORICAL_CLOSE',
+      dataStatus: quoteDataStatus,
     });
   }
 
