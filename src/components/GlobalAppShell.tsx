@@ -73,7 +73,7 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
           </button>
 
           {dashboardOpen && (
-            <div className="mt-0 mb-1 pl-10 pr-2 space-y-0">
+            <div className="mt-0 mb-1 pl-10 pr-2 space-y-[-4px]">
               <button
                 type="button"
                 onClick={() => goDashboard('forex_terminal')}
@@ -95,7 +95,7 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
             </div>
           )}
 
-          <div className="space-y-0">
+          <div className="space-y-[-4px]">
             {nav.map(item => {
               const Icon = item.icon;
               const selected = activeTab === item.id;

@@ -471,7 +471,8 @@ async function withAuthenticatedAccount<T>(
   isLive: boolean,
   fn: (ws: WebSocket) => Promise<T>
 ): Promise<T> {
-  const hosts = ['wss://live.ctraderapi.com:5036'];
+  const configuredHost = getConfiguredCTraderWsHost();
+  const hosts = configuredHost ? [configuredHost] : ['wss://live.ctraderapi.com:5036'];
 
   let lastError: any = null;
 
