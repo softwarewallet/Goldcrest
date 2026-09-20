@@ -29,7 +29,7 @@ import { BrokerError } from './src/brokers/errors';
 import { brokerRouter } from './src/brokers/brokerRoutes';
 import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission } from './src/brokers/safety/AutoExecutionEngine';
 import { autoTradingService } from './src/services/autoTradingService';
-import { getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile, listLiveRuntimeLogFiles } from './src/services/liveRuntimeLog';
+import { initializeLiveRuntimeLog, getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile, listLiveRuntimeLogFiles, logApplicationAction, liveRuntimeLog } from './src/services/liveRuntimeLog';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
 // the public research/training API is retired while the research program is closed.
@@ -51,6 +51,32 @@ if (invokedByNpmDev) {
 }
 
 dotenv.config();
+
+// Start durable audit logging before the application initializes any broker,
+// database, reconciliation, or Auto Live services. Credentials and secrets are
+// sanitized by the logging service.
+const startupAudit = initializeLiveRuntimeLog('APPLICATION_START');
+logApplicationAction('APPLICATION_BOOT', {
+  pid: process.pid,
+  nodeEnv: process.env.NODE_ENV || 'development',
+  port: process.env.PORT || 3000,
+  auditFile: startupAudit.file
+});
+
+process.on('uncaughtException', (error) => {
+  liveRuntimeLog('ERROR', 'PROCESS_UNCAUGHT_EXCEPTION', {
+    message: error?.message || String(error),
+    stack: error?.stack
+  });
+});
+
+process.on('unhandledRejection', (reason) => {
+  liveRuntimeLog('ERROR', 'PROCESS_UNHANDLED_REJECTION', {
+    reason: reason instanceof Error
+      ? { message: reason.message, stack: reason.stack }
+      : reason
+  });
+});
 
 // Local development uses the same LIVE execution pipeline for end-to-end
 // broker testing, but the autonomous arm is still operator-triggered.
@@ -122,6 +148,37 @@ app.use(requestId);
 app.use(apiRateLimit);
 app.use(blockLegacyTradingModes);
 app.use(express.json({ limit: '512kb' }));
+
+// Durable audit trail for every API action. Request bodies are deliberately
+// excluded so credentials/tokens/passwords can never be persisted by this
+// middleware. Detailed trade actions are recorded separately by auditLog.ts.
+app.use((req: Request, res: Response, next) => {
+  const startedAt = Date.now();
+  const shouldAudit = req.path.startsWith('/api/');
+  if (shouldAudit) {
+    liveRuntimeLog('SYSTEM', 'API_REQUEST_STARTED', {
+      method: req.method,
+      path: req.path,
+      query: req.query
+    });
+  }
+
+  res.on('finish', () => {
+    if (!shouldAudit) return;
+    liveRuntimeLog(
+      res.statusCode >= 500 ? 'ERROR' : res.statusCode >= 400 ? 'WARN' : 'SYSTEM',
+      'API_REQUEST_COMPLETED',
+      {
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode,
+        durationMs: Date.now() - startedAt
+      }
+    );
+  });
+
+  next();
+});
 
 // Operator authentication is a same-origin, HttpOnly session derived from the
 // server-side operator API key. The secret is never embedded in the client bundle.
@@ -869,6 +926,13 @@ async function captureLiveBrokerReconciliation(): Promise<void> {
 }
 
 async function startServer() {
+  logApplicationAction('SERVER_STARTING', {
+    nodeEnv: process.env.NODE_ENV || 'development',
+    lifecycle: process.env.npm_lifecycle_event || null,
+    host: process.env.HOST || '127.0.0.1',
+    port: Number(process.env.PORT || 3000)
+  });
+
   // Strict preflight enforcement applies only to an actual production launch.
   // npm run dev is always treated as local development even when .env contains
   // a stale NODE_ENV=production value.
@@ -897,7 +961,14 @@ async function startServer() {
     process.env.GOLDCREST_LOCAL_DEVELOPMENT = localDevelopmentHost ? 'true' : 'false';
   }
   const server = app.listen(PORT, host, () => {
-    console.log(`Goldcrest server listening on http://${host}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
+    const runtime = process.env.NODE_ENV || 'development';
+    console.log(`Goldcrest server listening on http://${host}:${PORT} (NODE_ENV=${runtime})`);
+    logApplicationAction('SERVER_STARTED', {
+      host,
+      port: PORT,
+      nodeEnv: runtime,
+      auditFile: getLiveRuntimeLogStatus().file
+    });
     void captureLiveBrokerReconciliation();
     void reconcileInFlightExecutionIntents();
     const reconciliationTimer = setInterval(() => void captureLiveBrokerReconciliation(), 5 * 60_000);
@@ -911,6 +982,7 @@ async function startServer() {
   });
 
   const shutdown = (signal: string) => {
+    liveRuntimeLog('SYSTEM', 'SERVER_SHUTDOWN_REQUESTED', { signal });
     console.log(`Goldcrest received ${signal}; closing HTTP server gracefully.`);
     server.close(() => {
       try {
