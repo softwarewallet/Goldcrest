@@ -22,7 +22,7 @@ const contentText = fs.readFileSync(status.file, 'utf8');
 assert.match(contentText, /TEST_EVENT/);
 assert.doesNotMatch(contentText, /super-secret-access-token-value/);
 assert.doesNotMatch(contentText, /super-secret-client-secret-value/);
-assert.match(contentText, /\[REDACTED\]/);
+assert.match(contentText, /\[REDACTED(?:_TOKEN)?\]/);
 
 const stopped = stopLiveRuntimeLog('TEST');
 assert.equal(stopped.enabled, false);
