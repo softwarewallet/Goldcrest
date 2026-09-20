@@ -131,6 +131,20 @@ async function getBrokerStatusSnapshot(): Promise<any> {
         return { broker, environment: 'LIVE', connected: true, account, error: null };
       } catch (err: any) {
         const normalized = normalizeBrokerError(err, broker, 'LIVE');
+        const previous = brokerStatusCache?.payload?.brokers?.find((item: any) => item.broker === broker);
+        if (normalized.code === 'RATE_LIMITED' && previous?.account) {
+          // Preserve the last broker-confirmed account snapshot when the provider
+          // temporarily throttles a read-only status poll. Do not use this
+          // stale snapshot for order validation; execution still calls the
+          // broker directly.
+          return {
+            ...previous,
+            stale: true,
+            lastRefreshError: normalized.message,
+            code: normalized.code
+          };
+        }
+
         return {
           broker,
           environment: 'LIVE',
