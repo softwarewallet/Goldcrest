@@ -311,28 +311,10 @@ async function hydratePersistedTradeLimits(): Promise<void> {
   // SQLite remains the migration/source-of-record for settings already stored
   // by older Goldcrest builds. The config service also maintains an atomic
   // file-backed copy so settings survive a full server/process restart.
-  const rows = await executeQuery<any>(
-    'SELECT key, value FROM system_settings WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [
-      'SELECTED_CTRADER_ACCOUNT_ID',
-      'SELECTED_CTRADER_ACCOUNT_CURRENCY',
-      'SELECTED_CTRADER_ACCOUNT_LABEL',
-      'DEFAULT_RISK_PCT',
-      'MAX_DAILY_LOSS_PCT',
-      'MAX_OPEN_POSITIONS',
-      'MAX_TRADES_PER_DAY',
-      'MAX_CONSECUTIVE_LOSSES',
-      'MAX_SPREAD_BPS',
-      'SIGNAL_COOLDOWN_MS',
-      'EVENT_PROXIMITY_THRESHOLD_MINUTES',
-      'STRIKE_DEPTH',
-      'MAX_TRADE_VALUE_FOREX_USD',
-      'MAX_TRADE_VALUE_INDIAN_INR',
-      'AUTO_LIVE_FOREX_PAIRS',
-      'AUTO_LIVE_INDIAN_UNDERLYINGS',
-      'FINANCIAL_DISCLAIMER'
-    ]
-  );
+  // Read all settings and filter known durable keys below. Avoid positional
+  // placeholder counts here because sql.js throws "column index out of range"
+  // when the query and bind list ever drift during schema evolution.
+  const rows = await executeQuery<any>('SELECT key, value FROM system_settings');
 
   const values = rows.reduce<Record<string, string>>((acc, row) => {
     acc[String(row.key)] = String(row.value ?? '');
