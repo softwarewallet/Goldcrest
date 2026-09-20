@@ -10,9 +10,9 @@ export interface ForexCandle {
   high: number;
   low: number;
   close: number;
-  bid: number;
-  ask: number;
-  spread: number;
+  bid?: number;
+  ask?: number;
+  spread?: number;
   volume: number;
   tickVolume?: number;
   provider: string;
