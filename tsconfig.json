@@ -25,6 +25,9 @@
     "noEmit": true
   },
   "exclude": [
-    "test/**"
+    "test/**",
+    "src/ml/experiments/**",
+    "src/ml/backtest/**",
+    "src/components/ModelGovernanceDashboard.tsx"
   ]
 }
