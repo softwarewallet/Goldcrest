@@ -645,5 +645,6 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
           )}
       </div>
     </div>
+    </div>
   );
 };
