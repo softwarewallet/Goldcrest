@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Gauge, Plus, RefreshCw, Search, Settings2 } from 'lucide-react';
 import { Candle, IndianSessionState, ForexSessionState, TradingSignal } from '../markets/common/types';
 import { BrokerType, TradingEnvironment } from '../brokers/types';
@@ -119,22 +119,41 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
   const [show50, setShow50] = useState(true);
   const [watchSearch, setWatchSearch] = useState('');
   const [candles, setCandles] = useState<Candle[]>(candlesMap.NIFTY || []);
+  const fetchInFlightRef = useRef<Promise<void> | null>(null);
 
   const fetchDashboard = async () => {
-    try {
-      const [s, c, cfg] = await Promise.all([
-        fetch('/api/brokers/dashboard-summary'),
-        fetch(`/api/candles/${encodeURIComponent(selectedSymbol)}?tf=${encodeURIComponent(timeframe)}&limit=500`),
-        fetch('/api/config')
-      ]);
-      if (s.ok) setSummary(await s.json());
-      if (c.ok) {
-        const data = await c.json();
-        if (Array.isArray(data)) setCandles(data);
+    if (fetchInFlightRef.current) return fetchInFlightRef.current;
+
+    const request = (async () => {
+      try {
+        const [s, c, cfg] = await Promise.all([
+          fetch('/api/brokers/dashboard-summary'),
+          fetch(`/api/candles/${encodeURIComponent(selectedSymbol)}?tf=${encodeURIComponent(timeframe)}&limit=500`),
+          fetch('/api/config')
+        ]);
+
+        if (s.ok) {
+          const data = await s.json();
+          if (data && typeof data === 'object') setSummary(data);
+        }
+        if (c.ok) {
+          const data = await c.json();
+          if (Array.isArray(data) && data.length > 0) setCandles(data);
+        }
+        if (cfg.ok) {
+          const data = await cfg.json();
+          if (data && typeof data === 'object') setConfig(data);
+        }
+      } catch {
+        // Preserve last authoritative values on transient refresh failures.
       }
-      if (cfg.ok) setConfig(await cfg.json());
-    } catch {
-      // Keep the last authoritative values visible; never fabricate a fallback.
+    })();
+
+    fetchInFlightRef.current = request;
+    try {
+      await request;
+    } finally {
+      fetchInFlightRef.current = null;
     }
   };
 
