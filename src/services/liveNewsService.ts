@@ -283,7 +283,7 @@ function deduplicateArticles(articles: LiveNewsArticle[]): LiveNewsArticle[] {
     const urlKey = article.url
       .toLowerCase()
       .replace(/[?#].*$/, '')
-      .replace(/\\/$/, '');
+      .replace(/\/$/, '');
 
     const key = `${titleKey}|${urlKey}`;
     if (!byKey.has(key)) byKey.set(key, article);
