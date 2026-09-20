@@ -240,7 +240,7 @@ export async function fetchLiveCTraderAccountDetails(
           // cTrader trader details expose the authoritative used-margin value; the
           // reconcile response provides the account's current unrealized P/L. Derive
           // equity and free/available margin from those broker values rather than
-          // presenting balance as synthetic equity.
+          // presenting balance as derived equity.
           const reconcilePositions = Array.isArray(msg.payload?.position) ? msg.payload.position : [];
           const unrealizedPnl = reconcilePositions.reduce((sum: number, position: any) => {
             const value = Number(position?.unrealizedPnL ?? position?.tradeData?.unrealizedPnL ?? 0);
