@@ -1093,9 +1093,6 @@ export const MLResearchDashboard: React.FC = () => {
       )}
 
       {/* PHASE 4: SUB-VIEW 11 - PAPER VALIDATION & PROMOTION GATE */}
-      {activeSubTab === 'paperValidation' && (
-        <PaperValidationTab />
-      )}
 
       {/* PHASE 4: SUB-VIEW 12 - RESEARCH REPORTS & DATA EXPORT */}
       {activeSubTab === 'reports' && (
