@@ -16,7 +16,6 @@ import {
   Download
 } from 'lucide-react';
 import { BrokerSettingsPanel } from './BrokerSettingsPanel';
-import { ModelGovernanceDashboard } from './ModelGovernanceDashboard';
 import { BrokerType, TradingEnvironment } from '../brokers/types';
 
 interface SettingsHubProps {
@@ -199,7 +198,7 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
   onBrokerSelect,
   onRefreshGlobal
 }) => {
-  const [activeSettingsSection, setActiveSettingsSection] = useState<'BROKER_CONFIG' | 'GOVERNANCE' | 'LIVE_LOG'>('BROKER_CONFIG');
+  const [activeSettingsSection, setActiveSettingsSection] = useState<'BROKER_CONFIG' | 'LIVE_LOG'>('BROKER_CONFIG');
 
   return (
     <div id="unified_settings_hub" className="space-y-4">
@@ -211,7 +210,6 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
           </span>
           {[
             { id: 'BROKER_CONFIG', label: 'BROKER & RISK CONFIGURATION', icon: Server },
-            { id: 'GOVERNANCE', label: 'MODEL GOVERNANCE & READINESS GATES', icon: ShieldCheck },
             { id: 'LIVE_LOG', label: 'LIVE RUNTIME LOG', icon: Activity }
           ].map(tab => {
             const Icon = tab.icon;
@@ -255,8 +253,10 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
         />
       )}
 
-      {activeSettingsSection === 'GOVERNANCE' && (
-        <ModelGovernanceDashboard />
+      {activeSettingsSection !== 'BROKER_CONFIG' && activeSettingsSection !== 'LIVE_LOG' && (
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-6 text-sm text-slate-300">
+          Retired research and model-governance workflows are not part of the LIVE production runtime.
+        </div>
       )}
     </div>
   );
