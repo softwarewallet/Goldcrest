@@ -23,7 +23,7 @@ export const MarketHub: React.FC<MarketHubProps> = ({
   onSelectSignal,
   onEnsureCandles,
   initialOptionSymbol = 'NIFTY',
-  environment = 'PAPER'
+  environment = 'LIVE'
 }) => {
   const [activeMarketTab, setActiveMarketTab] = useState<'forex' | 'indian' | 'options' | 'scanner'>('forex');
   const [selectedOptionSymbol, setSelectedOptionSymbol] = useState<string>(initialOptionSymbol);
