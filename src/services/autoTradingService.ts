@@ -289,7 +289,7 @@ class AutoTradingService {
       this.preOpenStatus = 'RUNNING';
       liveRuntimeLog('SYSTEM', 'AUTO_TRADING_PRE_OPEN_ARMED', {
         intervalMs: AUTO_INTERVAL_MS,
-        pairs: AUTO_PAIRS,
+        pairs: getConfiguredAutoForexPairs(),
         marketGate
       });
       void this.runScheduledCycle();
@@ -475,7 +475,7 @@ class AutoTradingService {
 
     this.lastCycleAt = Date.now();
     this.lastActions = [];
-    liveRuntimeLog('INFO', 'AUTO_TRADING_CYCLE_STARTED', { timestamp: this.lastCycleAt, pairs: AUTO_PAIRS });
+    liveRuntimeLog('INFO', 'AUTO_TRADING_CYCLE_STARTED', { timestamp: this.lastCycleAt, pairs: getConfiguredAutoForexPairs() });
 
     try {
       if (killSwitch.isHalted()) {
