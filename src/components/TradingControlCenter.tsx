@@ -191,6 +191,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [lastRefreshedAt, setLastRefreshedAt] = useState<number>(Date.now());
   const [selectedSignalDecision, setSelectedSignalDecision] = useState<any | null>(null);
   const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(null);
+  const [autoTradingBusy, setAutoTradingBusy] = useState(false);
 
   // Filter States
   const [positionBrokerFilter, setPositionBrokerFilter] = useState<string>('ALL');
@@ -759,6 +760,22 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
     }
   }, []);
 
+  const toggleAutoTrading = useCallback(async () => {
+    setAutoTradingBusy(true);
+    try {
+      const shouldStop = autoTradingStatus?.state === 'RUNNING';
+      const res = await fetch(shouldStop ? '/api/auto-trading/stop' : '/api/auto-trading/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json().catch(() => ({}));
+      setAutoTradingStatus(data);
+    } catch (err) {
+      console.warn('Auto trading control failed:', err);
+    } finally {
+      setAutoTradingBusy(false);
+    }
+  }, [autoTradingStatus?.state]);
   // Fetch Options Chain
   const fetchOptionsChain = useCallback(async (symbol: string, expiry?: string, depth: number = 7) => {
     setOptionsLoading(true);
@@ -918,6 +935,15 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <Zap className="w-3.5 h-3.5" />
               <span>AUTO LIVE: {autoTradingStatus?.state || 'UNKNOWN'}</span>
             </div>
+
+            <button
+              onClick={toggleAutoTrading}
+              disabled={autoTradingBusy}
+              className="px-3 py-1 rounded border text-xs font-bold transition disabled:opacity-50 bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800"
+              title="Explicitly start or stop autonomous live trading"
+            >
+              {autoTradingBusy ? 'Working...' : autoTradingStatus?.state === 'RUNNING' ? 'STOP AUTO LIVE' : 'START AUTO LIVE'}
+            </button>
 
             <button
               onClick={fetchAllOperationalData}

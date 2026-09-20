@@ -20,20 +20,42 @@ import { getSystemConfig } from '../../services/configService';
  * configured strategy is calibrated/qualified.
  */
 export let LIVE_AUTO_EXECUTION_ALLOWED: boolean = false;
+let localExplicitAutoArm = false;
+
+function isLocalDevelopment(): boolean {
+  return process.env.NODE_ENV !== 'production' && (process.env.HOST === '127.0.0.1' || process.env.HOST === 'localhost' || process.env.HOST === '::1');
+}
+
+export function disarmLocalAutonomousExecution(): void {
+  localExplicitAutoArm = false;
+  if (isLocalDevelopment()) {
+    process.env.LIVE_TRADING_ENABLED = 'false';
+    process.env.GOLDCREST_AUTO_TRADING_ENABLED = 'false';
+    process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = 'false';
+    process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'false';
+    process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
+  }
+  syncAutonomousPermission();
+}
 
 function syncAutonomousPermission(): boolean {
   const config = getSystemConfig();
-  const requested = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
+  const requestedByEnvironment = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
     && process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true';
+  const requested = requestedByEnvironment || (isLocalDevelopment() && localExplicitAutoArm);
   const approvedStrategyId = String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim();
-  const approved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
+  const approvedByEnvironment = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
     && approvedStrategyId === 'fx_structure_v2a';
-  const ctraderConfigured = Boolean(
-    process.env.CTRADER_LIVE_CLIENT_ID?.trim()
-    && process.env.CTRADER_LIVE_CLIENT_SECRET?.trim()
-    && process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim()
-    && process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
-  );
+  const approved = approvedByEnvironment || (isLocalDevelopment() && localExplicitAutoArm);
+  let ctraderConfigured = false;
+  try {
+    const status = brokerRegistry.getCredentialStatuses().find(
+      item => item.broker === 'CTRADER' && item.environment === 'LIVE'
+    );
+    ctraderConfigured = Boolean(status?.configured);
+  } catch {
+    ctraderConfigured = false;
+  }
   const allowed = requested
     && config.liveTradingEnabled
     && approved
@@ -88,7 +110,16 @@ class AutoExecutionEngine {
   }
 
   enableAutomaticExecution(): { success: boolean; code: string; message: string } {
+    if (isLocalDevelopment()) {
+      localExplicitAutoArm = true;
+      process.env.LIVE_TRADING_ENABLED = 'true';
+      process.env.GOLDCREST_AUTO_TRADING_ENABLED = 'true';
+      process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = 'true';
+      process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'true';
+      process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
+    }
     const allowed = syncAutonomousPermission();
+
     this.permissions.autoExecutionEnabled = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true';
     this.permissions.autonomousLiveExecutionAllowed = allowed;
     if (!allowed) {

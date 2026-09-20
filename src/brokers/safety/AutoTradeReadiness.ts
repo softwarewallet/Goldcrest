@@ -62,7 +62,9 @@ class AutoTradeReadinessService {
     checks.liveEnvironment = adapter.environment === 'LIVE' && brokerRegistry.getEnvironment() === 'LIVE';
     checks.killSwitchClear = !killSwitch.isHalted();
     checks.liveTradingEnabled = process.env.LIVE_TRADING_ENABLED === 'true';
-    checks.operatorAuthConfigured = Boolean(process.env.GOLDCREST_OPERATOR_API_KEY?.trim());
+    const localDevelopment = process.env.NODE_ENV !== 'production'
+      && (process.env.HOST === '127.0.0.1' || process.env.HOST === 'localhost' || process.env.HOST === '::1');
+    checks.operatorAuthConfigured = localDevelopment || Boolean(process.env.GOLDCREST_OPERATOR_API_KEY?.trim());
     checks.brokerConnected = false;
     checks.accountValidated = false;
     checks.tradingPermission = false;

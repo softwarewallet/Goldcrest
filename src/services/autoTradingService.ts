@@ -4,7 +4,7 @@ import { FOREX_PAIRS, getForexPairConfig } from '../markets/forex/instruments';
 import { ForexSignalEngine } from '../markets/forex/signalEngine';
 import { getForexSessionState } from '../markets/common/session';
 import { brokerRegistry } from '../brokers/registry';
-import { autoExecutionEngine, refreshAutonomousExecutionPermission } from '../brokers/safety/AutoExecutionEngine';
+import { autoExecutionEngine, refreshAutonomousExecutionPermission, disarmLocalAutonomousExecution } from '../brokers/safety/AutoExecutionEngine';
 import { autoTradeReadinessService } from '../brokers/safety/AutoTradeReadiness';
 import { getSystemConfig } from './configService';
 import { killSwitch } from '../brokers/safety/KillSwitch';
@@ -154,6 +154,13 @@ class AutoTradingService {
   }
 
   start(): AutoTradingStatus {
+    const activation = autoExecutionEngine.enableAutomaticExecution();
+    if (!activation.success) {
+      this.state = 'BLOCKED';
+      this.lastCycleResult = activation.message;
+      return this.getStatus();
+    }
+
     if (!this.isRequested()) {
       this.state = 'BLOCKED';
       this.lastCycleResult = 'Auto trading is not enabled. Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION must be true.';
@@ -194,6 +201,7 @@ class AutoTradingService {
     }
     this.state = 'STOPPED';
     this.lastCycleResult = reason;
+    disarmLocalAutonomousExecution();
     return this.getStatus();
   }
 
