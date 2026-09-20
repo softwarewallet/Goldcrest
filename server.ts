@@ -31,6 +31,7 @@ import { BrokerError } from './src/brokers/errors';
 import { brokerRouter } from './src/brokers/brokerRoutes';
 import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission } from './src/brokers/safety/AutoExecutionEngine';
 import { autoTradingService } from './src/services/autoTradingService';
+import { getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile } from './src/services/liveRuntimeLog';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
 // the public research/training API is retired while the research program is closed.
@@ -160,6 +161,22 @@ app.post('/api/auto-trading/start', operatorAuthRequired, (_req: Request, res: R
 
 app.post('/api/auto-trading/stop', operatorAuthRequired, (_req: Request, res: Response) => {
   res.json(autoTradingService.stop());
+});
+
+app.get('/api/live-log/status', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.json(getLiveRuntimeLogStatus());
+});
+
+app.post('/api/live-log/start', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.json(startLiveRuntimeLog('SETTINGS'));
+});
+
+app.post('/api/live-log/stop', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.json(stopLiveRuntimeLog('SETTINGS'));
+});
+
+app.get('/api/live-log/file', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.sendFile(getLiveRuntimeLogFile());
 });
 
 

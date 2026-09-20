@@ -1,4 +1,5 @@
 import { AuditLogEntry, BrokerType, TradingEnvironment } from './types';
+import { liveRuntimeLog } from '../services/liveRuntimeLog';
 
 // In-memory audit trail buffer (keeps last 500 actions, sanitized)
 const auditLogs: AuditLogEntry[] = [];
@@ -18,7 +19,13 @@ export function logBrokerAction(entry: Omit<AuditLogEntry, 'id' | 'timestamp'>):
   }
 
   // Print sanitized log without credentials
-  console.log(`[AUDIT-LOG] [${sanitizedEntry.environment}] [${sanitizedEntry.broker}] ${sanitizedEntry.action} -> ${sanitizedEntry.result} (Account: ${sanitizedEntry.account})`);
+  const line = `[${sanitizedEntry.environment}] [${sanitizedEntry.broker}] ${sanitizedEntry.action} -> ${sanitizedEntry.result} (Account: ${sanitizedEntry.account})`;
+  console.log(`[AUDIT-LOG] ${line}`);
+  liveRuntimeLog(
+    sanitizedEntry.result === 'FAILURE' ? 'ERROR' : sanitizedEntry.result === 'BLOCKED' ? 'WARN' : 'TRADE',
+    'BROKER_ACTION',
+    { line, symbol: sanitizedEntry.symbol, quantity: sanitizedEntry.quantity, orderId: sanitizedEntry.orderId, signalId: sanitizedEntry.signalId, strategyId: sanitizedEntry.strategyId, riskValidation: sanitizedEntry.riskValidation }
+  );
 
   return sanitizedEntry;
 }
