@@ -29,7 +29,6 @@ import { getForexSessionState } from '../common/session';
 interface SyncForexDataProvider {
   readonly providerName: string;
   readonly status: DataSourceStatus;
-  readonly isDemo: boolean;
   getCandles(pair: string, timeframe: ForexTimeframe, limit?: number): ForexCandle[];
   getLatestCandle(pair: string, timeframe: ForexTimeframe): ForexCandle;
   getAvailablePairs(): ForexPairConfig[];
