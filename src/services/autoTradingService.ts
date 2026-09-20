@@ -22,6 +22,40 @@ const AUTO_PAIRS = FOREX_PAIRS
   .filter(pair => pair.quoteCurrency === 'USD')
   .map(pair => pair.symbol);
 
+// Pre-open preparation is background work. Keep the operator-facing arm fast,
+// avoid repeating the same broker history fetch every minute, and bound
+// concurrent pair preparation so cTrader is not flooded with sessions.
+const PREOPEN_PREPARATION_MIN_INTERVAL_MS = Math.max(
+  60_000,
+  Number(process.env.GOLDCREST_PREOPEN_MIN_INTERVAL_MS || 120_000)
+);
+const PREOPEN_PAIR_CONCURRENCY = Math.max(
+  1,
+  Math.min(3, Number(process.env.GOLDCREST_PREOPEN_PAIR_CONCURRENCY || 3))
+);
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  const runWorker = async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker())
+  );
+  return results;
+}
+
 class LiveForexSignalProvider implements ForexDataProvider {
   readonly providerName = 'CTRADER_LIVE_PROVIDER';
   readonly status = 'LIVE' as const;
@@ -51,26 +85,9 @@ class LiveForexSignalProvider implements ForexDataProvider {
       this.candles.set(`${pair}:${row.timeframe}`, row.data as ForexCandle[]);
     }
 
-    const quote = await adapter.getQuote(pair);
-    if (quote.status !== 'FRESH' || Date.now() - quote.timestamp >= 10_000) {
-      throw new Error(`Live quote for ${pair} is stale or delayed.`);
-    }
-
-    this.quotes.set(pair, {
-      pair,
-      timestamp: quote.timestamp,
-      bid: quote.bid,
-      ask: quote.ask,
-      spreadPips: quote.spread * (getForexPairConfig(pair).symbol.includes('JPY') ? 100 : 10000),
-      digits: getForexPairConfig(pair).digits,
-      pipSize: getForexPairConfig(pair).pipSize,
-      changePips24h: 0,
-      changePercent24h: 0,
-      high24h: 0,
-      low24h: 0,
-      provider: this.providerName,
-      dataStatus: 'LIVE'
-    });
+    // Pre-open trend preparation only needs historical candles. A live quote
+    // is fetched again at the execution boundary, so opening another broker
+    // WebSocket here only adds latency and can block preparation unnecessarily.
   }
 
   getQuote(pair: string): ForexQuote {
@@ -341,45 +358,61 @@ class AutoTradingService {
         return;
       }
 
-      const trendResults: Array<{
+      const sinceLastPreparation = this.lastPreOpenPreparedAt
+        ? Date.now() - this.lastPreOpenPreparedAt
+        : Number.POSITIVE_INFINITY;
+      if (sinceLastPreparation < PREOPEN_PREPARATION_MIN_INTERVAL_MS && this.preOpenStatus === 'READY') {
+        this.lastCycleResult = `Pre-open preparation is already fresh (${Math.round(sinceLastPreparation / 1000)}s old). Auto Live remains armed.`;
+        liveRuntimeLog('INFO', 'PREOPEN_PREPARATION_SKIPPED_FRESH', {
+          ageMs: sinceLastPreparation,
+          minIntervalMs: PREOPEN_PREPARATION_MIN_INTERVAL_MS
+        });
+        return;
+      }
+
+      const newsPromise = fetchLiveForexNews();
+      const trendResults = (await mapWithConcurrency(
+        AUTO_PAIRS,
+        PREOPEN_PAIR_CONCURRENCY,
+        async pair => {
+          try {
+            await this.provider.refreshPair(pair);
+            const analysis = this.signalEngine.analyzePair(pair);
+            liveRuntimeLog('INFO', 'PREOPEN_TREND_EVALUATED', {
+              pair,
+              trend: analysis.trend.direction,
+              strength: analysis.trend.strength,
+              regime: analysis.regime,
+              alignment: analysis.multiTimeframe.alignment,
+              signalScore: analysis.signal.score
+            });
+            return {
+              pair,
+              trend: analysis.trend.direction,
+              strength: analysis.trend.strength,
+              regime: analysis.regime,
+              alignment: analysis.multiTimeframe.alignment,
+              score: analysis.signal.score
+            };
+          } catch (error: any) {
+            liveRuntimeLog('WARN', 'PREOPEN_TREND_UNAVAILABLE', {
+              pair,
+              error: error?.message || String(error)
+            });
+            return null;
+          }
+        }
+      )).filter((item): item is {
         pair: string;
         trend: string;
         strength: number;
         regime: string;
         alignment: string;
         score: number;
-      }> = [];
-
-      for (const pair of AUTO_PAIRS) {
-        try {
-          await this.provider.refreshPair(pair);
-          const analysis = this.signalEngine.analyzePair(pair);
-          trendResults.push({
-            pair,
-            trend: analysis.trend.direction,
-            strength: analysis.trend.strength,
-            regime: analysis.regime,
-            alignment: analysis.multiTimeframe.alignment,
-            score: analysis.signal.score
-          });
-          liveRuntimeLog('INFO', 'PREOPEN_TREND_EVALUATED', {
-            pair,
-            trend: analysis.trend.direction,
-            strength: analysis.trend.strength,
-            regime: analysis.regime,
-            alignment: analysis.multiTimeframe.alignment,
-            signalScore: analysis.signal.score
-          });
-        } catch (error: any) {
-          liveRuntimeLog('WARN', 'PREOPEN_TREND_UNAVAILABLE', {
-            pair,
-            error: error?.message || String(error)
-          });
-        }
-      }
+      } => item !== null);
 
       this.preOpenTrendPairsEvaluated = trendResults.length;
-      this.preOpenNews = await fetchLiveForexNews();
+      this.preOpenNews = await newsPromise;
       this.preOpenStatus = this.preOpenNews.status === 'LIVE' ? 'READY' : 'UNAVAILABLE';
 
       liveRuntimeLog(
