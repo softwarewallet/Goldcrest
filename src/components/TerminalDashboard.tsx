@@ -139,10 +139,9 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
   };
 
   useEffect(() => { fetchDashboard(); }, [selectedSymbol, timeframe]);
-  useEffect(() => {
-    const id = window.setInterval(fetchDashboard, 15000);
-    return () => window.clearInterval(id);
-  }, [selectedSymbol, timeframe]);
+  // The application shell owns the global refresh cycle. Fetch again only
+  // when the selected instrument or timeframe changes.
+
 
   const indices = useMemo(() => {
     const preferred = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY', 'NIFTYIT', 'MIDCPNIFTY'];
