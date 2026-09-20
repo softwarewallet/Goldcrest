@@ -60,6 +60,13 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   private conversionAssetCache: { expiresAt: number; assets: Awaited<ReturnType<typeof fetchCTraderAssets>> } | null = null;
   private conversionChainCache = new Map<string, { expiresAt: number; chain: Awaited<ReturnType<typeof fetchCTraderConversionSymbols>> }>();
   private static readonly CONVERSION_METADATA_TTL_MS = 5 * 60 * 1000;
+  // Account identity and symbol metadata are stable over short trading windows.
+  // Re-fetching them for every candle/quote request created dozens of extra
+  // authenticated WebSocket sessions during Auto Live preparation.
+  private rawAccountCache: { expiresAt: number; account: CTraderRawAccount } | null = null;
+  private symbolCache: { expiresAt: number; accountKey: string; symbols: Awaited<ReturnType<typeof fetchCTraderSymbols>> } | null = null;
+  private static readonly RAW_ACCOUNT_CACHE_TTL_MS = 60 * 1000;
+  private static readonly SYMBOL_CACHE_TTL_MS = 5 * 60 * 1000;
 
   constructor(config: CTraderConfig) {
     super();
@@ -81,6 +88,8 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       if (previousAccountId !== this.config.accountId) {
         this.conversionAssetCache = null;
         this.conversionChainCache.clear();
+        this.rawAccountCache = null;
+        this.symbolCache = null;
       }
     }
   }
@@ -482,6 +491,15 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     this.syncConfig();
     this.validateCredentials();
     const { clientId, clientSecret, accessToken, accountId } = this.config;
+    const cached = this.rawAccountCache;
+    if (cached && cached.expiresAt > Date.now()) {
+      if (!accountId
+        || String(cached.account.traderLogin) === String(accountId)
+        || String(cached.account.ctidTraderAccountId) === String(accountId)) {
+        return cached.account;
+      }
+    }
+
     const liveAccounts = await fetchLiveCTraderAccounts(
       clientId!,
       clientSecret!,
@@ -491,7 +509,8 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     if (!liveAccounts || liveAccounts.length === 0) {
       throw new BrokerError('ACCOUNT_NOT_FOUND', 'No cTrader accounts found.', 'CTRADER', this.environment);
     }
-    let matched = undefined;
+
+    let matched: CTraderRawAccount | undefined;
     if (accountId) {
       matched = liveAccounts.find(
         a => String(a.traderLogin) === String(accountId) || String(a.ctidTraderAccountId) === String(accountId)
@@ -514,7 +533,28 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         this.environment
       );
     }
+
+    this.rawAccountCache = {
+      account: matched,
+      expiresAt: Date.now() + CTraderBrokerAdapter.RAW_ACCOUNT_CACHE_TTL_MS
+    };
     return matched;
+  }
+
+  private async getCachedCTraderSymbols(raw: CTraderRawAccount): Promise<Awaited<ReturnType<typeof fetchCTraderSymbols>>> {
+    const accountKey = String(raw.ctidTraderAccountId);
+    const cached = this.symbolCache;
+    if (cached && cached.expiresAt > Date.now() && cached.accountKey === accountKey) {
+      return cached.symbols;
+    }
+
+    const symbols = await this.getCachedCTraderSymbols(raw);
+    this.symbolCache = {
+      accountKey,
+      symbols,
+      expiresAt: Date.now() + CTraderBrokerAdapter.SYMBOL_CACHE_TTL_MS
+    };
+    return symbols;
   }
 
   async getPositions(): Promise<NormalizedPosition[]> {
@@ -526,13 +566,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       this.config.accessToken!,
       raw.isLive
     );
-    const symbols = await fetchCTraderSymbols(
-      raw.ctidTraderAccountId,
-      this.config.clientId!,
-      this.config.clientSecret!,
-      this.config.accessToken!,
-      raw.isLive
-    );
+    const symbols = await this.getCachedCTraderSymbols(raw);
     const byId = new Map(symbols.map(s => [s.symbolId, s]));
     return state.positions.map((p: any) => {
       const trade = p.tradeData || {};
@@ -697,13 +731,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   async getHistoricalCandles(symbol: string, timeframe: string, limit: number) {
     try {
       const raw = await this.resolveRawAccount();
-      const instruments = await fetchCTraderSymbols(
-        raw.ctidTraderAccountId,
-        this.config.clientId!,
-        this.config.clientSecret!,
-        this.config.accessToken!,
-        raw.isLive
-      );
+      const instruments = await this.getCachedCTraderSymbols(raw);
       const normalized = symbol.replace('/', '').toUpperCase();
       const match = instruments.find(s => s.symbolName.replace('/', '').toUpperCase() === normalized);
       if (!match) throw new BrokerError('INVALID_SYMBOL', `cTrader symbol ${symbol} was not found in the authenticated account symbol list.`, 'CTRADER', this.environment);
@@ -726,13 +754,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   async getQuote(symbol: string): Promise<NormalizedQuote> {
     try {
       const raw = await this.resolveRawAccount();
-      const symbols = await fetchCTraderSymbols(
-        raw.ctidTraderAccountId,
-        this.config.clientId!,
-        this.config.clientSecret!,
-        this.config.accessToken!,
-        raw.isLive
-      );
+      const symbols = await this.getCachedCTraderSymbols(raw);
       const normalized = symbol.replace('/', '').toUpperCase();
       const match = symbols.find(s => s.symbolName.replace('/', '').toUpperCase() === normalized);
       if (!match) {
