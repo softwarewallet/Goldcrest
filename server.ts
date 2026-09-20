@@ -308,43 +308,83 @@ function extractForexPair(req: Request): string {
 }
 
 async function hydratePersistedTradeLimits(): Promise<void> {
+  // SQLite remains the migration/source-of-record for settings already stored
+  // by older Goldcrest builds. The config service also maintains an atomic
+  // file-backed copy so settings survive a full server/process restart.
   const rows = await executeQuery<any>(
-    'SELECT key, value FROM system_settings WHERE key IN (?, ?)',
+    'SELECT key, value FROM system_settings WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
+      'SELECTED_CTRADER_ACCOUNT_ID',
+      'SELECTED_CTRADER_ACCOUNT_CURRENCY',
+      'SELECTED_CTRADER_ACCOUNT_LABEL',
+      'DEFAULT_RISK_PCT',
+      'MAX_DAILY_LOSS_PCT',
+      'MAX_OPEN_POSITIONS',
+      'MAX_TRADES_PER_DAY',
+      'MAX_CONSECUTIVE_LOSSES',
+      'MAX_SPREAD_BPS',
+      'SIGNAL_COOLDOWN_MS',
+      'EVENT_PROXIMITY_THRESHOLD_MINUTES',
+      'STRIKE_DEPTH',
       'MAX_TRADE_VALUE_FOREX_USD',
       'MAX_TRADE_VALUE_INDIAN_INR',
       'AUTO_LIVE_FOREX_PAIRS',
-      'AUTO_LIVE_INDIAN_UNDERLYINGS'
+      'AUTO_LIVE_INDIAN_UNDERLYINGS',
+      'FINANCIAL_DISCLAIMER'
     ]
   );
-  const persistedLimits: Record<string, number> = {};
-  for (const row of rows) {
-    const value = Number(row.value);
-    if (Number.isFinite(value) && value > 0) {
-      persistedLimits[String(row.key)] = value;
+
+  const values = rows.reduce<Record<string, string>>((acc, row) => {
+    acc[String(row.key)] = String(row.value ?? '');
+    return acc;
+  }, {});
+
+  const persistedUpdates: Record<string, any> = {};
+
+  const numericKeys: Array<[string, string]> = [
+    ['DEFAULT_RISK_PCT', 'defaultRiskPct'],
+    ['MAX_DAILY_LOSS_PCT', 'maxDailyLossPct'],
+    ['MAX_OPEN_POSITIONS', 'maxOpenPositions'],
+    ['MAX_TRADES_PER_DAY', 'maxTradesPerDay'],
+    ['MAX_CONSECUTIVE_LOSSES', 'maxConsecutiveLosses'],
+    ['MAX_SPREAD_BPS', 'maxSpreadBps'],
+    ['SIGNAL_COOLDOWN_MS', 'signalCooldownMs'],
+    ['EVENT_PROXIMITY_THRESHOLD_MINUTES', 'eventProximityThresholdMinutes'],
+    ['STRIKE_DEPTH', 'strikeDepth'],
+    ['MAX_TRADE_VALUE_FOREX_USD', 'maxTradeValueForexUsd'],
+    ['MAX_TRADE_VALUE_INDIAN_INR', 'maxTradeValueIndianInr']
+  ];
+
+  for (const [dbKey, configKey] of numericKeys) {
+    if (values[dbKey] === undefined) continue;
+    const numberValue = Number(values[dbKey]);
+    if (Number.isFinite(numberValue)) persistedUpdates[configKey] = numberValue;
+  }
+
+  const stringKeys: Array<[string, string]> = [
+    ['SELECTED_CTRADER_ACCOUNT_ID', 'selectedCtraderAccountId'],
+    ['SELECTED_CTRADER_ACCOUNT_CURRENCY', 'selectedCtraderAccountCurrency'],
+    ['SELECTED_CTRADER_ACCOUNT_LABEL', 'selectedCtraderAccountLabel'],
+    ['FINANCIAL_DISCLAIMER', 'financialDisclaimer']
+  ];
+
+  for (const [dbKey, configKey] of stringKeys) {
+    if (values[dbKey] !== undefined && values[dbKey].trim() !== '') {
+      persistedUpdates[configKey] = values[dbKey];
     }
   }
 
-  const persistedUpdates: Record<string, any> = {};
-  if (persistedLimits.MAX_TRADE_VALUE_FOREX_USD !== undefined) {
-    persistedUpdates.maxTradeValueForexUsd = persistedLimits.MAX_TRADE_VALUE_FOREX_USD;
+  for (const [dbKey, configKey] of [
+    ['AUTO_LIVE_FOREX_PAIRS', 'autoLiveForexPairs'],
+    ['AUTO_LIVE_INDIAN_UNDERLYINGS', 'autoLiveIndianUnderlyings']
+  ] as Array<[string, string]>) {
+    try {
+      const parsed = JSON.parse(values[dbKey] || 'null');
+      if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
+        persistedUpdates[configKey] = parsed;
+      }
+    } catch {}
   }
-  if (persistedLimits.MAX_TRADE_VALUE_INDIAN_INR !== undefined) {
-    persistedUpdates.maxTradeValueIndianInr = persistedLimits.MAX_TRADE_VALUE_INDIAN_INR;
-  }
-
-  const universeRows = rows.reduce<Record<string, string>>((acc, row) => {
-    acc[String(row.key)] = String(row.value || '');
-    return acc;
-  }, {});
-  try {
-    const forex = JSON.parse(universeRows.AUTO_LIVE_FOREX_PAIRS || 'null');
-    if (Array.isArray(forex)) persistedUpdates.autoLiveForexPairs = forex;
-  } catch {}
-  try {
-    const india = JSON.parse(universeRows.AUTO_LIVE_INDIAN_UNDERLYINGS || 'null');
-    if (Array.isArray(india)) persistedUpdates.autoLiveIndianUnderlyings = india;
-  } catch {}
 
   if (Object.keys(persistedUpdates).length > 0) {
     updateSystemConfig(persistedUpdates);
@@ -433,6 +473,12 @@ app.get('/api/config', async (_req: Request, res: Response) => {
 
 app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
+    // Always hydrate the latest durable values before applying a partial
+    // settings update. This prevents one save operation from accidentally
+    // overwriting unrelated persisted settings with process defaults.
+    await databaseInitPromise;
+    await hydratePersistedTradeLimits();
+
     const requestedForex = req.body?.maxTradeValueForexUsd;
     const requestedIndian = req.body?.maxTradeValueIndianInr;
     const requestedForexPairs = req.body?.autoLiveForexPairs;
@@ -478,13 +524,30 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
 
     const updated = updateSystemConfig(updates);
     const now = Date.now();
+
+    // Write every durable system setting after the merge so a partial save
+    // cannot reset a different setting. configService has already written the
+    // same merged configuration to an atomic JSON file.
     await executeRun(
-      'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)',
+      'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)',
       [
+        'SELECTED_CTRADER_ACCOUNT_ID', String(updated.selectedCtraderAccountId || ''), now,
+        'SELECTED_CTRADER_ACCOUNT_CURRENCY', String(updated.selectedCtraderAccountCurrency || ''), now,
+        'SELECTED_CTRADER_ACCOUNT_LABEL', String(updated.selectedCtraderAccountLabel || ''), now,
+        'DEFAULT_RISK_PCT', String(updated.defaultRiskPct), now,
+        'MAX_DAILY_LOSS_PCT', String(updated.maxDailyLossPct), now,
+        'MAX_OPEN_POSITIONS', String(updated.maxOpenPositions), now,
+        'MAX_TRADES_PER_DAY', String(updated.maxTradesPerDay), now,
+        'MAX_CONSECUTIVE_LOSSES', String(updated.maxConsecutiveLosses), now,
+        'MAX_SPREAD_BPS', String(updated.maxSpreadBps), now,
+        'SIGNAL_COOLDOWN_MS', String(updated.signalCooldownMs), now,
+        'EVENT_PROXIMITY_THRESHOLD_MINUTES', String(updated.eventProximityThresholdMinutes), now,
+        'STRIKE_DEPTH', String(updated.strikeDepth), now,
         'MAX_TRADE_VALUE_FOREX_USD', String(updated.maxTradeValueForexUsd), now,
         'MAX_TRADE_VALUE_INDIAN_INR', String(updated.maxTradeValueIndianInr), now,
         'AUTO_LIVE_FOREX_PAIRS', JSON.stringify(updated.autoLiveForexPairs || []), now,
-        'AUTO_LIVE_INDIAN_UNDERLYINGS', JSON.stringify(updated.autoLiveIndianUnderlyings || []), now
+        'AUTO_LIVE_INDIAN_UNDERLYINGS', JSON.stringify(updated.autoLiveIndianUnderlyings || []), now,
+        'FINANCIAL_DISCLAIMER', String(updated.financialDisclaimer || ''), now
       ]
     );
     res.json({ success: true, config: updated });
