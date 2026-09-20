@@ -139,11 +139,11 @@ class AutoTradingService {
   }
 
   getStatus(): AutoTradingStatus {
-    refreshAutonomousExecutionPermission();
+    const autonomousPermission = refreshAutonomousExecutionPermission();
     return {
       state: this.state,
       enabledByEnvironment: this.isRequested(),
-      autonomousPermission: process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true',
+      autonomousPermission,
       intervalMs: AUTO_INTERVAL_MS,
       pairs: [...AUTO_PAIRS],
       lastCycleAt: this.lastCycleAt,
