@@ -68,15 +68,26 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/brokers/status');
-      if (res.ok) {
-        const data = await res.json();
+      // Load broker status and persisted configuration independently. A transient
+      // broker-status failure must never cause the UI to fall back to hard-coded
+      // trade-limit defaults.
+      const [statusRes, configRes] = await Promise.all([
+        fetch('/api/brokers/status', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/config', { cache: 'no-store' }).catch(() => null)
+      ]);
+
+      if (statusRes?.ok) {
+        const data = await statusRes.json();
         setStatuses(data.credentials || []);
-        const configRes = await fetch('/api/config');
-        if (configRes.ok) {
-          const config = await configRes.json();
-          if (Number.isFinite(Number(config.maxTradeValueForexUsd))) setMaxForexUsd(Number(config.maxTradeValueForexUsd));
-          if (Number.isFinite(Number(config.maxTradeValueIndianInr))) setMaxIndianInr(Number(config.maxTradeValueIndianInr));
+      }
+
+      if (configRes?.ok) {
+        const config = await configRes.json();
+        if (Number.isFinite(Number(config.maxTradeValueForexUsd))) {
+          setMaxForexUsd(Number(config.maxTradeValueForexUsd));
+        }
+        if (Number.isFinite(Number(config.maxTradeValueIndianInr))) {
+          setMaxIndianInr(Number(config.maxTradeValueIndianInr));
         }
       }
     } finally {
