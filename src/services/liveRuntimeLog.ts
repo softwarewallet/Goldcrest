@@ -75,6 +75,18 @@ export function stopLiveRuntimeLog(source = 'SETTINGS'): {
   file: string;
 } {
   const file = ensureLogFile();
+
+  // During development/pre-production testing the audit trail is mandatory.
+  // A UI action must not be able to disable evidence collection.
+  if (process.env.NODE_ENV !== 'production') {
+    writeLine('WARN', 'LIVE_LOG_STOP_REQUEST_IGNORED', {
+      source,
+      reason: 'Audit logging is mandatory until Goldcrest reaches production.'
+    });
+    enabled = true;
+    return { enabled, file };
+  }
+
   if (enabled) writeLine('SYSTEM', 'LIVE_LOG_STOPPED', { source, logDate: getLogDate(), timeZone: LOG_TIMEZONE });
   enabled = false;
   return { enabled, file };
