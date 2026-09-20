@@ -9,6 +9,7 @@ import { autoTradeReadinessService } from '../brokers/safety/AutoTradeReadiness'
 import { getSystemConfig } from './configService';
 import { killSwitch } from '../brokers/safety/KillSwitch';
 import { BrokerAdapter, NormalizedQuote, OrderRequest } from '../brokers/types';
+import { liveRuntimeLog } from './liveRuntimeLog';
 
 const AUTO_INTERVAL_MS = Math.max(
   15_000,
@@ -184,6 +185,7 @@ class AutoTradingService {
 
     this.state = 'RUNNING';
     this.lastCycleResult = 'Auto-trading loop started.';
+    liveRuntimeLog('SYSTEM', 'AUTO_TRADING_STARTED', { intervalMs: AUTO_INTERVAL_MS, pairs: AUTO_PAIRS });
     void this.runCycle();
 
     this.timer = setInterval(() => {
@@ -201,6 +203,7 @@ class AutoTradingService {
     }
     this.state = 'STOPPED';
     this.lastCycleResult = reason;
+    liveRuntimeLog('SYSTEM', 'AUTO_TRADING_STOPPED', { reason });
     disarmLocalAutonomousExecution();
     return this.getStatus();
   }
@@ -211,6 +214,7 @@ class AutoTradingService {
 
     this.lastCycleAt = Date.now();
     this.lastActions = [];
+    liveRuntimeLog('INFO', 'AUTO_TRADING_CYCLE_STARTED', { timestamp: this.lastCycleAt, pairs: AUTO_PAIRS });
 
     try {
       if (killSwitch.isHalted()) {
@@ -228,6 +232,7 @@ class AutoTradingService {
       const session = getForexSessionState();
       if (session.activeSessions.includes('CLOSED (WEEKEND)')) {
         this.lastCycleResult = 'Market closed; no orders evaluated.';
+        liveRuntimeLog('INFO', 'AUTO_TRADING_MARKET_CLOSED', { session: session.activeSessions });
         return;
       }
 
@@ -236,8 +241,10 @@ class AutoTradingService {
       }
 
       this.lastCycleResult = 'Cycle completed.';
+      liveRuntimeLog('INFO', 'AUTO_TRADING_CYCLE_COMPLETED', { actions: this.lastActions });
     } catch (error: any) {
       this.lastCycleResult = error?.message || String(error);
+      liveRuntimeLog('ERROR', 'AUTO_TRADING_CYCLE_ERROR', { error: this.lastCycleResult });
     } finally {
       this.cycleInFlight = false;
     }
@@ -246,15 +253,19 @@ class AutoTradingService {
   private async evaluatePair(pair: string): Promise<void> {
     try {
       await this.provider.refreshPair(pair);
+      liveRuntimeLog('INFO', 'LIVE_DATA_REFRESHED', { pair });
       const signal = await this.signalEngine.generateSignal(pair);
+      liveRuntimeLog('INFO', 'SIGNAL_EVALUATED', { pair, signalId: signal.id, direction: signal.direction, score: signal.score, status: signal.status, strategyId: signal.strategyVersion });
 
       if (!['BUY', 'SELL'].includes(signal.direction) || !signal.tradePlan) {
         this.lastActions.push({ pair, result: 'NO_TRADE', signalId: signal.id, reason: 'Signal engine did not produce an actionable directional setup.' });
+        liveRuntimeLog('INFO', 'NO_TRADE', { pair, signalId: signal.id, reason: 'No actionable directional setup.' });
         return;
       }
 
       if (signal.score < 75) {
         this.lastActions.push({ pair, result: 'FILTERED', signalId: signal.id, reason: `Signal score ${signal.score} is below the actionable threshold of 75.` });
+        liveRuntimeLog('INFO', 'SIGNAL_FILTERED', { pair, signalId: signal.id, score: signal.score, threshold: 75 });
         return;
       }
 
@@ -269,6 +280,7 @@ class AutoTradingService {
       const entryPrice = signal.direction === 'BUY' ? quote.ask : quote.bid;
       if (entryPrice < plan.entryMin || entryPrice > plan.entryMax) {
         this.lastActions.push({ pair, result: 'WAITING_ENTRY', signalId: signal.id, reason: `Live quote ${entryPrice} is outside entry zone ${plan.entryMin} - ${plan.entryMax}.` });
+        liveRuntimeLog('INFO', 'WAITING_ENTRY', { pair, signalId: signal.id, entryPrice, entryMin: plan.entryMin, entryMax: plan.entryMax });
         return;
       }
 
@@ -326,6 +338,8 @@ class AutoTradingService {
         .reduce((sum, position) => sum + Math.abs(Number(position.quantity || 0)) * Number(position.currentPrice || 0), 0)
         + (quantity * entryPrice);
 
+      liveRuntimeLog('INFO', 'ORDER_CANDIDATE', { pair, signalId: signal.id, side: order.side, quantity, entryPrice, stopLoss: order.stopLoss, takeProfit: order.takeProfit, notional: quantity * entryPrice });
+
       const result = await autoExecutionEngine.processSignal(
         {
           signalId: signal.id,
@@ -372,12 +386,14 @@ class AutoTradingService {
         reason: result.reason,
         orderId: result.order?.brokerOrderId || result.order?.id
       });
+      liveRuntimeLog(result.executed ? 'TRADE' : 'WARN', result.executed ? 'AUTO_ORDER_EXECUTION_RESULT' : 'AUTO_ORDER_BLOCKED', { pair, signalId: signal.id, result: result.executed ? 'EXECUTED' : 'BLOCKED', code: result.code, reason: result.reason, brokerOrderId: result.order?.brokerOrderId, brokerStatus: result.order?.status });
     } catch (error: any) {
       this.lastActions.push({
         pair,
         result: 'ERROR',
         reason: error?.message || String(error)
       });
+      liveRuntimeLog('ERROR', 'PAIR_EVALUATION_ERROR', { pair, error: error?.message || String(error) });
     }
   }
 }
