@@ -5,10 +5,7 @@ import {
   ConnectionTestResult,
   BrokerCredentialStatus
 } from './types';
-import { PaperBrokerAdapter } from './adapters/PaperBrokerAdapter';
-import { CTraderDemoAdapter } from './adapters/cTrader/CTraderDemoAdapter';
 import { CTraderLiveAdapter } from './adapters/cTrader/CTraderLiveAdapter';
-import { FivePaisaDemoAdapter } from './adapters/fivepaisa/FivePaisaDemoAdapter';
 import { FivePaisaLiveAdapter } from './adapters/fivepaisa/FivePaisaLiveAdapter';
 import { FivePaisaBrokerAdapter } from './adapters/fivepaisa/FivePaisaBrokerAdapter';
 import { BrokerError } from './errors';
@@ -31,19 +28,9 @@ export class BrokerRegistry {
   }
 
   private initializeAdapters(): void {
-    // Legacy adapters remain registered for compatibility, but LIVE_ONLY routing
-    // uses only the live cTrader and live 5paisa adapters.
-    const paperAdapter = new PaperBrokerAdapter();
-    this.adapters.set('PAPER_PAPER', paperAdapter);
-
-    const ctraderDemo = new CTraderDemoAdapter();
     const ctraderLive = new CTraderLiveAdapter();
-    this.adapters.set('CTRADER_DEMO', ctraderDemo);
-    this.adapters.set('CTRADER_LIVE', ctraderLive);
-
-    const fivePaisaDemo = new FivePaisaDemoAdapter();
     const fivePaisaLive = new FivePaisaLiveAdapter();
-    this.adapters.set('FIVE_PAISA_DEMO', fivePaisaDemo);
+    this.adapters.set('CTRADER_LIVE', ctraderLive);
     this.adapters.set('FIVE_PAISA_LIVE', fivePaisaLive);
   }
 
@@ -75,13 +62,16 @@ export class BrokerRegistry {
     const targetBroker = broker || this.selectedBroker;
     const targetEnv = environment || this.activeEnvironment;
 
-    if (targetBroker === 'PAPER' || targetEnv === 'PAPER') {
-      const adapter = this.adapters.get('PAPER_PAPER');
-      if (!adapter) throw new Error('Paper adapter not found');
-      return adapter;
+    if (targetEnv !== 'LIVE') {
+      throw new BrokerError(
+        'ENVIRONMENT_MISMATCH',
+        `Goldcrest is LIVE_ONLY. Unsupported trading environment: ${targetEnv}`,
+        targetBroker,
+        'LIVE'
+      );
     }
 
-    const key = `${targetBroker}_${targetEnv}`;
+    const key = `${targetBroker}_LIVE`;
     const adapter = this.adapters.get(key);
     if (!adapter) {
       throw new BrokerError(
@@ -137,26 +127,19 @@ export class BrokerRegistry {
       if (adapter) return adapter;
     }
 
-    const active = this.adapters.get(`FIVE_PAISA_${this.activeEnvironment}`) as FivePaisaBrokerAdapter | undefined;
-    if (active && active.hasActiveSession()) return active;
-
     const live = this.adapters.get('FIVE_PAISA_LIVE') as FivePaisaBrokerAdapter | undefined;
-    if (live && live.hasActiveSession()) return live;
-    const demo = this.adapters.get('FIVE_PAISA_DEMO') as FivePaisaDemoAdapter | undefined;
-    if (demo && demo.hasActiveSession()) return demo as unknown as FivePaisaBrokerAdapter;
-
     return live || null;
   }
 
   registerAdapter(broker: BrokerType, environment: TradingEnvironment, adapter: BrokerAdapter): void {
     this.ensureInitialized();
-    const key = `${broker}_${environment}`;
-    this.adapters.set(key, adapter);
+    if (environment !== 'LIVE' || !adapter.isLive) {
+      throw new Error('Goldcrest is LIVE_ONLY. Only live broker adapters may be registered.');
+    }
+    this.adapters.set(`${broker}_LIVE`, adapter);
   }
 
   validateMarketCompatibility(market: string, broker: BrokerType): { compatible: boolean; reason?: string } {
-    if (broker === 'PAPER') return { compatible: true };
-
     if (broker === 'CTRADER') {
       if (market === 'FOREX') return { compatible: true };
       return {
@@ -213,15 +196,6 @@ export class BrokerRegistry {
         status: fpLiveStatus.configured ? 'CONNECTED' : 'DISCONNECTED'
       }
     ];
-  }
-
-  updateDemoCredentials(broker: BrokerType, creds: Record<string, any>): void {
-    this.ensureInitialized();
-    if (broker === 'CTRADER') {
-      (this.adapters.get('CTRADER_DEMO') as CTraderDemoAdapter).updateCredentials(creds);
-    } else if (broker === 'FIVE_PAISA') {
-      (this.adapters.get('FIVE_PAISA_DEMO') as FivePaisaDemoAdapter).updateCredentials(creds);
-    }
   }
 
   updateLiveCredentials(broker: BrokerType, creds: Record<string, any>): void {
