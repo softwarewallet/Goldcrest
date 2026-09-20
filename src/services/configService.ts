@@ -26,9 +26,13 @@ export interface SystemConfig {
   financialDisclaimer: string;
 }
 
-const CONFIG_DIR = path.join(process.cwd(), 'data');
-const CONFIG_FILE = path.join(CONFIG_DIR, 'system-config.json');
-const CONFIG_TMP_FILE = path.join(CONFIG_DIR, 'system-config.json.tmp');
+const CONFIG_DIR = process.env.GOLDCREST_CONFIG_DIR
+  ? path.resolve(process.env.GOLDCREST_CONFIG_DIR)
+  : path.join(process.cwd(), 'data');
+const CONFIG_FILE = process.env.GOLDCREST_CONFIG_FILE
+  ? path.resolve(process.env.GOLDCREST_CONFIG_FILE)
+  : path.join(CONFIG_DIR, 'system-config.json');
+const CONFIG_TMP_FILE = `${CONFIG_FILE}.tmp`;
 
 /**
  * Only operator-editable, non-secret runtime settings are persisted.
