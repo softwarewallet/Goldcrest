@@ -410,7 +410,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       broker: 'FIVE_PAISA',
       environment: this.environment,
       connectionStatus: this.status,
-      server: this.isLive ? '5paisa-Xstream-OpenAPI-Live' : '5paisa-DevOpenAPI-Sandbox',
+      server: '5paisa-Xstream-OpenAPI-Live',
       permissions: ['NSE_EQUITY', 'NSE_FNO', 'BSE_EQUITY', 'BSE_FNO'],
       lastUpdate: Date.now(),
       isLiveAccount: this.isLive
@@ -708,7 +708,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       const bid = Number(item?.BidPrice);
       const ask = Number(item?.AskPrice);
       if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0 || ask < bid) {
-        throw new BrokerError('UNAVAILABLE', `5paisa returned no authoritative bid/ask quote for ${symbol}; synthetic pricing is disabled.`, 'FIVE_PAISA', this.environment);
+        throw new BrokerError('UNAVAILABLE', `5paisa returned no authoritative bid/ask quote for ${symbol}; authoritative live pricing is unavailable.`, 'FIVE_PAISA', this.environment);
       }
 
       return {
