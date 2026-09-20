@@ -83,6 +83,8 @@ export function isLiveRuntimeLogEnabled(): boolean {
 export function getLiveRuntimeLogStatus(): {
   enabled: boolean;
   file: string;
+  logDate: string;
+  timeZone: string;
   exists: boolean;
   sizeBytes: number;
   lastModifiedAt: string | null;
