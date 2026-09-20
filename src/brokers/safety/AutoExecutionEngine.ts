@@ -25,10 +25,9 @@ let localExplicitAutoArm = false;
 
 function isLocalDevelopment(): boolean {
   if (process.env.NODE_ENV === 'production') return false;
-  // Goldcrest defaults to loopback when HOST is not explicitly configured.
-  // Only an explicit non-loopback HOST disables local development controls.
+  const explicitLocalMode = process.env.GOLDCREST_LOCAL_DEVELOPMENT === 'true';
   const host = String(process.env.HOST || '').trim().toLowerCase();
-  return !host || ['127.0.0.1', 'localhost', '::1'].includes(host);
+  return explicitLocalMode || ['127.0.0.1', 'localhost', '::1'].includes(host);
 }
 
 export function disarmLocalAutonomousExecution(): void {
@@ -159,7 +158,7 @@ class AutoExecutionEngine {
       if (killSwitch.isHalted()) blockers.push('KILL_SWITCH');
 
       const message = blockers.length
-        ? `Autonomous live execution is blocked by: ${blockers.join(', ')}.`
+        ? `Autonomous execution is not enabled or the production strategy has not been explicitly approved. Blockers: ${blockers.join(', ')}.`
         : 'Autonomous live execution is not currently permitted by the server safety gate.';
 
       liveRuntimeLog('WARN', 'AUTO_TRADING_ARM_BLOCKED', {
