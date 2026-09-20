@@ -208,7 +208,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     const interval = setInterval(() => {
       fetchRealPositions(true);
       fetchRealSignals(true);
-    }, 4000);
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [fetchRealPositions, fetchRealSignals]);
