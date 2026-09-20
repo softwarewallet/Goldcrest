@@ -10,19 +10,17 @@ import { getDatabase, getDatabaseStats, executeQuery, executeRun, persistDatabas
 import { getForexSessionState, getIndianSessionState } from './src/markets/common/session';
 import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments';
 import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
-import { ForexDemoProvider as LegacyForexProvider, IndianMarketDemoProvider, OptionsChainDemoProvider, EconomicCalendarDemoProvider } from './src/services/providers';
 import { ScannerService } from './src/services/scannerService';
 import { getSystemConfig, updateSystemConfig } from './src/services/configService';
 import { calculateStrategyPayoff } from './src/markets/india_options/strategySkeleton';
 
 // Phase 2A Forex Engines
-import { ForexDemoProvider } from './src/markets/forex/provider';
+import { LiveForexProvider } from './src/markets/forex/provider';
 import { ForexSignalEngine } from './src/markets/forex/signalEngine';
 import { calculateIndicators } from './src/markets/forex/indicators';
 import { analyzeMarketStructure } from './src/markets/forex/marketStructure';
 import { calculateSupportResistance } from './src/markets/forex/supportResistance';
 import { analyzeMultiTimeframe } from './src/markets/forex/multiTimeframe';
-import { paperSignalTracker } from './src/markets/forex/paperTracker';
 import { explainForexAnalysis } from './src/services/geminiExplainer';
 import { ForexTimeframe } from './src/markets/forex/types';
 
@@ -197,14 +195,8 @@ app.get('/api/live-log/file', operatorAuthRequired, (req: Request, res: Response
 });
 
 
-
-const forexProviderV2 = new ForexDemoProvider();
-const forexSignalEngine = new ForexSignalEngine(undefined, forexProviderV2);
-
-const forexProvider = new LegacyForexProvider();
-const indiaProvider = new IndianMarketDemoProvider();
-const optionsProvider = new OptionsChainDemoProvider();
-const economicProvider = new EconomicCalendarDemoProvider();
+\nconst liveForexProvider = new LiveForexProvider();
+const forexSignalEngine = new ForexSignalEngine(undefined, liveForexProvider);
 const scannerService = new ScannerService();
 
 function extractForexPair(req: Request): string {
@@ -282,7 +274,6 @@ app.get('/api/status', (req: Request, res: Response) => {
     dataStatus: config.dataStatus,
     modelStatus: config.modelStatus,
     tradingMode: config.tradingMode,
-    isDemo: false,
     timestamp: Date.now()
   });
 });
@@ -384,7 +375,7 @@ app.get('/api/forex/pairs', async (req: Request, res: Response) => {
 });
 
 app.get('/api/forex/market-status', (req: Request, res: Response) => {
-  const status = forexProviderV2.getMarketStatus();
+  const status = liveForexProvider.getMarketStatus();
   res.json(status);
 });
 
@@ -409,6 +400,7 @@ async function getLiveAnchoredCandles(pair: string, tf: ForexTimeframe = '15M', 
 app.get(['/api/forex/analysis/:pair', '/api/forex/analysis/:part1/:part2'], async (req: Request, res: Response) => {
   try {
     const pair = extractForexPair(req);
+    await liveForexProvider.refreshPair(pair);
     const analysis = forexSignalEngine.analyzePair(pair);
     try {
       const adapter = brokerRegistry.getAdapter('CTRADER');
@@ -493,6 +485,7 @@ app.get(['/api/forex/multi-timeframe/:pair', '/api/forex/multi-timeframe/:part1/
 app.get(['/api/forex/signal/:pair', '/api/forex/signal/:part1/:part2'], async (req: Request, res: Response) => {
   try {
     const pair = extractForexPair(req);
+    await liveForexProvider.refreshPair(pair);
     const signal = await forexSignalEngine.generateSignal(pair);
     res.json(signal);
   } catch (err: any) {
@@ -503,6 +496,7 @@ app.get(['/api/forex/signal/:pair', '/api/forex/signal/:part1/:part2'], async (r
 app.post('/api/forex/signal/generate', async (req: Request, res: Response) => {
   try {
     const pair = extractForexPair(req);
+    await liveForexProvider.refreshPair(pair);
     const signal = await forexSignalEngine.generateSignal(pair);
     res.json(signal);
   } catch (err: any) {
@@ -525,138 +519,7 @@ app.post('/api/forex/explain', async (req: Request, res: Response) => {
   }
 });
 
-// Paper Signal Tracking Endpoints (Section 25)
-app.get('/api/forex/paper/tracked', async (req: Request, res: Response) => {
-  try {
-    const tracked = await paperSignalTracker.getAllTracked();
-    res.json(tracked);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
-app.post('/api/forex/paper/track', async (req: Request, res: Response) => {
-  try {
-    let signal = req.body?.signal;
-    if (!signal && req.body?.pair) {
-      signal = await forexSignalEngine.generateSignal(req.body.pair);
-    }
-    if (!signal) {
-      return res.status(400).json({ error: 'Valid signal payload or pair required' });
-    }
-    const currentPrice = req.body.currentPrice ?? signal.tradePlan?.entryPreferred ?? 1.0;
-    const tracked = await paperSignalTracker.trackSignal(signal, currentPrice);
-    res.json(tracked);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/forex/paper/update', async (req: Request, res: Response) => {
-  try {
-    const { trackId, currentPrice } = req.body;
-    if (!trackId || currentPrice === undefined) {
-      return res.status(400).json({ error: 'trackId and currentPrice are required' });
-    }
-    const updated = await paperSignalTracker.updatePrice(trackId, currentPrice);
-    res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Paper Portfolio & Trade API Endpoints
-app.get('/api/paper/portfolio', async (req: Request, res: Response) => {
-  try {
-    const rows = await executeQuery<any>('SELECT balance, equity, margin_used, free_margin, currency FROM portfolio WHERE id = ?', ['paper_account']);
-    if (rows.length) {
-      res.json({
-        balance: Number(rows[0].balance),
-        equity: Number(rows[0].equity),
-        marginUsed: Number(rows[0].margin_used),
-        freeMargin: Number(rows[0].free_margin),
-        currency: String(rows[0].currency),
-        updatedAt: Date.now()
-      });
-    } else {
-      res.json({
-        balance: 100000,
-        equity: 100000,
-        marginUsed: 0,
-        freeMargin: 100000,
-        currency: 'USD',
-        updatedAt: Date.now()
-      });
-    }
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/paper/portfolio/reset', async (req: Request, res: Response) => {
-  try {
-    await executeRun(
-      'UPDATE portfolio SET balance = 100000, equity = 100000, margin_used = 0, free_margin = 100000, currency = ? WHERE id = ?',
-      ['USD', 'paper_account']
-    );
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/paper/trades', async (req: Request, res: Response) => {
-  try {
-    const rows = await executeQuery<any>(
-      'SELECT id, instrument AS symbol, instrument, direction, entry_price, exit_price, size AS quantity, stop_loss, take_profit, pnl, status, entry_time, exit_time FROM trades ORDER BY entry_time DESC'
-    );
-    const trades = rows.map(r => ({
-      id: r.id,
-      symbol: r.symbol,
-      market: 'LOCAL',
-      type: r.direction,
-      entryPrice: Number(r.entry_price),
-      exitPrice: r.exit_price == null ? undefined : Number(r.exit_price),
-      quantity: Number(r.quantity),
-      stopLoss: Number(r.stop_loss || 0),
-      takeProfit: Number(r.take_profit || 0),
-      pnl: Number(r.pnl || 0),
-      status: r.status === 'OPEN' ? 'OPEN' : 'CLOSED',
-      openedAt: Number(r.entry_time),
-      closedAt: r.exit_time == null ? undefined : Number(r.exit_time)
-    }));
-    res.json(trades);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/paper/trades', async (req: Request, res: Response) => {
-  try {
-    const trade = req.body;
-    const id = `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    await executeRun(
-      'INSERT INTO trades (id, signal_id, instrument, direction, entry_price, size, status, entry_time, pnl) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 0)',
-      [id, trade.symbol, trade.type, trade.entryPrice, trade.quantity, 'OPEN', Date.now()]
-    );
-    res.json({ id });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/paper/trades/close', async (req: Request, res: Response) => {
-  try {
-    const { tradeId, exitPrice, pnl } = req.body;
-    await executeRun(
-      'UPDATE trades SET status = ?, exit_price = ?, pnl = ?, exit_time = ? WHERE id = ?',
-      ['CLOSED', exitPrice, pnl, Date.now(), tradeId]
-    );
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 app.get('/api/notes', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
@@ -823,7 +686,7 @@ app.get('/api/options/chain/:symbol', async (req: Request, res: Response) => {
 
 app.get('/api/options/scanner/:symbol', async (req: Request, res: Response) => {
   const symbol = req.params.symbol ? req.params.symbol.toUpperCase() : 'NIFTY';
-  const result = scannerService.getOptionsScanner(symbol);
+  const result = await scannerService.getOptionsScanner(symbol);
   res.json(result);
 });
 
@@ -837,14 +700,35 @@ app.post('/api/options/payoff', (req: Request, res: Response) => {
 });
 
 // 7. Unified Signals
-app.get(['/api/signals', '/api/signals/all'], (req: Request, res: Response) => {
-  const signals = scannerService.getAllSignals();
-  res.json(signals);
+app.get(['/api/signals', '/api/signals/all'], async (req: Request, res: Response) => {
+  try {
+    const signals = await scannerService.getAllSignals();
+    res.json(signals);
+  } catch (err: any) {
+    res.status(503).json({
+      error: err?.code || 'LIVE_SIGNAL_DATA_UNAVAILABLE',
+      message: err?.message || 'Live signal data is unavailable from the configured brokers.'
+    });
+  }
 });
 
 // 8. Macroeconomic Events
-app.get('/api/economic-events', (req: Request, res: Response) => {
-  res.json(economicProvider.getEvents());
+app.get('/api/economic-events', async (_req: Request, res: Response) => {
+  const news = await fetchLiveForexNews();
+  const now = Date.now();
+  const events = news.articles.map((article, index) => ({
+    id: `LIVE_NEWS_${now}_${index}`,
+    title: article.title,
+    currency: 'USD',
+    impact: news.highImpactCount > 0 && index < news.highImpactCount ? 'HIGH' : 'MEDIUM',
+    timestamp: article.publishedAt ? Date.parse(article.publishedAt) || now : now,
+    minutesUntil: article.publishedAt ? Math.round((Date.parse(article.publishedAt) - now) / 60000) : 0,
+    blocksNewEntry: false,
+    source: article.source,
+    url: article.url,
+    dataStatus: news.status
+  }));
+  res.json(events);
 });
 
 // 9. Database Stats & Diagnostics

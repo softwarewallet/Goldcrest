@@ -209,27 +209,6 @@ function initSchema(db: Database) {
       model_version TEXT NOT NULL
     );
 
-    -- 13b. Paper Signal Tracking
-    CREATE TABLE IF NOT EXISTS paper_tracking (
-      id TEXT PRIMARY KEY,
-      signal_id TEXT NOT NULL,
-      pair TEXT NOT NULL,
-      direction TEXT NOT NULL,
-      entry_price REAL NOT NULL,
-      current_price REAL NOT NULL,
-      stop_loss REAL NOT NULL,
-      tp1 REAL NOT NULL,
-      tp2 REAL NOT NULL,
-      tp3 REAL NOT NULL,
-      unrealized_pnl_pips REAL NOT NULL,
-      unrealized_pnl_usd REAL NOT NULL,
-      status TEXT NOT NULL,
-      exit_condition TEXT,
-      entry_timestamp INTEGER NOT NULL,
-      last_updated_timestamp INTEGER NOT NULL,
-      exit_timestamp INTEGER
-    );
-
     -- 14. Signal Events
     CREATE TABLE IF NOT EXISTS signal_events (
       id TEXT PRIMARY KEY,
@@ -277,16 +256,6 @@ function initSchema(db: Database) {
       quantity REAL NOT NULL,
       status TEXT NOT NULL,
       timestamp INTEGER NOT NULL
-    );
-
-    -- 18. Portfolio
-    CREATE TABLE IF NOT EXISTS portfolio (
-      id TEXT PRIMARY KEY,
-      balance REAL NOT NULL,
-      equity REAL NOT NULL,
-      margin_used REAL NOT NULL,
-      free_margin REAL NOT NULL,
-      currency TEXT NOT NULL
     );
 
     -- 19. Economic Events
@@ -529,7 +498,7 @@ function seedInitialData(db: Database) {
     ('MAX_TRADE_VALUE_INDIAN_INR', '20000', ${now});
   `);
 
-  // Enforce LIVE_ONLY persistence and remove obsolete PAPER/DEMO defaults.
+  // Enforce LIVE_ONLY persistence.
   db.run(`UPDATE system_settings SET value = 'LIVE_ONLY', updated_at = ${now} WHERE key = 'TRADING_MODE';
     UPDATE system_settings SET value = 'UNAVAILABLE', updated_at = ${now} WHERE key = 'DATA_STATUS';
     UPDATE risk_configs SET trading_mode = 'LIVE_ONLY';
@@ -539,9 +508,6 @@ function seedInitialData(db: Database) {
   db.run(`INSERT OR IGNORE INTO risk_configs (id, max_risk_per_trade_pct, max_daily_loss_pct, max_open_positions, trading_mode) VALUES 
     ('default_risk', 1.0, 3.0, 5, 'LIVE_ONLY');
   `);
-
-  // No synthetic/PAPER portfolio is seeded. LIVE broker APIs are the only source of live account state.
-  db.run(`DELETE FROM portfolio WHERE id = 'paper_account';`);
 
   // Economic events
   db.run(`INSERT OR IGNORE INTO economic_events (id, title, currency, impact, timestamp, blocks_entry) VALUES 
@@ -594,7 +560,7 @@ export async function getDatabaseStats() {
   const db = await getDatabase();
   const tables = [
     'markets', 'currency_pairs', 'underlyings', 'contracts', 'candles',
-    'signals', 'trades', 'positions', 'orders', 'portfolio', 'economic_events',
+    'signals', 'trades', 'positions', 'orders', 'economic_events',
     'risk_configs', 'system_settings', 'broker_accounts',
     'broker_reconciliation_snapshots', 'execution_intents', 'execution_fill_observations', 'execution_fill_events',
     'trade_traces', 'trade_trace_nodes', 'trade_notes', 'ml_storage_records'

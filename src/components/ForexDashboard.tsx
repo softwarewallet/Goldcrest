@@ -5,8 +5,7 @@ import {
   CompletePairAnalysisResponse,
   ForexCandle,
   ForexSignal,
-  ForexTimeframe,
-  PaperSignalTrackingRecord
+  ForexTimeframe
 } from '../markets/forex/types';
 import {
   ArrowUpRight,
@@ -14,7 +13,6 @@ import {
   Minus,
   AlertTriangle,
   ChevronRight,
-  CheckCircle2,
   XCircle,
   Sparkles,
   ShieldAlert,
@@ -24,10 +22,7 @@ import {
   Compass,
   RefreshCw,
   TrendingUp,
-  BookmarkPlus,
-  Cloud
 } from 'lucide-react';
-import { addCloudTrackedSignal } from '../services/firebaseTradingService';
 
 interface ForexDashboardProps {
   pairs: any[];
@@ -42,7 +37,7 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
   onSelectSignal,
   candlesMap,
   onEnsureCandles,
-  environment = 'PAPER'
+  environment = 'LIVE'
 }) => {
   const [selectedPairSymbol, setSelectedPairSymbol] = useState<string>('EUR/USD');
   const [selectedTimeframe, setSelectedTimeframe] = useState<ForexTimeframe>('15M');
@@ -59,11 +54,6 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
   const [explanation, setExplanation] = useState<any | null>(null);
   const [loadingExplanation, setLoadingExplanation] = useState<boolean>(false);
   const [explanationOpen, setExplanationOpen] = useState<boolean>(false);
-
-  // Paper Tracking State
-  const [trackedRecords, setTrackedRecords] = useState<PaperSignalTrackingRecord[]>([]);
-  const [trackingLoading, setTrackingLoading] = useState<boolean>(false);
-  const [trackNotification, setTrackNotification] = useState<string | null>(null);
 
   // Fetch Full Quantitative Analysis for selected pair
   const fetchAnalysis = useCallback(async (pair: string, tf: ForexTimeframe = '15M', silent = false) => {
@@ -96,19 +86,6 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
     }
   }, []);
 
-  // Fetch Paper Tracking records
-  const fetchTracked = useCallback(async () => {
-    try {
-      const res = await fetch('/api/forex/paper/tracked');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) setTrackedRecords(data);
-      }
-    } catch (err: any) {
-      console.warn('Paper tracking load notice:', err?.message || err);
-    }
-  }, []);
-
   // Request Gemini Explanation
   const handleRequestExplanation = async () => {
     if (!analysis) return;
@@ -131,61 +108,14 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
     }
   };
 
-  // Track as Paper Signal
-  const handleTrackSignal = async () => {
-    if (!analysis || !analysis.tradePlan) return;
-    setTrackingLoading(true);
-    try {
-      const res = await fetch('/api/forex/paper/track', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pair: analysis.pair,
-          currentPrice: analysis.currentPrice
-        })
-      });
-      if (res.ok) {
-        const record = await res.json();
-        // Also persist directly into goldcrestfinman-trading Firestore
-        try {
-          await addCloudTrackedSignal({
-            pair: analysis.pair,
-            direction: analysis.signal?.direction || 'BUY',
-            entryPrice: record.entryPrice || analysis.currentPrice,
-            currentPrice: analysis.currentPrice,
-            stopLoss: analysis.tradePlan.stopLoss,
-            tp1: analysis.tradePlan.takeProfit1,
-            tp2: analysis.tradePlan.takeProfit2,
-            tp3: analysis.tradePlan.takeProfit3,
-            unrealizedPnlPips: record.unrealizedPnlPips || 0,
-            status: 'ACTIVE'
-          });
-        } catch (cloudErr) {
-          console.warn('Firestore cloud sync warning:', cloudErr);
-        }
-
-        setTrackNotification(`Tracked ${analysis.pair} in Paper Analysis & goldcrestfinman-trading Firestore!`);
-        setTimeout(() => setTrackNotification(null), 4000);
-        fetchTracked();
-      }
-    } catch (err: any) {
-      console.warn('Paper tracking submission notice:', err?.message || err);
-    } finally {
-      setTrackingLoading(false);
-    }
-  };
 
   useEffect(() => {
     fetchAnalysis(selectedPairSymbol, selectedTimeframe);
-    fetchTracked();
-    
     const timer = setInterval(() => {
       fetchAnalysis(selectedPairSymbol, selectedTimeframe, true);
-      fetchTracked();
     }, 15000);
-    
     return () => clearInterval(timer);
-  }, [selectedPairSymbol, selectedTimeframe, environment, fetchAnalysis, fetchTracked]);
+  }, [selectedPairSymbol, selectedTimeframe, fetchAnalysis]);
 
   const selectedPair = useMemo(() => {
     return pairs.find(p => p.symbol === selectedPairSymbol) || pairs[0];
@@ -237,14 +167,12 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
 
   return (
     <div id="forex_dashboard_view" className="space-y-4">
-      {/* Top Banner & Stats with DEMO Badge */}
+      {/* Top Banner & Live Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3" style={{ marginBottom: '5px' }}>
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-slate-400 text-xs font-mono uppercase">Forex Instruments</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
-              DEMO DATA
-            </span>
+
           </div>
           <div className="text-xl font-bold text-white mt-1">{pairs.length} Pairs</div>
           <div className="text-[11px] text-slate-500 mt-1">Instituational Majors & Crosses</div>
@@ -263,27 +191,16 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
           <div className="text-base font-bold text-purple-300 mt-1">
             {analysis?.regime || 'EVALUATING'}
           </div>
-          <div className="text-[11px] text-slate-500 mt-1">Structure & Volatility Model</div>
+          <div className="text-[11px] text-slate-500 mt-1">Structure & Volatility Model — LIVE</div>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
           <div className="text-slate-400 text-xs font-mono uppercase">Signal Protocol</div>
           <div className="text-base font-bold text-emerald-400 mt-1">Phase 2A Engine</div>
-          <div className="text-[11px] text-slate-500 mt-1">Strict Rules • Paper Tracking</div>
+          <div className="text-[11px] text-slate-500 mt-1">Strict Rules • Live Execution Gates</div>
         </div>
       </div>
 
-      {trackNotification && (
-        <div className="bg-emerald-950/80 border border-emerald-600/80 text-emerald-200 px-4 py-2 rounded text-xs font-mono flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>{trackNotification}</span>
-          </div>
-          <span className="text-[10px] uppercase tracking-wider text-emerald-400 bg-emerald-900 px-2 py-0.5 rounded font-bold">
-            PAPER ANALYSIS
-          </span>
-        </div>
-      )}
 
       {/* Main Content Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -350,9 +267,9 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
                       </td>
                       <td className="py-2.5 px-3 text-right">
                         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-                          environment === 'LIVE' ? 'bg-rose-950 text-rose-300 border-rose-800' : environment === 'DEMO' ? 'bg-amber-950 text-amber-300 border-amber-800' : 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                          'bg-rose-950 text-rose-300 border-rose-800'
                         }`}>
-                          {environment}
+                          LIVE
                         </span>
                       </td>
                     </tr>
@@ -371,9 +288,9 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
               <div className="flex items-center space-x-2">
                 <h2 className="text-lg font-bold text-white">{selectedPairSymbol}</h2>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                  environment === 'LIVE' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : environment === 'DEMO' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  'bg-rose-500/20 text-rose-300 border-rose-500/30'
                 }`}>
-                  {environment} FEED
+                  LIVE FEED
                 </span>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">
                   {analysis?.session || 'Forex Session'}
@@ -557,16 +474,6 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
                   </span>
                 </div>
 
-                {analysis.tradePlan && (
-                  <button
-                    onClick={handleTrackSignal}
-                    disabled={trackingLoading}
-                    className="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded font-mono text-xs flex items-center space-x-1.5 transition"
-                  >
-                    <BookmarkPlus className="w-3.5 h-3.5" />
-                    <span>Track as Paper Analysis</span>
-                  </button>
-                )}
               </div>
 
               {/* Numerical Execution Levels */}
@@ -736,74 +643,6 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
               ) : null}
             </div>
           )}
-
-          {/* Paper Signal Tracking Panel */}
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-3.5 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <div className="flex items-center space-x-2">
-                <ShieldAlert className="w-4 h-4 text-cyan-400" />
-                <span className="font-bold text-white">Paper Signal Tracking History</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-950 text-cyan-300 border border-slate-800">
-                  PAPER ANALYSIS • NO BROKER EXECUTION
-                </span>
-              </div>
-              <button
-                onClick={fetchTracked}
-                className="text-slate-400 hover:text-white"
-                title="Refresh Paper Signals"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {trackedRecords.length === 0 ? (
-              <div className="text-slate-500 font-sans py-2 text-center">
-                No active paper signals tracked yet. Click &quot;Track as Paper Analysis&quot; on any actionable Forex setup.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-[11px]">
-                  <thead className="text-slate-500 uppercase border-b border-slate-800">
-                    <tr>
-                      <th className="py-1.5">Pair</th>
-                      <th className="py-1.5">Side</th>
-                      <th className="py-1.5">Entry</th>
-                      <th className="py-1.5">Current</th>
-                      <th className="py-1.5">SL / TP1</th>
-                      <th className="py-1.5 text-right">Unrealized P&amp;L</th>
-                      <th className="py-1.5 text-right">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {trackedRecords.map(r => (
-                      <tr key={r.id}>
-                        <td className="py-2 text-white font-bold">{r.pair}</td>
-                        <td className="py-2">
-                          <span className={r.direction === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}>
-                            {r.direction}
-                          </span>
-                        </td>
-                        <td className="py-2 text-slate-300">{r.entryPrice}</td>
-                        <td className="py-2 text-slate-200">{r.currentPrice}</td>
-                        <td className="py-2 text-slate-400">{r.stopLoss} / {r.tp1}</td>
-                        <td className="py-2 text-right">
-                          <span className={r.unrealizedPnlPips >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                            {r.unrealizedPnlPips >= 0 ? `+${r.unrealizedPnlPips}` : r.unrealizedPnlPips} pips
-                          </span>
-                        </td>
-                        <td className="py-2 text-right">
-                          <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px]">
-                            {r.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );

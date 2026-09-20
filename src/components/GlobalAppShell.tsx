@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  BarChart3, Bell, BookOpen, CandlestickChart, ChevronDown, ChevronRight,
+  Bell, BookOpen, CandlestickChart, ChevronDown, ChevronRight,
   Grid2X2, ListChecks, Settings, Sparkles, TrendingUp, Activity
 } from 'lucide-react';
 import { IndianSessionState } from '../markets/common/types';
@@ -19,7 +19,6 @@ const nav = [
   { id: 'trading', label: 'Positions', icon: CandlestickChart },
   { id: 'control_center', label: 'Orders', icon: ListChecks },
   { id: 'signals', label: 'Strategy', icon: Sparkles },
-  { id: 'research', label: 'Backtest', icon: BarChart3 },
   { id: 'pnl', label: 'Reports', icon: BookOpen },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'settings', label: 'Settings', icon: Settings }

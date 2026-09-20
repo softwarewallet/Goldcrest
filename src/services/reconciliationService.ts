@@ -1,22 +1,28 @@
 import { executeQuery, executeRun } from '../database/db';
 import { brokerRegistry } from '../brokers/registry';
-import { firestoreTradeTraceService, TradeTraceData } from './firestoreTradeTraceService';
 
 export type ReconciliationStatus =
   | 'MATCHED' | 'RECONCILIATION_MISMATCH' | 'ORPHAN_INTERNAL'
-  | 'ORPHAN_BROKER' | 'ORPHAN_CLOUD' | 'CLOUDDIVERGENCE';
+  | 'ORPHAN_BROKER' | 'ORPHAN_SQLITE' | 'SQLITE_DIVERGENCE';
 
 export interface InternalStateItem { id:string; symbol:string; quantity:number; direction:string; status:string; price:number; }
 export interface BrokerStateItem { id:string; symbol:string; quantity:number; direction:string; status:string; price:number; }
-export interface FirestoreStateItem { tradeTraceId:string; signalId:string; status:string; environment:string; brokerOrderId?:string; }
+export interface SqliteTradeTraceData {
+  tradeTraceId: string;
+  signalId?: string;
+  status?: string;
+  environment?: string;
+  brokerOrderId?: string;
+  [key: string]: any;
+}
 export interface ReconciliationDiscrepancy {
   entityId:string; type:ReconciliationStatus; field?:string;
-  internalValue?:any; brokerValue?:any; cloudValue?:any; message:string;
+  internalValue?:any; brokerValue?:any; sqliteValue?:any; message:string;
 }
 export interface ReconciliationRecord {
   reconciliationId:string; tradeTraceId:string; status:ReconciliationStatus;
   internalState:Record<string,any>; brokerState:Record<string,any>;
-  firestoreState:Record<string,any>; discrepancies:ReconciliationDiscrepancy[];
+  sqliteState:Record<string,any>; discrepancies:ReconciliationDiscrepancy[];
   timestamp:number; userId?:string;
 }
 
@@ -27,23 +33,31 @@ export class ReconciliationService {
     tradeTraceId:string,
     internalItem?:InternalStateItem|null,
     brokerItem?:BrokerStateItem|null,
-    firestoreTrace?:TradeTraceData|null
+    sqliteTrace?:SqliteTradeTraceData|null
   ):Promise<ReconciliationRecord> {
     const reconciliationId = `RECON-${tradeTraceId}-${Date.now()}`;
     const discrepancies:ReconciliationDiscrepancy[] = [];
-    const localTrace = firestoreTrace || await firestoreTradeTraceService.getTradeTrace(tradeTraceId);
-    const cloudTrace = localTrace;
+    let localTrace = sqliteTrace || null;
+    if (!localTrace) {
+      const rows = await executeQuery<any>(
+        'SELECT payload_json FROM trade_traces WHERE trade_trace_id = ? LIMIT 1',
+        [tradeTraceId]
+      );
+      if (rows.length) {
+        try { localTrace = JSON.parse(rows[0].payload_json || '{}'); } catch { localTrace = null; }
+      }
+    }
 
-    const count = (internalItem?1:0)+(brokerItem?1:0)+(cloudTrace?1:0);
+    const count = (internalItem?1:0)+(brokerItem?1:0)+(localTrace?1:0);
     if (count === 1) {
       if (internalItem) discrepancies.push({entityId:tradeTraceId,type:'ORPHAN_INTERNAL',message:'Record exists in internal execution state but is missing from broker and SQLite trace persistence.'});
       else if (brokerItem) discrepancies.push({entityId:tradeTraceId,type:'ORPHAN_BROKER',message:'Record exists on broker but is missing from internal state and SQLite trace persistence.'});
-      else discrepancies.push({entityId:tradeTraceId,type:'ORPHAN_CLOUD',message:'Trace record exists in SQLite but is missing from internal state and broker.'});
-    } else if (count === 2 && internalItem && brokerItem && !cloudTrace) {
-      discrepancies.push({entityId:tradeTraceId,type:'CLOUDDIVERGENCE',message:'Record exists in internal state and broker but is missing from SQLite trace persistence.'});
-    } else if (count === 2 && internalItem && cloudTrace && !brokerItem) {
+      else discrepancies.push({entityId:tradeTraceId,type:'ORPHAN_SQLITE',message:'Trace record exists in SQLite but is missing from internal state and broker.'});
+    } else if (count === 2 && internalItem && brokerItem && !localTrace) {
+      discrepancies.push({entityId:tradeTraceId,type:'SQLITE_DIVERGENCE',message:'Record exists in internal state and broker but is missing from SQLite trace persistence.'});
+    } else if (count === 2 && internalItem && localTrace && !brokerItem) {
       discrepancies.push({entityId:tradeTraceId,type:'RECONCILIATION_MISMATCH',message:'Record exists in internal state and SQLite but is missing from broker.'});
-    } else if (count === 2 && brokerItem && cloudTrace && !internalItem) {
+    } else if (count === 2 && brokerItem && localTrace && !internalItem) {
       discrepancies.push({entityId:tradeTraceId,type:'RECONCILIATION_MISMATCH',message:'Record exists on broker and SQLite but is missing from internal state.'});
     }
 
@@ -61,11 +75,11 @@ export class ReconciliationService {
       }
     }
 
-    if (cloudTrace?.brokerOrderId && brokerItem?.id && cloudTrace.brokerOrderId !== brokerItem.id) {
+    if (localTrace?.brokerOrderId && brokerItem?.id && localTrace.brokerOrderId !== brokerItem.id) {
       discrepancies.push({
-        entityId:tradeTraceId,type:'CLOUDDIVERGENCE',field:'brokerOrderId',
-        brokerValue:brokerItem.id,cloudValue:cloudTrace.brokerOrderId,
-        message:`Broker Order ID in SQLite trace (${cloudTrace.brokerOrderId}) differs from Broker item (${brokerItem.id})`
+        entityId:tradeTraceId,type:'SQLITE_DIVERGENCE',field:'brokerOrderId',
+        brokerValue:brokerItem.id,sqliteValue:localTrace.brokerOrderId,
+        message:`Broker Order ID in SQLite trace (${localTrace.brokerOrderId}) differs from Broker item (${brokerItem.id})`
       });
     }
 
@@ -74,7 +88,7 @@ export class ReconciliationService {
       status:discrepancies.length ? discrepancies[0].type : 'MATCHED',
       internalState:internalItem?{...internalItem}:{},
       brokerState:brokerItem?{...brokerItem}:{},
-      firestoreState:cloudTrace?{...cloudTrace}:{},
+      sqliteState:localTrace?{...localTrace}:{},
       discrepancies,timestamp:Date.now(),userId:'local_user'
     };
     this.localRecords.set(reconciliationId,record);
@@ -88,47 +102,24 @@ export class ReconciliationService {
   public async captureBrokerSnapshot(broker: 'CTRADER' | 'FIVE_PAISA'): Promise<any> {
     const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
     if (!adapter) return null;
-
     try {
       const [account, positions, orders] = await Promise.all([
-        adapter.getAccount(),
-        adapter.getPositions(),
-        adapter.getOpenOrders()
+        adapter.getAccount(), adapter.getPositions(), adapter.getOpenOrders()
       ]);
       const timestamp = Date.now();
-      const snapshot = {
-        id: `BROKER-SNAPSHOT-${broker}-${timestamp}`,
-        broker,
-        environment: 'LIVE',
-        timestamp,
-        account,
-        positions,
-        orders,
-        status: 'CAPTURED'
-      };
+      const snapshot = { id:`BROKER-SNAPSHOT-${broker}-${timestamp}`, broker, environment:'LIVE', timestamp, account, positions, orders, status:'CAPTURED' };
       await executeRun(
         'INSERT INTO broker_reconciliation_snapshots (id, broker, environment, timestamp, account_json, positions_json, orders_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [snapshot.id, broker, 'LIVE', timestamp, JSON.stringify(account), JSON.stringify(positions), JSON.stringify(orders), snapshot.status]
       );
       return snapshot;
-    } catch (err: any) {
+    } catch (err:any) {
       const isUnconfigured = err?.code === 'AUTHENTICATION_FAILED' ||
-                             err?.message?.includes('access token is unavailable') ||
-                             err?.message?.includes('credentials missing') ||
-                             err?.message?.includes('ACCOUNT_NOT_FOUND');
+        err?.message?.includes('access token is unavailable') ||
+        err?.message?.includes('credentials missing') ||
+        err?.message?.includes('ACCOUNT_NOT_FOUND');
       const timestamp = Date.now();
-      const status = isUnconfigured ? 'UNCONFIGURED' : 'FAILED';
-      const snapshot = {
-        id: `BROKER-SNAPSHOT-${broker}-${timestamp}`,
-        broker,
-        environment: 'LIVE',
-        timestamp,
-        account: null,
-        positions: [],
-        orders: [],
-        status,
-        reason: err?.message || String(err)
-      };
+      const snapshot = { id:`BROKER-SNAPSHOT-${broker}-${timestamp}`, broker, environment:'LIVE', timestamp, account:null, positions:[], orders:[], status:isUnconfigured?'UNCONFIGURED':'FAILED', reason:err?.message||String(err) };
       await executeRun(
         'INSERT INTO broker_reconciliation_snapshots (id, broker, environment, timestamp, account_json, positions_json, orders_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [snapshot.id, broker, 'LIVE', timestamp, JSON.stringify(null), JSON.stringify([]), JSON.stringify([]), snapshot.status]
@@ -143,56 +134,32 @@ export class ReconciliationService {
       [limit]
     );
     return rows.map(r => ({
-      id: r.id,
-      broker: r.broker,
-      environment: r.environment,
-      timestamp: Number(r.timestamp),
-      account: JSON.parse(r.account_json),
-      positions: JSON.parse(r.positions_json),
-      orders: JSON.parse(r.orders_json),
-      status: r.status
+      id:r.id, broker:r.broker, environment:r.environment, timestamp:Number(r.timestamp),
+      account:JSON.parse(r.account_json), positions:JSON.parse(r.positions_json), orders:JSON.parse(r.orders_json), status:r.status
     }));
   }
 
-
-  /**
-   * Returns a conservative broker-balance-based loss measure for the current
-   * local calendar day. Balance excludes unrealized P/L, so a decline from the
-   * first authoritative snapshot of the day is treated as realized/net loss.
-   * If no baseline exists yet, the current balance is treated as the baseline.
-   */
-  public async getDailyLoss(broker: 'CTRADER' | 'FIVE_PAISA', currentBalance: number): Promise<number> {
+  public async getDailyLoss(broker:'CTRADER'|'FIVE_PAISA', currentBalance:number):Promise<number> {
     const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
     if (typeof adapter.getDailyRealizedPnL === 'function') {
       try {
         const realizedPnL = await adapter.getDailyRealizedPnL();
-        if (Number.isFinite(realizedPnL)) {
-          return Math.max(0, -Number(realizedPnL));
-        }
-      } catch (err: any) {
-        console.warn('[Goldcrest] authoritative daily PnL unavailable; using reconciliation baseline:', err?.message || err);
+        if (Number.isFinite(realizedPnL)) return Math.max(0, -Number(realizedPnL));
+      } catch (err:any) {
+        console.warn('[Goldcrest] authoritative daily PnL unavailable; using reconciliation baseline:', err?.message||err);
       }
     }
-
-    // Conservative fallback for brokers that do not expose a reliable daily
-    // realized-P/L field: compare against the first authoritative balance
-    // snapshot captured during the local calendar day.
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
     const rows = await executeQuery<any>(
       'SELECT account_json FROM broker_reconciliation_snapshots WHERE broker = ? AND environment = ? AND timestamp >= ? AND status = ? ORDER BY timestamp ASC LIMIT 1',
-      [broker, 'LIVE', startOfDay.getTime(), 'CAPTURED']
+      [broker,'LIVE',startOfDay.getTime(),'CAPTURED']
     );
     if (!rows.length) return 0;
-
     try {
-      const account = JSON.parse(rows[0].account_json || '{}');
-      const baselineBalance = Number(account?.balance);
+      const baselineBalance = Number(JSON.parse(rows[0].account_json || '{}')?.balance);
       if (!Number.isFinite(baselineBalance) || !Number.isFinite(currentBalance)) return 0;
-      return Math.max(0, baselineBalance - currentBalance);
-    } catch {
-      return 0;
-    }
+      return Math.max(0, baselineBalance-currentBalance);
+    } catch { return 0; }
   }
 
   public getLocalRecord(id:string){ return this.localRecords.get(id); }

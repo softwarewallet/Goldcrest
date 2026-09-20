@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
   isEmergencyHalted,
   onToggleKillSwitch
 }) => {
-  const isLive = environment === 'LIVE';
+  const isLive = true;
   const activeArea =
     activeTab === 'forex_terminal' ? 'FOREX' :
     activeTab === 'market' ? 'NSE' :

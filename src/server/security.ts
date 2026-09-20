@@ -64,24 +64,10 @@ export function apiRateLimit(req: Request, res: Response, next: NextFunction): v
   next();
 }
 
-export function blockLegacyTradingModes(req: Request, res: Response, next: NextFunction): void {
-  const legacy = req.path === '/api/demo'
-    || req.path.startsWith('/api/demo/')
-    || req.path === '/api/paper'
-    || req.path.startsWith('/api/paper/')
-    || req.path === '/api/forex/paper'
-    || req.path.startsWith('/api/forex/paper/');
-
-  if (legacy) {
-    res.status(410).json({
-      error: 'LEGACY_TRADING_MODE_DISABLED',
-      message: 'PAPER/DEMO workflows are retired. Goldcrest is LIVE_ONLY.'
-    });
-    return;
-  }
+export export function blockLegacyTradingModes(req: Request, _res: Response, next: NextFunction): void {
+  // Unsupported historical routes naturally return 404/405. Runtime trading is LIVE_ONLY.
   next();
 }
-
 
 const OPERATOR_SESSION_COOKIE = 'goldcrest_operator_session';
 const OPERATOR_SESSION_TTL_MS = 8 * 60 * 60 * 1000;

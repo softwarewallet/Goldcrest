@@ -3,7 +3,7 @@
 // ============================================================================
 
 export type MarketType = 'FOREX' | 'INDIAN_EQUITY' | 'INDIAN_OPTIONS';
-export type EnvironmentType = 'PAPER' | 'DEMO' | 'LIVE';
+export type EnvironmentType = 'LIVE';
 
 export const CURRENT_FEATURE_VERSION = 'FEAT-v3.1.0';
 export const CURRENT_ANALYSIS_VERSION = 'ANALYSIS-v2.5.0';

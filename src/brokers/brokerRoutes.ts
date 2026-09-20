@@ -508,7 +508,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       signalAgeMs: 15000,
       currentQuote: quote,
       isMarketOpen,
-      dailyRealizedLoss: adapter.broker === 'PAPER' ? 0 : await reconciliationService.getDailyLoss(adapter.broker as 'CTRADER' | 'FIVE_PAISA', Number(account.balance || 0)),
+      dailyRealizedLoss: await reconciliationService.getDailyLoss(adapter.broker as 'CTRADER' | 'FIVE_PAISA', Number(account.balance || 0)),
       dailyLossLimit,
       totalAccountExposure: totalExposureIncludingOrder,
       maxAllowedExposure,

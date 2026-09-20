@@ -164,7 +164,7 @@ export const ForexTerminalDashboard: React.FC<ForexTerminalDashboardProps> = ({
 
         <div className="rounded-xl border border-slate-800 bg-[#080d12] overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between"><span className="font-semibold text-sm">Market Depth</span><Info className="w-4 h-4 text-slate-600"/></div>
-          <div className="h-full flex flex-col items-center justify-center p-5 text-center"><BarChart3 className="w-8 h-8 text-slate-700 mb-3"/><div className="text-xs text-slate-400">Native cTrader Level-2 depth is not exposed by the current broker adapter.</div><div className="text-[10px] text-slate-600 mt-2">No synthetic order book is displayed.</div></div>
+          <div className="h-full flex flex-col items-center justify-center p-5 text-center"><BarChart3 className="w-8 h-8 text-slate-700 mb-3"/><div className="text-xs text-slate-400">Native cTrader Level-2 depth is not exposed by the current broker adapter.</div><div className="text-[10px] text-slate-600 mt-2">Level-2 depth unavailable from the current broker adapter.</div></div>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-[#080d12] overflow-hidden">
