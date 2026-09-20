@@ -23,7 +23,6 @@ import {
   Compass,
   RefreshCw,
   TrendingUp,
-  Cloud
 } from 'lucide-react';
 
 interface ForexDashboardProps {
@@ -666,8 +665,6 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
               ) : null}
             </div>
           )}
-
-/div>
       </div>
     </div>
   );
