@@ -1,4 +1,8 @@
-import React from 'react';
+import React, { Component } from 'react';
+
+interface RuntimeErrorBoundaryProps {
+  children?: React.ReactNode;
+}
 
 interface RuntimeErrorBoundaryState {
   hasError: boolean;
@@ -6,10 +10,7 @@ interface RuntimeErrorBoundaryState {
   stack: string;
 }
 
-export class RuntimeErrorBoundary extends React.Component<
-  React.PropsWithChildren<Record<string, never>>,
-  RuntimeErrorBoundaryState
-> {
+export class RuntimeErrorBoundary extends Component<RuntimeErrorBoundaryProps, RuntimeErrorBoundaryState> {
   state: RuntimeErrorBoundaryState = {
     hasError: false,
     message: '',
