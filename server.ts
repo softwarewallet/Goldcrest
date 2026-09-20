@@ -967,6 +967,10 @@ async function startServer() {
   // Goldcrest is a private/local application; loopback is the safe default.
   // Remote binding must be explicitly configured via HOST.
   const host = process.env.HOST || '127.0.0.1';
+  const localDevelopmentHost = ['127.0.0.1', 'localhost', '::1'].includes(String(host).trim().toLowerCase());
+  if (process.env.NODE_ENV !== 'production') {
+    process.env.GOLDCREST_LOCAL_DEVELOPMENT = localDevelopmentHost ? 'true' : 'false';
+  }
   const server = app.listen(PORT, host, () => {
     console.log(`Goldcrest server listening on http://${host}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
     void captureLiveBrokerReconciliation();
