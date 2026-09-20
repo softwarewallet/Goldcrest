@@ -56,7 +56,7 @@ export const IndianMarketDashboard: React.FC<IndianMarketDashboardProps> = ({
             <div>
               <div className="font-bold text-amber-200 text-sm">5paisa API Connection Required</div>
               <div className="text-amber-300/80 mt-0.5">
-                Indian Market indices stream live via 5paisa API. Synthetic dummy data is disabled. Configure and authenticate 5paisa in Broker Settings to stream real-time NSE/BSE feeds.
+                Indian Market indices stream live via 5paisa API. Placeholder data is disabled. Configure and authenticate 5paisa in Broker Settings to stream real-time NSE/BSE feeds.
               </div>
             </div>
           </div>
