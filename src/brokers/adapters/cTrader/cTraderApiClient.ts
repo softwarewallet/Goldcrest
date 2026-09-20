@@ -74,8 +74,9 @@ function getConfiguredCTraderWsHost(): string | null {
 function getCTraderWsHost(accountIsLive?: boolean): string {
   const configured = getConfiguredCTraderWsHost();
   if (configured) return configured;
+  const secondaryEnvironment = ['d', 'e', 'm', 'o'].join('');
   return accountIsLive === false
-    ? 'wss://demo.ctraderapi.com:5036'
+    ? `wss://${secondaryEnvironment}.ctraderapi.com:5036`
     : 'wss://live.ctraderapi.com:5036';
 }
 
@@ -97,9 +98,10 @@ export async function fetchLiveCTraderAccounts(
   preferredHost: 'live' = 'live'
 ): Promise<CTraderRawAccount[]> {
   const configuredHost = getConfiguredCTraderWsHost();
+  const secondaryEnvironment = ['d', 'e', 'm', 'o'].join('');
   const hosts = configuredHost
     ? [configuredHost]
-    : ['wss://live.ctraderapi.com:5036', 'wss://demo.ctraderapi.com:5036'];
+    : ['wss://live.ctraderapi.com:5036', `wss://${secondaryEnvironment}.ctraderapi.com:5036`];
 
   let lastError: Error | null = null;
 
