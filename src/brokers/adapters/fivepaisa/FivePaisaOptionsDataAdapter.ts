@@ -25,7 +25,7 @@ export class FivePaisaOptionsDataAdapter {
     strikeDepth: number = 7
   ): Promise<OptionChainSummary> {
     try {
-      const adapter = brokerRegistry.getFivePaisaAdapter(this.environment);
+      const adapter = brokerRegistry.getFivePaisaAdapter();
       if (adapter && typeof adapter.fetchOptionChainFrom5Paisa === 'function') {
         const liveChain = await adapter.fetchOptionChainFrom5Paisa(symbol, selectedExpiryDate, strikeDepth);
         if (liveChain) {
