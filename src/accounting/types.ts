@@ -106,7 +106,7 @@ export interface FinancialRecord {
 export interface AccountBalanceWithContext {
   currency: CurrencyCode;
   balance: number;
-  executionMode: 'PAPER' | 'cTrader DEMO' | '5paisa SANDBOX';
+  executionMode: 'LIVE';
   accountType: 'FOREX_MARGIN' | 'INDIAN_EQUITY_DERIVATIVES';
   isSimulatedCapital: boolean;
   notice: string;
