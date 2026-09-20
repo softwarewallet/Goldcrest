@@ -97,9 +97,13 @@ app.use(express.json({ limit: '512kb' }));
 // Operator authentication is a same-origin, HttpOnly session derived from the
 // server-side operator API key. The secret is never embedded in the client bundle.
 app.get('/api/operator/session', (req: Request, res: Response) => {
+  const localDevelopment = process.env.NODE_ENV !== 'production'
+    && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(String(req.socket.remoteAddress || req.ip || '').toLowerCase());
+
   res.json({
     configured: operatorAuthConfigured(),
-    authenticated: isOperatorSessionValid(req),
+    authenticated: localDevelopment || isOperatorSessionValid(req),
+    bypassedForLocalDevelopment: localDevelopment,
     ttlHours: 8
   });
 });
