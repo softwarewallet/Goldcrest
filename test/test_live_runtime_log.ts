@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import path from 'node:path';
 import {
   startLiveRuntimeLog,
   stopLiveRuntimeLog,
   getLiveRuntimeLogStatus,
-  liveRuntimeLog
+  liveRuntimeLog,
+  listLiveRuntimeLogFiles
 } from '../src/services/liveRuntimeLog';
 
 const status = startLiveRuntimeLog('TEST');
 assert.equal(status.enabled, true);
 assert.ok(fs.existsSync(status.file));
+assert.match(status.file, /goldcrest-live-\d{4}-\d{2}-\d{2}\.log$/);
+assert.doesNotMatch(status.file, /goldcrest-live\\.log$/);
 
 liveRuntimeLog('INFO', 'TEST_EVENT', {
   account: '****1234',
@@ -31,6 +33,9 @@ const sizeBefore = fs.statSync(stopped.file).size;
 liveRuntimeLog('INFO', 'SHOULD_NOT_BE_WRITTEN');
 const sizeAfter = fs.statSync(stopped.file).size;
 assert.equal(sizeAfter, sizeBefore);
+
+const archive = listLiveRuntimeLogFiles();
+assert.ok(archive.some(item => item.file === status.file));
 
 const finalStatus = getLiveRuntimeLogStatus();
 assert.equal(finalStatus.enabled, false);

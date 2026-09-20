@@ -31,7 +31,7 @@ import { BrokerError } from './src/brokers/errors';
 import { brokerRouter } from './src/brokers/brokerRoutes';
 import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission } from './src/brokers/safety/AutoExecutionEngine';
 import { autoTradingService } from './src/services/autoTradingService';
-import { getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile } from './src/services/liveRuntimeLog';
+import { getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile, listLiveRuntimeLogFiles } from './src/services/liveRuntimeLog';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
 // the public research/training API is retired while the research program is closed.
@@ -175,8 +175,17 @@ app.post('/api/live-log/stop', operatorAuthRequired, (_req: Request, res: Respon
   res.json(stopLiveRuntimeLog('SETTINGS'));
 });
 
-app.get('/api/live-log/file', operatorAuthRequired, (_req: Request, res: Response) => {
-  res.sendFile(getLiveRuntimeLogFile());
+app.get('/api/live-log/files', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.json({ files: listLiveRuntimeLogFiles() });
+});
+
+app.get('/api/live-log/file', operatorAuthRequired, (req: Request, res: Response) => {
+  const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: 'INVALID_LOG_DATE', message: 'Log date must use YYYY-MM-DD format.' });
+  }
+  const file = getLiveRuntimeLogFile(date);
+  res.sendFile(file);
 });
 
 
