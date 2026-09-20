@@ -306,23 +306,43 @@ function extractForexPair(req: Request): string {
   return decodeURIComponent(p || 'EUR/USD').toUpperCase().trim();
 }
 
-// Initialize database on boot
-getDatabase().then(async () => {
-  const rows = await executeQuery<any>('SELECT key, value FROM system_settings WHERE key IN (?, ?)', ['MAX_TRADE_VALUE_FOREX_USD', 'MAX_TRADE_VALUE_INDIAN_INR']);
+async function hydratePersistedTradeLimits(): Promise<void> {
+  const rows = await executeQuery<any>(
+    'SELECT key, value FROM system_settings WHERE key IN (?, ?)',
+    ['MAX_TRADE_VALUE_FOREX_USD', 'MAX_TRADE_VALUE_INDIAN_INR']
+  );
   const persistedLimits: Record<string, number> = {};
   for (const row of rows) {
     const value = Number(row.value);
-    if (Number.isFinite(value) && value > 0) persistedLimits[String(row.key)] = value;
+    if (Number.isFinite(value) && value > 0) {
+      persistedLimits[String(row.key)] = value;
+    }
   }
-  const persistedUpdates: any = {};
-  if (persistedLimits.MAX_TRADE_VALUE_FOREX_USD !== undefined) persistedUpdates.maxTradeValueForexUsd = persistedLimits.MAX_TRADE_VALUE_FOREX_USD;
-  if (persistedLimits.MAX_TRADE_VALUE_INDIAN_INR !== undefined) persistedUpdates.maxTradeValueIndianInr = persistedLimits.MAX_TRADE_VALUE_INDIAN_INR;
-  if (Object.keys(persistedUpdates).length) updateSystemConfig(persistedUpdates);
-  databaseReady = true;
-  console.log('SQLite database initialized successfully');
-}).catch(err => {
-  console.error('Failed to initialize SQLite database:', err);
-});
+
+  const persistedUpdates: Record<string, number> = {};
+  if (persistedLimits.MAX_TRADE_VALUE_FOREX_USD !== undefined) {
+    persistedUpdates.maxTradeValueForexUsd = persistedLimits.MAX_TRADE_VALUE_FOREX_USD;
+  }
+  if (persistedLimits.MAX_TRADE_VALUE_INDIAN_INR !== undefined) {
+    persistedUpdates.maxTradeValueIndianInr = persistedLimits.MAX_TRADE_VALUE_INDIAN_INR;
+  }
+  if (Object.keys(persistedUpdates).length > 0) {
+    updateSystemConfig(persistedUpdates);
+  }
+}
+
+// Initialize database on boot and keep one shared initialization promise so
+// API reads cannot race the initial SQLite hydration.
+const databaseInitPromise = getDatabase()
+  .then(async () => {
+    await hydratePersistedTradeLimits();
+    databaseReady = true;
+    console.log('SQLite database initialized successfully');
+  })
+  .catch(err => {
+    console.error('Failed to initialize SQLite database:', err);
+    throw err;
+  });
 
 // Lazy Gemini AI initialization
 let genAiClient: GoogleGenAI | null = null;
@@ -375,8 +395,20 @@ app.get('/api/status', (req: Request, res: Response) => {
 });
 
 // 2. Configuration API
-app.get('/api/config', (req: Request, res: Response) => {
-  res.json(getSystemConfig());
+app.get('/api/config', async (_req: Request, res: Response) => {
+  try {
+    // Always wait for SQLite initialization and rehydrate persisted limits
+    // before returning configuration. This prevents navigation/reload from
+    // displaying the in-memory defaults while the DB contains operator values.
+    await databaseInitPromise;
+    await hydratePersistedTradeLimits();
+    res.json(getSystemConfig());
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'CONFIG_UNAVAILABLE',
+      message: err?.message || 'Persisted configuration is unavailable.'
+    });
+  }
 });
 
 app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response) => {
