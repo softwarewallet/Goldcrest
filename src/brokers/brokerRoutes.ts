@@ -16,6 +16,14 @@ export const brokerRouter = Router();
 
 const LIVE_BROKERS: BrokerType[] = ['CTRADER', 'FIVE_PAISA'];
 
+// Several terminal surfaces request broker status at nearly the same time.
+// Share one short-lived broker snapshot and one in-flight request so normal
+// UI polling does not repeatedly hit broker account APIs and trigger provider
+// throttling. Order execution paths still request the broker directly.
+const BROKER_STATUS_CACHE_TTL_MS = 20_000;
+let brokerStatusCache: { payload: any; expiresAt: number } | null = null;
+let brokerStatusInFlight: Promise<any> | null = null;
+
 function resolveMarketBroker(market: string): BrokerType {
   if (market === 'FOREX') return 'CTRADER';
   if (market === 'INDIAN_EQUITY' || market === 'INDIAN_FUTURES' || market === 'INDIAN_OPTIONS') {
@@ -101,8 +109,17 @@ async function calculateAccountCurrencyExposure(
 
 // Both LIVE broker connections remain active simultaneously. No user broker
 // selection is required; market compatibility determines the adapter.
-brokerRouter.get('/status', async (_req: Request, res: Response) => {
-  try {
+async function getBrokerStatusSnapshot(): Promise<any> {
+  const now = Date.now();
+  if (brokerStatusCache && now < brokerStatusCache.expiresAt) {
+    return brokerStatusCache.payload;
+  }
+
+  if (brokerStatusInFlight) {
+    return brokerStatusInFlight;
+  }
+
+  brokerStatusInFlight = (async () => {
     const environment = brokerRegistry.getEnvironment();
     const controls = autoExecutionEngine.getControls();
     const haltDetails = killSwitch.getHaltDetails();
@@ -125,7 +142,7 @@ brokerRouter.get('/status', async (_req: Request, res: Response) => {
       }
     }));
 
-    res.json({
+    const payload = {
       environment,
       routingMode: 'AUTOMATIC_BY_MARKET',
       selectedBroker: null,
@@ -140,7 +157,24 @@ brokerRouter.get('/status', async (_req: Request, res: Response) => {
       controls,
       emergencyStop: haltDetails,
       timestamp: Date.now()
-    });
+    };
+
+    brokerStatusCache = {
+      payload,
+      expiresAt: Date.now() + BROKER_STATUS_CACHE_TTL_MS
+    };
+    return payload;
+  })().finally(() => {
+    brokerStatusInFlight = null;
+  });
+
+  return brokerStatusInFlight;
+}
+
+brokerRouter.get('/status', async (_req: Request, res: Response) => {
+  try {
+    const payload = await getBrokerStatusSnapshot();
+    res.json(payload);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
