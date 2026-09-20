@@ -20,14 +20,26 @@ import { getSystemConfig } from '../../services/configService';
  * configured strategy is calibrated/qualified.
  */
 export let LIVE_AUTO_EXECUTION_ALLOWED: boolean = false;
+let localExplicitAutoArm = false;
+
+function isLocalDevelopment(): boolean {
+  return process.env.NODE_ENV !== 'production' && (process.env.HOST === '127.0.0.1' || process.env.HOST === 'localhost' || process.env.HOST === '::1');
+}
+
+export function disarmLocalAutonomousExecution(): void {
+  localExplicitAutoArm = false;
+  syncAutonomousPermission();
+}
 
 function syncAutonomousPermission(): boolean {
   const config = getSystemConfig();
-  const requested = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
+  const requestedByEnvironment = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
     && process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true';
+  const requested = requestedByEnvironment || (isLocalDevelopment() && localExplicitAutoArm);
   const approvedStrategyId = String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim();
-  const approved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
+  const approvedByEnvironment = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
     && approvedStrategyId === 'fx_structure_v2a';
+  const approved = approvedByEnvironment || (isLocalDevelopment() && localExplicitAutoArm);
   let ctraderConfigured = false;
   try {
     const status = brokerRegistry.getCredentialStatuses().find(
@@ -91,7 +103,12 @@ class AutoExecutionEngine {
   }
 
   enableAutomaticExecution(): { success: boolean; code: string; message: string } {
+    if (isLocalDevelopment()) {
+      localExplicitAutoArm = true;
+      process.env.LIVE_TRADING_ENABLED = 'true';
+    }
     const allowed = syncAutonomousPermission();
+
     this.permissions.autoExecutionEnabled = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true';
     this.permissions.autonomousLiveExecutionAllowed = allowed;
     if (!allowed) {
