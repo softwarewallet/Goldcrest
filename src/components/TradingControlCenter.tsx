@@ -72,8 +72,8 @@ interface AccountCardData {
   availableMargin: number;
   usedMargin: number;
   marginLevelPct?: number;
-  unrealizedPnl: number;
-  realizedPnl: number;
+  unrealizedPnl?: number;
+  realizedPnl?: number;
   lastSyncTimestamp: number;
   freshness: FreshnessStatus;
   source: string;
@@ -238,7 +238,10 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         positionsRes,
         ordersRes,
         reconRes,
-        autoTradingRes
+        autoTradingRes,
+        signalsRes,
+        forexPairsRes,
+        indianUnderlyingsRes
       ] = await Promise.all([
         fetch('/api/brokers/status', { cache: 'no-store' }).catch(() => null),
         fetch('/api/brokers/accounts', { cache: 'no-store' }).catch(() => null),
@@ -246,12 +249,76 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         fetch('/api/brokers/positions', { cache: 'no-store' }).catch(() => null),
         fetch('/api/brokers/orders', { cache: 'no-store' }).catch(() => null),
         fetch('/api/governance/reconciliation/positions', { cache: 'no-store' }).catch(() => null),
-        fetch('/api/auto-trading/status', { cache: 'no-store' }).catch(() => null)
+        fetch('/api/auto-trading/status', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/signals', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/forex/pairs', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/india/underlyings', { cache: 'no-store' }).catch(() => null)
       ]);
 
       if (autoTradingRes?.ok) {
         setAutoTradingStatus(await autoTradingRes.json());
       }
+
+      if (signalsRes?.ok) {
+        const liveSignals = await signalsRes.json();
+        setSignals(Array.isArray(liveSignals) ? liveSignals : []);
+      } else {
+        setSignals([]);
+      }
+
+      const liveQuotes: MarketQuoteItem[] = [];
+      if (forexPairsRes?.ok) {
+        const pairs = await forexPairsRes.json();
+        if (Array.isArray(pairs)) {
+          for (const row of pairs) {
+            const bid = Number(row?.bid);
+            const ask = Number(row?.ask);
+            if (Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 && ask > 0) {
+              liveQuotes.push({
+                market: 'FOREX',
+                symbol: String(row.symbol),
+                bid,
+                ask,
+                ltp: (bid + ask) / 2,
+                spreadPipsOrPts: Number(row.spreadPips || row.spreadPipsOrPts || 0),
+                change24h: Number(row.changePips24h || 0),
+                changePercent24h: Number(row.changePercent24h || 0),
+                timestamp: Date.now(),
+                timeframe: 'LIVE',
+                status: 'OPEN',
+                freshness: row.dataStatus === 'FRESH' ? 'LIVE' : 'RECENT'
+              });
+            }
+          }
+        }
+      }
+
+      if (indianUnderlyingsRes?.ok) {
+        const underlyings = await indianUnderlyingsRes.json();
+        if (Array.isArray(underlyings)) {
+          for (const row of underlyings) {
+            const ltp = Number(row?.spot ?? row?.currentPrice ?? row?.ltp);
+            if (Number.isFinite(ltp) && ltp > 0) {
+              liveQuotes.push({
+                market: 'INDIA_EQUITY',
+                symbol: String(row.symbol),
+                bid: Number(row.bid ?? ltp),
+                ask: Number(row.ask ?? ltp),
+                ltp,
+                spreadPipsOrPts: Number(row.spread ?? 0),
+                change24h: Number(row.change ?? row.changePoints ?? 0),
+                changePercent24h: Number(row.changePercent ?? row.changePct ?? 0),
+                volume24h: Number(row.volume ?? 0) || undefined,
+                timestamp: Number(row.timestamp || Date.now()),
+                timeframe: 'LIVE',
+                status: 'OPEN',
+                freshness: 'LIVE'
+              });
+            }
+          }
+        }
+      }
+      setMarketQuotes(liveQuotes);
 
       if (auditLogsRes?.ok) {
         const logs = await auditLogsRes.json();
