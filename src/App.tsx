@@ -30,6 +30,7 @@ export default function App() {
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [loadingInitial, setLoadingInitial] = useState<boolean>(true);
+  const terminalRefreshInFlightRef = useRef<Promise<void> | null>(null);
 
   // Broker Environment & Safety State
   const [environment, setEnvironment] = useState<TradingEnvironment>('LIVE');
@@ -76,110 +77,106 @@ export default function App() {
   }, []);
 
   // Fetch all primary terminal data
-  const refreshTerminalData = useCallback(async () => {
-    setIsRefreshing(true);
-    try {
-      const safeFetchJson = async (url: string, fallback: any = []) => {
-        try {
-          const res = await fetch(url);
-          if (res.ok) {
-            return await res.json();
-          }
-        } catch (e) {
-          console.warn(`Safe fetch failed for ${url}:`, e);
-        }
-        return fallback;
-      };
-
-      // Ensure broker status refresh is executed safely alongside data fetches
-      const brokerPromise = refreshBrokerStatus().catch(err => {
-        console.warn('Failed to refresh broker status:', err);
-      });
-
-      const [fxPairs, inUnder, sigs, autoStatus, config] = await Promise.all([
-        safeFetchJson('/api/forex/pairs'),
-        safeFetchJson('/api/india/underlyings'),
-        safeFetchJson('/api/signals/all'),
-        safeFetchJson('/api/auto-trading/status', null),
-        safeFetchJson('/api/config', null)
-      ]);
-      await brokerPromise;
-
-      if (config && typeof config === 'object') {
-        if (Array.isArray(config.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0) {
-          setActiveForexUniverse(config.autoLiveForexPairs);
-        }
-        if (Array.isArray(config.autoLiveIndianUnderlyings)) {
-          setActiveIndianUniverse(config.autoLiveIndianUnderlyings);
-        }
-      }
-
-      const selectedForex = Array.isArray(config?.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0
-        ? new Set(config.autoLiveForexPairs.map((symbol: any) => String(symbol).toUpperCase()))
-        : null;
-      const selectedIndia = Array.isArray(config?.autoLiveIndianUnderlyings)
-        ? new Set(config.autoLiveIndianUnderlyings.map((symbol: any) => String(symbol).toUpperCase()))
-        : null;
-
-      if (Array.isArray(fxPairs) && fxPairs.length > 0) {
-        setForexPairs(selectedForex
-          ? fxPairs.filter((row: any) => selectedForex.has(String(row?.symbol || '').toUpperCase()))
-          : fxPairs);
-      }
-      if (Array.isArray(inUnder) && inUnder.length > 0) {
-        setIndianUnderlyings(selectedIndia
-          ? inUnder.filter((row: any) => selectedIndia.has(String(row?.symbol || '').toUpperCase()))
-          : inUnder);
-      }
-      if (Array.isArray(sigs)) setSignals(sigs);
-      if (autoStatus && typeof autoStatus === 'object') setAutoTradingStatus(autoStatus);
-
-      // Pre-fetch primary candles for EUR/USD and NIFTY
-      const [eurCandles, niftyCandles] = await Promise.all([
-        safeFetchJson('/api/candles/EUR%2FUSD'),
-        safeFetchJson('/api/candles/NIFTY')
-      ]);
-
-      setCandlesMap(prev => ({
-        ...prev,
-        'EUR/USD': Array.isArray(eurCandles) ? eurCandles : [],
-        'NIFTY': Array.isArray(niftyCandles) ? niftyCandles : []
-      }));
-    } catch (err) {
-      console.error('Failed to load terminal data:', err);
-    } finally {
-      setIsRefreshing(false);
-      setLoadingInitial(false);
+  // Fetch all primary terminal data. Background refreshes are serialized
+  // and never replace valid state with an empty/error fallback.
+  const refreshTerminalData = useCallback(async (showSpinner = true) => {
+    if (terminalRefreshInFlightRef.current) {
+      return terminalRefreshInFlightRef.current;
     }
-  }, [refreshBrokerStatus]);
 
-  // 1-Second real-time clock & session status ticker (updates clock automatically without page refresh)
+    const run = (async () => {
+      if (showSpinner) setIsRefreshing(true);
+
+      try {
+        const safeFetchJson = async (url: string, fallback: any = []) => {
+          try {
+            const res = await fetch(url, { cache: 'no-store' });
+            if (res.ok) {
+              return await res.json();
+            }
+          } catch (e) {
+            console.warn(`Safe fetch failed for ${url}:`, e);
+          }
+          return fallback;
+        };
+
+        const [fxPairs, inUnder, sigs, autoStatus, config] = await Promise.all([
+          safeFetchJson('/api/forex/pairs'),
+          safeFetchJson('/api/india/underlyings'),
+          safeFetchJson('/api/signals/all'),
+          safeFetchJson('/api/auto-trading/status', null),
+          safeFetchJson('/api/config', null)
+        ]);
+
+        if (config && typeof config === 'object') {
+          if (Array.isArray(config.autoLiveForexPairs)) {
+            setActiveForexUniverse(config.autoLiveForexPairs);
+          }
+          if (Array.isArray(config.autoLiveIndianUnderlyings)) {
+            setActiveIndianUniverse(config.autoLiveIndianUnderlyings);
+          }
+        }
+
+        const selectedForex = Array.isArray(config?.autoLiveForexPairs)
+          ? new Set(config.autoLiveForexPairs.map((symbol: any) => String(symbol).toUpperCase()))
+          : null;
+        const selectedIndia = Array.isArray(config?.autoLiveIndianUnderlyings)
+          ? new Set(config.autoLiveIndianUnderlyings.map((symbol: any) => String(symbol).toUpperCase()))
+          : null;
+
+        if (Array.isArray(fxPairs) && fxPairs.length > 0) {
+          setForexPairs(selectedForex
+            ? fxPairs.filter((row: any) => selectedForex.has(String(row?.symbol || '').toUpperCase()))
+            : fxPairs);
+        }
+
+        if (Array.isArray(inUnder) && inUnder.length > 0) {
+          setIndianUnderlyings(selectedIndia
+            ? inUnder.filter((row: any) => selectedIndia.has(String(row?.symbol || '').toUpperCase()))
+            : inUnder);
+        }
+
+        if (Array.isArray(sigs) && sigs.length > 0) setSignals(sigs);
+        if (autoStatus && typeof autoStatus === 'object') setAutoTradingStatus(autoStatus);
+
+        const [eurCandles, niftyCandles] = await Promise.all([
+          safeFetchJson('/api/candles/EUR%2FUSD'),
+          safeFetchJson('/api/candles/NIFTY')
+        ]);
+
+        // Preserve valid chart data during transient broker/API errors.
+        if (Array.isArray(eurCandles) && eurCandles.length > 0) {
+          setCandlesMap(prev => ({ ...prev, 'EUR/USD': eurCandles }));
+        }
+        if (Array.isArray(niftyCandles) && niftyCandles.length > 0) {
+          setCandlesMap(prev => ({ ...prev, 'NIFTY': niftyCandles }));
+        }
+      } catch (err) {
+        console.error('Failed to load terminal data:', err);
+      } finally {
+        if (showSpinner) setIsRefreshing(false);
+        setLoadingInitial(false);
+      }
+    })();
+
+    terminalRefreshInFlightRef.current = run;
+    try {
+      await run;
+    } finally {
+      terminalRefreshInFlightRef.current = null;
+    }
+  }, [terminalRefreshInFlightRef]);
+
+  // One application-level market refresh loop. Child dashboards do not need
+  // independent high-frequency polling for the same broker resources.
   useEffect(() => {
-    const tickSessions = () => {
-      const now = new Date();
-      setForexSessions(getForexSessionState(now));
-      setIndianSession(getIndianSessionState(now));
-    };
-
-    tickSessions();
-    const clockTimer = setInterval(tickSessions, 1000);
-
-    return () => {
-      clearInterval(clockTimer);
-    };
-  }, []);
-
-  // Periodic 15-second background refresh for prices and signals
-  useEffect(() => {
-    refreshTerminalData();
+    void refreshTerminalData(true);
 
     const dataTimer = setInterval(() => {
-      refreshTerminalData();
-    }, 15000);
+      void refreshTerminalData(false);
+    }, 30000);
 
-    return () => {
-      clearInterval(dataTimer);
-    };
+    return () => clearInterval(dataTimer);
   }, [refreshTerminalData]);
 
   // LIVE_ONLY runtime: no environment switching is exposed.
