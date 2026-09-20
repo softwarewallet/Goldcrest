@@ -89,6 +89,18 @@ function isAuthoritativeLiveHost(host: string): boolean {
 }
 
 /**
+ * Resolve the cTrader WebSocket endpoint from the actual account environment.
+ * Goldcrest remains LIVE-only at the application level, but a cTrader test
+ * account is routed through cTrader's non-live transport when no explicit
+ * endpoint override is configured.
+ */
+export function getCTraderRequestHosts(accountIsLive: boolean): string[] {
+  const configuredHost = getConfiguredCTraderWsHost();
+  if (configuredHost) return [configuredHost];
+  return [getCTraderWsHost(accountIsLive)];
+}
+
+/**
  * Executes a WebSocket request flow against the cTrader Open API (port 5036 JSON interface)
  */
 export async function fetchLiveCTraderAccounts(
@@ -471,8 +483,11 @@ async function withAuthenticatedAccount<T>(
   isLive: boolean,
   fn: (ws: WebSocket) => Promise<T>
 ): Promise<T> {
-  const configuredHost = getConfiguredCTraderWsHost();
-  const hosts = configuredHost ? [configuredHost] : ['wss://live.ctraderapi.com:5036'];
+  // Route account-scoped reads through the same cTrader environment that
+  // authenticated the selected account. The previous implementation always
+  // used the LIVE transport when no explicit host override was configured,
+  // which caused CANT_ROUTE_REQUEST for non-live cTrader test accounts.
+  const hosts = getCTraderRequestHosts(isLive);
 
   let lastError: any = null;
 
