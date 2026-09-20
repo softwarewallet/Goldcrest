@@ -243,7 +243,7 @@ function readXmlTag(block: string, tag: string): string {
 }
 
 function parseGoogleNewsRss(xml: string): LiveNewsArticle[] {
-  const items = xml.match(/<item\\b[\\s\\S]*?<\\/item>/gi) || [];
+  const items = xml.match(/<item\b[\s\S]*?<\/item>/gi) || [];
 
   return items
     .map(item => ({
