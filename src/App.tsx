@@ -40,6 +40,7 @@ export default function App() {
   const [currency, setCurrency] = useState<string>('USD');
   const [balance, setBalance] = useState<number>(0);
   const [isEmergencyHalted, setIsEmergencyHalted] = useState<boolean>(false);
+  const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(null);
 
   // Modals for environment switch and order confirmation
   const [pendingEnvSwitch, setPendingEnvSwitch] = useState<TradingEnvironment | null>(null);
@@ -92,16 +93,18 @@ export default function App() {
         console.warn('Failed to refresh broker status:', err);
       });
 
-      const [fxPairs, inUnder, sigs] = await Promise.all([
+      const [fxPairs, inUnder, sigs, autoStatus] = await Promise.all([
         safeFetchJson('/api/forex/pairs'),
         safeFetchJson('/api/india/underlyings'),
         safeFetchJson('/api/signals/all'),
+        safeFetchJson('/api/auto-trading/status', null),
         brokerPromise
       ]);
 
       if (Array.isArray(fxPairs) && fxPairs.length > 0) setForexPairs(fxPairs);
       if (Array.isArray(inUnder) && inUnder.length > 0) setIndianUnderlyings(inUnder);
       if (Array.isArray(sigs)) setSignals(sigs);
+      if (autoStatus && typeof autoStatus === 'object') setAutoTradingStatus(autoStatus);
 
       // Pre-fetch primary candles for EUR/USD and NIFTY
       const [eurCandles, niftyCandles] = await Promise.all([
@@ -289,6 +292,7 @@ export default function App() {
           onRequestEnvironmentChange={handleRequestEnvironmentChange}
           selectedBroker={selectedBroker}
           maskedAccount={maskedAccount}
+          autoTradingStatus={autoTradingStatus}
           isEmergencyHalted={isEmergencyHalted}
           onToggleKillSwitch={handleToggleKillSwitch}
         />

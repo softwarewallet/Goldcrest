@@ -190,6 +190,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<number>(Date.now());
   const [selectedSignalDecision, setSelectedSignalDecision] = useState<any | null>(null);
+  const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(null);
 
   // Filter States
   const [positionBrokerFilter, setPositionBrokerFilter] = useState<string>('ALL');
@@ -683,7 +684,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         positionsRes,
         ordersRes,
         reconRes,
-        healthRes
+        healthRes,
+        autoTradingRes
       ] = await Promise.all([
         fetch('/api/brokers/status').catch(() => null),
         fetch('/api/brokers/accounts').catch(() => null),
@@ -691,8 +693,14 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         fetch('/api/brokers/positions').catch(() => null),
         fetch('/api/brokers/orders').catch(() => null),
         fetch('/api/governance/reconciliation/positions').catch(() => null),
-        fetch('/api/governance/status').catch(() => null)
+        fetch('/api/governance/status').catch(() => null),
+        fetch('/api/auto-trading/status').catch(() => null)
       ]);
+
+      if (autoTradingRes && autoTradingRes.ok) {
+        const autoData = await autoTradingRes.json();
+        setAutoTradingStatus(autoData);
+      }
 
       if (auditLogsRes && auditLogsRes.ok) {
         const logs = await auditLogsRes.json();
@@ -900,12 +908,15 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
 
             <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-slate-950 border border-slate-800 text-slate-300">
               <span className="text-slate-500">MODEL:</span>
-              <strong className="text-slate-200">gbt_forex_v1.0.0</strong>
+              <strong className="text-slate-200">fx_structure_v2a</strong>
             </div>
 
-            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-emerald-950/80 border border-emerald-700 text-emerald-300 font-bold">
-              <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>LIVE_AUTO_EXECUTION: true</span>
+            <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded border font-bold ${autoTradingStatus?.autonomousPermission
+              ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
+              : 'bg-amber-950/70 border-amber-700 text-amber-300'
+            }`}>
+              <Zap className="w-3.5 h-3.5" />
+              <span>AUTO LIVE: {autoTradingStatus?.state || 'UNKNOWN'}</span>
             </div>
 
             <button
@@ -1816,8 +1827,11 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <ShieldAlert className="w-4 h-4 text-rose-400" />
               <span>Execution Safety Invariant & Model Governance</span>
             </h3>
-            <span className="text-rose-400 font-bold text-xs bg-rose-950/80 px-2.5 py-1 rounded border border-rose-700">
-              AUTONOMOUS LIVE EXECUTION LOCKED
+            <span className={`font-bold text-xs px-2.5 py-1 rounded border ${autoTradingStatus?.autonomousPermission
+              ? 'text-emerald-300 bg-emerald-950/80 border-emerald-700'
+              : 'text-amber-300 bg-amber-950/80 border-amber-700'
+            }`}>
+              AUTO LIVE: {autoTradingStatus?.state || 'UNKNOWN'}
             </span>
           </div>
 
@@ -1834,7 +1848,9 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
                   <span className="text-slate-400">LIVE_AUTO_EXECUTION_ALLOWED</span>
-                  <strong className="text-emerald-400">true (OPERATIONAL)</strong>
+                  <strong className={autoTradingStatus?.autonomousPermission ? 'text-emerald-400' : 'text-amber-400'}>
+                    {autoTradingStatus?.autonomousPermission ? 'true (OPERATIONAL)' : 'false (GATED)'}
+                  </strong>
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
@@ -1844,7 +1860,9 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
                   <span className="text-slate-400">Live Execution Authorized:</span>
-                  <strong className="text-emerald-400">YES (Autonomous Allowed)</strong>
+                  <strong className={autoTradingStatus?.autonomousPermission ? 'text-emerald-400' : 'text-amber-400'}>
+                    {autoTradingStatus?.autonomousPermission ? 'YES' : 'NO'}
+                  </strong>
                 </div>
               </div>
             </div>
@@ -1862,16 +1880,16 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
                   <span className="text-slate-400">Production Model:</span>
                   <div className="text-right">
-                    <strong className="text-emerald-400">gbt_forex_v1.0.0</strong>
-                    <div className="text-[10px] text-slate-500">Active / Production</div>
+                    <strong className="text-emerald-400">fx_structure_v2a</strong>
+                    <div className="text-[10px] text-slate-500">Deterministic strategy / approval-gated</div>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
                   <span className="text-slate-400">Research Candidate:</span>
                   <div className="text-right">
-                    <strong className="text-amber-400">gbt_forex_v1.1.0_candidate</strong>
-                    <div className="text-[10px] text-slate-500">CLOSED / RESEARCH ONLY / NOT PROMOTED</div>
+                    <strong className="text-amber-400">ML BASELINE</strong>
+                    <div className="text-[10px] text-slate-500">Uncalibrated / not used for autonomous execution</div>
                   </div>
                 </div>
               </div>

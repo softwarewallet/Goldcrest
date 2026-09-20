@@ -72,6 +72,12 @@ function productionPreflight(enforce = false): { ok: boolean; checks: Record<str
   checks.autonomousExecution = LIVE_AUTO_EXECUTION_ALLOWED
     ? 'ENABLED'
     : (autoTradingRequested || autonomousRequested ? 'BLOCKED' : 'DISABLED');
+  const productionStrategyApproved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
+    && String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim() === 'fx_structure_v2a';
+  checks.autoTradingBroker = (autoTradingRequested || autonomousRequested)
+    ? (ctraderConfigured ? 'CONFIGURED' : 'MISSING')
+    : 'NOT_REQUESTED';
+  checks.productionStrategy = productionStrategyApproved ? 'APPROVED' : 'NOT_APPROVED';
   checks.tradingMode = getSystemConfig().tradingMode;
   const autoConfigValid = !autoTradingRequested && !autonomousRequested
     ? true
@@ -222,6 +228,7 @@ app.get('/api/health/ready', (req: Request, res: Response) => {
     database: databaseReady ? 'READY' : 'INITIALIZING',
     tradingMode: getSystemConfig().tradingMode,
     autonomousLiveExecutionAllowed: LIVE_AUTO_EXECUTION_ALLOWED,
+    autoTrading: autoTradingService.getStatus(),
     productionChecks: preflight.checks,
     timestamp: Date.now()
   });

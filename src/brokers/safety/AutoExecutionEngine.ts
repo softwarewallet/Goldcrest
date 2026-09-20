@@ -25,8 +25,20 @@ function syncAutonomousPermission(): boolean {
   const config = getSystemConfig();
   const requested = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
     && process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true';
-  const calibrated = !/UNCALIBRATED/i.test(String(config.modelStatus || ''));
-  const allowed = requested && config.liveTradingEnabled && calibrated && !killSwitch.isHalted();
+  const approvedStrategyId = String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim();
+  const approved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
+    && approvedStrategyId === 'fx_structure_v2a';
+  const ctraderConfigured = Boolean(
+    process.env.CTRADER_LIVE_CLIENT_ID?.trim()
+    && process.env.CTRADER_LIVE_CLIENT_SECRET?.trim()
+    && process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim()
+    && process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
+  );
+  const allowed = requested
+    && config.liveTradingEnabled
+    && approved
+    && ctraderConfigured
+    && !killSwitch.isHalted();
   LIVE_AUTO_EXECUTION_ALLOWED = allowed;
   return allowed;
 }
@@ -83,7 +95,7 @@ class AutoExecutionEngine {
       return {
         success: false,
         code: 'AUTONOMOUS_LIVE_EXECUTION_NOT_READY',
-        message: 'Autonomous execution is not enabled or the live strategy is not currently qualified. Set both auto-trading flags and use a calibrated strategy.'
+        message: 'Autonomous execution is not enabled or the production strategy has not been explicitly approved. Set the auto-trading flags and approve the configured production strategy.'
       };
     }
     return {
@@ -251,7 +263,23 @@ class AutoExecutionEngine {
         };
       }
 
-      const placedOrder = await adapter.placeOrder(order);
+      const autonomousPlacer = (adapter as BrokerAdapter & {
+        placeAutonomousOrder?: (request: OrderRequest) => Promise<NormalizedOrder>;
+      }).placeAutonomousOrder;
+
+      if (typeof autonomousPlacer !== 'function') {
+        await failExecutionIntent(idempotencyKey, {
+          status: 'REJECTED',
+          rejectionReason: 'Broker adapter does not expose the guarded autonomous-order capability.'
+        } as NormalizedOrder);
+        return {
+          executed: false,
+          code: 'AUTONOMOUS_ORDER_PATH_UNAVAILABLE',
+          reason: 'Broker adapter does not expose the guarded autonomous-order capability.'
+        };
+      }
+
+      const placedOrder = await autonomousPlacer.call(adapter, order);
 
       if (placedOrder.status === 'FILLED') {
         await completeExecutionIntent(idempotencyKey, placedOrder);
