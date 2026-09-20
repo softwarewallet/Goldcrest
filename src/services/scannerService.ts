@@ -1,6 +1,8 @@
 import { TradingSignal } from '../markets/common/types';
-import { ForexDemoProvider, IndianMarketDemoProvider, OptionsChainDemoProvider } from './providers';
+import { brokerRegistry } from '../brokers/registry';
 import { calculateStrategyPayoff, OptionStrategyType } from '../markets/india_options/strategySkeleton';
+import { LiveForexProvider } from '../markets/forex/provider';
+import { ForexSignalEngine } from '../markets/forex/signalEngine';
 
 export interface OptionsOpportunityCandidate {
   id: string;
@@ -10,7 +12,7 @@ export interface OptionsOpportunityCandidate {
   title: string;
   bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   score: number;
-  mlProbability: number;
+  mlProbability: number | null;
   entryPremium: number;
   maxLoss: number;
   maxProfit: number;
@@ -22,20 +24,105 @@ export interface OptionsOpportunityCandidate {
   expiry: string;
 }
 
+function mapForexSignal(signal: any): TradingSignal {
+  const direction = String(signal.direction || 'NO_TRADE');
+  const normalizedDirection: TradingSignal['direction'] =
+    direction.includes('BUY') ? 'BUY' :
+    direction.includes('SELL') ? 'SELL' :
+    direction === 'NO_TRADE' ? 'NO_TRADE' : 'WAIT';
+
+  return {
+    id: signal.id,
+    timestamp: signal.timestamp,
+    market: 'FOREX',
+    instrument: signal.pair,
+    direction: normalizedDirection,
+    category: signal.signalCategory,
+    strategy: signal.strategyVersion,
+    score: signal.score,
+    scoreBreakdown: {
+      trend: signal.scoreBreakdown.trend,
+      multiTimeframe: signal.scoreBreakdown.multiTimeframe,
+      momentum: signal.scoreBreakdown.momentum,
+      marketStructure: signal.scoreBreakdown.marketStructure,
+      supportResistance: signal.scoreBreakdown.supportResistance,
+      volumeOI: 0,
+      mlProbability: signal.mlProbability ?? 0,
+      riskReward: signal.scoreBreakdown.riskReward,
+      volatility: signal.scoreBreakdown.volatility,
+      totalScore: signal.score
+    },
+    mlProbability: signal.mlProbability ?? 0,
+    entryZone: signal.tradePlan
+      ? {
+          min: signal.tradePlan.entryMin,
+          max: signal.tradePlan.entryMax,
+          preferred: signal.tradePlan.entryPreferred
+        }
+      : { min: 0, max: 0, preferred: 0 },
+    stopLoss: signal.tradePlan?.stopLoss ?? 0,
+    target1: signal.tradePlan?.takeProfit1?.targetPrice ?? 0,
+    target2: signal.tradePlan?.takeProfit2?.targetPrice ?? 0,
+    target3: signal.tradePlan?.takeProfit3?.targetPrice,
+    riskReward: signal.tradePlan?.riskReward ?? 0,
+    status: signal.status === 'ACTIVE' ? 'ACTIVE' : signal.status === 'NO_TRADE' ? 'CANCELLED' : 'WAITING',
+    invalidationConditions: signal.invalidationConditions || [],
+    reasons: signal.reasons || [],
+    noTradeReasons: signal.noTradeReasons || [],
+    modelVersion: signal.modelVersion,
+    expiry: undefined
+  };
+}
+
 export class ScannerService {
-  private forexProvider = new ForexDemoProvider();
-  private indiaProvider = new IndianMarketDemoProvider();
-  private optionsProvider = new OptionsChainDemoProvider();
+  private forexProvider = new LiveForexProvider();
+  private forexSignalEngine = new ForexSignalEngine(undefined, this.forexProvider);
 
-  getForexScanner() {
-    return this.forexProvider.getPairsOverview();
+  private getFivePaisaAdapter() {
+    const adapter = brokerRegistry.getFivePaisaAdapter();
+    if (!adapter) throw new Error('5paisa LIVE adapter is unavailable.');
+    return adapter;
   }
 
-  getIndianMarketScanner() {
-    return this.indiaProvider.getUnderlyingsOverview();
+  async getForexScanner() {
+    const results: any[] = [];
+    for (const pair of this.forexProvider.getAvailablePairs()) {
+      try {
+        await this.forexProvider.refreshPair(pair.symbol);
+        const signal = await this.forexSignalEngine.generateSignal(pair.symbol);
+        const quote = this.forexProvider.getQuote(pair.symbol);
+        results.push({
+          symbol: pair.symbol,
+          description: pair.description,
+          bid: quote.bid,
+          ask: quote.ask,
+          spreadPips: quote.spreadPips,
+          changePips: quote.changePips24h,
+          changePercent: quote.changePercent24h,
+          digits: pair.digits,
+          signal: mapForexSignal(signal),
+          dataStatus: 'LIVE',
+          dataSource: quote.provider
+        });
+      } catch (error: any) {
+        results.push({
+          symbol: pair.symbol,
+          description: pair.description,
+          signal: null,
+          dataStatus: 'UNKNOWN',
+          error: error?.message || String(error)
+        });
+      }
+    }
+    return results;
   }
 
-  getOptionsScanner(symbol: string = 'NIFTY'): {
+  async getIndianMarketScanner() {
+    const adapter = this.getFivePaisaAdapter();
+    return adapter.fetchIndianUnderlyingsFrom5Paisa();
+  }
+
+  async getOptionsScanner(symbol: string = 'NIFTY'): Promise<{
     underlying: string;
     spot: number;
     bias: 'Bullish' | 'Bearish' | 'Range-bound';
@@ -43,20 +130,24 @@ export class ScannerService {
     opportunities: OptionsOpportunityCandidate[];
     isBlank?: boolean;
     error?: string;
-  } {
-    const chain = this.optionsProvider.getChain(symbol);
-    const underlyings = this.indiaProvider.getUnderlyingsOverview();
-    const underlyingData = underlyings.find(u => u.symbol === symbol);
+  }> {
+    const clean = symbol.toUpperCase().replace(/\s+/g, '');
+    const adapter = this.getFivePaisaAdapter();
+    const [chain, underlyings] = await Promise.all([
+      adapter.fetchOptionChainFrom5Paisa(clean),
+      adapter.fetchIndianUnderlyingsFrom5Paisa()
+    ]);
+    const underlyingData = underlyings.find(u => u.symbol === clean);
 
     if (!underlyingData || !chain || chain.rows.length === 0 || chain.spotPrice <= 0) {
       return {
-        underlying: symbol,
+        underlying: clean,
         spot: 0,
         bias: 'Range-bound',
         pcr: 0,
         opportunities: [],
         isBlank: true,
-        error: '5paisa API Connection Required. Please authenticate 5paisa in Broker Settings to stream live option setups.'
+        error: '5paisa LIVE option data is unavailable for this instrument.'
       };
     }
 
@@ -69,173 +160,166 @@ export class ScannerService {
     const isBullish = underlyingData.vwapStatus === 'ABOVE_VWAP';
     const isBearish = underlyingData.vwapStatus === 'BELOW_VWAP';
     const bias = isBullish ? 'Bullish' : isBearish ? 'Bearish' : 'Range-bound';
+    const liveScore = Number(underlyingData.signal?.score || 0);
+    const liveProbability = underlyingData.signal?.mlProbability ?? null;
+    const expiryMs = chain.expiry ? Date.parse(chain.expiry) : NaN;
+    const daysLeft = Number.isFinite(expiryMs) ? Math.max(0, Math.ceil((expiryMs - Date.now()) / 86400000)) : null;
 
     const opportunities: OptionsOpportunityCandidate[] = [];
 
-    // 1. Bull Call Spread candidate
     if (atmRow && otmCallRow) {
-      const spreadPayoff = calculateStrategyPayoff({
+      const payoff = calculateStrategyPayoff({
         strategyType: 'BULL_CALL_SPREAD',
-        underlying: symbol,
+        underlying: clean,
         spotPrice: spot,
         strike1: atm,
         premium1: atmRow.call.ltp,
         strike2: otmCallRow.strike,
         premium2: otmCallRow.call.ltp
       });
-
       opportunities.push({
-        id: `opt_bcs_${symbol}`,
-        underlying: symbol,
+        id: `opt_bcs_${clean}`,
+        underlying: clean,
         spot,
         strategyType: 'BULL_CALL_SPREAD',
-        title: `${symbol} ${atm} CE / ${otmCallRow.strike} CE Bull Call Spread`,
+        title: `${clean} ${atm} CE / ${otmCallRow.strike} CE Bull Call Spread`,
         bias: 'BULLISH',
-        score: isBullish ? 87 : 54,
-        mlProbability: isBullish ? 0.72 : 0.44,
-        entryPremium: Math.round(atmRow.call.ltp - otmCallRow.call.ltp),
-        maxLoss: spreadPayoff.maxLoss,
-        maxProfit: spreadPayoff.maxProfit,
-        breakeven: spreadPayoff.breakeven,
-        riskReward: spreadPayoff.riskRewardRatio,
+        score: isBullish ? liveScore : Math.min(liveScore, 60),
+        mlProbability: liveProbability,
+        entryPremium: Math.max(0, atmRow.call.ltp - otmCallRow.call.ltp),
+        maxLoss: payoff.maxLoss,
+        maxProfit: payoff.maxProfit,
+        breakeven: payoff.breakeven,
+        riskReward: payoff.riskRewardRatio,
         status: isBullish ? 'BULL_CALL_SPREAD' : 'NO_TRADE',
         reasons: isBullish
           ? [
-              `Underlying trading above VWAP (+${underlyingData.vwapDistance} pts)`,
-              `High put OI support concentrated at ${chain.putSupportStrike}`,
-              `Net debit defined-risk capping theta decay on volatile swings`
+              `Underlying live VWAP distance: ${underlyingData.vwapDistance}`,
+              `Live put OI support: ${chain.putSupportStrike}`,
+              'Defined-risk spread from live option quotes'
             ]
-          : [`Rejected: Underlying trend is not bullish; poor directional momentum`],
+          : ['Live underlying bias is not bullish.'],
         invalidation: [
-          `Spot breaks below ${underlyingData.vwap.toFixed(1)} intraday VWAP`,
-          `Call OI surging on ${atm} resistance strike`
+          `Spot breaks below live VWAP ${underlyingData.vwap.toFixed(1)}`,
+          `Call OI resistance at live strike ${atm}`
         ],
         expiry: chain.expiry
       });
     }
 
-    // 2. Long Call candidate
     if (atmRow) {
-      const callPayoff = calculateStrategyPayoff({
+      const payoff = calculateStrategyPayoff({
         strategyType: 'LONG_CALL',
-        underlying: symbol,
+        underlying: clean,
         spotPrice: spot,
         strike1: atm,
         premium1: atmRow.call.ltp
       });
-
-      // Crucial Options Rule check: Do not automatically recommend buying an option merely because the underlying has a bullish signal
       const hasHighIV = atmRow.call.iv > 20;
-      const daysLeft = 4;
-      const isHighThetaRisk = daysLeft <= 2;
-      const isLongCallFavorable = isBullish && !hasHighIV && !isHighThetaRisk;
-
+      const expiryAvailable = daysLeft !== null;
+      const favorable = isBullish && !hasHighIV && (!expiryAvailable || daysLeft > 2);
       opportunities.push({
-        id: `opt_lc_${symbol}`,
-        underlying: symbol,
+        id: `opt_lc_${clean}`,
+        underlying: clean,
         spot,
         strategyType: 'LONG_CALL',
-        title: `${symbol} ${atm} CE Naked Long Call`,
+        title: `${clean} ${atm} CE Naked Long Call`,
         bias: 'BULLISH',
-        score: isLongCallFavorable ? 81 : 52,
-        mlProbability: isLongCallFavorable ? 0.69 : 0.41,
+        score: favorable ? liveScore : Math.min(liveScore, 55),
+        mlProbability: liveProbability,
         entryPremium: atmRow.call.ltp,
-        maxLoss: callPayoff.maxLoss,
-        maxProfit: callPayoff.maxProfit,
-        breakeven: callPayoff.breakeven,
-        riskReward: callPayoff.riskRewardRatio,
-        status: isLongCallFavorable ? 'LONG_CALL' : 'WAIT',
-        reasons: isLongCallFavorable
-          ? [
-              `Atm strike ${atm} exhibiting active call buying momentum`,
-              `Theta risk manageable (${daysLeft} days to expiry)`
-            ]
-          : [
-              `Options Rule applied: Spreads are statistically favored over naked calls when trend strength is moderate`
-            ],
+        maxLoss: payoff.maxLoss,
+        maxProfit: payoff.maxProfit,
+        breakeven: payoff.breakeven,
+        riskReward: payoff.riskRewardRatio,
+        status: favorable ? 'LONG_CALL' : 'WAIT',
+        reasons: favorable
+          ? [`Live underlying is above VWAP; expiry remaining: ${daysLeft ?? 'unknown'} days`]
+          : ['Live options inputs do not satisfy the long-call filters.'],
         invalidation: [
-          `Spot falls below ${underlyingData.vwap.toFixed(1)}`,
-          `IV contraction (>2% drop within 30 min)`
+          `Spot falls below live VWAP ${underlyingData.vwap.toFixed(1)}`,
+          'Live IV expands or market structure invalidates the setup'
         ],
         expiry: chain.expiry
       });
     }
 
-    // 3. Bear Put Spread candidate
     if (atmRow && otmPutRow) {
-      const putSpreadPayoff = calculateStrategyPayoff({
+      const payoff = calculateStrategyPayoff({
         strategyType: 'BEAR_PUT_SPREAD',
-        underlying: symbol,
+        underlying: clean,
         spotPrice: spot,
         strike1: otmPutRow.strike,
         premium1: otmPutRow.put.ltp,
         strike2: atm,
         premium2: atmRow.put.ltp
       });
-
       opportunities.push({
-        id: `opt_bps_${symbol}`,
-        underlying: symbol,
+        id: `opt_bps_${clean}`,
+        underlying: clean,
         spot,
         strategyType: 'BEAR_PUT_SPREAD',
-        title: `${symbol} ${atm} PE / ${otmPutRow.strike} PE Bear Put Spread`,
+        title: `${clean} ${atm} PE / ${otmPutRow.strike} PE Bear Put Spread`,
         bias: 'BEARISH',
-        score: isBearish ? 84 : 48,
-        mlProbability: isBearish ? 0.70 : 0.38,
-        entryPremium: Math.round(atmRow.put.ltp - otmPutRow.put.ltp),
-        maxLoss: putSpreadPayoff.maxLoss,
-        maxProfit: putSpreadPayoff.maxProfit,
-        breakeven: putSpreadPayoff.breakeven,
-        riskReward: putSpreadPayoff.riskRewardRatio,
+        score: isBearish ? liveScore : Math.min(liveScore, 55),
+        mlProbability: liveProbability,
+        entryPremium: Math.max(0, atmRow.put.ltp - otmPutRow.put.ltp),
+        maxLoss: payoff.maxLoss,
+        maxProfit: payoff.maxProfit,
+        breakeven: payoff.breakeven,
+        riskReward: payoff.riskRewardRatio,
         status: isBearish ? 'BEAR_PUT_SPREAD' : 'NO_TRADE',
         reasons: isBearish
           ? [
-              `Underlying trading below VWAP`,
-              `Call writing build-up at ${chain.callResistanceStrike}`
+              'Underlying live price is below VWAP',
+              `Live call OI resistance: ${chain.callResistanceStrike}`
             ]
-          : [`Rejected: Current underlying bias is not bearish`],
-        invalidation: [`Spot crosses above VWAP equilibrium`],
+          : ['Live underlying bias is not bearish.'],
+        invalidation: ['Spot crosses above live VWAP equilibrium'],
         expiry: chain.expiry
       });
     }
 
-    // 4. OTM Put No-Trade example (to prove the system does NOT force trades)
     if (otmPutRow) {
+      const payoff = calculateStrategyPayoff({
+        strategyType: 'LONG_PUT',
+        underlying: clean,
+        spotPrice: spot,
+        strike1: otmPutRow.strike,
+        premium1: otmPutRow.put.ltp
+      });
       opportunities.push({
-        id: `opt_lp_otm_${symbol}`,
-        underlying: symbol,
+        id: `opt_lp_otm_${clean}`,
+        underlying: clean,
         spot,
         strategyType: 'LONG_PUT',
-        title: `${symbol} ${otmPutRow.strike} PE Deep OTM Put`,
+        title: `${clean} ${otmPutRow.strike} PE Deep OTM Put`,
         bias: 'BEARISH',
-        score: 32,
-        mlProbability: 0.28,
+        score: 0,
+        mlProbability: liveProbability,
         entryPremium: otmPutRow.put.ltp,
-        maxLoss: otmPutRow.put.ltp * 25,
-        maxProfit: otmPutRow.strike * 25,
-        breakeven: [otmPutRow.strike - otmPutRow.put.ltp],
-        riskReward: 1.2,
+        maxLoss: payoff.maxLoss,
+        maxProfit: payoff.maxProfit,
+        breakeven: payoff.breakeven,
+        riskReward: payoff.riskRewardRatio,
         status: 'NO_TRADE',
-        reasons: [
-          `No-Trade Triggered: Low delta (${otmPutRow.put.greeks.delta}), low probability of reaching breakeven, severe theta erosion risk`
-        ],
-        invalidation: ['Do not enter under any regular market condition'],
+        reasons: ['Live option-chain structure does not justify the deep-OTM long put.'],
+        invalidation: ['Do not enter without a new live qualifying setup.'],
         expiry: chain.expiry
       });
     }
 
-    return {
-      underlying: symbol,
-      spot,
-      bias,
-      pcr: chain.pcr,
-      opportunities
-    };
+    return { underlying: clean, spot, bias, pcr: chain.pcr, opportunities };
   }
 
-  getAllSignals(): TradingSignal[] {
-    const forex = this.getForexScanner().map(p => p.signal);
-    const india = this.getIndianMarketScanner().map(u => u.signal);
-    return [...forex, ...india];
+  async getAllSignals(): Promise<TradingSignal[]> {
+    const [forex, india] = await Promise.all([
+      this.getForexScanner(),
+      this.getIndianMarketScanner()
+    ]);
+    return [
+      ...forex.map(item => item.signal).filter(Boolean),
+      ...india.map(item => item.signal).filter(Boolean)
+    ];
   }
 }
