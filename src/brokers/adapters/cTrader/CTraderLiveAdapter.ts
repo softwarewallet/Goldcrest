@@ -13,7 +13,7 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
       accessToken: customConfig?.accessToken ?? process.env.CTRADER_LIVE_ACCESS_TOKEN,
       accountId: customConfig?.accountId ?? process.env.CTRADER_LIVE_ACCOUNT_ID,
       environment: 'LIVE',
-      apiHost: customConfig?.apiHost || 'https://live.ctraderapi.com'
+      apiHost: customConfig?.apiHost ?? process.env.CTRADER_LIVE_API_HOST ?? 'https://live.ctraderapi.com'
     };
     super(config);
   }
@@ -37,7 +37,7 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
       accessToken: undefined,
       accountId: undefined,
       environment: 'LIVE',
-      apiHost: 'https://live.ctraderapi.com'
+      apiHost: process.env.CTRADER_LIVE_API_HOST ?? 'https://live.ctraderapi.com'
     };
     this.status = 'DISCONNECTED';
   }
