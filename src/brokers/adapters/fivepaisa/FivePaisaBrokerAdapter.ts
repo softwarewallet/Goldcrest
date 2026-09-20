@@ -341,11 +341,11 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
         environment: this.environment,
         connected: true,
         account: maskedClient,
-        accountType: this.isLive ? 'LIVE' : 'DEMO',
+        accountType: 'LIVE',
         balance,
         equity,
         currency: 'INR',
-        server: this.isLive ? '5paisa-Xstream-OpenAPI-Live' : '5paisa-DevOpenAPI-Sandbox',
+        server: '5paisa-Xstream-OpenAPI-Live',
         permissions: ['NSE_EQUITY', 'NSE_FNO', 'BSE_EQUITY', 'BSE_FNO', 'MCX_COMMODITY'],
         timestamp: Date.now()
       };
