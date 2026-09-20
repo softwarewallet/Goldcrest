@@ -28,12 +28,15 @@ function syncAutonomousPermission(): boolean {
   const approvedStrategyId = String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim();
   const approved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
     && approvedStrategyId === 'fx_structure_v2a';
-  const ctraderConfigured = Boolean(
-    process.env.CTRADER_LIVE_CLIENT_ID?.trim()
-    && process.env.CTRADER_LIVE_CLIENT_SECRET?.trim()
-    && process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim()
-    && process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
-  );
+  let ctraderConfigured = false;
+  try {
+    const status = brokerRegistry.getCredentialStatuses().find(
+      item => item.broker === 'CTRADER' && item.environment === 'LIVE'
+    );
+    ctraderConfigured = Boolean(status?.configured);
+  } catch {
+    ctraderConfigured = false;
+  }
   const allowed = requested
     && config.liveTradingEnabled
     && approved
