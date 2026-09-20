@@ -21,10 +21,12 @@ const LIVE_BROKERS: BrokerType[] = ['CTRADER', 'FIVE_PAISA'];
 // Share one short-lived broker snapshot and one in-flight request so normal
 // UI polling does not repeatedly hit broker account APIs and trigger provider
 // throttling. Order execution paths still request the broker directly.
-const BROKER_STATUS_CACHE_TTL_MS = 60_000;
+const BROKER_STATUS_CACHE_TTL_MS = 120_000;
 let brokerStatusCache: { payload: any; expiresAt: number } | null = null;
 let brokerStatusInFlight: Promise<any> | null = null;
 const lastKnownBrokerAccounts = new Map<BrokerType, any>();
+let brokerStatusLoopStarted = false;
+const BROKER_STATUS_BACKGROUND_REFRESH_MS = 120_000;
 
 type BrokerCollectionCache = { payload: any[]; expiresAt: number };
 const positionsCache: BrokerCollectionCache = { payload: [], expiresAt: 0 };
@@ -254,44 +256,33 @@ async function refreshBrokerStatusSnapshot(): Promise<any> {
   return payload;
 }
 
+function startBrokerStatusRefreshLoop(): void {
+  if (brokerStatusLoopStarted) return;
+  brokerStatusLoopStarted = true;
+
+  const runRefresh = () => {
+    if (brokerStatusInFlight) return;
+    brokerStatusInFlight = refreshBrokerStatusSnapshot()
+      .catch(err => {
+        console.warn('[BROKER_STATUS] background refresh failed:', err?.message || err);
+        return brokerStatusCache?.payload;
+      })
+      .finally(() => {
+        brokerStatusInFlight = null;
+      });
+  };
+
+  // Prime the snapshot once. Subsequent UI requests never need to contact a
+  // broker; they read the last snapshot while this single server-side loop
+  // refreshes it at a controlled cadence.
+  runRefresh();
+  setInterval(runRefresh, BROKER_STATUS_BACKGROUND_REFRESH_MS);
+}
+
 async function getBrokerStatusSnapshot(): Promise<any> {
-  const now = Date.now();
+  startBrokerStatusRefreshLoop();
 
   if (brokerStatusCache) {
-    if (now < brokerStatusCache.expiresAt) {
-      return brokerStatusCache.payload;
-    }
-
-    // Stale-while-revalidate: never make the UI wait for a broker reconnect.
-    // Return the last authoritative snapshot immediately and refresh in the
-    // background. This eliminates header flicker during provider throttling.
-    if (brokerStatusInFlight) {
-      return brokerStatusCache.payload;
-    }
-
-    brokerStatusInFlight = refreshBrokerStatusSnapshot().catch(err => {
-      console.warn('[BROKER_STATUS] background refresh failed:', err?.message || err);
-      return brokerStatusCache?.payload || {
-        environment: 'LIVE',
-        routingMode: 'AUTOMATIC_BY_MARKET',
-        selectedBroker: null,
-        brokers: LIVE_BROKERS.map(broker => ({
-          broker,
-          environment: 'LIVE',
-          connected: false,
-          account: null,
-          error: 'Broker status temporarily unavailable.',
-          stale: true
-        })),
-        credentials: brokerRegistry.getCredentialStatuses(),
-        controls: autoExecutionEngine.getControls(),
-        emergencyStop: killSwitch.getHaltDetails(),
-        timestamp: Date.now()
-      };
-    }).finally(() => {
-      brokerStatusInFlight = null;
-    });
-
     return brokerStatusCache.payload;
   }
 
@@ -299,11 +290,7 @@ async function getBrokerStatusSnapshot(): Promise<any> {
     return brokerStatusInFlight;
   }
 
-  brokerStatusInFlight = refreshBrokerStatusSnapshot().finally(() => {
-    brokerStatusInFlight = null;
-  });
-
-  return brokerStatusInFlight;
+  return refreshBrokerStatusSnapshot();
 }
 
 brokerRouter.get('/status', async (_req: Request, res: Response) => {
