@@ -629,7 +629,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     const end = new Date();
     const from = new Date(end.getTime() - days * 86400000);
     const fmt = (d: Date) => d.toISOString().slice(0,10);
-    const url = `https://openapi.5paisa.com/historical/${row.Exch}/${row.ExchType}/${row.ScripCode}/${timeframe}?from=${fmt(from)}&end=${fmt(end)}`;
+    const url = `https://openapi.5paisa.com/V2/historical/${row.Exch}/${row.ExchType}/${row.ScripCode}/${timeframe}?from=${fmt(from)}&end=${fmt(end)}`;
     const res = await fetch(url, {
       headers: {
         'Ocp-Apim-Subscription-Key': 'c89fab8d895a426d9e00db380b433027',
@@ -1210,11 +1210,36 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       : new Set<string>();
 
     const requested = [
-      { symbol: 'NIFTY', name: 'Nifty 50', exchange: 'N' },
-      { symbol: 'BANKNIFTY', name: 'Nifty Bank', exchange: 'N' },
-      { symbol: 'FINNIFTY', name: 'Nifty Financial Services', exchange: 'N' },
-      { symbol: 'MIDCPNIFTY', name: 'Nifty Midcap Select', exchange: 'N' },
-      { symbol: 'SENSEX', name: 'BSE SENSEX', exchange: 'B' }
+      {
+        symbol: 'NIFTY',
+        name: 'Nifty 50',
+        exchange: 'N',
+        aliases: ['NIFTY', 'NIFTY50', 'NIFTY50INDEX']
+      },
+      {
+        symbol: 'BANKNIFTY',
+        name: 'Nifty Bank',
+        exchange: 'N',
+        aliases: ['BANKNIFTY', 'NIFTYBANK', 'NIFTYBANKINDEX']
+      },
+      {
+        symbol: 'FINNIFTY',
+        name: 'Nifty Financial Services',
+        exchange: 'N',
+        aliases: ['FINNIFTY', 'NIFTYFIN', 'NIFTYFINANCIALSERVICES', 'NIFTYFINANCIAL']
+      },
+      {
+        symbol: 'MIDCPNIFTY',
+        name: 'Nifty Midcap Select',
+        exchange: 'N',
+        aliases: ['MIDCPNIFTY', 'NIFTYMIDCAPSELECT', 'MIDCAPSELECT', 'NIFTYMIDCAP']
+      },
+      {
+        symbol: 'SENSEX',
+        name: 'BSE SENSEX',
+        exchange: 'B',
+        aliases: ['SENSEX', 'BSESENSEX', 'SENSEX30']
+      }
     ].filter(item => activeSymbols.size === 0 || activeSymbols.has(item.symbol));
 
     const master = await this.getScripMasterRows();
@@ -1223,17 +1248,22 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       .replace(/[^A-Z0-9]/g, '');
 
     const scrips = requested.map(request => {
-      const requestKey = normalizeInstrumentKey(request.symbol);
+      const aliases = new Set(request.aliases.map(normalizeInstrumentKey));
       const row = master.find(item => {
         const exchange = String(item.Exch || '').toUpperCase();
         const exchangeType = String(item.ExchType || '').toUpperCase();
         if (exchange !== request.exchange || exchangeType !== 'C') return false;
+
         const dataKey = normalizeInstrumentKey(item.ScripData);
         const nameKey = normalizeInstrumentKey(item.Name);
-        return dataKey === requestKey
-          || dataKey === `${requestKey}EQ`
-          || nameKey === requestKey
-          || nameKey.includes(requestKey);
+
+        return aliases.has(dataKey)
+          || aliases.has(dataKey.replace(/EQ$/, ''))
+          || [...aliases].some(alias =>
+            nameKey === alias
+            || nameKey.includes(alias)
+            || dataKey.includes(alias)
+          );
       });
 
       if (!row) return null;
@@ -1317,9 +1347,19 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
           );
 
           if (match) {
-            const spot = Number(match.LastRate || match.LTP || match.Rate || 0);
+            // When NSE/BSE is closed, MarketFeed may omit a current LastRate/Bid/Ask
+            // while still returning Previous Close. Use that broker-reported close
+            // for the terminal rather than blanking a perfectly valid last price.
+            const spot = Number(
+              match.LastRate
+              ?? match.LTP
+              ?? match.Rate
+              ?? match.PClose
+              ?? match.PrevClose
+              ?? 0
+            );
             if (spot <= 0) continue;
-            const prevClose = Number(match.PClose || match.PrevClose || spot);
+            const prevClose = Number(match.PClose ?? match.PrevClose ?? spot);
             const change = Number((match.Chg !== undefined ? match.Chg : (spot - prevClose)).toFixed(2));
             const changePercent = Number((match.ChgPrcnt !== undefined ? match.ChgPrcnt : ((change / (prevClose || 1)) * 100)).toFixed(2));
             const high = Number(match.High || spot);
@@ -1663,13 +1703,45 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
    * Helper to map underlying symbols and option contracts to 5paisa Scrip Codes
    */
   protected async resolve5PaisaInstrument(symbol: string): Promise<{ scripCode: number; scripData: string; exchange: string; exchangeType: string }> {
-    const normalized = String(symbol || '').replace(/^NSE:|^BSE:/, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const normalized = String(symbol || '')
+      .replace(/^NSE:|^BSE:/, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+
+    const aliasesBySymbol: Record<string, string[]> = {
+      NIFTY: ['NIFTY', 'NIFTY50', 'NIFTY50INDEX'],
+      BANKNIFTY: ['BANKNIFTY', 'NIFTYBANK', 'NIFTYBANKINDEX'],
+      FINNIFTY: ['FINNIFTY', 'NIFTYFIN', 'NIFTYFINANCIALSERVICES', 'NIFTYFINANCIAL'],
+      MIDCPNIFTY: ['MIDCPNIFTY', 'NIFTYMIDCAPSELECT', 'MIDCAPSELECT', 'NIFTYMIDCAP'],
+      SENSEX: ['SENSEX', 'BSESENSEX', 'SENSEX30']
+    };
+
+    const aliases = new Set(
+      aliasesBySymbol[normalized]
+      || Object.entries(aliasesBySymbol).find(([, values]) => values.includes(normalized))?.[1]
+      || [normalized]
+    );
+
+    const expectedExchange = normalized === 'SENSEX' || aliases.has('SENSEX') ? 'B' : 'N';
     const rows = await this.getScripMasterRows();
+
+    const normalizeKey = (value: unknown) =>
+      String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
     const row = rows.find((item: any) => {
-      const exchangeType = String(item.ExchType || '').toUpperCase();
-      if (exchangeType !== 'C') return false;
-      const key = String(item.ScripData || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-      return key === normalized || key === `${normalized}EQ`;
+      if (String(item.Exch || '').toUpperCase() !== expectedExchange) return false;
+      if (String(item.ExchType || '').toUpperCase() !== 'C') return false;
+
+      const dataKey = normalizeKey(item.ScripData);
+      const nameKey = normalizeKey(item.Name);
+
+      return aliases.has(dataKey)
+        || aliases.has(dataKey.replace(/EQ$/, ''))
+        || [...aliases].some(alias =>
+          nameKey === alias
+          || nameKey.includes(alias)
+          || dataKey.includes(alias)
+        );
     });
 
     if (!row) {
