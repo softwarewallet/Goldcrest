@@ -51,14 +51,13 @@ import { DataAuditTab } from './research/DataAuditTab';
 import { DatasetIngestionTab } from './research/DatasetIngestionTab';
 import { LargeScaleBacktestTab } from './research/LargeScaleBacktestTab';
 import { MonteCarloTab } from './research/MonteCarloTab';
-import { PaperValidationTab } from './research/PaperValidationTab';
 import { ReportsAndExportTab } from './research/ReportsAndExportTab';
 import { Database, UploadCloud, Shuffle, FileSpreadsheet } from 'lucide-react';
 
 export const MLResearchDashboard: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<
     'overview' | 'predict' | 'walkforward' | 'backtest' | 'registry' | 'drift' |
-    'dataAudit' | 'ingestion' | 'largeBacktest' | 'monteCarlo' | 'paperValidation' | 'reports'
+    'dataAudit' | 'ingestion' | 'largeBacktest' | 'monteCarlo' | 'reports'
   >('overview');
   const [models, setModels] = useState<ModelRegistryEntry[]>([]);
   const [selectedModel, setSelectedModel] = useState<ModelRegistryEntry | null>(null);
