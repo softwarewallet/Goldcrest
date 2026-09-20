@@ -101,9 +101,9 @@ export default function App() {
         safeFetchJson('/api/india/underlyings'),
         safeFetchJson('/api/signals/all'),
         safeFetchJson('/api/auto-trading/status', null),
-        safeFetchJson('/api/config', null),
-        brokerPromise
+        safeFetchJson('/api/config', null)
       ]);
+      await brokerPromise;
 
       if (config && typeof config === 'object') {
         if (Array.isArray(config.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0) {
