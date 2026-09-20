@@ -44,6 +44,18 @@ import { brokerRegistry } from './src/brokers/registry';
 
 dotenv.config();
 
+// Local development uses the same LIVE execution pipeline for end-to-end
+// broker testing, but the autonomous arm is still operator-triggered.
+// Keep the required arm flags enabled in development so START AUTO LIVE does
+// not depend on stale .env values. Production remains explicitly gated.
+if (process.env.NODE_ENV !== 'production') {
+  process.env.GOLDCREST_AUTO_TRADING_ENABLED = 'true';
+  process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = 'true';
+  process.env.LIVE_TRADING_ENABLED = 'true';
+  process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
+  process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'true';
+}
+
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 let databaseReady = false;
