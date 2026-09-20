@@ -56,8 +56,6 @@ export const ModelGovernanceDashboard: React.FC = () => {
   const [isRunningTests, setIsRunningTests] = useState<boolean>(false);
 
   // Active Evidence Package for Inspection
-  const [activeEvidence, setActiveEvidence] = useState<PromotionEvidencePackage | null>(null);
-  const [isGeneratingEvidence, setIsGeneratingEvidence] = useState<boolean>(false);
 
   // Operator Promotion Sign-Off Modal
   const [signOffModal, setSignOffModal] = useState<{
@@ -104,56 +102,7 @@ export const ModelGovernanceDashboard: React.FC = () => {
     loadAllGovernanceData();
   }, [loadAllGovernanceData]);
 
-  // Generate Demonstration Evidence Package
-  const handleGenerateEvidence = async () => {
-    setIsGeneratingEvidence(true);
-    try {
-      const res = await fetch('/api/governance/promotions/generate-evidence', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          strategyId: 'forex_trend_continuation_v2',
-          strategyVersion: 'v2.0.0',
-          modelId: 'gbt_forex_v1.0.0',
-          modelVersion: 'v1.0.0',
-          datasetVersion: 'v1.0.0',
-          featureVersion: 'v1.0.0',
-          market: 'FOREX',
-          instrument: 'EUR/USD',
-          timeframe: 'M15',
-          targetEnvironment: 'DEMO'
-        })
-      });
-      if (res.ok) {
-        const evidence: PromotionEvidencePackage = await res.json();
-        setActiveEvidence(evidence);
-
-        // Submit formal request
-        await fetch('/api/governance/promotions/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            strategyId: evidence.strategyId,
-            modelId: evidence.modelId,
-            market: evidence.market,
-            instrument: evidence.instrument,
-            fromStage: 'PAPER',
-            toStage: 'DEMO',
-            requestedBy: 'LEAD_QUANT_RESEARCHER',
-            evidencePackageId: evidence.id,
-            notes: 'Generated formal evidence package after 38 paper executions and 16 active days.'
-          })
-        });
-
-        await loadAllGovernanceData();
-        setActiveTab('PROMOTIONS');
-      }
-    } catch (err) {
-      console.error('Evidence generation failed:', err);
-    } finally {
-      setIsGeneratingEvidence(false);
-    }
-  };
+  // Legacy promotion-evidence generation is retired in LIVE_ONLY runtime.
 
   // Run Automated Governance Tests
   const handleRunGovernanceTests = async () => {
@@ -231,15 +180,6 @@ export const ModelGovernanceDashboard: React.FC = () => {
 
           <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={handleGenerateEvidence}
-              disabled={isGeneratingEvidence}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-mono font-bold shadow transition"
-            >
-              <FileCheck className={`w-3.5 h-3.5 ${isGeneratingEvidence ? 'animate-spin' : ''}`} />
-              <span>{isGeneratingEvidence ? 'GENERATING...' : 'GENERATE EVIDENCE PACKAGE'}</span>
-            </button>
-
-            <button
               onClick={handleRunGovernanceTests}
               disabled={isRunningTests}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-mono font-bold shadow transition"
@@ -265,11 +205,11 @@ export const ModelGovernanceDashboard: React.FC = () => {
             <div className="flex items-center space-x-3">
               <span className="text-slate-400">SCORECARD STATUS:</span>
               <span className={`px-2.5 py-0.5 rounded font-bold ${
-                scorecard.overallReadiness === 'READY_FOR_CONTROLLED_DEMO'
+                scorecard.overallReadiness === 'READY_FOR_LIVE'
                   ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
                   : 'bg-amber-950 text-amber-300 border border-amber-700'
               }`}>
-                {scorecard.overallReadiness}
+                {scorecard.overallReadiness === 'READY_FOR_CONTROLLED_DEMO' ? 'LIVE READINESS REVIEW' : scorecard.overallReadiness}
               </span>
               <span className="text-slate-500">({scorecard.passingGatesCount}/9 Gates Passing)</span>
             </div>
@@ -357,7 +297,7 @@ export const ModelGovernanceDashboard: React.FC = () => {
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow space-y-4 font-mono">
             <h3 className="text-sm font-bold text-white flex items-center space-x-2">
               <Layers className="w-4 h-4 text-emerald-400" />
-              <span>Strategy Lifecycles (RESEARCH → RETIRED)</span>
+              <span>Strategy Lifecycles (RESEARCH → LIVE)</span>
             </h3>
             <div className="space-y-3">
               {strategies.map((st) => (
@@ -374,9 +314,9 @@ export const ModelGovernanceDashboard: React.FC = () => {
                   <div className="text-xs text-slate-400">{st.notes}</div>
 
                   {/* Visual Step Progress */}
-                  <div className="grid grid-cols-6 gap-1 text-[10px] text-center pt-2">
-                    {['RESEARCH', 'BACKTEST', 'PAPER', 'DEMO', 'LIVE_CANDIDATE', 'LIVE_APPROVED'].map((stage, idx) => {
-                      const stages = ['RESEARCH', 'BACKTEST', 'PAPER', 'DEMO', 'LIVE_CANDIDATE', 'LIVE_APPROVED'];
+                  <div className="grid grid-cols-4 gap-1 text-[10px] text-center pt-2">
+                    {['RESEARCH', 'BACKTEST', 'LIVE_CANDIDATE', 'LIVE_APPROVED'].map((stage, idx) => {
+                      const stages = ['RESEARCH', 'BACKTEST', 'LIVE_CANDIDATE', 'LIVE_APPROVED'];
                       const currentIdx = stages.indexOf(st.state);
                       const isPastOrCurrent = idx <= currentIdx;
                       return (
@@ -421,9 +361,9 @@ export const ModelGovernanceDashboard: React.FC = () => {
                   <div className="text-xs text-slate-400">{m.notes}</div>
 
                   {/* Visual Step Progress */}
-                  <div className="grid grid-cols-5 gap-1 text-[10px] text-center pt-2">
-                    {['RESEARCH', 'CANDIDATE', 'PAPER', 'DEMO', 'PRODUCTION'].map((stage, idx) => {
-                      const stages = ['RESEARCH', 'CANDIDATE', 'PAPER', 'DEMO', 'PRODUCTION'];
+                  <div className="grid grid-cols-3 gap-1 text-[10px] text-center pt-2">
+                    {['RESEARCH', 'CANDIDATE', 'PRODUCTION'].map((stage, idx) => {
+                      const stages = ['RESEARCH', 'CANDIDATE', 'PRODUCTION'];
                       const currentIdx = stages.indexOf(m.state);
                       const isPastOrCurrent = idx <= currentIdx;
                       return (
@@ -464,7 +404,7 @@ export const ModelGovernanceDashboard: React.FC = () => {
 
             {promotions.length === 0 ? (
               <div className="p-6 text-center text-slate-500 bg-slate-950 rounded-lg">
-                No active promotion requests. Click &quot;GENERATE EVIDENCE PACKAGE&quot; above to submit a new validation request.
+                No active live promotion requests.
               </div>
             ) : (
               <div className="space-y-3">
