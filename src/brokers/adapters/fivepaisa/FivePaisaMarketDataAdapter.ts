@@ -29,7 +29,7 @@ export interface UnderlyingMarketData {
 export class FivePaisaMarketDataAdapter {
   private environment: TradingEnvironment;
 
-  constructor(environment: TradingEnvironment = 'DEMO') {
+  constructor(environment: TradingEnvironment = 'LIVE') {
     this.environment = environment;
   }
 
