@@ -911,10 +911,10 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <strong className="text-slate-200">fx_structure_v2a</strong>
             </div>
 
-            <div className={\`flex items-center space-x-1.5 px-2.5 py-1 rounded border font-bold \${autoTradingStatus?.autonomousPermission
+            <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded border font-bold ${autoTradingStatus?.autonomousPermission
               ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
               : 'bg-amber-950/70 border-amber-700 text-amber-300'
-            }\`}>
+            }`}>
               <Zap className="w-3.5 h-3.5" />
               <span>AUTO LIVE: {autoTradingStatus?.state || 'UNKNOWN'}</span>
             </div>
@@ -1827,10 +1827,10 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <ShieldAlert className="w-4 h-4 text-rose-400" />
               <span>Execution Safety Invariant & Model Governance</span>
             </h3>
-            <span className={\`font-bold text-xs px-2.5 py-1 rounded border \${autoTradingStatus?.autonomousPermission
+            <span className={`font-bold text-xs px-2.5 py-1 rounded border ${autoTradingStatus?.autonomousPermission
               ? 'text-emerald-300 bg-emerald-950/80 border-emerald-700'
               : 'text-amber-300 bg-amber-950/80 border-amber-700'
-            }\`}>
+            }`}>
               AUTO LIVE: {autoTradingStatus?.state || 'UNKNOWN'}
             </span>
           </div>
