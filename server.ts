@@ -310,7 +310,12 @@ function extractForexPair(req: Request): string {
 async function hydratePersistedTradeLimits(): Promise<void> {
   const rows = await executeQuery<any>(
     'SELECT key, value FROM system_settings WHERE key IN (?, ?)',
-    ['MAX_TRADE_VALUE_FOREX_USD', 'MAX_TRADE_VALUE_INDIAN_INR']
+    [
+      'MAX_TRADE_VALUE_FOREX_USD',
+      'MAX_TRADE_VALUE_INDIAN_INR',
+      'AUTO_LIVE_FOREX_PAIRS',
+      'AUTO_LIVE_INDIAN_UNDERLYINGS'
+    ]
   );
   const persistedLimits: Record<string, number> = {};
   for (const row of rows) {
@@ -320,13 +325,27 @@ async function hydratePersistedTradeLimits(): Promise<void> {
     }
   }
 
-  const persistedUpdates: Record<string, number> = {};
+  const persistedUpdates: Record<string, any> = {};
   if (persistedLimits.MAX_TRADE_VALUE_FOREX_USD !== undefined) {
     persistedUpdates.maxTradeValueForexUsd = persistedLimits.MAX_TRADE_VALUE_FOREX_USD;
   }
   if (persistedLimits.MAX_TRADE_VALUE_INDIAN_INR !== undefined) {
     persistedUpdates.maxTradeValueIndianInr = persistedLimits.MAX_TRADE_VALUE_INDIAN_INR;
   }
+
+  const universeRows = rows.reduce<Record<string, string>>((acc, row) => {
+    acc[String(row.key)] = String(row.value || '');
+    return acc;
+  }, {});
+  try {
+    const forex = JSON.parse(universeRows.AUTO_LIVE_FOREX_PAIRS || 'null');
+    if (Array.isArray(forex)) persistedUpdates.autoLiveForexPairs = forex;
+  } catch {}
+  try {
+    const india = JSON.parse(universeRows.AUTO_LIVE_INDIAN_UNDERLYINGS || 'null');
+    if (Array.isArray(india)) persistedUpdates.autoLiveIndianUnderlyings = india;
+  } catch {}
+
   if (Object.keys(persistedUpdates).length > 0) {
     updateSystemConfig(persistedUpdates);
   }
@@ -416,6 +435,8 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
   try {
     const requestedForex = req.body?.maxTradeValueForexUsd;
     const requestedIndian = req.body?.maxTradeValueIndianInr;
+    const requestedForexPairs = req.body?.autoLiveForexPairs;
+    const requestedIndianUnderlyings = req.body?.autoLiveIndianUnderlyings;
     const updates: any = { ...req.body };
 
     if (requestedForex !== undefined) {
@@ -430,11 +451,41 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
       updates.maxTradeValueIndianInr = value;
     }
 
+    const validForexPairs = new Set(FOREX_PAIRS.map(pair => pair.symbol.toUpperCase()));
+    const validIndianUnderlyings = new Set(INDIAN_UNDERLYINGS.map(item => item.symbol.toUpperCase()));
+
+    if (requestedForexPairs !== undefined) {
+      if (!Array.isArray(requestedForexPairs) || requestedForexPairs.length === 0) {
+        return res.status(400).json({ error: 'Select at least one Forex instrument for the Auto Live working universe.' });
+      }
+      const normalized = [...new Set(requestedForexPairs.map((value: unknown) => String(value).toUpperCase().trim()))];
+      if (normalized.some(symbol => !validForexPairs.has(symbol))) {
+        return res.status(400).json({ error: 'One or more selected Forex instruments are not supported.' });
+      }
+      updates.autoLiveForexPairs = normalized;
+    }
+
+    if (requestedIndianUnderlyings !== undefined) {
+      if (!Array.isArray(requestedIndianUnderlyings)) {
+        return res.status(400).json({ error: 'autoLiveIndianUnderlyings must be an array.' });
+      }
+      const normalized = [...new Set(requestedIndianUnderlyings.map((value: unknown) => String(value).toUpperCase().trim()))];
+      if (normalized.some(symbol => !validIndianUnderlyings.has(symbol))) {
+        return res.status(400).json({ error: 'One or more selected NSE/BSE underlyings are not supported.' });
+      }
+      updates.autoLiveIndianUnderlyings = normalized;
+    }
+
     const updated = updateSystemConfig(updates);
     const now = Date.now();
     await executeRun(
-      'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?)',
-      ['MAX_TRADE_VALUE_FOREX_USD', String(updated.maxTradeValueForexUsd), now, 'MAX_TRADE_VALUE_INDIAN_INR', String(updated.maxTradeValueIndianInr), now]
+      'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)',
+      [
+        'MAX_TRADE_VALUE_FOREX_USD', String(updated.maxTradeValueForexUsd), now,
+        'MAX_TRADE_VALUE_INDIAN_INR', String(updated.maxTradeValueIndianInr), now,
+        'AUTO_LIVE_FOREX_PAIRS', JSON.stringify(updated.autoLiveForexPairs || []), now,
+        'AUTO_LIVE_INDIAN_UNDERLYINGS', JSON.stringify(updated.autoLiveIndianUnderlyings || []), now
+      ]
     );
     res.json({ success: true, config: updated });
   } catch (err: any) {
