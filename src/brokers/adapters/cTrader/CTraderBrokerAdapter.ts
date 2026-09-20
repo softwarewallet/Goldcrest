@@ -199,7 +199,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         clientId,
         clientSecret,
         accessToken,
-        this.isLive ? 'live' : 'demo'
+        'live'
       );
 
       if (!liveAccounts || liveAccounts.length === 0) {
