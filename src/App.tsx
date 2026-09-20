@@ -13,7 +13,6 @@ import { ForexTerminalDashboard } from './components/ForexTerminalDashboard';
 import { GlobalAppShell } from './components/GlobalAppShell';
 import { SignalModal } from './components/SignalModal';
 import { DiagnosticsModal } from './components/DiagnosticsModal';
-import { EnvironmentSwitchModal } from './components/EnvironmentSwitchModal';
 import { OrderConfirmationModal } from './components/OrderConfirmationModal';
 import { TradingSignal, Candle, ForexSessionState, IndianSessionState } from './markets/common/types';
 import { getForexSessionState, getIndianSessionState } from './markets/common/session';
@@ -42,8 +41,7 @@ export default function App() {
   const [isEmergencyHalted, setIsEmergencyHalted] = useState<boolean>(false);
   const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(null);
 
-  // Modals for environment switch and order confirmation
-  const [pendingEnvSwitch, setPendingEnvSwitch] = useState<TradingEnvironment | null>(null);
+  // Modal for manual order confirmation
   const [pendingOrder, setPendingOrder] = useState<OrderRequest | null>(null);
 
   // Fetch Broker Status
@@ -154,31 +152,9 @@ export default function App() {
     };
   }, [refreshTerminalData]);
 
-  // Handle environment change request (Confirmation required)
-  const handleRequestEnvironmentChange = (targetEnv: TradingEnvironment) => {
-    if (targetEnv === environment) return;
-    setPendingEnvSwitch(targetEnv);
-  };
-
-  // Confirm environment switch
-  const handleConfirmEnvironmentSwitch = async () => {
-    if (!pendingEnvSwitch) return;
-    const targetEnv = pendingEnvSwitch;
-    setPendingEnvSwitch(null);
-
-    try {
-      const res = await fetch('/api/brokers/environment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ environment: targetEnv, confirmed: true })
-      });
-      if (res.ok) {
-        setEnvironment(targetEnv);
-        await refreshBrokerStatus();
-      }
-    } catch (err) {
-      console.error('Failed to change environment:', err);
-    }
+  // LIVE_ONLY runtime: environment changes are intentionally unavailable.
+  const handleRequestEnvironmentChange = (_targetEnv: TradingEnvironment) => {
+    console.warn('Goldcrest is LIVE_ONLY; environment changes are not supported.');
   };
 
   // Broker selection handler
@@ -369,7 +345,7 @@ export default function App() {
                 />
               )}
 
-              {(activeTab === 'trading' || activeTab === 'paper') && (
+              {activeTab === 'trading' && (
                 <TradingHub
                   environment={environment}
                   selectedBroker={selectedBroker}
@@ -426,20 +402,6 @@ export default function App() {
         />
       )}
 
-      {/* Environment Switch Confirmation Modal */}
-      {pendingEnvSwitch && (
-        <EnvironmentSwitchModal
-          isOpen={!!pendingEnvSwitch}
-          onClose={() => setPendingEnvSwitch(null)}
-          onConfirm={handleConfirmEnvironmentSwitch}
-          currentEnv={environment}
-          targetEnv={pendingEnvSwitch}
-          broker={selectedBroker}
-          maskedAccount={maskedAccount}
-          currency={currency}
-          balance={balance}
-        />
-      )}
 
       {/* Order Confirmation Modal */}
       {pendingOrder && (
