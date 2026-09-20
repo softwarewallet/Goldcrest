@@ -56,3 +56,20 @@ Authenticated local API endpoints:
     POST /api/auto-trading/stop
 
 The loop also refuses to continue when the emergency kill switch is active or autonomous permission is withdrawn.
+
+## Date-wise runtime audit logs
+
+When enabled from Settings -> LIVE RUNTIME LOG, Goldcrest writes one plain-text file per calendar date:
+
+    logs/goldcrest-live-YYYY-MM-DD.log
+
+The default audit timezone for the filename is Asia/Kolkata; override with GOLDCREST_LOG_TIMEZONE when needed. The log archive endpoint lists all available daily files, and a specific date can be opened/downloaded without touching other dates.
+
+Recommended audit workflow:
+
+    START LIVE LOG
+    run the live test
+    STOP LIVE LOG
+    provide the relevant logs/goldcrest-live-YYYY-MM-DD.log file for audit
+
+Older dates remain untouched when a new date begins, so the archive can be used for historical incident, execution, and reconciliation reviews.
