@@ -240,7 +240,11 @@ export async function runPhase7_4TestSuite() {
     });
   } catch (err: any) {
     liveExecutionBlocked = true;
-    assert.ok(err.message.includes('NOT ALLOWED') || err.message.includes('LIVE'), 'Explicit LIVE block error thrown');
+    assert.ok(
+      err.code === 'AUTONOMOUS_LIVE_EXECUTION_DISABLED'
+      || err.message.includes('Direct live order submission is blocked'),
+      'Direct LIVE broker-route order is explicitly blocked'
+    );
   }
   assert.strictEqual(liveExecutionBlocked, true, 'LIVE order placement strictly thrown & blocked');
 
