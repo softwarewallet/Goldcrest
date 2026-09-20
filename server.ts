@@ -10,19 +10,17 @@ import { getDatabase, getDatabaseStats, executeQuery, executeRun, persistDatabas
 import { getForexSessionState, getIndianSessionState } from './src/markets/common/session';
 import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments';
 import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
-import { ForexDemoProvider as LegacyForexProvider, IndianMarketDemoProvider, OptionsChainDemoProvider, EconomicCalendarDemoProvider } from './src/services/providers';
 import { ScannerService } from './src/services/scannerService';
 import { getSystemConfig, updateSystemConfig } from './src/services/configService';
 import { calculateStrategyPayoff } from './src/markets/india_options/strategySkeleton';
 
 // Phase 2A Forex Engines
-import { ForexDemoProvider } from './src/markets/forex/provider';
+import { LiveForexProvider } from './src/markets/forex/provider';
 import { ForexSignalEngine } from './src/markets/forex/signalEngine';
 import { calculateIndicators } from './src/markets/forex/indicators';
 import { analyzeMarketStructure } from './src/markets/forex/marketStructure';
 import { calculateSupportResistance } from './src/markets/forex/supportResistance';
 import { analyzeMultiTimeframe } from './src/markets/forex/multiTimeframe';
-import { paperSignalTracker } from './src/markets/forex/paperTracker';
 import { explainForexAnalysis } from './src/services/geminiExplainer';
 import { ForexTimeframe } from './src/markets/forex/types';
 
@@ -384,7 +382,7 @@ app.get('/api/forex/pairs', async (req: Request, res: Response) => {
 });
 
 app.get('/api/forex/market-status', (req: Request, res: Response) => {
-  const status = forexProviderV2.getMarketStatus();
+  const status = liveForexProvider.getMarketStatus();
   res.json(status);
 });
 
@@ -409,6 +407,7 @@ async function getLiveAnchoredCandles(pair: string, tf: ForexTimeframe = '15M', 
 app.get(['/api/forex/analysis/:pair', '/api/forex/analysis/:part1/:part2'], async (req: Request, res: Response) => {
   try {
     const pair = extractForexPair(req);
+    await liveForexProvider.refreshPair(pair);
     const analysis = forexSignalEngine.analyzePair(pair);
     try {
       const adapter = brokerRegistry.getAdapter('CTRADER');
@@ -493,6 +492,7 @@ app.get(['/api/forex/multi-timeframe/:pair', '/api/forex/multi-timeframe/:part1/
 app.get(['/api/forex/signal/:pair', '/api/forex/signal/:part1/:part2'], async (req: Request, res: Response) => {
   try {
     const pair = extractForexPair(req);
+    await liveForexProvider.refreshPair(pair);
     const signal = await forexSignalEngine.generateSignal(pair);
     res.json(signal);
   } catch (err: any) {
@@ -503,6 +503,7 @@ app.get(['/api/forex/signal/:pair', '/api/forex/signal/:part1/:part2'], async (r
 app.post('/api/forex/signal/generate', async (req: Request, res: Response) => {
   try {
     const pair = extractForexPair(req);
+    await liveForexProvider.refreshPair(pair);
     const signal = await forexSignalEngine.generateSignal(pair);
     res.json(signal);
   } catch (err: any) {
@@ -525,7 +526,15 @@ app.post('/api/forex/explain', async (req: Request, res: Response) => {
   }
 });
 
-// Paper Signal Tracking Endpoints (Section 25)
+// Legacy paper-tracking endpoints are retired in LIVE_ONLY mode.
+app.all(['/api/forex/paper', '/api/forex/paper/*', '/api/paper', '/api/paper/*'], (_req: Request, res: Response) => {
+  return res.status(410).json({
+    error: 'LIVE_ONLY',
+    message: 'Paper trading and simulated portfolio endpoints are retired. Use live broker telemetry.'
+  });
+});
+
+/*
 app.get('/api/forex/paper/tracked', async (req: Request, res: Response) => {
   try {
     const tracked = await paperSignalTracker.getAllTracked();
@@ -657,6 +666,8 @@ app.post('/api/paper/trades/close', async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 });
+*/
+
 
 app.get('/api/notes', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
@@ -823,7 +834,7 @@ app.get('/api/options/chain/:symbol', async (req: Request, res: Response) => {
 
 app.get('/api/options/scanner/:symbol', async (req: Request, res: Response) => {
   const symbol = req.params.symbol ? req.params.symbol.toUpperCase() : 'NIFTY';
-  const result = scannerService.getOptionsScanner(symbol);
+  const result = await scannerService.getOptionsScanner(symbol);
   res.json(result);
 });
 
@@ -837,14 +848,35 @@ app.post('/api/options/payoff', (req: Request, res: Response) => {
 });
 
 // 7. Unified Signals
-app.get(['/api/signals', '/api/signals/all'], (req: Request, res: Response) => {
-  const signals = scannerService.getAllSignals();
-  res.json(signals);
+app.get(['/api/signals', '/api/signals/all'], async (req: Request, res: Response) => {
+  try {
+    const signals = await scannerService.getAllSignals();
+    res.json(signals);
+  } catch (err: any) {
+    res.status(503).json({
+      error: err?.code || 'LIVE_SIGNAL_DATA_UNAVAILABLE',
+      message: err?.message || 'Live signal data is unavailable from the configured brokers.'
+    });
+  }
 });
 
 // 8. Macroeconomic Events
-app.get('/api/economic-events', (req: Request, res: Response) => {
-  res.json(economicProvider.getEvents());
+app.get('/api/economic-events', async (_req: Request, res: Response) => {
+  const news = await fetchLiveForexNews();
+  const now = Date.now();
+  const events = news.articles.map((article, index) => ({
+    id: `LIVE_NEWS_${now}_${index}`,
+    title: article.title,
+    currency: 'USD',
+    impact: news.highImpactCount > 0 && index < news.highImpactCount ? 'HIGH' : 'MEDIUM',
+    timestamp: article.publishedAt ? Date.parse(article.publishedAt) || now : now,
+    minutesUntil: article.publishedAt ? Math.round((Date.parse(article.publishedAt) - now) / 60000) : 0,
+    blocksNewEntry: false,
+    source: article.source,
+    url: article.url,
+    dataStatus: news.status
+  }));
+  res.json(events);
 });
 
 // 9. Database Stats & Diagnostics
