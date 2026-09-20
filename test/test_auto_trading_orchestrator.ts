@@ -4,7 +4,9 @@ import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission } fro
 
 const originalAuto = process.env.GOLDCREST_AUTO_TRADING_ENABLED;
 const originalLiveAuto = process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION;
+const originalLocalDevelopment = process.env.GOLDCREST_LOCAL_DEVELOPMENT;
 
+process.env.GOLDCREST_LOCAL_DEVELOPMENT = 'false';
 delete process.env.GOLDCREST_AUTO_TRADING_ENABLED;
 delete process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION;
 
@@ -22,5 +24,7 @@ if (originalAuto === undefined) delete process.env.GOLDCREST_AUTO_TRADING_ENABLE
 else process.env.GOLDCREST_AUTO_TRADING_ENABLED = originalAuto;
 if (originalLiveAuto === undefined) delete process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION;
 else process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = originalLiveAuto;
+if (originalLocalDevelopment === undefined) delete process.env.GOLDCREST_LOCAL_DEVELOPMENT;
+else process.env.GOLDCREST_LOCAL_DEVELOPMENT = originalLocalDevelopment;
 
 console.log('AUTO-TRADING ORCHESTRATOR SAFETY TEST PASSED');
