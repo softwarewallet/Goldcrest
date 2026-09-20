@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
   isEmergencyHalted,
   onToggleKillSwitch
 }) => {
-  const isLive = environment === 'LIVE';
+  const isLive = true;
   const activeArea =
     activeTab === 'forex_terminal' ? 'FOREX' :
     activeTab === 'market' ? 'NSE' :
@@ -88,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({
               : 'bg-amber-950/70 border-amber-700 text-amber-300'
         }`}>
           <ShieldAlert className="w-3 h-3" />
-          <span>{isEmergencyHalted ? 'TRADING HALTED' : isLive ? 'LIVE TRADING' : environment + ' MODE'}</span>
+          <span>{isEmergencyHalted ? 'TRADING HALTED' : 'LIVE TRADING'}</span>
           <span>({maskedAccount})</span>
         </div>
       </div>
