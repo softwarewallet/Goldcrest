@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+const originalNodeEnv = process.env.NODE_ENV;
+process.env.NODE_ENV = 'development';
+
 import {
   startLiveRuntimeLog,
   stopLiveRuntimeLog,
@@ -27,18 +30,22 @@ assert.doesNotMatch(contentText, /super-secret-client-secret-value/);
 assert.match(contentText, /\[REDACTED(?:_TOKEN)?\]/);
 
 const stopped = stopLiveRuntimeLog('TEST');
-assert.equal(stopped.enabled, false);
+assert.equal(stopped.enabled, true);
 const sizeBefore = fs.statSync(stopped.file).size;
 
-liveRuntimeLog('INFO', 'SHOULD_NOT_BE_WRITTEN');
+liveRuntimeLog('INFO', 'SHOULD_BE_WRITTEN_AFTER_STOP_REQUEST');
 const sizeAfter = fs.statSync(stopped.file).size;
-assert.equal(sizeAfter, sizeBefore);
+assert.ok(sizeAfter > sizeBefore);
+assert.match(fs.readFileSync(stopped.file, 'utf8'), /LIVE_LOG_STOP_REQUEST_IGNORED/);
 
 const archive = listLiveRuntimeLogFiles();
 assert.ok(archive.some(item => item.file === status.file));
 
 const finalStatus = getLiveRuntimeLogStatus();
-assert.equal(finalStatus.enabled, false);
+assert.equal(finalStatus.enabled, true);
 assert.equal(finalStatus.exists, true);
 
 console.log('LIVE RUNTIME LOG TESTS PASSED');
+
+if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+else process.env.NODE_ENV = originalNodeEnv;
