@@ -690,9 +690,16 @@ app.get('/api/options/chain/:symbol', async (req: Request, res: Response) => {
 });
 
 app.get('/api/options/scanner/:symbol', async (req: Request, res: Response) => {
-  const symbol = req.params.symbol ? req.params.symbol.toUpperCase() : 'NIFTY';
-  const result = scannerService.getOptionsScanner(symbol);
-  res.json(result);
+  try {
+    const symbol = req.params.symbol ? req.params.symbol.toUpperCase() : 'NIFTY';
+    const result = await scannerService.getOptionsScanner(symbol);
+    res.json(result);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_OPTIONS_SCANNER_UNAVAILABLE',
+      message: err?.message || 'Authoritative live options scanner data is unavailable.'
+    });
+  }
 });
 
 app.post('/api/options/payoff', (req: Request, res: Response) => {
@@ -705,9 +712,16 @@ app.post('/api/options/payoff', (req: Request, res: Response) => {
 });
 
 // 7. Unified Signals
-app.get(['/api/signals', '/api/signals/all'], (req: Request, res: Response) => {
-  const signals = scannerService.getAllSignals();
-  res.json(signals);
+app.get(['/api/signals', '/api/signals/all'], async (_req: Request, res: Response) => {
+  try {
+    const signals = await scannerService.getAllSignals();
+    res.json(signals);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_SIGNAL_FEED_UNAVAILABLE',
+      message: err?.message || 'Authoritative live signal data is unavailable.'
+    });
+  }
 });
 
 // 8. Live Macro News
