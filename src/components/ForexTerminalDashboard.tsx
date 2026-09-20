@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart3, Info, RefreshCw, Search } from 'lucide-react';
 import { Candle, ForexSessionState, TradingSignal } from '../markets/common/types';
 import { BrokerType, OrderRequest, TradingEnvironment } from '../brokers/types';
@@ -68,23 +68,40 @@ export const ForexTerminalDashboard: React.FC<ForexTerminalDashboardProps> = ({
   const [amount, setAmount] = useState('1');
   const [summary, setSummary] = useState<Summary | null>(null);
   const [candles, setCandles] = useState<Candle[]>(candlesMap['EUR/USD'] || []);
+  const loadInFlightRef = useRef<Promise<void> | null>(null);
 
   const pair = forexPairs.find(p => p.symbol === selectedPair) || forexPairs.find(Boolean);
   const actualPair = pair?.symbol || selectedPair;
 
   const load = async () => {
-    try {
-      const [c, s] = await Promise.all([
-        fetch(`/api/forex/candles/${encodeURIComponent(actualPair)}?tf=${encodeURIComponent(timeframe)}&limit=300`),
-        fetch('/api/brokers/dashboard-summary')
-      ]);
-      if (c.ok) {
-        const data = await c.json();
-        if (Array.isArray(data)) setCandles(data);
+    if (loadInFlightRef.current) return loadInFlightRef.current;
+
+    const request = (async () => {
+      try {
+        const [c, s] = await Promise.all([
+          fetch(`/api/forex/candles/${encodeURIComponent(actualPair)}?tf=${encodeURIComponent(timeframe)}&limit=300`),
+          fetch('/api/brokers/dashboard-summary')
+        ]);
+
+        if (c.ok) {
+          const data = await c.json();
+          // Preserve the current chart during transient provider errors/empty reads.
+          if (Array.isArray(data) && data.length > 0) setCandles(data);
+        }
+        if (s.ok) {
+          const data = await s.json();
+          if (data && typeof data === 'object') setSummary(data);
+        }
+      } catch {
+        // Keep the last authoritative state; never blank a chart during a refresh.
       }
-      if (s.ok) setSummary(await s.json());
-    } catch {
-      // Keep last authoritative state; do not manufacture quotes or candles.
+    })();
+
+    loadInFlightRef.current = request;
+    try {
+      await request;
+    } finally {
+      loadInFlightRef.current = null;
     }
   };
 
