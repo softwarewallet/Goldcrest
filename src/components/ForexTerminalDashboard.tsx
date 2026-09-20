@@ -90,10 +90,10 @@ export const ForexTerminalDashboard: React.FC<ForexTerminalDashboardProps> = ({
 
   useEffect(() => { if (pair?.symbol) setSelectedPair(pair.symbol); }, [forexPairs.length]);
   useEffect(() => { load(); }, [actualPair, timeframe]);
-  useEffect(() => {
-    const id = window.setInterval(load, 15000);
-    return () => window.clearInterval(id);
-  }, [actualPair, timeframe]);
+  // The application shell owns the global refresh loop. Load this dashboard
+  // when the selected pair/timeframe changes; do not poll the same broker data
+  // independently every 15 seconds.
+
 
   const quote = {
     bid: Number(pair?.bid),
