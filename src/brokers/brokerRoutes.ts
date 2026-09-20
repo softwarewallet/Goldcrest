@@ -390,6 +390,19 @@ brokerRouter.get('/account', async (req: Request, res: Response) => {
   } catch (err: any) {
     const broker = requestedBroker || 'CTRADER';
     const normalized = normalizeBrokerError(err, broker, 'LIVE');
+    const transient = ['RATE_LIMITED', 'TIMEOUT', 'NETWORK_ERROR', 'UNAVAILABLE', 'BROKER_UNAVAILABLE'].includes(normalized.code);
+
+    if (requestedBroker && transient) {
+      const persisted = await loadPersistedBrokerAccount(requestedBroker);
+      if (persisted) {
+        return res.json({
+          ...persisted,
+          stale: true,
+          lastRefreshError: normalized.message
+        });
+      }
+    }
+
     res.status(500).json({ error: normalized.message, code: normalized.code });
   }
 });
