@@ -337,7 +337,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       this.status = 'CONNECTED';
       const authoritativeAccount: BrokerAccountInfo = {
         accountId: String(details.traderLogin),
-        accountType: details.isLive ? 'LIVE' : 'DEMO',
+        accountType: 'LIVE',
         balance: details.balance,
         equity: details.equity,
         availableMargin: details.availableMargin,
