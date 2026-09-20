@@ -87,7 +87,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
 
   protected getApiHost(): string {
     if (this.config.apiHost) return this.config.apiHost;
-    return this.isLive ? 'https://live.ctraderapi.com' : 'https://demo.ctraderapi.com';
+    return 'https://live.ctraderapi.com';
   }
 
   protected validateCredentials(): void {
@@ -177,7 +177,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
 
   /**
    * Discovers accounts associated with the authenticated cTrader identity via Open API.
-   * Never injects synthetic fallback accounts.
+   * Never injects fabricated fallback accounts.
    */
   async getAccounts(): Promise<BrokerAccountInfo[]> {
     this.syncConfig();
