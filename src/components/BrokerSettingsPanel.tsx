@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Server, ShieldCheck, RefreshCw, CheckCircle2, XCircle, Lock, Database, DollarSign, IndianRupee } from 'lucide-react';
+import { Server, ShieldCheck, RefreshCw, CheckCircle2, XCircle, Lock, Database, DollarSign, IndianRupee, Sliders } from 'lucide-react';
 import { BrokerCredentialStatus, BrokerType, TradingEnvironment, ConnectionTestResult } from '../brokers/types';
 
 interface BrokerSettingsPanelProps {
