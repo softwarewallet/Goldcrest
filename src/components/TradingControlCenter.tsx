@@ -222,6 +222,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [riskTimeline, setRiskTimeline] = useState<RiskTimelineEvent[]>([]);
   const [reconciliations, setReconciliations] = useState<ReconciliationComparison[]>([]);
   const [healthComponents, setHealthComponents] = useState<SystemHealthComponent[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
   // Fetch live operational data from authoritative broker and runtime APIs.
   const fetchAllOperationalData = useCallback(async () => {
