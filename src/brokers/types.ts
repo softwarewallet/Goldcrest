@@ -1,8 +1,8 @@
 // Normalized types and interfaces for Phase 2B & 2C Broker Integration
 
-export type TradingEnvironment = 'PAPER' | 'DEMO' | 'LIVE';
+export type TradingEnvironment = 'LIVE';
 
-export type BrokerType = 'CTRADER' | 'FIVE_PAISA' | 'PAPER';
+export type BrokerType = 'CTRADER' | 'FIVE_PAISA';
 
 export type BrokerStatus =
   | 'CONNECTED'
@@ -60,7 +60,7 @@ export type OrderStatus =
 
 export interface BrokerAccountInfo {
   accountId: string;
-  accountType: 'DEMO' | 'LIVE' | 'PAPER';
+  accountType: 'LIVE';
   balance: number;
   equity: number;
   availableMargin: number;
