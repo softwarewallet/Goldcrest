@@ -77,8 +77,8 @@ interface RealSignal {
 export const TradingHub: React.FC<TradingHubProps> = ({ 
   environment, 
   selectedBroker = 'cTrader', 
-  maskedAccount = 'ID-8849-LIVE', 
-  balance = 148500.00, 
+  maskedAccount = '****', 
+  balance = 0, 
   currency = 'USD', 
   isEmergencyHalted 
 }) => {
@@ -118,7 +118,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   );
   const [confidenceThreshold, setConfidenceThreshold] = useState<number>(85);
   const [maxPositions, setMaxPositions] = useState<number>(4);
-  const [isAutoTradingActive, setIsAutoTradingActive] = useState<boolean>(true);
+  const [isAutoTradingActive, setIsAutoTradingActive] = useState<boolean>(false);
   const [isSavingInstructions, setIsSavingInstructions] = useState<boolean>(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
@@ -952,7 +952,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           </div>
           <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
             <span className="px-3 py-1 rounded-lg border bg-rose-950/80 text-rose-300 border-rose-800 font-bold">
-              {environment === 'LIVE' ? 'LIVE BROKER ACCOUNT' : 'LIVE DEMO GATE'}
+              LIVE BROKER ACCOUNT
             </span>
             <span className="px-3 py-1 rounded-lg border bg-emerald-950/80 text-emerald-300 border-emerald-800 font-bold flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> AUTONOMOUS EXECUTION: ENABLED
