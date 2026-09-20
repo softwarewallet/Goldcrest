@@ -67,7 +67,7 @@ export class LiveForexProvider implements LiveForexDataProvider {
         close: Number(candle.close),
         // cTrader historical bars provide OHLCV; current executable bid/ask is
         // supplied separately by getQuote(). Historical bid/ask are therefore
-        // represented at bar close without inventing synthetic prices.
+        // represented at bar close without inventing prices.
         bid: Number(candle.close),
         ask: Number(candle.close),
         spread: 0,
