@@ -18,6 +18,7 @@ const nav = [
   { id: 'market_watch', label: 'Market Watch', icon: Activity },
   { id: 'trading', label: 'Positions', icon: CandlestickChart },
   { id: 'control_center', label: 'Orders', icon: ListChecks },
+  { id: 'history', label: 'History', icon: BookOpen },
   { id: 'signals', label: 'Strategy', icon: Sparkles },
   { id: 'pnl', label: 'Reports', icon: BookOpen },
   { id: 'alerts', label: 'Alerts', icon: Bell },
