@@ -598,6 +598,13 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
     });
   }, [auditLogs, auditCategoryFilter, auditSearchQuery]);
 
+  const formatMarketValue = (value: number | null | undefined, market: MarketQuoteItem['market'], symbol: string) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '—';
+    const digits = market === 'FOREX' && !symbol.includes('JPY') ? 5 : 2;
+    return numeric.toFixed(digits);
+  };
+
   // Calculate Freshness Badge Style
   const renderFreshnessBadge = (freshness: FreshnessStatus, timestamp?: number) => {
     const ageSeconds = timestamp ? Math.floor((Date.now() - timestamp) / 1000) : 0;
@@ -692,6 +699,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
 
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
+                  type="button"
                   onClick={abandonClosedMarketAutoLive}
                   disabled={autoTradingBusy}
                   className="px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800 font-bold disabled:opacity-50"
@@ -699,6 +707,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                   No — Abandon
                 </button>
                 <button
+                  type="button"
                   onClick={confirmClosedMarketAutoLive}
                   disabled={autoTradingBusy}
                   className="px-4 py-2 rounded-lg border border-emerald-600 bg-emerald-950/70 text-emerald-300 hover:bg-emerald-900/70 font-bold disabled:opacity-50"
@@ -756,6 +765,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             </div>
 
             <button
+              type="button"
               onClick={toggleAutoTrading}
               disabled={autoTradingBusy}
               className="px-3 py-1 rounded border text-xs font-bold transition disabled:opacity-50 bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800"
@@ -955,8 +965,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                       </span>
                     </td>
                     <td className="py-2.5 px-3 font-bold text-white">{q.symbol}</td>
-                    <td className="py-2.5 px-3 text-slate-200">{q.bid.toFixed(q.market === 'FOREX' && !q.symbol.includes('JPY') ? 5 : 2)}</td>
-                    <td className="py-2.5 px-3 text-slate-200">{q.ask.toFixed(q.market === 'FOREX' && !q.symbol.includes('JPY') ? 5 : 2)}</td>
+                    <td className="py-2.5 px-3 text-slate-200">{formatMarketValue(q.bid, q.market, q.symbol)}</td>
+                    <td className="py-2.5 px-3 text-slate-200">{formatMarketValue(q.ask, q.market, q.symbol)}</td>
                     <td className="py-2.5 px-3 text-emerald-400">
                       {q.spreadPipsOrPts} {q.market === 'FOREX' ? 'pips' : 'pts'}
                     </td>
