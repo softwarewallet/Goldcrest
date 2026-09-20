@@ -874,10 +874,10 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             {accounts.map(acc => {
               const isForex = acc.currency === 'USD';
               const symbolPrefix = isForex ? '$' : '₹';
-              const formattedBalance = `${symbolPrefix}${acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-              const formattedEquity = `${symbolPrefix}${acc.equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-              const formattedMargin = `${symbolPrefix}${acc.availableMargin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-              const formattedUnrealized = `${acc.unrealizedPnl >= 0 ? '+' : ''}${symbolPrefix}${acc.unrealizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              const formattedBalance = `${symbolPrefix}${formatNumber(acc.balance, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              const formattedEquity = `${symbolPrefix}${formatNumber(acc.equity, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              const formattedMargin = `${symbolPrefix}${formatNumber(acc.availableMargin, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              const formattedUnrealized = `${acc.unrealizedPnl >= 0 ? '+' : ''}${symbolPrefix}${formatNumber(acc.unrealizedPnl, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
               return (
                 <div key={acc.broker} className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3 font-mono">
@@ -906,7 +906,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                     <div className="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/60">
                       <div className="text-slate-400 text-[10px]">FREE MARGIN</div>
                       <div className="font-bold text-slate-200 mt-0.5">{formattedMargin}</div>
-                      <div className="text-[9px] text-slate-500">{acc.marginLevelPct ? `${acc.marginLevelPct.toFixed(0)}% lvl` : 'Available'}</div>
+                      <div className="text-[9px] text-slate-500">{Number.isFinite(Number(acc.marginLevelPct)) ? `${Number(acc.marginLevelPct).toFixed(0)}% lvl` : 'Available'}</div>
                     </div>
 
                     <div className="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/60">
@@ -1341,11 +1341,11 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                           {pos.side}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-200">{pos.quantity.toLocaleString()}</td>
-                      <td className="py-2.5 px-3 text-slate-300">{pos.entryPrice.toFixed(pos.currency === 'USD' ? 5 : 2)}</td>
-                      <td className="py-2.5 px-3 font-bold text-slate-100">{pos.currentPrice.toFixed(pos.currency === 'USD' ? 5 : 2)}</td>
+                      <td className="py-2.5 px-3 text-slate-200">{formatNumber(pos.quantity)}</td>
+                      <td className="py-2.5 px-3 text-slate-300">{formatFixed(pos.entryPrice, pos.currency === 'USD' ? 5 : 2)}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-100">{formatFixed(pos.currentPrice, pos.currency === 'USD' ? 5 : 2)}</td>
                       <td className={`py-2.5 px-3 font-bold ${pos.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {pos.unrealizedPnl >= 0 ? '+' : ''}{sym}{pos.unrealizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2 })} ({pos.currency})
+                        {pos.unrealizedPnl >= 0 ? '+' : ''}{sym}{formatNumber(pos.unrealizedPnl, { minimumFractionDigits: 2 })} ({pos.currency})
                       </td>
                       <td className="py-2.5 px-3 text-emerald-400 text-[11px] font-semibold">{pos.brokerSyncStatus}</td>
                       <td className="py-2.5 px-3">
@@ -1426,8 +1426,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                         {ord.side}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3 text-slate-200">{ord.quantity.toLocaleString()}</td>
-                    <td className="py-2.5 px-3 font-bold text-slate-100">{ord.price.toFixed(ord.price < 50 ? 5 : 2)}</td>
+                    <td className="py-2.5 px-3 text-slate-200">{formatNumber(ord.quantity)}</td>
+                    <td className="py-2.5 px-3 font-bold text-slate-100">{formatFixed(ord.price, ord.price < 50 ? 5 : 2)}</td>
                     <td className="py-2.5 px-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         ord.status === 'FILLED' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' :
@@ -1608,7 +1608,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                   </div>
                   <div>
                     <span className="text-slate-500">Requests: </span>
-                    <strong className="text-slate-300">{comp.requestCount24h.toLocaleString()}</strong>
+                    <strong className="text-slate-300">{formatNumber(comp.requestCount24h)}</strong>
                   </div>
                   <div>
                     <span className="text-slate-500">Success: </span>
