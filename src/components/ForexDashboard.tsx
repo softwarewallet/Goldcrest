@@ -202,17 +202,6 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
         </div>
       </div>
 
-      {trackNotification && (
-        <div className="bg-emerald-950/80 border border-emerald-600/80 text-emerald-200 px-4 py-2 rounded text-xs font-mono flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>{trackNotification}</span>
-          </div>
-          <span className="text-[10px] uppercase tracking-wider text-emerald-400 bg-emerald-900 px-2 py-0.5 rounded font-bold">
-            PAPER ANALYSIS
-          </span>
-        </div>
-      )}
 
       {/* Main Content Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -488,8 +477,8 @@ export const ForexDashboard: React.FC<ForexDashboardProps> = ({
 
                 {analysis.tradePlan && (
                   <button
-                    onClick={handleTrackSignal}
-                    disabled={trackingLoading}
+                    onClick={}
+                    disabled={}
                     className="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded font-mono text-xs flex items-center space-x-1.5 transition"
                   >
                     <BookmarkPlus className="w-3.5 h-3.5" />
