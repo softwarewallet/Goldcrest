@@ -309,7 +309,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             currency: String(p.currency || 'USD').toUpperCase() === 'INR' ? 'INR' : 'USD',
             openedAt: Number(p.timestamp || Date.now()),
             brokerSyncStatus: 'SYNCED',
-            reconciliationStatus: 'MATCH'
+            reconciliationStatus: 'MINOR_DELAY'
           }))
           .filter((p: PositionItem) =>
             p.positionId && Number.isFinite(p.quantity) && Number.isFinite(p.entryPrice) && Number.isFinite(p.currentPrice)
@@ -1037,14 +1037,14 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                   <strong className="text-white">{optionsChainData.underlying}</strong>
                   <span className="text-slate-600 mx-2">|</span>
                   <span className="text-slate-400">Spot: </span>
-                  <strong className="text-emerald-400">₹{optionsChainData.spotPrice?.toFixed(2) || '24,851.00'}</strong>
+                  <strong className="text-emerald-400">₹{Number.isFinite(optionsChainData.spotPrice) && optionsChainData.spotPrice > 0 ? optionsChainData.spotPrice.toFixed(2) : '—'}</strong>
                 </div>
                 <div>
                   <span className="text-slate-400">PCR: </span>
-                  <strong className="text-amber-400">{optionsChainData.pcr?.toFixed(2) || '1.14'}</strong>
+                  <strong className="text-amber-400">{Number.isFinite(optionsChainData.pcr) && optionsChainData.pcr > 0 ? optionsChainData.pcr.toFixed(2) : '—'}</strong>
                   <span className="text-slate-600 mx-2">|</span>
                   <span className="text-slate-400">Expiry: </span>
-                  <strong className="text-slate-200">{optionsChainData.expiry || 'CURRENT'}</strong>
+                  <strong className="text-slate-200">{optionsChainData.expiry || '—'}</strong>
                 </div>
               </div>
 
