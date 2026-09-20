@@ -27,7 +27,7 @@ import { getForexSessionState } from '../common/session';
 
 export class ForexSignalEngine {
   private config: ForexSignalEngineConfig;
-  private provider: ForexDemoProvider;
+  private provider: ForexDataProvider;
 
   constructor(config: ForexSignalEngineConfig = DEFAULT_FOREX_CONFIG, provider: ForexDataProvider = new ForexDemoProvider()) {
     this.config = config;
