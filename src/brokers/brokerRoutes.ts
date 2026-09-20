@@ -20,7 +20,7 @@ const LIVE_BROKERS: BrokerType[] = ['CTRADER', 'FIVE_PAISA'];
 // Share one short-lived broker snapshot and one in-flight request so normal
 // UI polling does not repeatedly hit broker account APIs and trigger provider
 // throttling. Order execution paths still request the broker directly.
-const BROKER_STATUS_CACHE_TTL_MS = 20_000;
+const BROKER_STATUS_CACHE_TTL_MS = 60_000;
 let brokerStatusCache: { payload: any; expiresAt: number } | null = null;
 let brokerStatusInFlight: Promise<any> | null = null;
 
