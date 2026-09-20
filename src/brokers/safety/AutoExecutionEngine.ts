@@ -25,8 +25,10 @@ function syncAutonomousPermission(): boolean {
   const config = getSystemConfig();
   const requested = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
     && process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true';
-  const calibrated = !/UNCALIBRATED/i.test(String(config.modelStatus || ''));
-  const allowed = requested && config.liveTradingEnabled && calibrated && !killSwitch.isHalted();
+  const approvedStrategyId = String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim();
+  const approved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
+    && approvedStrategyId === 'fx_structure_v2a';
+  const allowed = requested && config.liveTradingEnabled && approved && !killSwitch.isHalted();
   LIVE_AUTO_EXECUTION_ALLOWED = allowed;
   return allowed;
 }
@@ -83,7 +85,7 @@ class AutoExecutionEngine {
       return {
         success: false,
         code: 'AUTONOMOUS_LIVE_EXECUTION_NOT_READY',
-        message: 'Autonomous execution is not enabled or the live strategy is not currently qualified. Set both auto-trading flags and use a calibrated strategy.'
+        message: 'Autonomous execution is not enabled or the production strategy has not been explicitly approved. Set the auto-trading flags and approve the configured production strategy.'
       };
     }
     return {
