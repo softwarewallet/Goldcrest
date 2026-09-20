@@ -337,7 +337,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             reconciliationState: 'MATCH',
             rejectionReason: o.rejectionReason
           }))
-          .filter((o: OrderItem) => o.internalOrderId && Number.isFinite(o.quantity)));
+          .filter((o: any) => o.internalOrderId && Number.isFinite(o.quantity)));
       }
 
       if (forexPairsRes?.ok || indiaUnderlyingsRes?.ok) {
