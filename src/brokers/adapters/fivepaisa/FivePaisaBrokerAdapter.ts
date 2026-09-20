@@ -73,6 +73,8 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   protected config: FivePaisaConfig;
   protected openPositions: Map<string, NormalizedPosition> = new Map();
   protected openOrders: Map<string, NormalizedOrder> = new Map();
+  private scripMasterCache: { expiresAt: number; rows: any[] } | null = null;
+  private static readonly SCRIP_MASTER_TTL_MS = 10 * 60 * 1000;
 
   constructor(config: FivePaisaConfig) {
     super();
@@ -649,19 +651,31 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   }
 
   private async getScripMasterRows(): Promise<any[]> {
+    const now = Date.now();
+    if (this.scripMasterCache && this.scripMasterCache.expiresAt > now) {
+      return this.scripMasterCache.rows;
+    }
+
     const res = await fetch(`${this.getApiHost()}/VendorsAPI/Service1.svc/ScripMaster/segment/All`);
     if (!res.ok) throw new BrokerError('BROKER_UNAVAILABLE', `5paisa ScripMaster HTTP ${res.status}: ${res.statusText}`, 'FIVE_PAISA', this.environment);
     const csv = await res.text();
     const lines = csv.split(/\r?\n/).filter(Boolean);
     if (lines.length < 2) return [];
+
     const headers = lines[0].split(',').map(v => v.trim());
     const idx = (name: string) => headers.findIndex(h => h.toLowerCase() === name.toLowerCase());
-    const fields = ['ScripData','ScripCode','Exch','ExchType','LotSize'];
+    const fields = ['ScripData','ScripCode','Exch','ExchType','LotSize','Name'];
     const indexes = Object.fromEntries(fields.map(name => [name, idx(name)]));
-    return lines.slice(1).map(line => {
+    const rows = lines.slice(1).map(line => {
       const cols = line.split(',');
       return Object.fromEntries(fields.map(name => [name, indexes[name] >= 0 ? cols[indexes[name]] : undefined]));
     });
+
+    this.scripMasterCache = {
+      rows,
+      expiresAt: now + FivePaisaBrokerAdapter.SCRIP_MASTER_TTL_MS
+    };
+    return rows;
   }
 
   async getQuote(symbol: string): Promise<NormalizedQuote> {
@@ -1189,13 +1203,52 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
       return [];
     }
 
-    const scrips = [
-      { Exch: 'N', ExchType: 'C', ScripCode: 999920000, ScripData: 'NIFTY', symbol: 'NIFTY', name: 'Nifty 50' },
-      { Exch: 'N', ExchType: 'C', ScripCode: 999920005, ScripData: 'BANKNIFTY', symbol: 'BANKNIFTY', name: 'Nifty Bank' },
-      { Exch: 'N', ExchType: 'C', ScripCode: 999920023, ScripData: 'FINNIFTY', symbol: 'FINNIFTY', name: 'Nifty Financial Services' },
-      { Exch: 'N', ExchType: 'C', ScripCode: 999920042, ScripData: 'MIDCPNIFTY', symbol: 'MIDCPNIFTY', name: 'Nifty Midcap Select' },
-      { Exch: 'B', ExchType: 'C', ScripCode: 999901, ScripData: 'SENSEX', symbol: 'SENSEX', name: 'BSE SENSEX' }
+    const requested = [
+      { symbol: 'NIFTY', name: 'Nifty 50', exchange: 'N' },
+      { symbol: 'BANKNIFTY', name: 'Nifty Bank', exchange: 'N' },
+      { symbol: 'FINNIFTY', name: 'Nifty Financial Services', exchange: 'N' },
+      { symbol: 'MIDCPNIFTY', name: 'Nifty Midcap Select', exchange: 'N' },
+      { symbol: 'SENSEX', name: 'BSE SENSEX', exchange: 'B' }
     ];
+
+    const master = await this.getScripMasterRows();
+    const normalizeInstrumentKey = (value: unknown) => String(value || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+
+    const scrips = requested.map(request => {
+      const requestKey = normalizeInstrumentKey(request.symbol);
+      const row = master.find(item => {
+        const exchange = String(item.Exch || '').toUpperCase();
+        const exchangeType = String(item.ExchType || '').toUpperCase();
+        if (exchange !== request.exchange || exchangeType !== 'C') return false;
+        const dataKey = normalizeInstrumentKey(item.ScripData);
+        const nameKey = normalizeInstrumentKey(item.Name);
+        return dataKey === requestKey
+          || dataKey === `${requestKey}EQ`
+          || nameKey === requestKey
+          || nameKey.includes(requestKey);
+      });
+
+      if (!row) return null;
+      return {
+        Exch: String(row.Exch).toUpperCase(),
+        ExchType: String(row.ExchType).toUpperCase(),
+        ScripCode: Number(row.ScripCode || 0),
+        ScripData: String(row.ScripData || ''),
+        symbol: request.symbol,
+        name: request.name
+      };
+    }).filter(Boolean) as Array<{
+      Exch: string;
+      ExchType: string;
+      ScripCode: number;
+      ScripData: string;
+      symbol: string;
+      name: string;
+    }>;
+
+    if (scrips.length === 0) return [];
 
     const endpoints = [
       `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/MarketFeed`,
@@ -1212,8 +1265,8 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
         MarketFeedData: scrips.map(s => ({
           Exch: s.Exch,
           ExchType: s.ExchType,
-          ScripCode: s.ScripCode,
-          ScripData: s.ScripData
+          ScripCode: s.ScripCode || 0,
+          ScripData: s.ScripData || ''
         }))
       }
     };
@@ -1312,7 +1365,8 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     }
 
     try {
-      const scripCode = this.resolve5PaisaScripCode(symbol);
+      const instrument = await this.resolve5PaisaInstrument(symbol);
+      const scripCode = instrument.scripCode;
       const toDate = new Date().toISOString().split('T')[0];
       const fromDateObj = new Date(Date.now() - 7 * 86400000);
       const fromDate = fromDateObj.toISOString().split('T')[0];
@@ -1322,8 +1376,8 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
         head: this.getApiHead('5PCandV1'),
         body: {
           ClientCode: this.config.clientCode || this.config.userId,
-          Exch: symbol === 'SENSEX' ? 'B' : 'N',
-          ExchType: 'C',
+          Exch: instrument.exchange,
+          ExchType: instrument.exchangeType,
           ScripCode: scripCode,
           FromDate: fromDate,
           ToDate: toDate,
@@ -1602,17 +1656,30 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   /**
    * Helper to map underlying symbols and option contracts to 5paisa Scrip Codes
    */
-  protected resolve5PaisaScripCode(symbol: string): number {
-    const scripMap: Record<string, number> = {
-      'NIFTY': 999920000,
-      'BANKNIFTY': 999920005,
-      'FINNIFTY': 999920023,
-      'MIDCPNIFTY': 999920042,
-      'SENSEX': 999901
+  protected async resolve5PaisaInstrument(symbol: string): Promise<{ scripCode: number; scripData: string; exchange: string; exchangeType: string }> {
+    const normalized = String(symbol || '').replace(/^NSE:|^BSE:/, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const rows = await this.getScripMasterRows();
+    const row = rows.find((item: any) => {
+      const exchangeType = String(item.ExchType || '').toUpperCase();
+      if (exchangeType !== 'C') return false;
+      const key = String(item.ScripData || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      return key === normalized || key === `${normalized}EQ`;
+    });
+
+    if (!row) {
+      throw new BrokerError(
+        'INVALID_SYMBOL',
+        `No authoritative 5paisa ScripMaster instrument is configured for ${symbol}.`,
+        'FIVE_PAISA',
+        this.environment
+      );
+    }
+
+    return {
+      scripCode: Number(row.ScripCode || 0),
+      scripData: String(row.ScripData || ''),
+      exchange: String(row.Exch || '').toUpperCase(),
+      exchangeType: String(row.ExchType || '').toUpperCase()
     };
-
-    if (scripMap[symbol]) return scripMap[symbol];
-
-    throw new BrokerError('INVALID_SYMBOL', `No authoritative 5paisa scrip code is configured for ${symbol}.`, 'FIVE_PAISA', this.environment);
   }
 }
