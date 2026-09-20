@@ -336,12 +336,12 @@ export default function App() {
           onSelectSignal={(sig) => setSelectedSignal(sig)}
         />
       ) : (
-        <main className="min-h-[calc(100vh-162px)] w-full px-4 sm:px-6 lg:px-8 py-5 space-y-4 bg-white">
+        <main className="min-h-[calc(100vh-162px)] w-full px-4 sm:px-6 lg:px-8 py-5 space-y-4 bg-[#03070d] text-slate-100">
           {loadingInitial ? (
             <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 font-mono">
               <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-              <div className="text-sm text-slate-600">Initializing Quantitative Terminal Engine...</div>
-              <div className="text-xs text-slate-400">Loading broker adapters, SQLite storage and risk gates</div>
+              <div className="text-sm text-slate-300">Initializing Quantitative Terminal Engine...</div>
+              <div className="text-xs text-slate-500">Loading broker adapters, SQLite storage and risk gates</div>
             </div>
           ) : (
             <>
