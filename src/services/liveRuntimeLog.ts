@@ -24,9 +24,40 @@ function getDailyLogFile(date = getLogDate()): string {
 }
 
 let enabled = false;
+let consoleCaptureInstalled = false;
 
 export function initializeLiveRuntimeLog(source = 'APPLICATION_START'): { enabled: boolean; file: string } {
-  return startLiveRuntimeLog(source);
+  const status = startLiveRuntimeLog(source);
+  installConsoleAuditCapture();
+  return status;
+}
+
+export function installConsoleAuditCapture(): void {
+  if (consoleCaptureInstalled) return;
+  consoleCaptureInstalled = true;
+
+  const methods: Array<{ name: 'log' | 'info' | 'warn' | 'error' | 'debug'; level: LiveLogLevel }> = [
+    { name: 'log', level: 'SYSTEM' },
+    { name: 'info', level: 'INFO' },
+    { name: 'warn', level: 'WARN' },
+    { name: 'error', level: 'ERROR' },
+    { name: 'debug', level: 'INFO' }
+  ];
+
+  for (const { name, level } of methods) {
+    const original = console[name].bind(console);
+    console[name] = (...args: unknown[]) => {
+      try {
+        writeLine(level, 'CONSOLE_OUTPUT', {
+          method: name,
+          args
+        });
+      } catch {
+        // Never let audit capture interfere with the application logger.
+      }
+      original(...args);
+    };
+  }
 }
 
 function ensureLogFile(date = getLogDate()): string {
@@ -40,7 +71,12 @@ function ensureLogFile(date = getLogDate()): string {
 
 function sanitize(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const raw = typeof value === 'string' ? value : JSON.stringify(value);
+  let raw: string;
+  try {
+    raw = typeof value === 'string' ? value : JSON.stringify(value);
+  } catch {
+    raw = String(value);
+  }
   return raw
     .replace(/((?:client[_ -]?secret|secret|access[_ -]?token|api[_ -]?key|password|user[_ -]?key|encryption[_ -]?key|totp[_ -]?secret|pin))\s*[:=]\s*[^,;\s\]}]+/gi, '$1=[REDACTED]')
     .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, 'Bearer [REDACTED]')
@@ -56,7 +92,7 @@ function writeLine(level: LiveLogLevel, event: string, details?: unknown): void 
   try {
     fs.appendFileSync(logFile, line, 'utf8');
   } catch (error) {
-    console.error('[LIVE-LOG] Failed to append log file:', error);
+    process.stderr.write(`[LIVE-LOG] Failed to append log file: ${String(error)}\n`);
   }
 }
 
