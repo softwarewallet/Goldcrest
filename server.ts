@@ -569,84 +569,111 @@ app.get('/api/markets', (req: Request, res: Response) => {
 });
 
 // 4. Forex Endpoints (Phase 2A Full Analysis Engine)
-app.get('/api/forex/pairs', async (req: Request, res: Response) => {
+const FOREX_PAIRS_CACHE_TTL_MS = 60_000;
+let forexPairsCache: { payload: any[]; expiresAt: number } | null = null;
+let forexPairsInFlight: Promise<any[]> | null = null;
+
+const INDIA_UNDERLYINGS_CACHE_TTL_MS = 60_000;
+let indiaUnderlyingsCache: { payload: any[]; expiresAt: number } | null = null;
+let indiaUnderlyingsInFlight: Promise<any[]> | null = null;
+
+const CANDLE_CACHE_TTL_MS = 30_000;
+const candleCache = new Map<string, { payload: any[]; expiresAt: number }>();
+const candleInFlight = new Map<string, Promise<any[]>>();
+
+app.get('/api/forex/pairs', async (_req: Request, res: Response) => {
   try {
-    const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
-    const instruments = await adapter.getInstruments();
+    const now = Date.now();
+    if (forexPairsCache && now < forexPairsCache.expiresAt) {
+      return res.json(forexPairsCache.payload);
+    }
+    if (forexPairsInFlight) {
+      return res.json(await forexPairsInFlight);
+    }
 
-    const pairsWithQuotes = await Promise.all(instruments.map(async inst => {
-      try {
-        const quote = await adapter.getQuote(inst.symbol);
-        return {
-          ...inst,
-          baseCurrency: inst.symbol.split('/')[0],
-          quoteCurrency: inst.symbol.split('/')[1] || '',
-          bid: quote.bid,
-          ask: quote.ask,
-          spreadPips: Number((quote.spread * (inst.symbol.includes('JPY') ? 100 : 10000)).toFixed(1)),
-          changePips24h: undefined,
-          changePercent24h: undefined,
-          high24h: undefined,
-          low24h: undefined,
-          dataStatus: quote.status,
-          dataSource: quote.source
-        };
-      } catch (quoteErr: any) {
-        // Closed Forex sessions can legitimately have no current spot event.
-        // Keep the terminal populated with the latest authoritative cTrader
-        // historical close instead of failing the entire instrument list.
+    forexPairsInFlight = (async () => {
+      const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+      const instruments = await adapter.getInstruments();
+
+      const pairsWithQuotes = await Promise.all(instruments.map(async inst => {
         try {
-          if (!adapter.getHistoricalCandles) throw quoteErr;
-          const candles = await adapter.getHistoricalCandles(inst.symbol, '15M', 2);
-          const last = candles?.[candles.length - 1];
-          const previous = candles?.[candles.length - 2] || last;
-          const close = Number(last?.close || 0);
-          if (!(close > 0)) throw quoteErr;
-
-          const previousClose = Number(previous?.close || close);
-          const change = close - previousClose;
-          const divisor = inst.symbol.includes('JPY') ? 100 : 10000;
-
+          const quote = await adapter.getQuote(inst.symbol);
           return {
             ...inst,
             baseCurrency: inst.symbol.split('/')[0],
             quoteCurrency: inst.symbol.split('/')[1] || '',
-            bid: close,
-            ask: close,
-            spreadPips: 0,
-            changePips24h: Number((change * divisor).toFixed(1)),
-            changePercent24h: previousClose > 0
-              ? Number(((change / previousClose) * 100).toFixed(2))
-              : undefined,
-            high24h: Number.isFinite(Number(last?.high)) ? Number(last.high) : close,
-            low24h: Number.isFinite(Number(last?.low)) ? Number(last.low) : close,
-            dataStatus: 'DELAYED',
-            dataSource: 'CTRADER_HISTORICAL_CLOSE',
-            dataError: quoteErr?.message || String(quoteErr)
-          };
-        } catch (historyErr: any) {
-          return {
-            ...inst,
-            baseCurrency: inst.symbol.split('/')[0],
-            quoteCurrency: inst.symbol.split('/')[1] || '',
-            bid: undefined,
-            ask: undefined,
-            spreadPips: undefined,
+            bid: quote.bid,
+            ask: quote.ask,
+            spreadPips: Number((quote.spread * (inst.symbol.includes('JPY') ? 100 : 10000)).toFixed(1)),
             changePips24h: undefined,
             changePercent24h: undefined,
             high24h: undefined,
             low24h: undefined,
-            dataStatus: 'UNKNOWN',
-            dataSource: 'CTRADER_LIVE_API_UNAVAILABLE',
-            dataError: historyErr?.message || quoteErr?.message || String(quoteErr)
+            dataStatus: quote.status,
+            dataSource: quote.source
           };
-        }
-      }
-    }));
+        } catch (quoteErr: any) {
+          try {
+            if (!adapter.getHistoricalCandles) throw quoteErr;
+            const candles = await adapter.getHistoricalCandles(inst.symbol, '15M', 2);
+            const last = candles?.[candles.length - 1];
+            const previous = candles?.[candles.length - 2] || last;
+            const close = Number(last?.close || 0);
+            if (!(close > 0)) throw quoteErr;
 
-    return res.json(pairsWithQuotes);
+            const previousClose = Number(previous?.close || close);
+            const change = close - previousClose;
+            const divisor = inst.symbol.includes('JPY') ? 100 : 10000;
+
+            return {
+              ...inst,
+              baseCurrency: inst.symbol.split('/')[0],
+              quoteCurrency: inst.symbol.split('/')[1] || '',
+              bid: close,
+              ask: close,
+              spreadPips: 0,
+              changePips24h: Number((change * divisor).toFixed(1)),
+              changePercent24h: previousClose > 0
+                ? Number(((change / previousClose) * 100).toFixed(2))
+                : undefined,
+              high24h: Number.isFinite(Number(last?.high)) ? Number(last.high) : close,
+              low24h: Number.isFinite(Number(last?.low)) ? Number(last.low) : close,
+              dataStatus: 'DELAYED',
+              dataSource: 'CTRADER_HISTORICAL_CLOSE',
+              dataError: quoteErr?.message || String(quoteErr)
+            };
+          } catch (historyErr: any) {
+            return {
+              ...inst,
+              baseCurrency: inst.symbol.split('/')[0],
+              quoteCurrency: inst.symbol.split('/')[1] || '',
+              bid: undefined,
+              ask: undefined,
+              spreadPips: undefined,
+              changePips24h: undefined,
+              changePercent24h: undefined,
+              high24h: undefined,
+              low24h: undefined,
+              dataStatus: 'UNKNOWN',
+              dataSource: 'CTRADER_LIVE_API_UNAVAILABLE',
+              dataError: historyErr?.message || quoteErr?.message || String(quoteErr)
+            };
+          }
+        }
+      }));
+
+      forexPairsCache = {
+        payload: pairsWithQuotes,
+        expiresAt: Date.now() + FOREX_PAIRS_CACHE_TTL_MS
+      };
+      return pairsWithQuotes;
+    })().finally(() => {
+      forexPairsInFlight = null;
+    });
+
+    return res.json(await forexPairsInFlight);
   } catch (err: any) {
-    return res.status(503).json({
+    res.status(503).json({
       error: err?.code || 'LIVE_MARKET_DATA_UNAVAILABLE',
       message: err?.message || 'Authoritative cTrader market data is unavailable.'
     });
@@ -842,13 +869,32 @@ app.delete('/api/notes/:id', operatorAuthRequired, async (req: Request, res: Res
 });
 
 // 5. Indian Equity Endpoints
-app.get('/api/india/underlyings', async (req: Request, res: Response) => {
+app.get('/api/india/underlyings', async (_req: Request, res: Response) => {
   try {
-    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE') as any;
-    if (typeof adapter.fetchIndianUnderlyingsFrom5Paisa !== 'function') {
-      throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa underlying market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
+    const now = Date.now();
+    if (indiaUnderlyingsCache && now < indiaUnderlyingsCache.expiresAt) {
+      return res.json(indiaUnderlyingsCache.payload);
     }
-    res.json(await adapter.fetchIndianUnderlyingsFrom5Paisa());
+    if (indiaUnderlyingsInFlight) {
+      return res.json(await indiaUnderlyingsInFlight);
+    }
+
+    indiaUnderlyingsInFlight = (async () => {
+      const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE') as any;
+      if (typeof adapter.fetchIndianUnderlyingsFrom5Paisa !== 'function') {
+        throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa underlying market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
+      }
+      const payload = await adapter.fetchIndianUnderlyingsFrom5Paisa();
+      indiaUnderlyingsCache = {
+        payload: Array.isArray(payload) ? payload : [],
+        expiresAt: Date.now() + INDIA_UNDERLYINGS_CACHE_TTL_MS
+      };
+      return indiaUnderlyingsCache.payload;
+    })().finally(() => {
+      indiaUnderlyingsInFlight = null;
+    });
+
+    return res.json(await indiaUnderlyingsInFlight);
   } catch (err: any) {
     res.status(503).json({
       error: err?.code || 'LIVE_MARKET_DATA_UNAVAILABLE',
@@ -905,21 +951,50 @@ app.get(['/api/candles/:symbol', '/api/candles/:part1/:part2'], async (req: Requ
     if (!symbol) {
       return res.status(400).json({ error: 'Symbol parameter is required' });
     }
-    symbol = decodeURIComponent(symbol).toUpperCase().trim();
 
+    symbol = decodeURIComponent(symbol).toUpperCase().trim();
     const isForex = symbol.includes('/') || FOREX_PAIRS.some(p => p.symbol.toUpperCase() === symbol);
-    if (isForex) {
-      const tf = (req.query.tf as ForexTimeframe) || '15M';
-      const limit = req.query.limit ? Math.min(Math.max(parseInt(req.query.limit as string, 10), 10), 500) : 80;
-      const candles = await getLiveAnchoredCandles(symbol, tf, limit);
-      return res.json(candles);
-    } else {
+    const tf = isForex
+      ? ((req.query.tf as ForexTimeframe) || '15M')
+      : String(req.query.tf || '15m');
+    const limit = req.query.limit
+      ? Math.min(Math.max(parseInt(req.query.limit as string, 10), 10), 500)
+      : 80;
+
+    const cacheKey = `${isForex ? 'FX' : 'IN'}|${symbol}|${tf}|${limit}`;
+    const cached = candleCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) {
+      return res.json(cached.payload);
+    }
+
+    const inFlight = candleInFlight.get(cacheKey);
+    if (inFlight) {
+      return res.json(await inFlight);
+    }
+
+    const promise = (async () => {
+      if (isForex) {
+        const candles = await getLiveAnchoredCandles(symbol, tf as ForexTimeframe, limit);
+        return candles;
+      }
+
       const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE');
-      if (!adapter.getHistoricalCandles) throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa historical market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
-      const tf = String(req.query.tf || '15m');
-      const limit = req.query.limit ? Math.min(Math.max(parseInt(req.query.limit as string, 10), 10), 500) : 80;
-      const candles = await adapter.getHistoricalCandles(symbol, tf, limit);
-      return res.json(candles);
+      if (!adapter.getHistoricalCandles) {
+        throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa historical market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
+      }
+      return await adapter.getHistoricalCandles(symbol, tf, limit);
+    })();
+
+    candleInFlight.set(cacheKey, promise);
+    try {
+      const candles = await promise;
+      candleCache.set(cacheKey, {
+        payload: Array.isArray(candles) ? candles : [],
+        expiresAt: Date.now() + CANDLE_CACHE_TTL_MS
+      });
+      return res.json(Array.isArray(candles) ? candles : []);
+    } finally {
+      candleInFlight.delete(cacheKey);
     }
   } catch (err: any) {
     const isAuth = err?.code === 'AUTHENTICATION_FAILED' || err?.code === 'ACCOUNT_NOT_FOUND' || err?.code === 'TOKEN_EXPIRED';
