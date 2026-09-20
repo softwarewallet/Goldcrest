@@ -65,9 +65,18 @@ const MSG_ERROR_RES = 2142;
  * exercised with the same application flows before the account is promoted
  * to the broker's real-money environment.
  */
-function getCTraderWsHost(): string {
+function getConfiguredCTraderWsHost(): string | null {
   const configured = String(process.env.CTRADER_LIVE_API_HOST || '').trim();
-  return configured || 'wss://live.ctraderapi.com:5036';
+  if (!configured || configured.toLowerCase() === 'auto') return null;
+  return configured;
+}
+
+function getCTraderWsHost(accountIsLive?: boolean): string {
+  const configured = getConfiguredCTraderWsHost();
+  if (configured) return configured;
+  return accountIsLive === false
+    ? 'wss://demo.ctraderapi.com:5036'
+    : 'wss://live.ctraderapi.com:5036';
 }
 
 function isAuthoritativeLiveHost(host: string): boolean {
@@ -87,7 +96,10 @@ export async function fetchLiveCTraderAccounts(
   accessToken: string,
   preferredHost: 'live' = 'live'
 ): Promise<CTraderRawAccount[]> {
-  const hosts = [getCTraderWsHost()];
+  const configuredHost = getConfiguredCTraderWsHost();
+  const hosts = configuredHost
+    ? [configuredHost]
+    : ['wss://live.ctraderapi.com:5036', 'wss://demo.ctraderapi.com:5036'];
 
   let lastError: Error | null = null;
 
@@ -121,15 +133,15 @@ export async function fetchLiveCTraderAccounts(
               clearTimeout(timer);
               try { ws.close(); } catch {}
               const accList: CTraderRawAccount[] = msg.payload?.ctidTraderAccount || [];
-              // LIVE-only runtime: only accounts explicitly marked live may be
-              // authenticated on the live Open API endpoint. cTrader separates
-              // separate account environments at the proxy layer.
-              const liveAccounts = accList.filter(account => account.isLive === true);
-              if (accList.length > 0 && liveAccounts.length === 0) {
-                reject(new Error('cTrader returned accounts, but none are LIVE accounts. Select a LIVE cTrader account and obtain its LIVE access token.'));
+              const endpointIsLive = isAuthoritativeLiveHost(host);
+              const eligibleAccounts = endpointIsLive
+                ? accList.filter(account => account.isLive === true)
+                : accList.filter(account => account.isLive === false);
+              if (accList.length > 0 && eligibleAccounts.length === 0) {
+                reject(new Error('cTrader returned accounts, but none match the connected Open API account environment.'));
                 return;
               }
-              resolve(liveAccounts);
+              resolve(eligibleAccounts);
             } else if (msg.payloadType === MSG_ERROR_RES) {
               clearTimeout(timer);
               try { ws.close(); } catch {}
@@ -171,7 +183,7 @@ export async function fetchLiveCTraderAccountDetails(
   clientSecret: string,
   accessToken: string
 ): Promise<CTraderRealTraderDetails> {
-  const host = getCTraderWsHost();
+  const host = getCTraderWsHost(rawAccount.isLive);
 
   if (isAuthoritativeLiveHost(host) && !rawAccount.isLive) {
     return Promise.reject(new Error(`cTrader account ${rawAccount.ctidTraderAccountId} is not marked LIVE by Open API. The configured LIVE broker endpoint requires a LIVE cTrader account.`));
