@@ -12,7 +12,8 @@ import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
 import { autoTradeReadinessService } from './AutoTradeReadiness';
 import { logBrokerAction } from '../auditLog';
 import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../../services/executionIntentService';
-import { getSystemConfig } from '../../services/configService';
+import { getSystemConfig, updateSystemConfig } from '../../services/configService';
+import { liveRuntimeLog } from '../../services/liveRuntimeLog';
 
 /**
  * Autonomous live execution is an explicit, server-side opt-in.
@@ -23,7 +24,11 @@ export let LIVE_AUTO_EXECUTION_ALLOWED: boolean = false;
 let localExplicitAutoArm = false;
 
 function isLocalDevelopment(): boolean {
-  return process.env.NODE_ENV !== 'production' && (process.env.HOST === '127.0.0.1' || process.env.HOST === 'localhost' || process.env.HOST === '::1');
+  if (process.env.NODE_ENV === 'production') return false;
+  // Goldcrest defaults to loopback when HOST is not explicitly configured.
+  // Only an explicit non-loopback HOST disables local development controls.
+  const host = String(process.env.HOST || '').trim().toLowerCase();
+  return !host || ['127.0.0.1', 'localhost', '::1'].includes(host);
 }
 
 export function disarmLocalAutonomousExecution(): void {
@@ -34,6 +39,7 @@ export function disarmLocalAutonomousExecution(): void {
     process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = 'false';
     process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'false';
     process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
+    updateSystemConfig({ liveTradingEnabled: false });
   }
   syncAutonomousPermission();
 }
@@ -110,25 +116,65 @@ class AutoExecutionEngine {
   }
 
   enableAutomaticExecution(): { success: boolean; code: string; message: string } {
-    if (isLocalDevelopment()) {
+    const localDevelopment = isLocalDevelopment();
+    if (localDevelopment) {
       localExplicitAutoArm = true;
       process.env.LIVE_TRADING_ENABLED = 'true';
       process.env.GOLDCREST_AUTO_TRADING_ENABLED = 'true';
       process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION = 'true';
       process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'true';
       process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
+      // configService snapshots LIVE_TRADING_ENABLED at module load, so an
+      // explicit local arm must update the authoritative runtime config too.
+      updateSystemConfig({ liveTradingEnabled: true });
     }
+
     const allowed = syncAutonomousPermission();
 
     this.permissions.autoExecutionEnabled = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true';
     this.permissions.autonomousLiveExecutionAllowed = allowed;
+
     if (!allowed) {
+      const blockers: string[] = [];
+      const config = getSystemConfig();
+      const ctraderConfigured = (() => {
+        try {
+          return Boolean(
+            brokerRegistry.getCredentialStatuses().find(
+              item => item.broker === 'CTRADER' && item.environment === 'LIVE'
+            )?.configured
+          );
+        } catch {
+          return false;
+        }
+      })();
+
+      if (!this.permissions.autoExecutionEnabled) blockers.push('AUTO_TRADING_FLAGS');
+      if (!config.liveTradingEnabled) blockers.push('LIVE_TRADING_ENABLED');
+      const approvedStrategyId = String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim();
+      const strategyApproved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
+        && approvedStrategyId === 'fx_structure_v2a';
+      if (!strategyApproved) blockers.push('PRODUCTION_STRATEGY_APPROVAL');
+      if (!ctraderConfigured) blockers.push('CTRADER_LIVE_CREDENTIALS');
+      if (killSwitch.isHalted()) blockers.push('KILL_SWITCH');
+
+      const message = blockers.length
+        ? `Autonomous live execution is blocked by: ${blockers.join(', ')}.`
+        : 'Autonomous live execution is not currently permitted by the server safety gate.';
+
+      liveRuntimeLog('WARN', 'AUTO_TRADING_ARM_BLOCKED', {
+        code: 'AUTONOMOUS_LIVE_EXECUTION_NOT_READY',
+        localDevelopment,
+        blockers
+      });
+
       return {
         success: false,
         code: 'AUTONOMOUS_LIVE_EXECUTION_NOT_READY',
-        message: 'Autonomous execution is not enabled or the production strategy has not been explicitly approved. Set the auto-trading flags and approve the configured production strategy.'
+        message
       };
     }
+
     return {
       success: true,
       code: 'AUTONOMOUS_LIVE_EXECUTION_ARMED',
