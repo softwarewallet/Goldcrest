@@ -102,7 +102,15 @@ export async function fetchLiveCTraderAccounts(
               clearTimeout(timer);
               try { ws.close(); } catch {}
               const accList: CTraderRawAccount[] = msg.payload?.ctidTraderAccount || [];
-              resolve(accList);
+              // LIVE-only runtime: only accounts explicitly marked live may be
+              // authenticated on the live Open API endpoint. cTrader separates
+              // live and demo environments at the proxy layer.
+              const liveAccounts = accList.filter(account => account.isLive === true);
+              if (accList.length > 0 && liveAccounts.length === 0) {
+                reject(new Error('cTrader returned accounts, but none are LIVE accounts. Select a LIVE cTrader account and obtain its LIVE access token.'));
+                return;
+              }
+              resolve(liveAccounts);
             } else if (msg.payloadType === MSG_ERROR_RES) {
               clearTimeout(timer);
               try { ws.close(); } catch {}
@@ -145,6 +153,10 @@ export async function fetchLiveCTraderAccountDetails(
   accessToken: string
 ): Promise<CTraderRealTraderDetails> {
   const host = 'wss://live.ctraderapi.com:5036';
+
+  if (!rawAccount.isLive) {
+    return Promise.reject(new Error(`cTrader account ${rawAccount.ctidTraderAccountId} is not marked LIVE by Open API. The LIVE runtime cannot authenticate a non-LIVE account.`));
+  }
 
   return new Promise<CTraderRealTraderDetails>((resolve, reject) => {
     const ws = new WebSocket(host);
@@ -269,7 +281,13 @@ export async function fetchLiveCTraderAccountDetails(
         } else if (msg.payloadType === MSG_ERROR_RES) {
           clearTimeout(timer);
           try { ws.close(); } catch {}
-          reject(new Error(`cTrader Account Error: ${JSON.stringify(msg.payload)}`));
+          const code = String(msg.payload?.errorCode || '').toUpperCase();
+          const description = String(msg.payload?.description || '').trim();
+          if (code === 'CANT_ROUTE_REQUEST' || description.toLowerCase().includes('cannot route request') || description.toLowerCase().includes('no environment connection')) {
+            reject(new Error(`cTrader Open API cannot route LIVE account ${rawAccount.ctidTraderAccountId} to the broker environment. Verify that this account is LIVE and its broker server is connected to the cTrader Open API LIVE proxy. (CANT_ROUTE_REQUEST)`));
+          } else {
+            reject(new Error(`cTrader Account Error: ${JSON.stringify(msg.payload)}`));
+          }
         }
       } catch (err: any) {
         clearTimeout(timer);
