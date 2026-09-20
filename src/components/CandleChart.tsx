@@ -487,7 +487,7 @@ export const CandleChart: React.FC<CandleChartProps> = ({
           {isIndianMarket && showVWAP && <span className="flex items-center space-x-1"><span className="w-2.5 h-0.5 bg-orange-400"></span><span>VWAP</span></span>}
         </div>
         <div>
-          <span className="text-slate-500">Tick: 15M • Data: Deterministic Demo Engine</span>
+          <span className="text-slate-500">Tick: 15M • Data: LIVE deterministic engine</span>
         </div>
       </div>
     </div>
