@@ -62,7 +62,7 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
               setDashboardOpen(v => !v);
               if (!isDashboard) setActiveTab('forex_terminal');
             }}
-            className={`w-full h-[50px] flex items-center gap-3 px-4 rounded-lg border transition text-left ${
+            className={`w-full h-[40px] flex items-center gap-3 px-4 rounded-lg border transition text-left ${
               isDashboard
                 ? 'bg-[#092345] border-blue-700/70 text-white shadow-[0_0_18px_rgba(30,100,210,0.18)]'
                 : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-900/70'
@@ -74,11 +74,11 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
           </button>
 
           {dashboardOpen && (
-            <div className="mt-1 mb-2 pl-10 pr-2 space-y-0.5">
+            <div className="mt-0 mb-1 pl-10 pr-2 space-y-0">
               <button
                 type="button"
                 onClick={() => goDashboard('forex_terminal')}
-                className={`w-full py-1.5 text-left text-sm transition ${
+                className={`w-full py-0.5 text-left text-sm transition ${
                   activeTab === 'forex_terminal' ? 'text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -87,7 +87,7 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
               <button
                 type="button"
                 onClick={() => goDashboard('market')}
-                className={`w-full py-1.5 text-left text-sm transition ${
+                className={`w-full py-0.5 text-left text-sm transition ${
                   activeTab === 'market' ? 'text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -96,7 +96,7 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
             </div>
           )}
 
-          <div className="space-y-1">
+          <div className="space-y-0">
             {nav.map(item => {
               const Icon = item.icon;
               const selected = activeTab === item.id;
@@ -105,7 +105,7 @@ export const GlobalAppShell: React.FC<GlobalAppShellProps> = ({
                   key={item.id}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full h-[48px] flex items-center gap-3 px-4 rounded-lg text-sm transition text-left ${
+                  className={`w-full h-[40px] flex items-center gap-3 px-4 rounded-lg text-sm transition text-left ${
                     selected
                       ? 'bg-slate-900 border border-slate-700 text-white'
                       : 'border border-transparent text-slate-300 hover:text-white hover:bg-slate-900/60'
