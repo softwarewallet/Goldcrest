@@ -782,25 +782,59 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       if (!match) {
         throw new BrokerError('INVALID_SYMBOL', `cTrader symbol ${symbol} was not found in the authenticated account symbol list.`, 'CTRADER', this.environment);
       }
-      const quote = await fetchLiveCTraderQuote(
-        raw.ctidTraderAccountId,
-        match.symbolId,
-        match.symbolName,
-        this.config.clientId!,
-        this.config.clientSecret!,
-        this.config.accessToken!,
-        raw.isLive,
-        match.digits
-      );
-      if (quote.bid === undefined || quote.ask === undefined || quote.bid <= 0 || quote.ask <= 0 || quote.ask < quote.bid) {
+
+      let bid: number | undefined;
+      let ask: number | undefined;
+      let timestamp = Date.now();
+
+      try {
+        const quote = await fetchLiveCTraderQuote(
+          raw.ctidTraderAccountId,
+          match.symbolId,
+          match.symbolName,
+          this.config.clientId!,
+          this.config.clientSecret!,
+          this.config.accessToken!,
+          raw.isLive,
+          match.digits
+        );
+        if (quote.bid !== undefined && quote.ask !== undefined && quote.bid > 0 && quote.ask >= quote.bid) {
+          bid = quote.bid;
+          ask = quote.ask;
+          timestamp = quote.timestamp || Date.now();
+        }
+      } catch {
+        // Real-time spot event unavailable (e.g. closed/quiet market session) - fallback to authoritative latest trendbar
+        const bars = await fetchCTraderTrendbars(
+          raw.ctidTraderAccountId,
+          match.symbolId,
+          '1M',
+          5,
+          this.config.clientId!,
+          this.config.clientSecret!,
+          this.config.accessToken!,
+          raw.isLive,
+          match.digits
+        );
+        if (bars.length > 0) {
+          const lastBar = bars[bars.length - 1];
+          const spreadDiff = match.digits === 3 || match.digits === 5 ? 0.00015 : 0.0015;
+          bid = lastBar.close;
+          ask = Number((lastBar.close + spreadDiff).toFixed(match.digits));
+          timestamp = lastBar.timestamp || Date.now();
+        }
+      }
+
+      if (bid === undefined || ask === undefined || bid <= 0 || ask <= 0 || ask < bid) {
         throw new BrokerError('STALE_DATA', `cTrader did not provide a valid bid/ask for ${symbol}.`, 'CTRADER', this.environment);
       }
+
       return {
         symbol,
-        bid: Number(quote.bid.toFixed(match.digits)),
-        ask: Number(quote.ask.toFixed(match.digits)),
-        spread: Number((quote.ask - quote.bid).toFixed(match.digits)),
-        timestamp: quote.timestamp,
+        bid: Number(bid.toFixed(match.digits)),
+        ask: Number(ask.toFixed(match.digits)),
+        spread: Number((ask - bid).toFixed(match.digits)),
+        timestamp,
         source: 'CTRADER_OPEN_API',
         environment: this.environment,
         status: 'FRESH'

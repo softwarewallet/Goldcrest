@@ -754,6 +754,9 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing market or symbol', code: 'INVALID_SYMBOL' });
     }
 
+    const rawSide = String(orderReq.side || 'BUY').toUpperCase();
+    orderReq.side = (rawSide.includes('SELL') || rawSide.includes('SHORT')) ? 'SELL' : 'BUY';
+
     const broker = resolveMarketBroker(orderReq.market);
     const adapter = brokerRegistry.getAdapterForMarket(orderReq.market);
 

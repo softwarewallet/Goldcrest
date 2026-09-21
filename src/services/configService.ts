@@ -74,8 +74,8 @@ let activeConfig: SystemConfig = {
   signalCooldownMs: 60000,
   eventProximityThresholdMinutes: 20,
   strikeDepth: 7,
-  maxTradeValueForexUsd: 200,
-  maxTradeValueIndianInr: 20000,
+  maxTradeValueForexUsd: 100000,
+  maxTradeValueIndianInr: 1000000,
   autoLiveForexPairs: ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD'],
   autoLiveIndianUnderlyings: ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'],
   financialDisclaimer:

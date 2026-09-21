@@ -122,6 +122,10 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [isSavingInstructions, setIsSavingInstructions] = useState<boolean>(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
+  // Triggering State & Notifications
+  const [triggeringSignalId, setTriggeringSignalId] = useState<string | null>(null);
+  const [triggerNotification, setTriggerNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
   // Helper to append telemetry console logs
   const addLog = useCallback((type: 'info' | 'success' | 'error' | 'warning' | 'nlp', message: string) => {
     setLogs(prev => [
@@ -136,12 +140,15 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
   // Safe JSON parsing helper to prevent unexpected token '<' exceptions from non-JSON gateway error pages
   const safeParseJson = useCallback(async (res: Response): Promise<any> => {
-    const contentType = res.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      return await res.json();
-    }
     const text = await res.text();
-    throw new Error(text.substring(0, 150) || `Server returned status ${res.status}`);
+    try {
+      return JSON.parse(text);
+    } catch {
+      if (text.includes('<!DOCTYPE') || text.includes('<!doctype') || text.includes('<html')) {
+        throw new Error(`Endpoint returned HTTP ${res.status} (${res.statusText || 'HTML Document'}) instead of JSON`);
+      }
+      throw new Error(text.substring(0, 150) || `Server returned status ${res.status}`);
+    }
   }, []);
 
   // Fetch positions from /api/brokers/positions
@@ -341,17 +348,36 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
   // Execute immediate order placement directly from a planned signal
   const triggerSignalExecution = async (signal: RealSignal) => {
-    addLog('nlp', `[SIGNAL DISPATCH] Operator selected immediate override execution for ${signal.instrument}`);
+    // 1. Resolve effective trade direction from signal direction, SL/TP structure, or strategy bias
+    let orderSide: 'BUY' | 'SELL' = 'BUY';
+    const rawDir = String(signal.direction || '').toUpperCase();
+    if (rawDir.includes('BUY') || rawDir.includes('LONG')) {
+      orderSide = 'BUY';
+    } else if (rawDir.includes('SELL') || rawDir.includes('SHORT')) {
+      orderSide = 'SELL';
+    } else if (signal.stopLoss && signal.target1 && signal.stopLoss > 0 && signal.target1 > 0) {
+      // If stopLoss > target1, it's a short (SELL) setup; if below, it's a long (BUY) setup
+      orderSide = signal.stopLoss > signal.target1 ? 'SELL' : 'BUY';
+    } else if (Array.isArray(signal.reasons) && signal.reasons.some(r => /bear|short|sell|down/i.test(r))) {
+      orderSide = 'SELL';
+    } else {
+      orderSide = 'BUY';
+    }
+
+    addLog('nlp', `[SIGNAL DISPATCH] Operator triggered immediate execution for ${signal.instrument} (${orderSide})`);
+    setTriggeringSignalId(signal.id);
+    setTriggerNotification(null);
+
     const idempotencyKey = `${signal.id}:${globalThis.crypto.randomUUID()}`;
     try {
       const payload = {
         market: signal.market,
         symbol: signal.instrument,
-        side: signal.direction,
+        side: orderSide,
         orderType: 'MARKET',
         quantity: signal.market === 'FOREX' ? 10000 : 25,
-        stopLoss: signal.stopLoss,
-        takeProfit: signal.target1,
+        stopLoss: signal.stopLoss && signal.stopLoss > 0 ? signal.stopLoss : undefined,
+        takeProfit: signal.target1 && signal.target1 > 0 ? signal.target1 : undefined,
         environment,
         signalId: idempotencyKey
       };
@@ -367,17 +393,34 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
       const data = await safeParseJson(res);
       if (!res.ok) {
-        throw new Error(data.error || 'Signal trigger submission rejected');
+        const errorMsg = data.error || data.message || 'Signal trigger submission rejected';
+        const detailsMsg = data.details?.length ? ` (${data.details.join(', ')})` : '';
+        throw new Error(`${errorMsg}${detailsMsg}`);
       }
 
-      const executionStatus = String(data.order?.status || data.executionState || 'UNKNOWN').toUpperCase();
+      const executionStatus = String(data.order?.status || data.executionState || 'SUBMITTED').toUpperCase();
+      const orderRef = data.order?.id || data.executionId || idempotencyKey;
+      
       addLog(
-        executionStatus === 'FILLED' ? 'success' : 'info',
-        `SIGNAL ORDER ${executionStatus}: ${signal.instrument} - Ref ID ${data.order?.id || data.executionId || idempotencyKey}`
+        executionStatus === 'FILLED' || executionStatus === 'EXECUTED' ? 'success' : 'info',
+        `SIGNAL ORDER ${executionStatus}: ${signal.instrument} ${orderSide} - Ref ID ${orderRef}`
       );
+
+      setTriggerNotification({
+        type: 'success',
+        message: `Order submitted for ${signal.instrument} [${orderSide}] (Status: ${executionStatus}, Ref: ${orderRef})`
+      });
+
       fetchRealPositions();
     } catch (err: any) {
-      addLog('error', `Failed to dispatch signal order: ${err.message}`);
+      const errMsg = err.message || 'Failed to dispatch signal order';
+      addLog('error', `Trigger Dispatch Error (${signal.instrument}): ${errMsg}`);
+      setTriggerNotification({
+        type: 'error',
+        message: `${signal.instrument}: ${errMsg}`
+      });
+    } finally {
+      setTriggeringSignalId(null);
     }
   };
 
@@ -775,8 +818,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         </div>
 
         {/* ROW 2: PLANNED AUTO TRADES (CONTINUOUS BACKGROUND SCANNERS) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4 mb-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
             <div className="flex items-center gap-2">
               <Target className="w-4 h-4 text-cyan-400" />
               <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
@@ -789,6 +832,28 @@ export const TradingHub: React.FC<TradingHubProps> = ({
             </div>
           </div>
 
+          {/* Trigger Banner Notification */}
+          {triggerNotification && (
+            <div className={`p-3 rounded-lg text-xs font-mono border flex items-center justify-between transition-all ${
+              triggerNotification.type === 'success'
+                ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300'
+                : triggerNotification.type === 'error'
+                ? 'bg-rose-950/80 border-rose-800 text-rose-300'
+                : 'bg-cyan-950/80 border-cyan-800 text-cyan-300'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className="font-bold">[{triggerNotification.type.toUpperCase()}]</span>
+                <span>{triggerNotification.message}</span>
+              </div>
+              <button
+                onClick={() => setTriggerNotification(null)}
+                className="text-slate-400 hover:text-white text-[10px] font-mono underline ml-4"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {plannedTrades.length === 0 ? (
             <div className="text-center py-8 bg-slate-950/40 rounded-lg border border-slate-800/60 font-mono text-xs text-slate-400">
               <Target className="w-8 h-8 text-slate-600 mx-auto mb-2" />
@@ -800,7 +865,6 @@ export const TradingHub: React.FC<TradingHubProps> = ({
               <table className="w-full text-left font-mono text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
-                    <th className="py-2.5 px-3">Signal ID</th>
                     <th className="py-2.5 px-3">Market</th>
                     <th className="py-2.5 px-3">Target Asset</th>
                     <th className="py-2.5 px-3">Side</th>
@@ -814,14 +878,22 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {plannedTrades.map(signal => {
+                    const isTriggering = triggeringSignalId === signal.id;
+                    const dirStr = String(signal.direction || 'WAIT').toUpperCase();
+
                     return (
                       <tr key={signal.id} className="hover:bg-slate-950/60 transition">
-                        <td className="py-3 px-3 text-slate-400 font-bold">{signal.id}</td>
                         <td className="py-3 px-3 text-slate-400">{signal.market}</td>
                         <td className="py-3 px-3 text-white font-bold">{signal.instrument}</td>
                         <td className="py-3 px-3">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            signal.direction === 'BUY' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/40' : 'bg-rose-950 text-rose-400 border border-rose-800/40'
+                            dirStr.includes('BUY')
+                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/40'
+                              : dirStr.includes('SELL')
+                              ? 'bg-rose-950 text-rose-400 border border-rose-800/40'
+                              : dirStr === 'WAIT'
+                              ? 'bg-amber-950/80 text-amber-400 border border-amber-800/40'
+                              : 'bg-slate-800 text-slate-400 border border-slate-700'
                           }`}>
                             {signal.direction}
                           </span>
@@ -838,10 +910,22 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                         <td className="py-2 px-3 text-center">
                           <button
                             onClick={() => triggerSignalExecution(signal)}
-                            className="text-[10px] font-bold px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
+                            disabled={isTriggering}
+                            className={`text-[10px] font-bold px-3 py-1.5 rounded shadow-sm transition flex items-center justify-center mx-auto gap-1 ${
+                              isTriggering
+                                ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                : 'bg-emerald-600 hover:bg-emerald-500 text-white active:scale-95'
+                            }`}
                             title="Instantly trigger execution"
                           >
-                            Trigger Now
+                            {isTriggering ? (
+                              <>
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                                <span>Triggering...</span>
+                              </>
+                            ) : (
+                              <span>Trigger Now</span>
+                            )}
                           </button>
                         </td>
                       </tr>

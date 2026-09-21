@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { timingSafeEqual } from 'node:crypto';
 import dotenv from 'dotenv';
@@ -1349,6 +1349,23 @@ async function startServer() {
   const productionRuntime = process.env.npm_lifecycle_event !== 'dev'
     && process.env.NODE_ENV === 'production';
   productionPreflight(productionRuntime);
+
+  // Global JSON error-handling middleware for API routes
+  app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+    const status = Number(err.status || err.statusCode || 500);
+    const message = err.message || 'Internal Server Error';
+    if (req.path.startsWith('/api/')) {
+      res.status(status).json({
+        error: message,
+        code: err.code || 'INTERNAL_ERROR',
+        details: err.details || undefined,
+        stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined
+      });
+    } else {
+      res.status(status).send(message);
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: {

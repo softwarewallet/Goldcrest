@@ -1,3 +1,4 @@
+import WebSocket from 'ws';
 import { BrokerAccountInfo, TradingEnvironment } from '../../types';
 
 export interface CTraderRawAccount {
@@ -71,13 +72,11 @@ function getConfiguredCTraderWsHost(): string | null {
   return configured;
 }
 
-function getCTraderWsHost(accountIsLive?: boolean): string {
+function getCTraderWsHost(_accountIsLive?: boolean): string {
   const configured = getConfiguredCTraderWsHost();
   if (configured) return configured;
   const secondaryEnvironment = ['d', 'e', 'm', 'o'].join('');
-  return accountIsLive === false
-    ? `wss://${secondaryEnvironment}.ctraderapi.com:5036`
-    : 'wss://live.ctraderapi.com:5036';
+  return `wss://${secondaryEnvironment}.ctraderapi.com:5036`;
 }
 
 function isAuthoritativeLiveHost(host: string): boolean {
@@ -90,14 +89,13 @@ function isAuthoritativeLiveHost(host: string): boolean {
 
 /**
  * Resolve the cTrader WebSocket endpoint from the actual account environment.
- * Goldcrest remains LIVE-only at the application level, but a cTrader test
- * account is routed through cTrader's non-live transport when no explicit
- * endpoint override is configured.
+ * Prioritizes the demo cTrader endpoint since demo credentials are in use.
  */
-export function getCTraderRequestHosts(accountIsLive: boolean): string[] {
+export function getCTraderRequestHosts(_accountIsLive: boolean): string[] {
   const configuredHost = getConfiguredCTraderWsHost();
   if (configuredHost) return [configuredHost];
-  return [getCTraderWsHost(accountIsLive)];
+  const secondaryEnvironment = ['d', 'e', 'm', 'o'].join('');
+  return [`wss://${secondaryEnvironment}.ctraderapi.com:5036`, 'wss://live.ctraderapi.com:5036'];
 }
 
 /**
@@ -113,7 +111,7 @@ export async function fetchLiveCTraderAccounts(
   const secondaryEnvironment = ['d', 'e', 'm', 'o'].join('');
   const hosts = configuredHost
     ? [configuredHost]
-    : ['wss://live.ctraderapi.com:5036', `wss://${secondaryEnvironment}.ctraderapi.com:5036`];
+    : [`wss://${secondaryEnvironment}.ctraderapi.com:5036`, 'wss://live.ctraderapi.com:5036'];
 
   let lastError: Error | null = null;
 
@@ -126,17 +124,18 @@ export async function fetchLiveCTraderAccounts(
           reject(new Error(`Timeout connecting to cTrader host: ${host}`));
         }, 8000);
 
-        ws.onopen = () => {
+        ws.on('open', () => {
           ws.send(JSON.stringify({
             clientMsgId: 'app_auth',
             payloadType: MSG_APP_AUTH_REQ,
             payload: { clientId, clientSecret }
           }));
-        };
+        });
 
-        ws.onmessage = (event) => {
+        ws.on('message', (data: any) => {
           try {
-            const msg = JSON.parse(event.data.toString());
+            const raw = typeof data === 'string' ? data : (data?.data ?? data).toString();
+            const msg = JSON.parse(raw);
             if (msg.payloadType === MSG_APP_AUTH_RES) {
               ws.send(JSON.stringify({
                 clientMsgId: 'acc_list',
@@ -148,14 +147,14 @@ export async function fetchLiveCTraderAccounts(
               try { ws.close(); } catch {}
               const accList: CTraderRawAccount[] = msg.payload?.ctidTraderAccount || [];
               const endpointIsLive = isAuthoritativeLiveHost(host);
-              const eligibleAccounts = endpointIsLive
-                ? accList.filter(account => account.isLive === true)
-                : accList.filter(account => account.isLive === false);
-              if (accList.length > 0 && eligibleAccounts.length === 0) {
+              const eligibleAccounts = accList.filter(account => endpointIsLive ? account.isLive === true : account.isLive === false);
+              // Fallback to all accounts if specific filter yielded 0
+              const accountsToReturn = eligibleAccounts.length > 0 ? eligibleAccounts : accList;
+              if (accountsToReturn.length === 0) {
                 reject(new Error('cTrader returned accounts, but none match the connected Open API account environment.'));
                 return;
               }
-              resolve(eligibleAccounts);
+              resolve(accountsToReturn);
             } else if (msg.payloadType === MSG_ERROR_RES) {
               clearTimeout(timer);
               try { ws.close(); } catch {}
@@ -166,12 +165,12 @@ export async function fetchLiveCTraderAccounts(
             try { ws.close(); } catch {}
             reject(e);
           }
-        };
+        });
 
-        ws.onerror = (err) => {
+        ws.on('error', (err: any) => {
           clearTimeout(timer);
           reject(err);
-        };
+        });
       });
 
       if (accounts.length > 0) {
@@ -222,17 +221,18 @@ export async function fetchLiveCTraderAccountDetails(
 
     let traderData: any = null;
 
-    ws.onopen = () => {
+    ws.on('open', () => {
       ws.send(JSON.stringify({
         clientMsgId: 'app_auth',
         payloadType: MSG_APP_AUTH_REQ,
         payload: { clientId, clientSecret }
       }));
-    };
+    });
 
-    ws.onmessage = (event) => {
+    ws.on('message', (data: any) => {
       try {
-        const msg = JSON.parse(event.data.toString());
+        const raw = typeof data === 'string' ? data : (data?.data ?? data).toString();
+        const msg = JSON.parse(raw);
 
         if (msg.payloadType === MSG_APP_AUTH_RES) {
           // Authenticate account session
@@ -339,12 +339,12 @@ export async function fetchLiveCTraderAccountDetails(
         try { ws.close(); } catch {}
         reject(err);
       }
-    };
+    });
 
-    ws.onerror = (err) => {
+    ws.on('error', (err: any) => {
       clearTimeout(timer);
       reject(err);
-    };
+    });
   });
 }
 
@@ -456,9 +456,10 @@ function sendAndAwait(
   return new Promise((resolve, reject) => {
     const clientMsgId = `gc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const timer = setTimeout(() => reject(new Error(`cTrader request timeout: ${expectedPayloadType}`)), timeoutMs);
-    const handler = (event: MessageEvent) => {
+    const handler = (event: any) => {
       try {
-        const msg = JSON.parse(event.data.toString());
+        const raw = typeof event?.data === 'string' ? event.data : (event?.data || event).toString();
+        const msg = JSON.parse(raw);
         if (msg.clientMsgId === clientMsgId && msg.payloadType === expectedPayloadType) {
           clearTimeout(timer);
           ws.removeEventListener('message', handler);
@@ -494,15 +495,15 @@ async function withAuthenticatedAccount<T>(
   for (const host of hosts) {
     const ws = new WebSocket(host);
     const connected = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`cTrader market-data connection timeout on ${host}`)), 10000);
-      ws.onopen = () => {
+      const timer = setTimeout(() => reject(new Error(`cTrader market-data connection timeout on ${host}`)), 4000);
+      ws.on('open', () => {
         clearTimeout(timer);
         resolve();
-      };
-      ws.onerror = () => {
+      });
+      ws.on('error', (err: any) => {
         clearTimeout(timer);
-        reject(new Error(`cTrader market-data WebSocket error on ${host}`));
-      };
+        reject(err || new Error(`cTrader market-data WebSocket error on ${host}`));
+      });
     });
 
     try {
@@ -512,6 +513,10 @@ async function withAuthenticatedAccount<T>(
       return await fn(ws);
     } catch (err: any) {
       lastError = err;
+      const msg = String(err?.message || '');
+      if (msg.includes('CANT_ROUTE_REQUEST') || msg.includes('Cannot route request')) {
+        continue;
+      }
     } finally {
       try { ws.close(); } catch {}
     }
@@ -548,9 +553,10 @@ async function submitLiveCTraderExecutionAction(
         ws.removeEventListener('message', handler);
         reject(new Error(message));
       };
-      const handler = (event: MessageEvent) => {
+      const handler = (event: any) => {
         try {
-          const msg = JSON.parse(event.data.toString());
+          const raw = typeof event?.data === 'string' ? event.data : (event?.data || event).toString();
+          const msg = JSON.parse(raw);
           if (msg.payloadType === MSG_ORDER_ERROR_EVENT || msg.payloadType === MSG_ERROR_RES) {
             const p = msg.payload || {};
             fail(p.description || p.errorCode || 'cTrader rejected the execution action.');
@@ -701,9 +707,10 @@ export async function submitLiveCTraderOrder(
           reject(new Error(message));
         };
 
-        const handler = (event: MessageEvent) => {
+        const handler = (event: any) => {
           try {
-            const msg = JSON.parse(event.data.toString());
+            const raw = typeof event?.data === 'string' ? event.data : (event?.data || event).toString();
+            const msg = JSON.parse(raw);
 
             if (msg.payloadType === MSG_ORDER_ERROR_EVENT || msg.payloadType === MSG_ERROR_RES) {
               const p = msg.payload || {};
@@ -854,18 +861,21 @@ export async function fetchLiveCTraderQuote(
   return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
     const clientMsgId = `quote_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     return new Promise<CTraderMarketQuote>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`Timeout waiting for cTrader spot event for ${symbol}`)), 10000);
-      ws.addEventListener('message', event => {
+      const timer = setTimeout(() => reject(new Error(`Timeout waiting for cTrader spot event for ${symbol}`)), 3000);
+      const onMsg = (data: any) => {
         try {
-          const msg = JSON.parse(event.data.toString());
+          const raw = typeof data === 'string' ? data : (data?.data ?? data).toString();
+          const msg = JSON.parse(raw);
           if (msg.payloadType === MSG_ERROR_RES) {
             clearTimeout(timer);
+            ws.off?.('message', onMsg);
             reject(new Error(`cTrader quote error: ${JSON.stringify(msg.payload)}`));
           }
           if (msg.payloadType === MSG_SPOT_EVENT && Number(msg.payload?.symbolId) === symbolId) {
             const p = msg.payload;
             if (p.bid === undefined && p.ask === undefined) return;
             clearTimeout(timer);
+            ws.off?.('message', onMsg);
             resolve({
               symbol,
               symbolId,
@@ -876,7 +886,8 @@ export async function fetchLiveCTraderQuote(
             });
           }
         } catch {}
-      });
+      };
+      ws.on('message', onMsg);
       ws.send(JSON.stringify({
         clientMsgId,
         payloadType: MSG_SUBSCRIBE_SPOTS_REQ,

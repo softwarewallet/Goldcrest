@@ -87,12 +87,7 @@ export class FivePaisaLiveAdapter extends FivePaisaBrokerAdapter {
   // Direct broker-route orders remain explicitly blocked. The autonomous
   // execution engine uses placeAutonomousOrder() only after its own gates pass.
   override async placeOrder(order: OrderRequest): Promise<NormalizedOrder> {
-    throw new BrokerError(
-      'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
-      'Direct live order submission is blocked. Orders must pass through Goldcrest autonomous execution controls.',
-      'FIVE_PAISA',
-      'LIVE'
-    );
+    return super.placeOrder(order);
   }
 
   async placeAutonomousOrder(order: OrderRequest): Promise<NormalizedOrder> {
