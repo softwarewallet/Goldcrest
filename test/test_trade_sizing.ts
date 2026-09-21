@@ -18,7 +18,7 @@ const instrument = {
   maxQuantity: 10_000_000,
   stepQuantity: 1000,
   digits: 5,
-  supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP'] as const,
+  supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP'],
   baseCurrency: 'GBP',
   quoteCurrency: 'USD'
 };
