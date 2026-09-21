@@ -857,8 +857,7 @@ export async function submitLiveCTraderOrder(
             symbol,
             orderType,
             side,
-            quantityUnits: quantity,
-            protocolVolume: volume,
+            volume,
             price,
             stopLoss,
             takeProfit,
@@ -872,6 +871,20 @@ export async function submitLiveCTraderOrder(
           });
         } catch (logError) {
           console.error('[TRADE-LOG] Failed to record trade request:', logError);
+        }
+
+        // ProtoOANewOrderReq accepts broker volume, not Goldcrest's normalized
+        // quantity field. The exact broker payload must contain only cTrader API
+        // fields; Goldcrest's normalized quantity is intentionally never
+        // copied into the broker payload.
+        const forbiddenPayloadFields = ['quantity', 'quantityUnits', 'protocolVolume'];
+        for (const field of forbiddenPayloadFields) {
+          if (Object.prototype.hasOwnProperty.call(payload, field)) {
+            throw new Error(`INVALID_CTRADER_ORDER_PACKET: ${field} is not a ProtoOANewOrderReq field.`);
+          }
+        }
+        if (payload.volume !== volume) {
+          throw new Error('INVALID_CTRADER_ORDER_PACKET: payload.volume does not match the final protocol volume.');
         }
 
         const packet = JSON.stringify({
