@@ -35,7 +35,7 @@ const positionsCache: BrokerCollectionCache = { payload: [], expiresAt: 0 };
 const ordersCache: BrokerCollectionCache = { payload: [], expiresAt: 0 };
 let positionsInFlight: Promise<any[]> | null = null;
 let ordersInFlight: Promise<any[]> | null = null;
-const BROKER_COLLECTION_CACHE_TTL_MS = 15_000;
+const BROKER_COLLECTION_CACHE_TTL_MS = 5_000;
 
 function resolveMarketBroker(market: string): BrokerType {
   if (market === 'FOREX') return 'CTRADER';
@@ -668,15 +668,28 @@ brokerRouter.get('/positions', async (_req: Request, res: Response) => {
   positionsInFlight = (async () => {
     const results = await Promise.all(LIVE_BROKERS.map(async broker => {
       try {
-        return await brokerRegistry.getAdapter(broker, 'LIVE').getPositions();
+        return {
+          broker,
+          ok: true,
+          positions: await brokerRegistry.getAdapter(broker, 'LIVE').getPositions()
+        };
       } catch {
-        return [];
+        return {
+          broker,
+          ok: false,
+          positions: []
+        };
       }
     }));
-    const payload = results.flat();
-    if (payload.length || positionsCache.payload.length === 0) {
-      positionsCache.payload = payload;
+
+    // A successful broker response containing zero positions is authoritative.
+    // Preserve cached rows only when every broker request failed, avoiding stale
+    // positions after a real broker-side close while still tolerating outages.
+    const successfulResults = results.filter(result => result.ok);
+    if (successfulResults.length > 0) {
+      positionsCache.payload = successfulResults.flatMap(result => result.positions);
     }
+
     positionsCache.expiresAt = Date.now() + BROKER_COLLECTION_CACHE_TTL_MS;
     return positionsCache.payload;
   })().finally(() => {
