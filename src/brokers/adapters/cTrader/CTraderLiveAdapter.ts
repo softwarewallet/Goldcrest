@@ -83,6 +83,10 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
    * adapter boundary so no direct cTrader caller can bypass the max-value rule.
    */
   private async enforceMaxTradeValueSizing(order: OrderRequest): Promise<void> {
+    // Hard requirement: every live order must request a trailing stop loss.
+    // Do not allow callers, signals, or UI state to disable this control.
+    order.trailingStopLoss = true;
+
     if (order.market !== 'FOREX') return;
 
     const instrument = await this.getInstrument(order.symbol);

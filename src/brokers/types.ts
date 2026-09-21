@@ -140,6 +140,8 @@ export interface OrderRequest {
   price?: number;
   stopLoss?: number;
   takeProfit?: number;
+  /** Hardcoded broker execution control: trailing stop loss is always enabled. */
+  trailingStopLoss?: true;
   strategyId?: string;
   signalId?: string;
   comment?: string;
