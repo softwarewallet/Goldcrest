@@ -74,6 +74,7 @@ export function recordTradeRequest(params: {
   price?: number;
   stopLoss?: number;
   takeProfit?: number;
+  trailingStopLoss: true;
   clientOrderId: string;
   packet: Record<string, unknown>;
 }): void {
