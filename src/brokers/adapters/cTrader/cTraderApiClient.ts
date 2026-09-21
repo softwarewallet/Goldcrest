@@ -150,7 +150,7 @@ export async function fetchLiveCTraderAccounts(
                 permissionScope
               }));
               const endpointIsLive = isAuthoritativeLiveHost(host);
-              // Goldcrest is LIVE-only. Never fall back to demo/non-live accounts
+              // Goldcrest is LIVE-only. Never fall back to a non-LIVE account
               // when the authoritative live endpoint returns no LIVE accounts.
               const accountsToReturn = endpointIsLive
                 ? accList.filter(account => account.isLive === true)
