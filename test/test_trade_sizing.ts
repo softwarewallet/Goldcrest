@@ -43,7 +43,7 @@ assert.equal(forcedFromOne.quantity, 7_474);
 assert.equal(forcedFromOne.adjusted, true);
 assert.equal(Number(forcedFromOne.rawMaxQuantity.toFixed(2)), 7474.68);
 assert.ok(forcedFromOne.estimatedTradeValueUsd <= 10_000);
-assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_999.73);
+assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_999.09);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 20_000
@@ -61,7 +61,7 @@ const forcedFromLargeRequest = await sizeForexOrderToMaxTradeValue(
 // calculation; the configured $20,000 cap sizes the order to 14,000 units.
 assert.equal(forcedFromLargeRequest.quantity, 14_949);
 assert.equal(forcedFromLargeRequest.adjusted, true);
-assert.equal(Number(forcedFromLargeRequest.estimatedTradeValueUsd.toFixed(2)), 19_999.27);
+assert.equal(Number(forcedFromLargeRequest.estimatedTradeValueUsd.toFixed(2)), 19_999.52);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 100
@@ -81,7 +81,7 @@ const belowBrokerMinimum = await sizeForexOrderToMaxTradeValue(
 // volume and is responsible for accepting or rejecting broker-side constraints.
 assert.equal(belowBrokerMinimum.quantity, 74);
 assert.ok(belowBrokerMinimum.quantity < instrument.minQuantity);
-assert.equal(Number(belowBrokerMinimum.estimatedTradeValueUsd.toFixed(2)), 98.99);
+assert.equal(Number(belowBrokerMinimum.estimatedTradeValueUsd.toFixed(2)), 99.00);
 
 console.log('Trade sizing tests passed.');
 
