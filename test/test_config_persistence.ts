@@ -9,15 +9,29 @@ const configFile = path.join(tempDir, 'system-config.json');
 process.env.GOLDCREST_CONFIG_DIR = tempDir;
 process.env.GOLDCREST_CONFIG_FILE = configFile;
 
+// A stale bootstrap snapshot must never override values hydrated from the
+// authoritative SQLite settings store during server startup.
+fs.writeFileSync(configFile, JSON.stringify({
+  maxTradeValueForexUsd: 100,
+  maxTradeValueIndianInr: 1000
+}, null, 2));
+
 const {
   getSystemConfig,
   updateSystemConfig,
-  loadPersistedSystemConfig
+  loadPersistedSystemConfig,
+  applyPersistedSystemConfig
 } = await import('../src/services/configService');
 
 try {
-  const initial = loadPersistedSystemConfig();
-  assert.equal(initial.tradingMode, 'LIVE_ONLY');
+  applyPersistedSystemConfig({
+    maxTradeValueForexUsd: 4321,
+    maxTradeValueIndianInr: 87654
+  });
+  assert.equal(getSystemConfig().maxTradeValueForexUsd, 4321);
+  assert.equal(getSystemConfig().maxTradeValueIndianInr, 87654);
+  assert.equal(loadPersistedSystemConfig().maxTradeValueForexUsd, 4321);
+  assert.equal(loadPersistedSystemConfig().maxTradeValueIndianInr, 87654);
 
   updateSystemConfig({
     maxTradeValueForexUsd: 777,

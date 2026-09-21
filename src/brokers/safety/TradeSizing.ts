@@ -10,13 +10,7 @@ export interface ForexSizingResult {
   quoteToUsdRate: number;
   quoteCurrency: string;
   adjusted: boolean;
-  brokerMinimumQuantity: number;
-  brokerStepQuantity: number;
-}
-
-function floorToStep(quantity: number, step: number): number {
-  if (!(quantity > 0) || !(step > 0)) return 0;
-  return Math.floor((quantity + Number.EPSILON) / step) * step;
+  brokerMaximumQuantity: number;
 }
 
 function getForexQuoteCurrency(symbol: string, instrument: BrokerInstrument): string {
@@ -37,8 +31,10 @@ function getForexQuoteCurrency(symbol: string, instrument: BrokerInstrument): st
  * The incoming/requested quantity is intentionally NOT an upper bound. It is
  * retained only for audit/telemetry so a caller cannot accidentally submit a
  * quantity such as 1 and bypass the configured maximum-trade-value sizing.
- * Broker minimum/maximum/step constraints are applied after the value-based
- * calculation, always rounding DOWN so the USD notional cap is never exceeded.
+ * The broker minimum/step constraints are deliberately NOT enforced locally.
+ * If cTrader rejects the calculated quantity because of broker-side volume
+ * rules, the live order submission path surfaces that broker response instead
+ * of inventing a larger order to satisfy a local minimum.
  */
 export async function sizeForexOrderToMaxTradeValue(
   adapter: BrokerAdapter,
@@ -83,23 +79,17 @@ export async function sizeForexOrderToMaxTradeValue(
   // calculation by the caller's requested quantity.
   const rawMaxQuantity = maxTradeValueUsd / valuePerBaseUnitUsd;
 
-  const step = Number(instrument.stepQuantity);
-  const minimum = Number(instrument.minQuantity);
   const maximum = Number(instrument.maxQuantity);
-
-  if (!(step > 0) || !(minimum > 0) || !(maximum > 0)) {
-    throw new Error(`MAX_TRADE_VALUE_INVALID: Broker quantity constraints for ${symbol} are unavailable.`);
+  if (!(maximum > 0) || !Number.isFinite(maximum)) {
+    throw new Error(`MAX_TRADE_VALUE_INVALID: Broker maximum quantity for ${symbol} is unavailable.`);
   }
 
-  // Always round DOWN. Never round a trade up to the broker minimum because
-  // doing so could violate the operator's configured maximum notional.
-  const quantity = Math.min(maximum, floorToStep(rawMaxQuantity, step));
-
-  if (quantity < minimum) {
-    const minimumTradeValueUsd = minimum * valuePerBaseUnitUsd;
-    throw new Error(
-      `MAX_TRADE_VALUE_BELOW_BROKER_MINIMUM: Configured maximum ${maxTradeValueUsd.toFixed(2)} USD is below the broker minimum executable ${minimumTradeValueUsd.toFixed(2)} USD for ${symbol} (minimum quantity ${minimum}). Increase the maximum trade value or use a broker/symbol with a smaller minimum volume.`
-    );
+  // Preserve the value-derived quantity exactly (subject only to an authoritative
+  // broker maximum). Do not locally enforce minQuantity or stepQuantity: cTrader
+  // is the authority for whether the submitted volume is executable.
+  const quantity = Math.min(maximum, rawMaxQuantity);
+  if (!(quantity > 0) || !Number.isFinite(quantity)) {
+    throw new Error(`MAX_TRADE_VALUE_INVALID: Calculated Forex quantity for ${symbol} is invalid.`);
   }
 
   const estimatedTradeValueUsd = quantity * valuePerBaseUnitUsd;
@@ -121,7 +111,6 @@ export async function sizeForexOrderToMaxTradeValue(
     quoteToUsdRate,
     quoteCurrency,
     adjusted: Math.abs(quantity - requested) > 1e-9,
-    brokerMinimumQuantity: minimum,
-    brokerStepQuantity: step
+    brokerMaximumQuantity: maximum
   };
 }

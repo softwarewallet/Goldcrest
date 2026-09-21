@@ -180,13 +180,16 @@ export function getSystemConfig(): SystemConfig {
 }
 
 export function applyPersistedSystemConfig(updates: Partial<SystemConfig>): SystemConfig {
-  loadPersistedSystemConfig();
-
+  // Once the server hydrates the authoritative persisted store (SQLite), do
+  // not subsequently reload the possibly stale file-backed snapshot and
+  // overwrite those values. SQLite is the durable runtime source of record;
+  // the JSON file is only a bootstrap/fallback snapshot.
   activeConfig = {
     ...activeConfig,
     ...updates,
     tradingMode: 'LIVE_ONLY'
   };
+  diskConfigLoaded = true;
 
   return { ...activeConfig };
 }
