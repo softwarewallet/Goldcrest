@@ -9,6 +9,8 @@ export interface CTraderRawAccount {
   lastClosingDealTimestamp?: number;
   lastBalanceUpdateTimestamp?: number;
   brokerTitleShort?: string;
+  /** cTrader Open API token scope: 0=view, 1=trade. */
+  permissionScope?: number;
 }
 
 export interface CTraderRealTraderDetails {
@@ -24,6 +26,8 @@ export interface CTraderRealTraderDetails {
   isLive: boolean;
   leverageInCents?: number;
   moneyDigits: number;
+  /** cTrader account access rights: 0=FULL_ACCESS, 1=CLOSE_ONLY, 2=NO_TRADING, 3=NO_LOGIN. */
+  accessRights?: number;
 }
 
 const MSG_APP_AUTH_REQ = 2100;
@@ -149,7 +153,13 @@ export async function fetchLiveCTraderAccounts(
             } else if (msg.payloadType === MSG_GET_ACCOUNTS_RES) {
               clearTimeout(timer);
               try { ws.close(); } catch {}
-              const accList: CTraderRawAccount[] = msg.payload?.ctidTraderAccount || [];
+              const permissionScope = msg.payload?.permissionScope !== undefined
+                ? Number(msg.payload.permissionScope)
+                : undefined;
+              const accList: CTraderRawAccount[] = (msg.payload?.ctidTraderAccount || []).map((account: CTraderRawAccount) => ({
+                ...account,
+                permissionScope
+              }));
               const endpointIsLive = isAuthoritativeLiveHost(host);
               const eligibleAccounts = accList.filter(account => endpointIsLive ? account.isLive === true : account.isLive === false);
               // Fallback to all accounts if specific filter yielded 0
@@ -325,7 +335,8 @@ export async function fetchLiveCTraderAccountDetails(
             brokerName: traderData.brokerName || rawAccount.brokerTitleShort || 'cTrader',
             isLive: rawAccount.isLive,
             leverageInCents: traderData.leverageInCents,
-            moneyDigits
+            moneyDigits,
+            accessRights: traderData.accessRights !== undefined ? Number(traderData.accessRights) : undefined
           });
         } else if (msg.payloadType === MSG_ERROR_RES) {
           clearTimeout(timer);
@@ -726,7 +737,14 @@ export async function submitLiveCTraderOrder(
             if (msg.payloadType === MSG_ORDER_ERROR_EVENT || msg.payloadType === MSG_ERROR_RES) {
               const p = msg.payload || {};
               const related = !p.orderId || !accepted || Number(p.orderId) === accepted.orderId;
-              if (related) fail(p.description || p.errorCode || 'cTrader rejected the live order.');
+              if (related) {
+                const description = String(p.description || p.errorCode || 'cTrader rejected the live order.');
+                if (/TRADE permission required/i.test(description)) {
+                  fail('cTrader rejected the live order: TRADE permission is not granted to the current access token/account. Re-authorize Goldcrest with the cTrader "trading" scope and ensure the account has FULL_ACCESS trading rights.');
+                } else {
+                  fail(description);
+                }
+              }
               return;
             }
 
