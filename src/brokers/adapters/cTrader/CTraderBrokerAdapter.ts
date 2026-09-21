@@ -18,6 +18,7 @@ import {
 } from '../../types';
 import { BrokerError, normalizeBrokerError } from '../../errors';
 import { maskIdentifier } from '../../auditLog';
+import { normalizePriceToThreeDigits } from '../../safety/TradeSizing';
 import {
   fetchLiveCTraderAccounts,
   fetchLiveCTraderAccountDetails,
@@ -1075,10 +1076,18 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     const brokerOrderType = String(brokerOrder.orderType || '').toUpperCase();
     const result = await amendLiveCTraderOrder(raw.ctidTraderAccountId, brokerId, {
       volume: modifications.quantity,
-      limitPrice: brokerOrderType.includes('LIMIT') ? modifications.price : undefined,
-      stopPrice: brokerOrderType.includes('STOP') ? modifications.price : undefined,
-      stopLoss: modifications.stopLoss,
-      takeProfit: modifications.takeProfit
+      limitPrice: brokerOrderType.includes('LIMIT') && modifications.price !== undefined
+        ? normalizePriceToThreeDigits(Number(modifications.price))
+        : undefined,
+      stopPrice: brokerOrderType.includes('STOP') && modifications.price !== undefined
+        ? normalizePriceToThreeDigits(Number(modifications.price))
+        : undefined,
+      stopLoss: modifications.stopLoss !== undefined && modifications.stopLoss > 0
+        ? normalizePriceToThreeDigits(Number(modifications.stopLoss))
+        : modifications.stopLoss,
+      takeProfit: modifications.takeProfit !== undefined && modifications.takeProfit > 0
+        ? normalizePriceToThreeDigits(Number(modifications.takeProfit))
+        : modifications.takeProfit
     }, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
 
     if (![2,3,4].includes(result.executionType)) {
