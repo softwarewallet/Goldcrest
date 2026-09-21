@@ -2,7 +2,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 
 const RATE_WINDOW_MS = 60_000;
-const RATE_LIMIT = 120;
+const READ_RATE_LIMIT = 600;
+const MUTATION_RATE_LIMIT = 120;
 const requestCounts = new Map<string, { count: number; resetAt: number }>();
 let lastCleanup = 0;
 
@@ -54,9 +55,16 @@ export function apiRateLimit(req: Request, res: Response, next: NextFunction): v
   }
 
   current.count += 1;
-  if (current.count > RATE_LIMIT) {
+  const limit = ['GET', 'HEAD', 'OPTIONS'].includes(req.method)
+    ? READ_RATE_LIMIT
+    : MUTATION_RATE_LIMIT;
+
+  if (current.count > limit) {
     res.setHeader('Retry-After', Math.ceil((current.resetAt - now) / 1000));
-    res.status(429).json({ error: 'RATE_LIMITED', message: 'Too many API requests. Please retry later.' });
+    res.status(429).type('application/json').json({
+      error: 'RATE_LIMITED',
+      message: 'Too many API requests. Please retry later.'
+    });
     return;
   }
   next();
