@@ -93,6 +93,8 @@ export interface NormalizedPosition {
   currency: string;
   timestamp: number;
   brokerPositionId?: string;
+  /** Standard lot size in normalized base-currency units when supplied by the broker. */
+  lotSize?: number;
 }
 
 export interface NormalizedFill {
@@ -175,6 +177,8 @@ export interface BrokerInstrument {
   baseCurrency?: string;
   quoteCurrency?: string;
   brokerInstrumentId?: string;
+  /** Standard lot size in normalized base-currency units when supplied by the broker. */
+  lotSize?: number;
 }
 
 export interface ConnectionTestResult {
