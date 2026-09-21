@@ -174,6 +174,18 @@ export function persistSystemConfig(config: SystemConfig = activeConfig): void {
   }
 }
 
+export function getPersistedSystemConfigOverrides(): Partial<SystemConfig> {
+  if (!diskConfigLoaded) loadPersistedSystemConfig();
+
+  try {
+    if (!fs.existsSync(CONFIG_FILE)) return {};
+    const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
+    return sanitizePersistedConfig(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
 export function getSystemConfig(): SystemConfig {
   loadPersistedSystemConfig();
   return { ...activeConfig };
