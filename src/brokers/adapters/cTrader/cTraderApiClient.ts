@@ -438,6 +438,13 @@ export interface CTraderSymbolInfo {
   symbolName: string;
   digits: number;
   pipPosition: number;
+  /** cTrader protocol volume constraints are expressed in 1/100 of a base unit. */
+  minVolume?: number;
+  maxVolume?: number;
+  stepVolume?: number;
+  lotSize?: number;
+  baseAssetId?: number;
+  quoteAssetId?: number;
 }
 
 const TREND_BAR_PERIODS: Record<string, number> = {
@@ -799,7 +806,13 @@ export async function fetchCTraderSymbols(
         symbolId: Number(s.symbolId),
         symbolName: String(s.symbolName),
         digits: Number(s.digits || 5),
-        pipPosition: Number(s.pipPosition || 4)
+        pipPosition: Number(s.pipPosition || 4),
+        minVolume: Number(s.minVolume || 0) || undefined,
+        maxVolume: Number(s.maxVolume || 0) || undefined,
+        stepVolume: Number(s.stepVolume || 0) || undefined,
+        lotSize: Number(s.lotSize || 0) || undefined,
+        baseAssetId: Number(s.baseAssetId || 0) || undefined,
+        quoteAssetId: Number(s.quoteAssetId || 0) || undefined
       }));
   });
 }
