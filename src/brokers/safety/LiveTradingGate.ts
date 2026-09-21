@@ -15,6 +15,8 @@ export interface LiveGateEvaluationParams {
   maxAllowedExposure: number;
   activePositionsCount: number;
   maxOpenPositions: number;
+  /** Maximum acceptable age of the authoritative broker quote for this execution path. */
+  quoteMaxAgeMs?: number;
 }
 
 export class LiveTradingGate {
@@ -70,10 +72,18 @@ export class LiveTradingGate {
       failedReasons.push('Condition 6 Failed: Market is currently closed or emergency halted.');
     }
 
-    // Check 7: Market data fresh
-    const marketDataFresh = params.currentQuote.status === 'FRESH' && (Date.now() - params.currentQuote.timestamp < 10000);
+    // Check 7: Market data fresh. The normal live execution path remains 10s;
+    // operator-triggered Signal -> Trigger Now execution may use the explicit
+    // 20s window supplied by the caller.
+    const quoteMaxAgeMs = Number.isFinite(params.quoteMaxAgeMs) && (params.quoteMaxAgeMs as number) > 0
+      ? Number(params.quoteMaxAgeMs)
+      : 10_000;
+    const marketDataFresh = params.currentQuote.status === 'FRESH'
+      && (Date.now() - params.currentQuote.timestamp < quoteMaxAgeMs);
     if (!marketDataFresh) {
-      failedReasons.push('Condition 7 Failed: Market data quote is stale or delayed (>10s old).');
+      failedReasons.push(
+        `Condition 7 Failed: Market data quote is stale or delayed (>${Math.round(quoteMaxAgeMs / 1000)}s old).`
+      );
     }
 
     // Check 8: Signal still valid (Max age: 5 min for Forex, 2 min for options)
