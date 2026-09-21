@@ -857,6 +857,7 @@ export async function submitLiveCTraderOrder(
             symbol,
             orderType,
             side,
+            volume,
             price,
             stopLoss,
             takeProfit,
