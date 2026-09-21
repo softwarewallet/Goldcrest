@@ -223,3 +223,36 @@ const realTradeOverage = await liveTradingGate.evaluate(gateAdapter, {
 
 assert.equal(realTradeOverage.checks.maximumTradeValueCheckPassed, false);
 assert.ok(realTradeOverage.failedReasons.some(reason => reason.includes('Condition 16 Failed')));
+
+
+// Live quote freshness regression: the gate must accept a 19.9s-old quote
+// and reject a quote older than the fixed 20s policy. No caller override exists.
+const quoteAt = Date.now() - 19_900;
+const freshAt20s = await liveTradingGate.evaluate(gateAdapter, {
+  order: { market: 'FOREX', symbol: 'GBP/USD', side: 'BUY', orderType: 'MARKET', quantity: 1, price: 1, stopLoss: 0.99 },
+  signalAgeMs: 1000,
+  currentQuote: { ...boundaryQuote, timestamp: quoteAt },
+  isMarketOpen: true,
+  dailyRealizedLoss: 0,
+  dailyLossLimit: 100,
+  totalAccountExposure: 0,
+  maxAllowedExposure: 1000,
+  activePositionsCount: 0,
+  maxOpenPositions: 5
+});
+assert.equal(freshAt20s.checks.marketDataFresh, true);
+
+const staleAt20s = await liveTradingGate.evaluate(gateAdapter, {
+  order: { market: 'FOREX', symbol: 'GBP/USD', side: 'BUY', orderType: 'MARKET', quantity: 1, price: 1, stopLoss: 0.99 },
+  signalAgeMs: 1000,
+  currentQuote: { ...boundaryQuote, timestamp: Date.now() - 20_100 },
+  isMarketOpen: true,
+  dailyRealizedLoss: 0,
+  dailyLossLimit: 100,
+  totalAccountExposure: 0,
+  maxAllowedExposure: 1000,
+  activePositionsCount: 0,
+  maxOpenPositions: 5
+});
+assert.equal(staleAt20s.checks.marketDataFresh, false);
+assert.ok(staleAt20s.failedReasons.some(reason => reason.includes('>20s old')));
