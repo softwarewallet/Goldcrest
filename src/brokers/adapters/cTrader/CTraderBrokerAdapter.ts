@@ -924,20 +924,24 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     return symbols.filter(s => allowed.has(s.symbolName.replace('/', '').toUpperCase())).map(s => {
       const p = FOREX_PAIRS.find(x => x.symbol.replace('/', '').toUpperCase() === s.symbolName.replace('/', '').toUpperCase());
       if (!p) throw new BrokerError('INVALID_SYMBOL', `Unsupported cTrader symbol ${s.symbolName}`, 'CTRADER', this.environment);
-      // cTrader exposes min/max/step volume in protocol "cents" (1/100
-      // of a base-currency unit). Normalize those values back to base units
-      // before they reach the common order-sizing and safety layers.
-      // Never invent a broker minimum/step when cTrader does not provide one.
-      // The common sizing layer deliberately does not enforce minimum volume;
-      // cTrader itself remains authoritative for executable volume constraints.
-      // A fabricated 1000-unit fallback could incorrectly block otherwise valid
-      // order preparation and is therefore removed.
-      // Goldcrest does not enforce a local broker minimum or volume step.
-      // Keep these normalized metadata fields neutral so no application layer
-      // can recreate a fabricated 1000-unit minimum from cTrader metadata.
-      const minQuantity = 0;
-      const maxQuantity = s.maxVolume ? Number(s.maxVolume) / 100 : Number.MAX_SAFE_INTEGER;
-      const stepQuantity = 1;
+      // cTrader Open API represents Forex volume in protocol cents:
+      // 1 protocol unit = 0.01 base-currency unit.
+      // Example: protocol volume 1000 = 10.00 base-currency units.
+      // Normalize the broker's authoritative min/max/step values into the
+      // common base-currency-unit representation used by Goldcrest.
+      //
+      // When cTrader omits a boundary, use the API's smallest representable
+      // unit (0.01) for min/step and an unbounded maximum. No fabricated
+      // 1000-unit minimum is introduced.
+      const minQuantity = s.minVolume
+        ? Number(s.minVolume) / 100
+        : 0.01;
+      const maxQuantity = s.maxVolume
+        ? Number(s.maxVolume) / 100
+        : Number.MAX_SAFE_INTEGER;
+      const stepQuantity = s.stepVolume
+        ? Number(s.stepVolume) / 100
+        : 0.01;
 
       return {
       symbol: p.symbol,
@@ -1016,6 +1020,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     const submitted = await submitLiveCTraderOrder(
       raw.ctidTraderAccountId,
       symbol.symbolId,
+      order.symbol,
       order.orderType as 'MARKET' | 'LIMIT' | 'STOP',
       order.side,
       order.quantity,
