@@ -926,9 +926,14 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       // cTrader exposes min/max/step volume in protocol "cents" (1/100
       // of a base-currency unit). Normalize those values back to base units
       // before they reach the common order-sizing and safety layers.
-      const minQuantity = s.minVolume ? Number(s.minVolume) / 100 : 1000;
-      const maxQuantity = s.maxVolume ? Number(s.maxVolume) / 100 : 10000000;
-      const stepQuantity = s.stepVolume ? Number(s.stepVolume) / 100 : 1000;
+      // Never invent a broker minimum/step when cTrader does not provide one.
+      // The common sizing layer deliberately does not enforce minimum volume;
+      // cTrader itself remains authoritative for executable volume constraints.
+      // A fabricated 1000-unit fallback could incorrectly block otherwise valid
+      // order preparation and is therefore removed.
+      const minQuantity = s.minVolume ? Number(s.minVolume) / 100 : 0;
+      const maxQuantity = s.maxVolume ? Number(s.maxVolume) / 100 : Number.MAX_SAFE_INTEGER;
+      const stepQuantity = s.stepVolume ? Number(s.stepVolume) / 100 : 1;
 
       return {
       symbol: p.symbol,
