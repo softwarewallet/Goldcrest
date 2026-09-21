@@ -111,8 +111,14 @@ export class LiveTradingGate {
       failedReasons.push('Condition 11 Failed: Daily loss limit breached.');
     }
 
-    // Check 12: Maximum exposure not exceeded
-    const maxExposureNotExceeded = params.totalAccountExposure < params.maxAllowedExposure;
+    // Check 12: Maximum exposure not exceeded.
+    // Exposure equal to the configured account limit is valid; only a real
+    // overage beyond a small floating-point tolerance should be rejected.
+    const exposureTolerance = 1e-8;
+    const maxExposureNotExceeded =
+      Number.isFinite(params.totalAccountExposure)
+      && Number.isFinite(params.maxAllowedExposure)
+      && params.totalAccountExposure <= params.maxAllowedExposure + exposureTolerance;
     if (!maxExposureNotExceeded) {
       failedReasons.push('Condition 12 Failed: Maximum account exposure threshold exceeded.');
     }
@@ -181,12 +187,16 @@ export class LiveTradingGate {
       }
     }
 
-    if (maximumTradeValueCheckPassed && isForex && tradeValueUsd > maxTradeValue) {
+    // Monetary values can contain binary floating-point noise (e.g.
+    // 200.00000000000003). Treat values within a tiny absolute tolerance of the
+    // configured limit as equal; genuine overages still fail closed.
+    const tradeValueTolerance = 1e-8;
+    if (maximumTradeValueCheckPassed && isForex && tradeValueUsd > maxTradeValue + tradeValueTolerance) {
       maximumTradeValueCheckPassed = false;
       failedReasons.push(
         `Condition 16 Failed: Trade value ${tradeValueUsd.toFixed(2)} USD exceeds configured maximum of ${maxTradeValue.toFixed(2)} USD for cTrader.`
       );
-    } else if (maximumTradeValueCheckPassed && !isForex && tradeValue > maxTradeValue) {
+    } else if (maximumTradeValueCheckPassed && !isForex && tradeValue > maxTradeValue + tradeValueTolerance) {
       maximumTradeValueCheckPassed = false;
       failedReasons.push(
         `Condition 16 Failed: Trade value ${tradeValue.toFixed(2)} INR exceeds configured maximum of ${maxTradeValue.toFixed(2)} INR for 5paisa.`
