@@ -1,7 +1,7 @@
 import { CTraderBrokerAdapter, CTraderConfig } from './CTraderBrokerAdapter';
 import { NormalizedOrder, OrderRequest, TradingEnvironment } from '../../types';
 import { BrokerError } from '../../errors';
-import { sizeForexOrderToMaxTradeValue } from '../../safety/TradeSizing';
+import { normalizePriceToInstrumentDigits, sizeForexOrderToMaxTradeValue } from '../../safety/TradeSizing';
 
 export class CTraderLiveAdapter extends CTraderBrokerAdapter {
   readonly environment: TradingEnvironment = 'LIVE';
@@ -109,18 +109,33 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
       executionPrice = order.side === 'BUY' ? quote.ask : quote.bid;
     }
 
+    // cTrader validates every submitted price field against the symbol's
+    // authoritative decimal precision. Normalize BEFORE sizing so the notional
+    // calculation uses the exact executable price that will be sent to cTrader.
+    const normalizedExecutionPrice = normalizePriceToInstrumentDigits(
+      executionPrice,
+      instrument.digits
+    );
+
     const sizing = await sizeForexOrderToMaxTradeValue(
       this,
       order.symbol,
-      executionPrice,
+      normalizedExecutionPrice,
       instrument,
       Number(order.quantity)
     );
 
-    // Mutate the request object so every downstream audit/trace/packet layer
-    // sees the same force-sized quantity that will actually be submitted.
+    // Normalize every broker-facing price field at the final LIVE boundary.
+    // Signals may arrive with 5 decimals for all FX pairs, while JPY crosses
+    // commonly allow only 3 (e.g. 157.711, not 157.71077).
     order.quantity = sizing.quantity;
-    order.price = executionPrice;
+    order.price = normalizedExecutionPrice;
+    if (order.stopLoss !== undefined && order.stopLoss > 0) {
+      order.stopLoss = normalizePriceToInstrumentDigits(order.stopLoss, instrument.digits);
+    }
+    if (order.takeProfit !== undefined && order.takeProfit > 0) {
+      order.takeProfit = normalizePriceToInstrumentDigits(order.takeProfit, instrument.digits);
+    }
 
     this.logAction('FORCE_MAX_TRADE_VALUE_SIZING', 'SUCCESS', this.config.accountId || '', {
       symbol: order.symbol,
