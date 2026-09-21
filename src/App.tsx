@@ -6,6 +6,7 @@ import { TradingHub } from './components/TradingHub';
 import { TradingOperationsDashboard } from './components/TradingOperationsDashboard';
 import { TradingControlCenter } from './components/TradingControlCenter';
 import { HistoryPage } from './components/HistoryPage';
+import { DatabaseExplorerPage } from './components/DatabaseExplorerPage';
 import { SettingsHub } from './components/SettingsHub';
 import { TerminalDashboard } from './components/TerminalDashboard';
 import { ForexTerminalDashboard } from './components/ForexTerminalDashboard';
@@ -413,6 +414,10 @@ export default function App() {
 
               {activeTab === 'history' && (
                 <HistoryPage />
+              )}
+
+              {activeTab === 'database' && (
+                <DatabaseExplorerPage />
               )}
 
               {(activeTab === 'settings' || activeTab === 'governance') && (
