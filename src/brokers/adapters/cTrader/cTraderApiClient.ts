@@ -701,7 +701,9 @@ export async function submitLiveCTraderOrder(
         orderType: mappedType,
         tradeSide: mappedSide,
         volume,
-        clientOrderId: requestClientId
+        clientOrderId: requestClientId,
+        // Hardcoded: every cTrader order must have a trailing stop loss.
+        trailingStopLoss: true
       };
 
       if (orderType === 'LIMIT' && price !== undefined) payload.limitPrice = price;
