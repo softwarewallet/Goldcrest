@@ -230,7 +230,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                     });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error || 'Failed to save limits');
-                    setLimitMessage('Trade value limits saved to SQLite and enforced server-side.');
+                    setLimitMessage('Trade value limits saved to durable configuration and SQLite, and enforced server-side.');
                     onRefreshGlobal?.();
                   } catch (err: any) {
                     setLimitMessage(err.message || 'Failed to save limits');
@@ -336,7 +336,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                     });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error || 'Failed to save working universe.');
-                    setUniverseMessage('Working universe saved to SQLite. Auto Live will use the selected Forex pairs.');
+                    setUniverseMessage('Working universe saved to durable configuration and SQLite. Auto Live will use the selected Forex pairs.');
                     onRefreshGlobal?.();
                   } catch (err: any) {
                     setUniverseMessage(err.message || 'Failed to save working universe.');
