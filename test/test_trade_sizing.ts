@@ -47,7 +47,7 @@ assert.equal(forcedFromOne.quantity, 7_470);
 assert.equal(forcedFromOne.adjusted, true);
 assert.equal(Number(forcedFromOne.rawMaxQuantity.toFixed(2)), 7474.68);
 assert.ok(forcedFromOne.estimatedTradeValueUsd <= 10_000);
-assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_993.94);
+assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_993.74);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 20_000
