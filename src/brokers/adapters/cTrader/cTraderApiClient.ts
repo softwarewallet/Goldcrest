@@ -62,6 +62,8 @@ const MSG_EXECUTION_EVENT = 2126;
 const MSG_ORDER_ERROR_EVENT = 2132;
 const MSG_ORDER_DETAILS_REQ = 2181;
 const MSG_ORDER_DETAILS_RES = 2182;
+const MSG_GET_POSITION_UNREALIZED_PNL_REQ = 2187;
+const MSG_GET_POSITION_UNREALIZED_PNL_RES = 2188;
 const MSG_SYMBOLS_FOR_CONVERSION_REQ = 2118;
 const MSG_SYMBOLS_FOR_CONVERSION_RES = 2119;
 const MSG_ERROR_RES = 2142;
@@ -980,6 +982,36 @@ export async function fetchCTraderReconcileState(
       positions: Array.isArray(payload.position) ? payload.position : [],
       orders: Array.isArray(payload.order) ? payload.order : []
     };
+  });
+}
+
+export async function fetchCTraderPositionUnrealizedPnL(
+  ctidTraderAccountId: number,
+  clientId: string,
+  clientSecret: string,
+  accessToken: string,
+  isLive: boolean
+): Promise<Map<string, number>> {
+  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+    const payload = await sendAndAwait(
+      ws,
+      MSG_GET_POSITION_UNREALIZED_PNL_REQ,
+      { ctidTraderAccountId },
+      MSG_GET_POSITION_UNREALIZED_PNL_RES,
+      10000
+    );
+    const moneyDigits = Number(payload?.moneyDigits ?? 2);
+    const divisor = Number.isInteger(moneyDigits) && moneyDigits >= 0 ? 10 ** moneyDigits : 100;
+    const rows = Array.isArray(payload?.positionUnrealizedPnL) ? payload.positionUnrealizedPnL : [];
+    return new Map(
+      rows
+        .filter((row: any) => row?.positionId !== undefined)
+        .map((row: any) => [
+          String(row.positionId),
+          Number(row.netUnrealizedPnL ?? row.grossUnrealizedPnL ?? 0) / divisor
+        ])
+        .filter((entry: [string, number]) => Number.isFinite(entry[1]))
+    );
   });
 }
 
