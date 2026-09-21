@@ -254,6 +254,21 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     addLog('info', `Routing manual order: ${side} ${quantity} ${symbol} via ${market} gateway...`);
 
     try {
+      // Verify that this browser is talking to the current Goldcrest Express
+      // backend before submitting a live order. Do not retry an order blindly:
+      // the idempotency key must remain unique for every operator action.
+      const runtimeRes = await fetch('/api/runtime', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store'
+      });
+      const runtimeContentType = runtimeRes.headers.get('content-type') || '';
+      if (!runtimeRes.ok || !runtimeContentType.includes('application/json')) {
+        throw new Error(
+          `Goldcrest backend runtime probe failed (HTTP ${runtimeRes.status}, content-type: ${runtimeContentType || 'unknown'}). Restart the current Node server on port 3000.`
+        );
+      }
+
       const payload = {
         market,
         symbol,
