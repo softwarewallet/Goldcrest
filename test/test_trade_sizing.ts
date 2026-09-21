@@ -31,24 +31,25 @@ updateSystemConfig({
   maxTradeValueForexUsd: 10_000
 });
 
-const capped = await sizeForexOrderToMaxTradeValue(
+const forcedFromOne = await sizeForexOrderToMaxTradeValue(
   adapter,
   'GBP/USD',
   1.33785,
   instrument,
-  10_000
+  1
 );
 
-assert.equal(capped.quantity, 7_000);
-assert.equal(capped.adjusted, true);
-assert.ok(capped.estimatedTradeValueUsd <= 10_000);
-assert.equal(Number(capped.estimatedTradeValueUsd.toFixed(2)), 9_364.95);
+assert.equal(forcedFromOne.quantity, 7_000);
+assert.equal(forcedFromOne.adjusted, true);
+assert.equal(Number(forcedFromOne.rawMaxQuantity.toFixed(2)), 7474.68);
+assert.ok(forcedFromOne.estimatedTradeValueUsd <= 10_000);
+assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_364.95);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 20_000
 });
 
-const uncapped = await sizeForexOrderToMaxTradeValue(
+const forcedFromLargeRequest = await sizeForexOrderToMaxTradeValue(
   adapter,
   'GBP/USD',
   1.33785,
@@ -56,16 +57,18 @@ const uncapped = await sizeForexOrderToMaxTradeValue(
   10_000
 );
 
-assert.equal(uncapped.quantity, 10_000);
-assert.equal(uncapped.adjusted, false);
-assert.equal(Number(uncapped.estimatedTradeValueUsd.toFixed(2)), 13_378.50);
+// The caller's requested 10,000 units cannot limit the forced maximum-value
+// calculation; the configured $20,000 cap sizes the order to 14,000 units.
+assert.equal(forcedFromLargeRequest.quantity, 14_000);
+assert.equal(forcedFromLargeRequest.adjusted, true);
+assert.equal(Number(forcedFromLargeRequest.estimatedTradeValueUsd.toFixed(2)), 18_729.90);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 100
 });
 
 await assert.rejects(
-  () => sizeForexOrderToMaxTradeValue(adapter, 'GBP/USD', 1.33785, instrument, 10_000),
+  () => sizeForexOrderToMaxTradeValue(adapter, 'GBP/USD', 1.33785, instrument, 1),
   /MAX_TRADE_VALUE_BELOW_BROKER_MINIMUM/
 );
 
