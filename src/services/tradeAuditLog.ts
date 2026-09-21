@@ -20,7 +20,7 @@ function getLogDate(): string {
 }
 
 function getDailyTradeLogFile(date = getLogDate()): string {
-  return path.join(LOG_DIR, \`\${date}-TradeLog.log\`);
+  return path.join(LOG_DIR, `${date}-TradeLog.log`);
 }
 
 function sanitize(value: unknown): unknown {
