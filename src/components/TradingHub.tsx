@@ -279,7 +279,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         stopLoss: stopLoss ? Number(stopLoss) : undefined,
         takeProfit: takeProfit ? Number(takeProfit) : undefined,
         environment,
-        signalId: idempotencyKey
+        signalId: idempotencyKey,
+        executionSource: 'TRIGGER_NOW'
       };
 
       const res = await fetch('/api/brokers/order', {

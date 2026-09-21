@@ -970,9 +970,14 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       1
     );
 
+    const isTriggerNowExecution = String(req.body.executionSource || '').toUpperCase() === 'TRIGGER_NOW';
     const gateResult = await liveTradingGate.evaluate(adapter, {
       order: orderReq,
       signalAgeMs: 15000,
+      // Trigger Now is an operator-initiated dispatch from the signal board.
+      // Give that explicit path a 20s quote window while keeping every other
+      // live order path on the normal 10s freshness requirement.
+      quoteMaxAgeMs: isTriggerNowExecution ? 20_000 : 10_000,
       currentQuote: quote,
       isMarketOpen,
       dailyRealizedLoss: await reconciliationService.getDailyLoss(adapter.broker as 'CTRADER' | 'FIVE_PAISA', Number(account.balance || 0)),
