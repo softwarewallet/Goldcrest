@@ -12,7 +12,7 @@ import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, mar
 import { reconcileExecutionIntent } from '../services/executionReconciliationService';
 import { getSystemConfig } from '../services/configService';
 import { executeQuery, executeRun } from '../database/db';
-import { sizeForexOrderToMaxTradeValue } from './safety/TradeSizing';
+import { normalizePriceToThreeDigits, sizeForexOrderToMaxTradeValue } from './safety/TradeSizing';
 import { liveRuntimeLog } from '../services/liveRuntimeLog';
 
 export const brokerRouter = Router();
@@ -874,10 +874,13 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Authoritative real-time quote is currently unavailable.', code: 'STALE_DATA' });
     }
 
-    // Auto-populate price for MARKET orders if missing
+    // Goldcrest-wide execution-price policy: every order price is normalized
+    // to three decimal places before sizing, safety-gate evaluation, logging,
+    // idempotency persistence, and broker dispatch.
     if (!orderReq.price || orderReq.price <= 0) {
       orderReq.price = orderReq.side === 'BUY' ? quote.ask : quote.bid;
     }
+    orderReq.price = normalizePriceToThreeDigits(Number(orderReq.price));
 
     // Hard position-sizing boundary: calculate the Forex quantity directly from
     // the operator-configured maximum trade value immediately before execution.
@@ -930,16 +933,25 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       const referencePrice = orderReq.price;
       const pct = isForex ? 0.005 : 0.01; // 50 pips (0.5%) for Forex, 1.0% for others
       if (orderReq.side === 'BUY') {
-        orderReq.stopLoss = Number((referencePrice * (1 - pct)).toFixed(isForex ? 5 : 2));
+        orderReq.stopLoss = normalizePriceToThreeDigits(referencePrice * (1 - pct));
         if (!orderReq.takeProfit || orderReq.takeProfit <= 0) {
-          orderReq.takeProfit = Number((referencePrice * (1 + pct * 2)).toFixed(isForex ? 5 : 2));
+          orderReq.takeProfit = normalizePriceToThreeDigits(referencePrice * (1 + pct * 2));
         }
       } else {
-        orderReq.stopLoss = Number((referencePrice * (1 + pct)).toFixed(isForex ? 5 : 2));
+        orderReq.stopLoss = normalizePriceToThreeDigits(referencePrice * (1 + pct));
         if (!orderReq.takeProfit || orderReq.takeProfit <= 0) {
-          orderReq.takeProfit = Number((referencePrice * (1 - pct * 2)).toFixed(isForex ? 5 : 2));
+          orderReq.takeProfit = normalizePriceToThreeDigits(referencePrice * (1 - pct * 2));
         }
       }
+    }
+
+    // Normalize caller-provided SL/TP as well. This covers orders that arrive
+    // with explicit risk prices instead of auto-populated values.
+    if (orderReq.stopLoss !== undefined && Number(orderReq.stopLoss) > 0) {
+      orderReq.stopLoss = normalizePriceToThreeDigits(Number(orderReq.stopLoss));
+    }
+    if (orderReq.takeProfit !== undefined && Number(orderReq.takeProfit) > 0) {
+      orderReq.takeProfit = normalizePriceToThreeDigits(Number(orderReq.takeProfit));
     }
 
     const account = await adapter.getAccount();
