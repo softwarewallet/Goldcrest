@@ -54,7 +54,7 @@ function append(record: Record<string, unknown>): void {
     JSON.stringify({
       auditTimestamp: new Date().toISOString(),
       auditDate: getLogDate(),
-      ...sanitize(record) as Record<string, unknown>
+      ...(sanitize(record) as Record<string, unknown>)
     }) + '\n',
     'utf8'
   );
