@@ -101,9 +101,9 @@ export function getCTraderRequestHosts(_accountIsLive: boolean): string[] {
   const apiMode = getCTraderApiMode();
   const demoEnv = ['d', 'e', 'm', 'o'].join('');
   if (apiMode === 'LIVE') {
-    return ['wss://live.ctraderapi.com:5036', `wss://${demoEnv}.ctraderapi.com:5036`];
+    return ['wss://live.ctraderapi.com:5036'];
   }
-  return [`wss://${demoEnv}.ctraderapi.com:5036`, 'wss://live.ctraderapi.com:5036'];
+  return [`wss://${demoEnv}.ctraderapi.com:5036`];
 }
 
 /**
@@ -113,13 +113,9 @@ export async function fetchLiveCTraderAccounts(
   clientId: string,
   clientSecret: string,
   accessToken: string,
-  preferredHost: 'live' = 'live'
+  _preferredHost: 'live' = 'live'
 ): Promise<CTraderRawAccount[]> {
-  const configuredHost = getConfiguredCTraderWsHost();
-  const secondaryEnvironment = ['d', 'e', 'm', 'o'].join('');
-  const hosts = configuredHost
-    ? [configuredHost]
-    : [`wss://${secondaryEnvironment}.ctraderapi.com:5036`, 'wss://live.ctraderapi.com:5036'];
+  const hosts = getCTraderRequestHosts(true);
 
   let lastError: Error | null = null;
 
@@ -503,7 +499,7 @@ async function withAuthenticatedAccount<T>(
   for (const host of hosts) {
     const ws = new WebSocket(host);
     const connected = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`cTrader market-data connection timeout on ${host}`)), 4000);
+      const timer = setTimeout(() => reject(new Error(`cTrader market-data connection timeout on ${host}`)), 12000);
       ws.on('open', () => {
         clearTimeout(timer);
         resolve();
