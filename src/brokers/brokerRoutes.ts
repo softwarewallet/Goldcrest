@@ -879,10 +879,10 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       orderReq.price = orderReq.side === 'BUY' ? quote.ask : quote.bid;
     }
 
-    // Hard position-sizing boundary: calculate the executable quantity from the
-    // operator-configured maximum trade value immediately before execution. The
-    // requested quantity can only reduce the result; it can never exceed the
-    // configured USD notional cap.
+    // Hard position-sizing boundary: calculate the Forex quantity directly from
+    // the operator-configured maximum trade value immediately before execution.
+    // The requested quantity is audit metadata only; it cannot cap the result.
+    // Broker-side minimum/step volume rules are intentionally left to cTrader.
     let sizingResult: Awaited<ReturnType<typeof sizeForexOrderToMaxTradeValue>> | null = null;
     if (orderReq.market === 'FOREX') {
       const instrument = await adapter.getInstrument(orderReq.symbol);
@@ -918,9 +918,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       } catch (sizingError: any) {
         return res.status(403).json({
           error: 'Live Safety Gate Rejected Order',
-          code: sizingError?.message?.startsWith('MAX_TRADE_VALUE_BELOW_BROKER_MINIMUM')
-            ? 'MAX_TRADE_VALUE_BELOW_BROKER_MINIMUM'
-            : 'POSITION_SIZING_REJECTED',
+          code: 'POSITION_SIZING_REJECTED',
           details: [sizingError?.message || String(sizingError)]
         });
       }
