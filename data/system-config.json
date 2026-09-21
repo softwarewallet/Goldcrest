@@ -8,8 +8,8 @@
   "signalCooldownMs": 60000,
   "eventProximityThresholdMinutes": 20,
   "strikeDepth": 7,
-  "maxTradeValueForexUsd": 100,
-  "maxTradeValueIndianInr": 1000,
+  "maxTradeValueForexUsd": 100000,
+  "maxTradeValueIndianInr": 1000000,
   "autoLiveForexPairs": [
     "EUR/USD",
     "GBP/USD",
