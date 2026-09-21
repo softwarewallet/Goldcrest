@@ -23,7 +23,8 @@
     "test:local_operator_bypass": "tsx test/test_local_operator_bypass.ts",
     "test:live_runtime_log": "tsx test/test_live_runtime_log.ts",
     "test:auto_live_market_gate": "tsx test/test_auto_live_market_gate.ts",
-    "test:live_only_audit": "tsx test/test_live_only_audit.ts"
+    "test:live_only_audit": "tsx test/test_live_only_audit.ts",
+    "test:trade_sizing": "tsx test/test_trade_sizing.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
