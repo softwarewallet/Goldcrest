@@ -1647,238 +1647,103 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
    * Fetches real-time Option Chain data from 5paisa API.
    * If 5paisa connection is not available, returns null (or blank structure).
    */
-  async fetchOptionChainFrom5Paisa(
-    symbol: string,
-    selectedExpiryDate?: string,
-    strikeDepth: number = 7
-  ): Promise<OptionChainSummary | null> {
+  async fetchOptionChainFrom5Paisa(symbol: string, selectedExpiryDate?: string, strikeDepth: number = 7): Promise<OptionChainSummary | null> {
     const hasSession = await this.ensureActiveSession();
-    if (!hasSession) {
-      return null;
-    }
-
+    if (!hasSession) return null;
+    const clean = symbol.toUpperCase().replace(/\s+/g, '');
+    const config = getIndianUnderlyingConfig(clean);
+    const expiries = generateExpiries(config.expiryDayOfWeek);
+    const currentExpiry = selectedExpiryDate || expiries[0]?.dateString || '';
     try {
-      const clean = symbol.toUpperCase().replace(/\s+/g, '');
-      const config = getIndianUnderlyingConfig(clean);
-      const expiries = generateExpiries(config.expiryDayOfWeek);
-      const currentExpiry = selectedExpiryDate || expiries[0]?.dateString || '';
-
-      // 1. First get live spot price from 5paisa underlying feed
       const underlyings = await this.fetchIndianUnderlyingsFrom5Paisa();
       const matched = underlyings.find(u => u.symbol === clean);
-      let spotPrice = matched ? matched.spot : 0;
+      let spotPrice = matched ? Number(matched.spot) : 0;
+      const exchange = clean === 'SENSEX' ? 'B' : 'N';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', '5Paisa-API-Uid': 'ka7SFqAU6SC' };
+      if (this.config.accessToken) headers.Authorization = 'Bearer ' + this.config.accessToken;
 
-      // 2. Try direct 5paisa OptionChain endpoint
-      const chainEndpoints = [
-        `${this.getApiHost()}/VendorsAPI/Service1.svc/V1/OptionChain`,
-        `${this.getApiHost()}/VendorsAPI/Service1.svc/OptionChain`
-      ];
-
-      const payload = {
-        head: this.getApiHead('5POptV1'),
-        body: {
-          ClientCode: this.config.clientCode || this.config.userId,
-          Exchange: clean === 'SENSEX' ? 'B' : 'N',
-          ExchangeType: 'D',
-          Symbol: clean,
-          Expiry: currentExpiry
-        }
+      // 5paisa's supported option-chain flow is GetExpiryForSymbolOptions -> GetOptionsForSymbol.
+      const postOptionApi = async (path: string, body: Record<string, unknown>) => {
+        const response = await fetch(this.getApiHost() + '/VendorsAPI/Service1.svc/' + path, { method: 'POST', headers, body: JSON.stringify({ head: { key: this.config.userKey }, body }) });
+        if (!response.ok) throw new Error('5paisa option-chain API HTTP ' + response.status + ': ' + response.statusText);
+        const data = await response.json();
+        const status = data?.head?.Status ?? data?.head?.status ?? data?.body?.Status;
+        if (status !== undefined && Number(status) !== 0) throw new Error(data?.head?.StatusDescription || data?.head?.statusDescription || data?.body?.Message || '5paisa option-chain API rejected the request.');
+        return data;
+      };
+      const parseExpiry = (value: unknown): number | null => {
+        if (typeof value === 'number' && Number.isFinite(value)) return value < 100000000000 ? value * 1000 : value;
+        const text = String(value ?? '').trim();
+        if (!text) return null;
+        const dotNet = text.match(/\/Date\((-?\d+)(?:[+-]\d{4})?\)\//);
+        if (dotNet) return Number(dotNet[1]);
+        const n = Number(text);
+        if (Number.isFinite(n) && n > 0) return n < 100000000000 ? n * 1000 : n;
+        const parsed = Date.parse(text);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
       };
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        '5Paisa-API-Uid': 'ka7SFqAU6SC'
+      const expiryResponse = await postOptionApi('V2/GetExpiryForSymbolOptions', { Exch: exchange, Symbol: clean });
+      const expiryContainer = expiryResponse?.body?.Data || expiryResponse?.body?.ExpiryData || expiryResponse?.body?.Expiry || expiryResponse?.body?.ExpiryDates || expiryResponse?.body?.ExpiryList || expiryResponse?.body;
+      const expiryItems = Array.isArray(expiryContainer) ? expiryContainer : expiryContainer && typeof expiryContainer === 'object' ? Object.values(expiryContainer) : [];
+      const liveExpiries = expiryItems.map((item: any) => { const raw = item?.ExpiryDate ?? item?.Expiry ?? item?.Date ?? item?.ExpiryDateTime ?? item; const timestamp = parseExpiry(raw); return timestamp ? { timestamp, date: new Date(timestamp).toISOString().slice(0, 10) } : null; }).filter(Boolean) as Array<{ timestamp: number; date: string }>;
+      const uniqueExpiries = Array.from(new Map(liveExpiries.filter(e => e.timestamp >= Date.now() - 86400000).map(e => [e.date, e])).values()).sort((a, b) => a.timestamp - b.timestamp);
+      const selected = currentExpiry ? uniqueExpiries.find(e => e.date === currentExpiry) : undefined;
+      const expiryEntry = selected || uniqueExpiries[0];
+      if (!expiryEntry) throw new Error('5paisa returned no active option expiries for ' + clean + '.');
+
+      const chainResponse = await postOptionApi('GetOptionsForSymbol', { Exch: exchange, Symbol: clean, ExpiryDate: '/Date(' + expiryEntry.timestamp + ')/' });
+      const rawContainer = chainResponse?.body?.Data || chainResponse?.body?.Options || chainResponse?.body?.OptionChain || chainResponse?.body?.OptionChainData || chainResponse?.body?.OptionsForSymbol || chainResponse?.body;
+      const rawOptions = Array.isArray(rawContainer) ? rawContainer : rawContainer && typeof rawContainer === 'object' ? Object.values(rawContainer).flatMap((v: any) => Array.isArray(v) ? v : []) : [];
+      if (rawOptions.length === 0) throw new Error('5paisa returned no option contracts for ' + clean + ' ' + expiryEntry.date + '.');
+      if (!(spotPrice > 0)) spotPrice = Number(chainResponse?.body?.LastRate || chainResponse?.body?.SpotPrice || chainResponse?.SpotPrice || 0);
+      if (!(spotPrice > 0)) throw new Error('Authoritative 5paisa spot price is unavailable for ' + clean + '.');
+
+      const numeric = (row: any, keys: string[], fallback = 0): number => { for (const key of keys) { const value = Number(row?.[key]); if (Number.isFinite(value)) return value; } return fallback; };
+      const textValue = (row: any, keys: string[]): string => { for (const key of keys) { const value = row?.[key]; if (value !== undefined && value !== null && String(value).trim() !== '') return String(value); } return ''; };
+      const optionType = (row: any): 'CALL' | 'PUT' | null => { const value = textValue(row, ['OptionType', 'ScripType', 'CPType', 'Option', 'Type']).toUpperCase(); if (value === 'CE' || value === 'CALL' || value.endsWith('CE')) return 'CALL'; if (value === 'PE' || value === 'PUT' || value.endsWith('PE')) return 'PUT'; const s = textValue(row, ['ScripData', 'ScripName', 'Symbol', 'TradingSymbol']).toUpperCase(); if (/_?CE$/.test(s)) return 'CALL'; if (/_?PE$/.test(s)) return 'PUT'; return null; };
+      const grouped = new Map<number, { call?: any; put?: any }>();
+      for (const item of rawOptions) { const strike = numeric(item, ['StrikePrice', 'StrikeRate', 'Strike', 'StrikeValue']); const type = optionType(item); if (!(strike > 0) || !type) continue; const pair = grouped.get(strike) || {}; pair[type === 'CALL' ? 'call' : 'put'] = item; grouped.set(strike, pair); }
+      const strikes = Array.from(grouped.keys()).sort((a, b) => a - b);
+      if (strikes.length === 0) throw new Error('5paisa returned option data without valid strikes for ' + clean + '.');
+      const atmStrike = strikes.reduce((closest, strike) => Math.abs(strike - spotPrice) < Math.abs(closest - spotPrice) ? strike : closest, strikes[0]);
+      const atmIndex = strikes.indexOf(atmStrike);
+      const depth = Math.max(1, Number(strikeDepth) || 7);
+      const selectedStrikes = strikes.slice(Math.max(0, atmIndex - depth), Math.min(strikes.length, atmIndex + depth + 1));
+      const timeInYears = Math.max(0.5 / 365, (expiryEntry.timestamp - Date.now()) / (365 * 24 * 60 * 60 * 1000));
+
+      const contract = (row: any | undefined, type: 'CALL' | 'PUT', strike: number): OptionContract => {
+        const ltp = Math.max(0, numeric(row, ['LastRate', 'LTP', 'LastTradedPrice', 'LastPrice', 'Rate']));
+        const bid = Math.max(0, numeric(row, ['BidPrice', 'BidRate', 'BestBidPrice']));
+        const ask = Math.max(0, numeric(row, ['AskPrice', 'OfferRate', 'OffRate', 'BestAskPrice']));
+        const prev = numeric(row, ['PrevClose', 'PreviousClose', 'PreviousClosingPrice']);
+        const change = numeric(row, ['Change', 'PriceChange'], prev > 0 ? ltp - prev : 0);
+        const changePercent = numeric(row, ['ChangePercent', 'PercentChange'], prev > 0 ? change / prev * 100 : 0);
+        const oi = Math.max(0, numeric(row, ['OpenInterest', 'OI', 'OpenInt']));
+        const changeOI = numeric(row, ['ChangeInOI', 'ChangeOI', 'OIChange']);
+        const volume = Math.max(0, numeric(row, ['Volume', 'Vol', 'TotalVolume']));
+        const ivRaw = numeric(row, ['IV', 'ImpliedVolatility', 'ImpliedVol', 'IVPercent']);
+        const iv = ivRaw > 1 ? ivRaw : ivRaw * 100;
+        const ivDecimal = iv > 0 ? iv / 100 : 0.138;
+        const brokerDelta = numeric(row, ['Delta']);
+        const model = calculateBlackScholesGreeks(spotPrice, strike, timeInYears, 0.068, ivDecimal, type);
+        const greeks = { delta: brokerDelta !== 0 ? brokerDelta : model.greeks.delta, gamma: numeric(row, ['Gamma'], model.greeks.gamma), theta: numeric(row, ['Theta'], model.greeks.theta), vega: numeric(row, ['Vega'], model.greeks.vega), rho: numeric(row, ['Rho'], model.greeks.rho), iv, modelDerived: brokerDelta === 0 };
+        const spread = Math.max(config.tickSize, ltp > 0 ? ltp * 0.01 : config.tickSize);
+        const effectiveBid = bid > 0 ? bid : Math.max(0, ltp - spread / 2);
+        const effectiveAsk = ask > 0 ? ask : Math.max(effectiveBid, ltp + spread / 2);
+        return { symbol: textValue(row, ['ScripData', 'ScripName', 'TradingSymbol', 'Symbol']) || (clean + '_' + expiryEntry.date + '_' + strike + '_' + (type === 'CALL' ? 'CE' : 'PE')), underlying: clean, expiry: expiryEntry.date, strike, optionType: type, lotSize: numeric(row, ['LotSize', 'Lot', 'Quantity'], config.lotSize), tickSize: numeric(row, ['TickSize', 'Tick'], config.tickSize), contractMultiplier: 1, ltp, change, changePercent, oi, changeOI, volume, bid: effectiveBid, ask: effectiveAsk, spread: Math.max(0, effectiveAsk - effectiveBid), iv, greeks, isATM: strike === atmStrike, isITM: type === 'CALL' ? strike < spotPrice : strike > spotPrice };
       };
-      if (this.config.accessToken) {
-        headers['Authorization'] = `Bearer ${this.config.accessToken}`;
-      }
-
-      let rawOptions: any[] = [];
-
-      for (const url of chainEndpoints) {
-        try {
-          const res = await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(payload)
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const list = data?.body?.Options || data?.body?.OptionChain || data?.Data || [];
-            if (Array.isArray(list) && list.length > 0) {
-              rawOptions = list;
-              if (!spotPrice) {
-                spotPrice = Number(data?.body?.LastRate || data?.body?.SpotPrice || data?.SpotPrice || 0);
-              }
-              break;
-            }
-          }
-        } catch {
-          // try next
-        }
-      }
-
-      if (spotPrice <= 0) {
-        return null; // Return blank when spot price is not available
-      }
-
-      const atmStrike = Math.round(spotPrice / config.strikeStep) * config.strikeStep;
-      const daysToExpiry = Math.max(0.5, expiries.find(e => e.dateString === currentExpiry)?.daysToExpiry || 4);
-      const timeInYears = daysToExpiry / 365;
-
-      let totalCallOI = 0;
-      let totalPutOI = 0;
-      let maxCallOI = -1;
-      let callResistanceStrike = atmStrike;
-      let maxPutOI = -1;
-      let putSupportStrike = atmStrike;
-
-      const rows: OptionChainStrikeRow[] = [];
-
-      if (rawOptions.length > 0) {
-        for (const item of rawOptions) {
-          const strike = Number(item.StrikeRate || item.StrikePrice || item.strike);
-          if (isNaN(strike)) continue;
-
-          const ceData = item.CE || item.Call || {};
-          const peData = item.PE || item.Put || {};
-
-          const ceLtp = Number(ceData.LastRate || ceData.LTP || 0);
-          const ceChange = Number(ceData.Chg || 0);
-          const ceChangePercent = Number(ceData.ChgPrcnt || 0);
-          const ceOI = Number(ceData.OpenInterest || ceData.OI || 0);
-          const ceChangeOI = Number(ceData.ChgOI || 0);
-          const ceVolume = Number(ceData.TotalQty || ceData.Volume || 0);
-          const ceBid = Number(ceData.BidRate || 0);
-          const ceAsk = Number(ceData.OffRate || 0);
-          const ceIV = Number(ceData.IV || 0);
-
-          const peLtp = Number(peData.LastRate || peData.LTP || 0);
-          const peChange = Number(peData.Chg || 0);
-          const peChangePercent = Number(peData.ChgPrcnt || 0);
-          const peOI = Number(peData.OpenInterest || peData.OI || 0);
-          const peChangeOI = Number(peData.ChgOI || 0);
-          const peVolume = Number(peData.TotalQty || peData.Volume || 0);
-          const peBid = Number(peData.BidRate || 0);
-          const peAsk = Number(peData.OffRate || 0);
-          const peIV = Number(peData.IV || 0);
-
-          if (ceLtp <= 0 || ceBid <= 0 || ceAsk <= 0 || ceIV <= 0 || peLtp <= 0 || peBid <= 0 || peAsk <= 0 || peIV <= 0) {
-            return null;
-          }
-
-          totalCallOI += ceOI;
-          totalPutOI += peOI;
-
-          if (ceOI > maxCallOI && strike >= atmStrike) {
-            maxCallOI = ceOI;
-            callResistanceStrike = strike;
-          }
-
-          if (peOI > maxPutOI && strike <= atmStrike) {
-            maxPutOI = peOI;
-            putSupportStrike = strike;
-          }
-
-          const isATM = strike === atmStrike;
-          const distanceFromAtm = Math.round((strike - atmStrike) / config.strikeStep);
-
-          const callGreeks = calculateBlackScholesGreeks(spotPrice, strike, timeInYears, 0.068, ceIV / 100, 'CALL');
-          const putGreeks = calculateBlackScholesGreeks(spotPrice, strike, timeInYears, 0.068, peIV / 100, 'PUT');
-
-          const callContract: OptionContract = {
-            symbol: `${clean}_${currentExpiry}_${strike}_CE`,
-            underlying: clean,
-            strike,
-            optionType: 'CALL',
-            expiry: currentExpiry,
-            lotSize: config.lotSize,
-            tickSize: 0.05,
-            contractMultiplier: 1,
-            ltp: ceLtp,
-            change: ceChange,
-            changePercent: ceChangePercent,
-            oi: ceOI,
-            changeOI: ceChangeOI,
-            volume: ceVolume,
-            bid: ceBid,
-            ask: ceAsk,
-            spread: Number(Math.max(0.05, ceAsk - ceBid).toFixed(2)),
-            iv: ceIV,
-            greeks: callGreeks.greeks,
-            isATM,
-            isITM: strike < spotPrice
-          };
-
-          const putContract: OptionContract = {
-            symbol: `${clean}_${currentExpiry}_${strike}_PE`,
-            underlying: clean,
-            strike,
-            optionType: 'PUT',
-            expiry: currentExpiry,
-            lotSize: config.lotSize,
-            tickSize: 0.05,
-            contractMultiplier: 1,
-            ltp: peLtp,
-            change: peChange,
-            changePercent: peChangePercent,
-            oi: peOI,
-            changeOI: peChangeOI,
-            volume: peVolume,
-            bid: peBid,
-            ask: peAsk,
-            spread: Number(Math.max(0.05, peAsk - peBid).toFixed(2)),
-            iv: peIV,
-            greeks: putGreeks.greeks,
-            isATM,
-            isITM: strike > spotPrice
-          };
-
-          rows.push({
-            strike,
-            isATM,
-            distanceFromAtm,
-            call: callContract,
-            put: putContract
-          });
-        }
-      } else {
-        // Never fabricate option-chain rows, IV, OI, bid/ask, or Greeks.
-        // The UI must surface that authoritative 5paisa option data is unavailable.
-        return null;
-      }
-
-      rows.sort((a, b) => a.strike - b.strike);
-
-      const atmIndex = rows.findIndex(r => r.strike === atmStrike);
-      const filteredRows = atmIndex >= 0
-        ? rows.slice(Math.max(0, atmIndex - strikeDepth), Math.min(rows.length, atmIndex + strikeDepth + 1))
-        : rows.slice(0, strikeDepth * 2 + 1);
-
-      const pcr = totalCallOI > 0 ? Number((totalPutOI / totalCallOI).toFixed(2)) : 1.0;
-
-      return {
-        underlying: clean,
-        spotPrice,
-        atmStrike,
-        expiry: currentExpiry,
-        availableExpiries: expiries.map(e => e.dateString),
-        totalCallOI,
-        totalPutOI,
-        pcr,
-        callResistanceStrike,
-        putSupportStrike,
-        highOIStrikeCall: callResistanceStrike,
-        highOIStrikePut: putSupportStrike,
-        rows: filteredRows,
-        timestamp: Date.now()
-      };
+      const rows: OptionChainStrikeRow[] = selectedStrikes.map(strike => { const pair = grouped.get(strike) || {}; return { strike, isATM: strike === atmStrike, distanceFromAtm: strikes.indexOf(strike) - atmIndex, call: contract(pair.call, 'CALL', strike), put: contract(pair.put, 'PUT', strike) }; });
+      const totalCallOI = strikes.reduce((sum, strike) => sum + numeric(grouped.get(strike)?.call, ['OpenInterest', 'OI', 'OpenInt']), 0);
+      const totalPutOI = strikes.reduce((sum, strike) => sum + numeric(grouped.get(strike)?.put, ['OpenInterest', 'OI', 'OpenInt']), 0);
+      let callResistanceStrike = atmStrike; let putSupportStrike = atmStrike; let maxCallOI = -1; let maxPutOI = -1;
+      for (const strike of strikes) { const callOI = numeric(grouped.get(strike)?.call, ['OpenInterest', 'OI', 'OpenInt']); const putOI = numeric(grouped.get(strike)?.put, ['OpenInterest', 'OI', 'OpenInt']); if (strike >= atmStrike && callOI > maxCallOI) { maxCallOI = callOI; callResistanceStrike = strike; } if (strike <= atmStrike && putOI > maxPutOI) { maxPutOI = putOI; putSupportStrike = strike; } }
+      return { underlying: clean, spotPrice, atmStrike, expiry: expiryEntry.date, availableExpiries: uniqueExpiries.map(e => e.date), totalCallOI, totalPutOI, pcr: totalCallOI > 0 ? Number((totalPutOI / totalCallOI).toFixed(2)) : 0, callResistanceStrike, putSupportStrike, highOIStrikeCall: callResistanceStrike, highOIStrikePut: putSupportStrike, rows, timestamp: Date.now() };
     } catch (err: any) {
       console.error('5paisa OptionChain fetch error:', err?.message || err);
       return null;
     }
   }
-
   /**
    * Helper to map underlying symbols and option contracts to 5paisa Scrip Codes
    */
