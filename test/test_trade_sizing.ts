@@ -16,9 +16,11 @@ const instrument = {
   symbol: 'GBP/USD',
   market: 'FOREX',
   pipSize: 0.0001,
-  minQuantity: 1000,
+  // cTrader protocol minVolume/stepVolume = 1000 cents => 10.00 base units.
+  // The normalized application representation is therefore 10-unit steps.
+  minQuantity: 10,
   maxQuantity: 10_000_000,
-  stepQuantity: 1000,
+  stepQuantity: 10,
   digits: 5,
   supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP'],
   baseCurrency: 'GBP',
@@ -41,11 +43,11 @@ const forcedFromOne = await sizeForexOrderToMaxTradeValue(
   1
 );
 
-assert.equal(forcedFromOne.quantity, 7_474);
+assert.equal(forcedFromOne.quantity, 7_470);
 assert.equal(forcedFromOne.adjusted, true);
 assert.equal(Number(forcedFromOne.rawMaxQuantity.toFixed(2)), 7474.68);
 assert.ok(forcedFromOne.estimatedTradeValueUsd <= 10_000);
-assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_999.09);
+assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_993.94);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 20_000
@@ -60,10 +62,11 @@ const forcedFromLargeRequest = await sizeForexOrderToMaxTradeValue(
 );
 
 // The caller's requested 10,000 units cannot limit the forced maximum-value
-// calculation; the configured $20,000 cap sizes the order to 14,000 units.
-assert.equal(forcedFromLargeRequest.quantity, 14_949);
+// calculation; the configured $20,000 cap sizes the order to the nearest
+// broker-valid 10-unit step below the cap.
+assert.equal(forcedFromLargeRequest.quantity, 14_940);
 assert.equal(forcedFromLargeRequest.adjusted, true);
-assert.equal(Number(forcedFromLargeRequest.estimatedTradeValueUsd.toFixed(2)), 19_999.52);
+assert.equal(Number(forcedFromLargeRequest.estimatedTradeValueUsd.toFixed(2)), 19_987.48);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 100
@@ -77,13 +80,35 @@ const belowBrokerMinimum = await sizeForexOrderToMaxTradeValue(
   1
 );
 
-// A configured $100 cap produces a positive value-derived quantity even though
-// this fixture advertises a broker minimum of 1,000 units. The local sizing
-// layer must not reject or round the order up; cTrader receives the calculated
-// volume and is responsible for accepting or rejecting broker-side constraints.
-assert.equal(belowBrokerMinimum.quantity, 74);
-assert.ok(belowBrokerMinimum.quantity < instrument.minQuantity);
-assert.equal(Number(belowBrokerMinimum.estimatedTradeValueUsd.toFixed(2)), 99.00);
+// The configured $100 cap yields 70 base units after broker 10-unit step
+// quantization and remains below the notional cap.
+assert.equal(belowBrokerMinimum.quantity, 70);
+assert.equal(Number(belowBrokerMinimum.estimatedTradeValueUsd.toFixed(2)), 93.65);
+
+const fineGrainedInstrument = {
+  ...instrument,
+  minQuantity: 0.01,
+  stepQuantity: 0.01
+};
+
+updateSystemConfig({
+  maxTradeValueForexUsd: 10.22
+});
+
+const fractionalQuantity = await sizeForexOrderToMaxTradeValue(
+  adapter,
+  'GBP/USD',
+  1.33785,
+  fineGrainedInstrument,
+  1
+);
+
+// cTrader protocol volume is in 0.01 base-currency units. The maximum-value
+// calculation is quantized DOWN to the nearest 0.01 unit: 7.638... -> 7.63.
+assert.equal(fractionalQuantity.quantity, 7.63);
+assert.ok(Number.isFinite(fractionalQuantity.quantity));
+assert.ok(fractionalQuantity.quantity % 0.01 < 1e-9);
+assert.ok(fractionalQuantity.estimatedTradeValueUsd <= 10.22 + 1e-8);
 
 // Goldcrest-wide price precision policy: every symbol is normalized to three
 // decimal places, regardless of broker-reported symbol precision.
@@ -94,22 +119,6 @@ assert.equal(normalizePriceToInstrumentDigits(1.1239, 5), 1.124);
 assert.equal(normalizePriceToInstrumentDigits(210.70722, 3), 210.707);
 
 console.log('Trade sizing tests passed.');
-
-updateSystemConfig({ maxTradeValueForexUsd: 10.22 });
-
-const fractionalQuantity = await sizeForexOrderToMaxTradeValue(
-  adapter,
-  'GBP/USD',
-  1.33785,
-  instrument,
-  1
-);
-
-// Whole-unit policy: 10.22 / 1.33785 = 7.638...; submit exactly 7 units.
-assert.equal(fractionalQuantity.quantity, 7);
-assert.ok(Number.isInteger(fractionalQuantity.quantity));
-assert.ok(fractionalQuantity.estimatedTradeValueUsd <= 10.22);
-
 
 updateSystemConfig({
   maxTradeValueForexUsd: 200,
