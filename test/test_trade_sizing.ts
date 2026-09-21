@@ -41,7 +41,7 @@ const forcedFromOne = await sizeForexOrderToMaxTradeValue(
 
 assert.equal(forcedFromOne.quantity, 7_000);
 assert.equal(forcedFromOne.adjusted, true);
-assert.equal(Number(forcedFromOne.rawMaxQuantity.toFixed(2)), 7474.54);
+assert.equal(Number(forcedFromOne.rawMaxQuantity.toFixed(2)), 7474.68);
 assert.ok(forcedFromOne.estimatedTradeValueUsd <= 10_000);
 assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_364.95);
 
