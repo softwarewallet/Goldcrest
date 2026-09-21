@@ -425,6 +425,32 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     if (!from || !to) throw new Error('Currency conversion requires both source and target currencies.');
     if (from === to) return 1;
 
+    // Prefer a directly tradable conversion leg before opening the native
+    // conversion-chain workflow. This avoids an unnecessary assets/chain
+    // request on the account-specific demo transport and is sufficient for
+    // the common G10 currencies used by Goldcrest.
+    const directPair = FOREX_PAIRS.find(
+      pair => pair.baseCurrency === from && pair.quoteCurrency === to
+    );
+    if (directPair) {
+      const quote = await this.getQuote(directPair.symbol);
+      if (quote.status !== 'FRESH' || !(quote.bid > 0 && quote.ask > 0)) {
+        throw new Error(`Authoritative live quote unavailable for conversion leg ${directPair.symbol}.`);
+      }
+      return quote.bid;
+    }
+
+    const inversePair = FOREX_PAIRS.find(
+      pair => pair.baseCurrency === to && pair.quoteCurrency === from
+    );
+    if (inversePair) {
+      const quote = await this.getQuote(inversePair.symbol);
+      if (quote.status !== 'FRESH' || !(quote.bid > 0 && quote.ask > 0)) {
+        throw new Error(`Authoritative live quote unavailable for conversion leg ${inversePair.symbol}.`);
+      }
+      return 1 / quote.ask;
+    }
+
     const raw = await this.resolveRawAccount();
     const { clientId, clientSecret, accessToken } = this.config;
     if (!clientId || !clientSecret || !accessToken) throw new Error('cTrader credentials unavailable for currency conversion.');
