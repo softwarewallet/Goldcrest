@@ -843,6 +843,9 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
     const rawSide = String(orderReq.side || 'BUY').toUpperCase();
     orderReq.side = (rawSide.includes('SELL') || rawSide.includes('SHORT')) ? 'SELL' : 'BUY';
 
+    // Hard requirement: every live order is submitted with trailing stop loss enabled.
+    orderReq.trailingStopLoss = true;
+
     const broker = resolveMarketBroker(orderReq.market);
     const adapter = brokerRegistry.getAdapterForMarket(orderReq.market);
 
