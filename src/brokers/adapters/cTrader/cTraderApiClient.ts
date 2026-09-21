@@ -660,6 +660,7 @@ export interface CTraderOrderSubmission {
 export async function submitLiveCTraderOrder(
   ctidTraderAccountId: number,
   symbolId: number,
+  symbol: string,
   orderType: 'MARKET' | 'LIMIT' | 'STOP',
   side: 'BUY' | 'SELL',
   quantity: number,
@@ -854,7 +855,7 @@ export async function submitLiveCTraderOrder(
             environment: 'LIVE',
             accountId: ctidTraderAccountId,
             symbolId,
-            symbol: `symbolId:${symbolId}`,
+            symbol,
             orderType,
             side,
             quantityUnits: quantity,
