@@ -15,8 +15,7 @@ export interface LiveGateEvaluationParams {
   maxAllowedExposure: number;
   activePositionsCount: number;
   maxOpenPositions: number;
-  /** Maximum acceptable age of the authoritative broker quote for this execution path. */
-  quoteMaxAgeMs?: number;
+  /** Maximum acceptable age of the authoritative broker quote. Goldcrest live policy is fixed at 20 seconds. */
 }
 
 export class LiveTradingGate {
@@ -72,12 +71,11 @@ export class LiveTradingGate {
       failedReasons.push('Condition 6 Failed: Market is currently closed or emergency halted.');
     }
 
-    // Check 7: Market data fresh. The normal live execution path remains 10s;
-    // operator-triggered Signal -> Trigger Now execution may use the explicit
-    // 20s window supplied by the caller.
-    const quoteMaxAgeMs = Number.isFinite(params.quoteMaxAgeMs) && (params.quoteMaxAgeMs as number) > 0
-      ? Number(params.quoteMaxAgeMs)
-      : 10_000;
+    // Check 7: Goldcrest-wide live quote freshness policy is fixed at 20s.
+    // There is intentionally no caller override or shorter fallback. This
+    // prevents any future execution path from silently reintroducing a 10s
+    // freshness requirement without an explicit code change here.
+    const quoteMaxAgeMs = 20_000;
     const marketDataFresh = params.currentQuote.status === 'FRESH'
       && (Date.now() - params.currentQuote.timestamp < quoteMaxAgeMs);
     if (!marketDataFresh) {
