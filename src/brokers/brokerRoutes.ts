@@ -12,6 +12,7 @@ import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, mar
 import { reconcileExecutionIntent } from '../services/executionReconciliationService';
 import { getSystemConfig } from '../services/configService';
 import { executeQuery, executeRun } from '../database/db';
+import { sizeForexOrderToMaxTradeValue } from './safety/TradeSizing';
 
 export const brokerRouter = Router();
 
@@ -877,6 +878,53 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       orderReq.price = orderReq.side === 'BUY' ? quote.ask : quote.bid;
     }
 
+    // Hard position-sizing boundary: calculate the executable quantity from the
+    // operator-configured maximum trade value immediately before execution. The
+    // requested quantity can only reduce the result; it can never exceed the
+    // configured USD notional cap.
+    let sizingResult: Awaited<ReturnType<typeof sizeForexOrderToMaxTradeValue>> | null = null;
+    if (orderReq.market === 'FOREX') {
+      const instrument = await adapter.getInstrument(orderReq.symbol);
+      if (!instrument) {
+        return res.status(400).json({
+          error: `Live broker instrument metadata unavailable for ${orderReq.symbol}.`,
+          code: 'INVALID_SYMBOL'
+        });
+      }
+
+      try {
+        sizingResult = await sizeForexOrderToMaxTradeValue(
+          adapter,
+          orderReq.symbol,
+          orderReq.price,
+          instrument,
+          Number(orderReq.quantity)
+        );
+        const requestedQuantity = Number(orderReq.quantity);
+        orderReq.quantity = sizingResult.quantity;
+
+        liveRuntimeLog('INFO', 'ORDER_POSITION_SIZED', {
+          broker,
+          market: orderReq.market,
+          symbol: orderReq.symbol,
+          requestedQuantity,
+          calculatedQuantity: sizingResult.quantity,
+          estimatedTradeValueUsd: sizingResult.estimatedTradeValueUsd,
+          maxTradeValueUsd: sizingResult.maxTradeValueUsd,
+          sizingAdjusted: sizingResult.adjusted,
+          quoteToUsdRate: sizingResult.quoteToUsdRate
+        });
+      } catch (sizingError: any) {
+        return res.status(403).json({
+          error: 'Live Safety Gate Rejected Order',
+          code: sizingError?.message?.startsWith('MAX_TRADE_VALUE_BELOW_BROKER_MINIMUM')
+            ? 'MAX_TRADE_VALUE_BELOW_BROKER_MINIMUM'
+            : 'POSITION_SIZING_REJECTED',
+          details: [sizingError?.message || String(sizingError)]
+        });
+      }
+    }
+
     // Auto-populate Stop Loss (Check 9 Compliance) and Take Profit if missing or invalid
     if (!orderReq.stopLoss || orderReq.stopLoss <= 0) {
       const isForex = orderReq.market === 'FOREX';
@@ -944,6 +992,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
         action: 'VALIDATE_ORDER',
         symbol: orderReq.symbol,
         quantity: orderReq.quantity,
+        price: orderReq.price,
         result: 'BLOCKED',
         error: gateResult.failedReasons.join(', ')
       });
@@ -960,6 +1009,14 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
         status: 'VALIDATED',
         broker,
         market: orderReq.market,
+        quantity: orderReq.quantity,
+        ...(sizingResult ? {
+          requestedQuantity: sizingResult.requestedQuantity,
+          calculatedQuantity: sizingResult.quantity,
+          estimatedTradeValueUsd: sizingResult.estimatedTradeValueUsd,
+          maxTradeValueUsd: sizingResult.maxTradeValueUsd,
+          sizingAdjusted: sizingResult.adjusted
+        } : {}),
         message: 'Order pre-flight checks passed. Live dispatch is permitted by the current server controls.'
       });
     }
