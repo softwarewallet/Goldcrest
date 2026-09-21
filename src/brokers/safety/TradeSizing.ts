@@ -13,6 +13,21 @@ export interface ForexSizingResult {
   brokerMaximumQuantity: number;
 }
 
+/**
+ * Normalize a broker-facing price to the exact decimal precision allowed by
+ * the live instrument. Number(toFixed()) removes both excess decimals and
+ * binary floating-point residue before the value reaches cTrader.
+ */
+export function normalizePriceToInstrumentDigits(price: number, digits: number): number {
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('INVALID_PRICE: Price must be a positive finite number.');
+  }
+  if (!Number.isInteger(digits) || digits < 0 || digits > 10) {
+    throw new Error('INVALID_PRICE: Instrument price precision is invalid.');
+  }
+  return Number(price.toFixed(digits));
+}
+
 function getForexQuoteCurrency(symbol: string, instrument: BrokerInstrument): string {
   if (instrument.quoteCurrency) return instrument.quoteCurrency.toUpperCase();
   const compact = String(symbol || '').toUpperCase().replace(/[^A-Z]/g, '');

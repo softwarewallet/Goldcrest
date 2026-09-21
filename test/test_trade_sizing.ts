@@ -8,7 +8,7 @@ process.env.GOLDCREST_CONFIG_DIR = configDir;
 process.env.GOLDCREST_CONFIG_FILE = path.join(configDir, 'system-config.json');
 
 const { updateSystemConfig } = await import('../src/services/configService');
-const { sizeForexOrderToMaxTradeValue } = await import('../src/brokers/safety/TradeSizing');
+const { normalizePriceToInstrumentDigits, sizeForexOrderToMaxTradeValue } = await import('../src/brokers/safety/TradeSizing');
 process.env.LIVE_TRADING_ENABLED = 'true';
 const { liveTradingGate } = await import('../src/brokers/safety/LiveTradingGate');
 
@@ -84,6 +84,12 @@ const belowBrokerMinimum = await sizeForexOrderToMaxTradeValue(
 assert.equal(belowBrokerMinimum.quantity, 74);
 assert.ok(belowBrokerMinimum.quantity < instrument.minQuantity);
 assert.equal(Number(belowBrokerMinimum.estimatedTradeValueUsd.toFixed(2)), 99.00);
+
+// cTrader price precision is symbol-specific. A USD/JPY price with five
+// incoming decimals must be normalized to the broker's three allowed digits.
+assert.equal(normalizePriceToInstrumentDigits(157.71077, 3), 157.711);
+assert.equal(normalizePriceToInstrumentDigits(157.7104, 3), 157.71);
+assert.equal(normalizePriceToInstrumentDigits(1.123456, 5), 1.12346);
 
 console.log('Trade sizing tests passed.');
 
