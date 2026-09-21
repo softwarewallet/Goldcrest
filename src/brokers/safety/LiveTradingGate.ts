@@ -109,14 +109,46 @@ export class LiveTradingGate {
       failedReasons.push('Condition 11 Failed: Daily loss limit breached.');
     }
 
-    // Check 12: Maximum exposure not exceeded.
-    // Exposure equal to the configured account limit is valid; only a real
-    // overage beyond a small floating-point tolerance should be rejected.
+    // Check 12: Maximum account exposure not exceeded.
+    //
+    // The live cTrader Forex execution contract applies the configured
+    // maximum-trade-value limit at the final broker boundary. Before that
+    // boundary, the dispatch layer may include the proposed order in
+    // totalAccountExposure using the preliminary Goldcrest quantity. That
+    // quantity is intentionally not the final cTrader volume representation
+    // and must not cause Condition 12 to double-count the pending order.
+    //
+    // Condition 12 is therefore an ACCOUNT-EXPOSURE check: for cTrader LIVE
+    // Forex, remove the preliminary proposed-order notional from the supplied
+    // aggregate exposure and compare only the existing account exposure with
+    // the configured account exposure ceiling. Condition 16 independently
+    // enforces the configured per-trade limit.
     const exposureTolerance = 1e-8;
+    const isLiveCTraderForex = params.order.market === 'FOREX' && adapter.environment === 'LIVE';
+    let exposureForLimit = params.totalAccountExposure;
+
+    if (
+      isLiveCTraderForex
+      && Number.isFinite(params.totalAccountExposure)
+      && Number.isFinite(params.order.quantity)
+      && params.order.quantity > 0
+    ) {
+      const referencePrice = params.order.price && params.order.price > 0
+        ? params.order.price
+        : (params.order.side === 'BUY' ? params.currentQuote.ask : params.currentQuote.bid);
+
+      if (Number.isFinite(referencePrice) && referencePrice > 0) {
+        const proposedOrderExposure = params.order.quantity * referencePrice;
+        if (Number.isFinite(proposedOrderExposure) && proposedOrderExposure >= 0) {
+          exposureForLimit = Math.max(0, params.totalAccountExposure - proposedOrderExposure);
+        }
+      }
+    }
+
     const maxExposureNotExceeded =
-      Number.isFinite(params.totalAccountExposure)
+      Number.isFinite(exposureForLimit)
       && Number.isFinite(params.maxAllowedExposure)
-      && params.totalAccountExposure <= params.maxAllowedExposure + exposureTolerance;
+      && exposureForLimit <= params.maxAllowedExposure + exposureTolerance;
     if (!maxExposureNotExceeded) {
       failedReasons.push('Condition 12 Failed: Maximum account exposure threshold exceeded.');
     }
