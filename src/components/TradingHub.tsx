@@ -55,6 +55,7 @@ interface RealPosition {
   realizedPnL: number;
   currency: string;
   timestamp: number;
+  lotSize?: number;
 }
 
 // Representing actual scanned system signals from /api/signals
@@ -221,7 +222,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     const interval = setInterval(() => {
       fetchRealPositions(true);
       fetchRealSignals(true);
-    }, 30000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [fetchRealPositions, fetchRealSignals]);
