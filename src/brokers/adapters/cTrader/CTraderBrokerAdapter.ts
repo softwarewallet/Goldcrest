@@ -28,6 +28,7 @@ import {
   fetchCTraderTrendbars,
   fetchCTraderReconcileState,
   fetchCTraderDeals,
+  fetchCTraderPositionUnrealizedPnL,
   fetchCTraderOrderDetails,
   fetchCTraderAssets,
   fetchCTraderConversionSymbols,
@@ -651,14 +652,78 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     );
     const symbols = await this.getCachedCTraderSymbols(raw);
     const byId = new Map(symbols.map(s => [s.symbolId, s]));
+
+    // Reconcile state contains authoritative position structure, while cTrader
+    // exposes live market price and unrealized P&L through dedicated live APIs.
+    // Fetch both from the broker so the Active Positions grid never reuses the
+    // entry price as a fake live price or displays raw monetary integers.
+    const uniqueSymbolIds = Array.from(new Set(
+      state.positions
+        .map((p: any) => Number(p?.tradeData?.symbolId))
+        .filter((id: number) => Number.isFinite(id) && id > 0)
+    ));
+    const quoteEntries = await Promise.all(uniqueSymbolIds.map(async symbolId => {
+      const symbolInfo = byId.get(symbolId);
+      if (!symbolInfo) return [symbolId, undefined] as const;
+      try {
+        const quote = await fetchLiveCTraderQuote(
+          raw.ctidTraderAccountId,
+          symbolId,
+          symbolInfo.symbolName,
+          this.config.clientId!,
+          this.config.clientSecret!,
+          this.config.accessToken!,
+          raw.isLive,
+          symbolInfo.digits
+        );
+        return [symbolId, quote] as const;
+      } catch {
+        return [symbolId, undefined] as const;
+      }
+    }));
+    const quotesById = new Map(quoteEntries);
+
+    let pnlByPositionId = new Map<string, number>();
+    try {
+      pnlByPositionId = await fetchCTraderPositionUnrealizedPnL(
+        raw.ctidTraderAccountId,
+        this.config.clientId!,
+        this.config.clientSecret!,
+        this.config.accessToken!,
+        raw.isLive
+      );
+    } catch {
+      // Reconcile payloads from some broker transports include an already
+      // normalized unrealized P&L. Use it only as a fallback.
+    }
+
     return state.positions.map((p: any) => {
       const trade = p.tradeData || {};
       const symbolInfo = byId.get(Number(trade.symbolId));
       if (!symbolInfo) return null;
+
       const side = String(trade.tradeSide || '').toUpperCase().includes('SELL') ? 'SELL' : 'BUY';
-      const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0));
-      const entryPrice = Number(trade.openPrice || p.price || 0);
+      // cTrader position volume is protocol cents: 1000 = 10.00 units.
+      const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0)) / 100;
+      const entryPrice = Number(p.price || trade.openPrice || 0);
       if (quantity <= 0 || entryPrice <= 0) return null;
+
+      const quote = quotesById.get(Number(trade.symbolId));
+      const livePrice = quote && quote.status === 'FRESH'
+        ? (side === 'BUY' ? quote.bid : quote.ask)
+        : entryPrice;
+
+      const fallbackPnlRaw = Number(p.unrealizedPnL ?? trade.unrealizedPnL ?? 0);
+      const fallbackMoneyDigits = Number(p.moneyDigits ?? trade.moneyDigits ?? 2);
+      const fallbackPnlDivisor = Number.isInteger(fallbackMoneyDigits) && fallbackMoneyDigits >= 0
+        ? 10 ** fallbackMoneyDigits
+        : 100;
+      const unrealizedPnL = pnlByPositionId.get(String(p.positionId))
+        ?? (Number.isFinite(fallbackPnlRaw) ? fallbackPnlRaw / fallbackPnlDivisor : 0);
+
+      const realizedRaw = Number(p.realizedPnL ?? trade.realizedPnL ?? 0);
+      const realizedPnL = Number.isFinite(realizedRaw) ? realizedRaw / fallbackPnlDivisor : 0;
+
       return {
         id: String(p.positionId),
         broker: 'CTRADER',
@@ -668,13 +733,14 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         side,
         quantity,
         entryPrice,
-        currentPrice: entryPrice,
-        stopLoss: trade.stopLoss,
-        takeProfit: trade.takeProfit,
-        unrealizedPnL: Number(p.unrealizedPnL || 0),
-        realizedPnL: Number(p.realizedPnL || 0),
+        currentPrice: Number.isFinite(livePrice) && livePrice > 0 ? livePrice : entryPrice,
+        // cTrader exposes protection prices directly on ProtoOAPosition.
+        stopLoss: Number(p.stopLoss ?? trade.stopLoss ?? 0) || undefined,
+        takeProfit: Number(p.takeProfit ?? trade.takeProfit ?? 0) || undefined,
+        unrealizedPnL: Number.isFinite(unrealizedPnL) ? unrealizedPnL : 0,
+        realizedPnL,
         currency: this.accountData?.currency || 'USD',
-        timestamp: Date.now(),
+        timestamp: Number(p.utcLastUpdateTimestamp || Date.now()),
         brokerPositionId: String(p.positionId)
       } as NormalizedPosition;
     }).filter(Boolean) as NormalizedPosition[];
