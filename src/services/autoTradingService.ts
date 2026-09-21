@@ -12,6 +12,7 @@ import { getSystemConfig } from './configService';
 import { killSwitch } from '../brokers/safety/KillSwitch';
 import { BrokerAdapter, NormalizedQuote, OrderRequest } from '../brokers/types';
 import { liveRuntimeLog } from './liveRuntimeLog';
+import { sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
 
 const AUTO_INTERVAL_MS = Math.max(
   15_000,
@@ -631,17 +632,34 @@ class AutoTradingService {
         return;
       }
 
-      const maxNotionalQuantity = Number(getSystemConfig().maxTradeValueForexUsd) / entryPrice;
-      let quantity = Math.min(riskBudget / stopDistance, maxNotionalQuantity);
-      const step = Number(instrument.stepQuantity) > 0 ? Number(instrument.stepQuantity) : 1;
-      quantity = Math.floor(quantity / step) * step;
-
-      if (!(quantity >= Number(instrument.minQuantity))) {
-        this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason: `Calculated quantity ${quantity} is below broker minimum ${instrument.minQuantity} under the configured trade-value limit.` });
+      const riskQuantity = riskBudget / stopDistance;
+      let sizing;
+      try {
+        sizing = await sizeForexOrderToMaxTradeValue(
+          adapter,
+          pair,
+          entryPrice,
+          instrument,
+          riskQuantity
+        );
+      } catch (sizingError: any) {
+        this.lastActions.push({
+          pair,
+          result: 'BLOCKED',
+          signalId: signal.id,
+          reason: sizingError?.message || String(sizingError)
+        });
+        liveRuntimeLog('WARN', 'AUTO_ORDER_SIZING_BLOCKED', {
+          pair,
+          signalId: signal.id,
+          requestedQuantity: riskQuantity,
+          maxTradeValueUsd: getSystemConfig().maxTradeValueForexUsd,
+          error: sizingError?.message || String(sizingError)
+        });
         return;
       }
 
-      quantity = Math.min(quantity, Number(instrument.maxQuantity));
+      const quantity = sizing.quantity;
 
       const order: OrderRequest = {
         market: 'FOREX',
@@ -666,7 +684,20 @@ class AutoTradingService {
         .reduce((sum, position) => sum + Math.abs(Number(position.quantity || 0)) * Number(position.currentPrice || 0), 0)
         + (quantity * entryPrice);
 
-      liveRuntimeLog('INFO', 'ORDER_CANDIDATE', { pair, signalId: signal.id, side: order.side, quantity, entryPrice, stopLoss: order.stopLoss, takeProfit: order.takeProfit, notional: quantity * entryPrice });
+      liveRuntimeLog('INFO', 'ORDER_CANDIDATE', {
+        pair,
+        signalId: signal.id,
+        side: order.side,
+        quantity,
+        requestedRiskQuantity: riskQuantity,
+        entryPrice,
+        stopLoss: order.stopLoss,
+        takeProfit: order.takeProfit,
+        notionalUsd: sizing.estimatedTradeValueUsd,
+        maxTradeValueUsd: sizing.maxTradeValueUsd,
+        sizingAdjusted: sizing.adjusted,
+        quoteToUsdRate: sizing.quoteToUsdRate
+      });
 
       const result = await autoExecutionEngine.processSignal(
         {

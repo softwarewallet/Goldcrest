@@ -907,17 +907,25 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     return symbols.filter(s => allowed.has(s.symbolName.replace('/', '').toUpperCase())).map(s => {
       const p = FOREX_PAIRS.find(x => x.symbol.replace('/', '').toUpperCase() === s.symbolName.replace('/', '').toUpperCase());
       if (!p) throw new BrokerError('INVALID_SYMBOL', `Unsupported cTrader symbol ${s.symbolName}`, 'CTRADER', this.environment);
+      // cTrader exposes min/max/step volume in protocol "cents" (1/100
+      // of a base-currency unit). Normalize those values back to base units
+      // before they reach the common order-sizing and safety layers.
+      const minQuantity = s.minVolume ? Number(s.minVolume) / 100 : 1000;
+      const maxQuantity = s.maxVolume ? Number(s.maxVolume) / 100 : 10000000;
+      const stepQuantity = s.stepVolume ? Number(s.stepVolume) / 100 : 1000;
+
       return {
       symbol: p.symbol,
       market: 'FOREX',
       pipSize: p.pipSize,
-      minQuantity: 1000,
-      maxQuantity: 10000000,
-      stepQuantity: 1000,
+      minQuantity,
+      maxQuantity,
+      stepQuantity,
       digits: p.digits,
       supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP'],
       baseCurrency: p.symbol.split('/')[0],
-      quoteCurrency: p.symbol.split('/')[1]
+      quoteCurrency: p.symbol.split('/')[1],
+      brokerInstrumentId: String(s.symbolId)
     };
     });
   }
