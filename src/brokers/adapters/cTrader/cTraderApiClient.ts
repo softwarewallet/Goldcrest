@@ -716,7 +716,6 @@ export async function submitLiveCTraderOrder(
 
       return new Promise<CTraderOrderSubmission>((resolve, reject) => {
         let accepted: CTraderOrderSubmission | null = null;
-        let requestLogged = false;
         let resultLogged = false;
 
         const logResult = (result: {
@@ -870,7 +869,6 @@ export async function submitLiveCTraderOrder(
               payload
             }
           });
-          requestLogged = true;
         } catch (logError) {
           console.error('[TRADE-LOG] Failed to record trade request:', logError);
         }
