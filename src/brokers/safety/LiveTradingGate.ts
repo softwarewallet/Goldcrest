@@ -157,16 +157,44 @@ export class LiveTradingGate {
       ? params.order.quantity * referencePrice
       : NaN;
     let maximumTradeValueCheckPassed = Number.isFinite(maxTradeValue) && maxTradeValue > 0 && Number.isFinite(tradeValue) && tradeValue > 0;
+    let quoteToUsdRate = 1;
+    let tradeValueUsd = isForex ? tradeValue : NaN;
 
     if (maximumTradeValueCheckPassed && isForex && quoteCurrency !== 'USD') {
-      // The configured Forex limit is explicitly USD-denominated. Do not compare
-      // JPY/EUR/GBP/etc. notionals directly against a USD threshold.
+      // The Forex limit is USD-denominated. Convert the broker-quoted notional
+      // using the adapter's authoritative account-currency conversion path
+      // rather than comparing JPY/EUR/GBP/etc. directly to a USD threshold.
+      try {
+        if (typeof adapter.getAccountCurrencyConversionRate !== 'function') {
+          throw new Error(`USD conversion for ${quoteCurrency} is unavailable.`);
+        }
+        quoteToUsdRate = await adapter.getAccountCurrencyConversionRate(quoteCurrency, 'USD');
+        if (!(quoteToUsdRate > 0) || !Number.isFinite(quoteToUsdRate)) {
+          throw new Error(`Invalid ${quoteCurrency}/USD conversion rate.`);
+        }
+        tradeValueUsd = tradeValue * quoteToUsdRate;
+      } catch (error: any) {
+        maximumTradeValueCheckPassed = false;
+        failedReasons.push(
+          `Condition 16 Failed: Forex pair ${params.order.symbol} has quote currency ${quoteCurrency}; authoritative USD conversion is unavailable (${error?.message || 'conversion failed'}), so the limit cannot be safely verified.`
+        );
+      }
+    }
+
+    if (maximumTradeValueCheckPassed && isForex && tradeValueUsd > maxTradeValue) {
       maximumTradeValueCheckPassed = false;
-      failedReasons.push(`Condition 16 Failed: Forex pair ${params.order.symbol} has quote currency ${quoteCurrency}; USD trade-value conversion is unavailable, so the limit cannot be safely verified.`);
-    } else if (maximumTradeValueCheckPassed && tradeValue > maxTradeValue) {
+      failedReasons.push(
+        `Condition 16 Failed: Trade value ${tradeValueUsd.toFixed(2)} USD exceeds configured maximum of ${maxTradeValue.toFixed(2)} USD for cTrader.`
+      );
+    } else if (maximumTradeValueCheckPassed && !isForex && tradeValue > maxTradeValue) {
       maximumTradeValueCheckPassed = false;
-      failedReasons.push(`Condition 16 Failed: Trade value ${tradeValue.toFixed(2)} ${isForex ? 'USD' : 'INR'} exceeds configured maximum of ${maxTradeValue.toFixed(2)} ${isForex ? 'USD' : 'INR'} for ${isForex ? 'cTrader' : '5paisa'}.`);
-    } else if (!maximumTradeValueCheckPassed) {
+      failedReasons.push(
+        `Condition 16 Failed: Trade value ${tradeValue.toFixed(2)} INR exceeds configured maximum of ${maxTradeValue.toFixed(2)} INR for 5paisa.`
+      );
+    } else if (maximumTradeValueCheckPassed && isForex && !(tradeValueUsd > 0)) {
+      maximumTradeValueCheckPassed = false;
+      failedReasons.push('Condition 16 Failed: USD-converted Forex trade value could not be safely calculated.');
+    } else if (!maximumTradeValueCheckPassed && failedReasons.length === 0) {
       failedReasons.push('Condition 16 Failed: Trade value could not be safely calculated or the configured maximum is invalid.');
     }
 
