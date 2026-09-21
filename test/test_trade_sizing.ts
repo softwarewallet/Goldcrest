@@ -9,6 +9,8 @@ process.env.GOLDCREST_CONFIG_FILE = path.join(configDir, 'system-config.json');
 
 const { updateSystemConfig } = await import('../src/services/configService');
 const { sizeForexOrderToMaxTradeValue } = await import('../src/brokers/safety/TradeSizing');
+process.env.LIVE_TRADING_ENABLED = 'true';
+const { liveTradingGate } = await import('../src/brokers/safety/LiveTradingGate');
 
 const instrument = {
   symbol: 'GBP/USD',
@@ -99,3 +101,117 @@ const fractionalQuantity = await sizeForexOrderToMaxTradeValue(
 assert.equal(fractionalQuantity.quantity, 7);
 assert.ok(Number.isInteger(fractionalQuantity.quantity));
 assert.ok(fractionalQuantity.estimatedTradeValueUsd <= 10.22);
+
+
+updateSystemConfig({
+  maxTradeValueForexUsd: 200,
+  maxTradeValueIndianInr: 1_000_000
+});
+
+const gateAdapter: any = {
+  broker: 'CTRADER',
+  environment: 'LIVE',
+  isLive: true,
+  getTradingStatus: async () => 'CONNECTED',
+  getAccount: async () => ({
+    accountId: 'test',
+    accountType: 'LIVE',
+    balance: 1000,
+    equity: 1000,
+    availableMargin: 1000,
+    usedMargin: 0,
+    freeMargin: 1000,
+    currency: 'USD',
+    broker: 'CTRADER',
+    environment: 'LIVE',
+    connectionStatus: 'CONNECTED',
+    permissions: ['READ', 'TRADE', 'TRADING'],
+    lastUpdate: Date.now()
+  }),
+  getInstrument: async () => instrument,
+  getPositions: async () => [],
+  getAccountCurrencyConversionRate: async () => 1
+};
+
+const boundaryQuote = {
+  symbol: 'GBP/USD',
+  bid: 1,
+  ask: 1,
+  spread: 0,
+  timestamp: Date.now(),
+  source: 'test',
+  environment: 'LIVE',
+  status: 'FRESH'
+};
+
+const exactBoundary = await liveTradingGate.evaluate(gateAdapter, {
+  order: {
+    market: 'FOREX',
+    symbol: 'GBP/USD',
+    side: 'BUY',
+    orderType: 'MARKET',
+    quantity: 200,
+    price: 1.0000000000000002,
+    stopLoss: 0.99
+  },
+  signalAgeMs: 1000,
+  currentQuote: boundaryQuote,
+  isMarketOpen: true,
+  dailyRealizedLoss: 0,
+  dailyLossLimit: 100,
+  totalAccountExposure: 1000,
+  maxAllowedExposure: 1000,
+  activePositionsCount: 0,
+  maxOpenPositions: 5
+});
+
+assert.equal(exactBoundary.checks.maxExposureNotExceeded, true);
+assert.equal(exactBoundary.checks.maximumTradeValueCheckPassed, true);
+
+const realExposureOverage = await liveTradingGate.evaluate(gateAdapter, {
+  order: {
+    market: 'FOREX',
+    symbol: 'GBP/USD',
+    side: 'BUY',
+    orderType: 'MARKET',
+    quantity: 200,
+    price: 1,
+    stopLoss: 0.99
+  },
+  signalAgeMs: 1000,
+  currentQuote: boundaryQuote,
+  isMarketOpen: true,
+  dailyRealizedLoss: 0,
+  dailyLossLimit: 100,
+  totalAccountExposure: 1000.0001,
+  maxAllowedExposure: 1000,
+  activePositionsCount: 0,
+  maxOpenPositions: 5
+});
+
+assert.equal(realExposureOverage.checks.maxExposureNotExceeded, false);
+assert.ok(realExposureOverage.failedReasons.some(reason => reason.includes('Condition 12 Failed')));
+
+const realTradeOverage = await liveTradingGate.evaluate(gateAdapter, {
+  order: {
+    market: 'FOREX',
+    symbol: 'GBP/USD',
+    side: 'BUY',
+    orderType: 'MARKET',
+    quantity: 200.000001,
+    price: 1,
+    stopLoss: 0.99
+  },
+  signalAgeMs: 1000,
+  currentQuote: boundaryQuote,
+  isMarketOpen: true,
+  dailyRealizedLoss: 0,
+  dailyLossLimit: 100,
+  totalAccountExposure: 10,
+  maxAllowedExposure: 1000,
+  activePositionsCount: 0,
+  maxOpenPositions: 5
+});
+
+assert.equal(realTradeOverage.checks.maximumTradeValueCheckPassed, false);
+assert.ok(realTradeOverage.failedReasons.some(reason => reason.includes('Condition 16 Failed')));
