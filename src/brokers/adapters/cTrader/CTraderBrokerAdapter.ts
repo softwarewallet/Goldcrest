@@ -932,9 +932,12 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       // cTrader itself remains authoritative for executable volume constraints.
       // A fabricated 1000-unit fallback could incorrectly block otherwise valid
       // order preparation and is therefore removed.
-      const minQuantity = s.minVolume ? Number(s.minVolume) / 100 : 0;
+      // Goldcrest does not enforce a local broker minimum or volume step.
+      // Keep these normalized metadata fields neutral so no application layer
+      // can recreate a fabricated 1000-unit minimum from cTrader metadata.
+      const minQuantity = 0;
       const maxQuantity = s.maxVolume ? Number(s.maxVolume) / 100 : Number.MAX_SAFE_INTEGER;
-      const stepQuantity = s.stepVolume ? Number(s.stepVolume) / 100 : 1;
+      const stepQuantity = 1;
 
       return {
       symbol: p.symbol,
