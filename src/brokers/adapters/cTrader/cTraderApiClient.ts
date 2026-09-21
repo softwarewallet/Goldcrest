@@ -875,8 +875,8 @@ export async function submitLiveCTraderOrder(
 
         // ProtoOANewOrderReq accepts broker volume, not Goldcrest's normalized
         // quantity field. The exact broker payload must contain only cTrader API
-        // fields; quantityUnits/protocolVolume are audit metadata only and are
-        // intentionally never copied into payload.
+        // fields; Goldcrest's normalized quantity is intentionally never
+        // copied into the broker payload.
         const forbiddenPayloadFields = ['quantity', 'quantityUnits', 'protocolVolume'];
         for (const field of forbiddenPayloadFields) {
           if (Object.prototype.hasOwnProperty.call(payload, field)) {
