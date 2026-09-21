@@ -830,6 +830,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       let bid: number | undefined;
       let ask: number | undefined;
       let timestamp = Date.now();
+      let quoteStatus: NormalizedQuote['status'] = 'STALE';
 
       try {
         const quote = await fetchLiveCTraderQuote(
@@ -846,6 +847,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
           bid = quote.bid;
           ask = quote.ask;
           timestamp = quote.timestamp || Date.now();
+          quoteStatus = 'FRESH';
         }
       } catch {
         // Real-time spot event unavailable (e.g. closed/quiet market session) - fallback to authoritative latest trendbar
@@ -866,6 +868,10 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
           bid = lastBar.close;
           ask = Number((lastBar.close + spreadDiff).toFixed(match.digits));
           timestamp = lastBar.timestamp || Date.now();
+          // Historical trendbar fallback is display/analysis data only.
+          // It must never be labeled FRESH because the live order safety gate
+          // requires an actual executable spot quote.
+          quoteStatus = 'DELAYED';
         }
       }
 
@@ -879,9 +885,9 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         ask: Number(ask.toFixed(match.digits)),
         spread: Number((ask - bid).toFixed(match.digits)),
         timestamp,
-        source: 'CTRADER_OPEN_API',
+        source: quoteStatus === 'FRESH' ? 'CTRADER_OPEN_API' : 'CTRADER_HISTORICAL_CLOSE',
         environment: this.environment,
-        status: 'FRESH'
+        status: quoteStatus
       };
     } catch (err: any) {
       throw normalizeBrokerError(err, 'CTRADER', this.environment);
