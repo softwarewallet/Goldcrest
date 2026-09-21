@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import { BrokerAccountInfo, TradingEnvironment } from '../../types';
 import { getCTraderApiMode } from '../../../services/configService';
+import { recordTradeRequest, recordTradeResult } from '../../../services/tradeAuditLog';
 
 export interface CTraderRawAccount {
   ctidTraderAccountId: number;
@@ -695,6 +696,7 @@ export async function submitLiveCTraderOrder(
     isLive,
     async ws => {
       const requestClientId = clientOrderId.slice(0, 50);
+      const tradeAuditId = `trade_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       const payload: Record<string, unknown> = {
         ctidTraderAccountId,
         symbolId,
@@ -713,21 +715,65 @@ export async function submitLiveCTraderOrder(
 
       return new Promise<CTraderOrderSubmission>((resolve, reject) => {
         let accepted: CTraderOrderSubmission | null = null;
+        let requestLogged = false;
+        let resultLogged = false;
+
+        const logResult = (result: {
+          status: 'ACCEPTED' | 'FILLED' | 'REJECTED' | 'FAILED' | 'TIMEOUT';
+          orderId?: number;
+          executionPrice?: number;
+          executedVolume?: number;
+          error?: string;
+          response?: unknown;
+        }) => {
+          if (resultLogged) return;
+          resultLogged = true;
+          try {
+            recordTradeResult({
+              tradeAuditId,
+              broker: 'CTRADER',
+              environment: 'LIVE',
+              ...result
+            });
+          } catch (logError) {
+            console.error('[TRADE-LOG] Failed to record trade result:', logError);
+          }
+        };
         const timer = setTimeout(() => {
           ws.removeEventListener('message', handler);
-          if (accepted) resolve(accepted);
-          else reject(new Error('cTrader order submission timed out without broker acknowledgement.'));
+          if (accepted) {
+            logResult({
+              status: 'ACCEPTED',
+              orderId: accepted.orderId,
+              executionPrice: accepted.executionPrice,
+              executedVolume: accepted.executedVolume,
+              response: accepted.raw
+            });
+            resolve(accepted);
+          } else {
+            const error = 'cTrader order submission timed out without broker acknowledgement.';
+            logResult({ status: 'TIMEOUT', error });
+            reject(new Error(error));
+          }
         }, 15000);
 
         const finish = (value: CTraderOrderSubmission) => {
           clearTimeout(timer);
           ws.removeEventListener('message', handler);
+          logResult({
+            status: value.status === 'FILLED' ? 'FILLED' : 'ACCEPTED',
+            orderId: value.orderId,
+            executionPrice: value.executionPrice,
+            executedVolume: value.executedVolume,
+            response: value.raw
+          });
           resolve(value);
         };
 
-        const fail = (message: string) => {
+        const fail = (message: string, response?: unknown) => {
           clearTimeout(timer);
           ws.removeEventListener('message', handler);
+          logResult({ status: 'REJECTED', error: message, response });
           reject(new Error(message));
         };
 
@@ -800,11 +846,47 @@ export async function submitLiveCTraderOrder(
         };
 
         ws.addEventListener('message', handler);
-        ws.send(JSON.stringify({
+
+        try {
+          recordTradeRequest({
+            tradeAuditId,
+            broker: 'CTRADER',
+            environment: 'LIVE',
+            accountId: ctidTraderAccountId,
+            symbolId,
+            symbol: `symbolId:${symbolId}`,
+            orderType,
+            side,
+            quantityUnits: quantity,
+            protocolVolume: volume,
+            price,
+            stopLoss,
+            takeProfit,
+            clientOrderId: requestClientId,
+            packet: {
+              clientMsgId: requestClientId,
+              payloadType: MSG_NEW_ORDER_REQ,
+              payload
+            }
+          });
+          requestLogged = true;
+        } catch (logError) {
+          console.error('[TRADE-LOG] Failed to record trade request:', logError);
+        }
+
+        const packet = JSON.stringify({
           clientMsgId: requestClientId,
           payloadType: MSG_NEW_ORDER_REQ,
           payload
-        }));
+        });
+
+        try {
+          ws.send(packet);
+        } catch (sendError: any) {
+          const message = `cTrader request transmission failed: ${sendError?.message || String(sendError)}`;
+          logResult({ status: 'FAILED', error: message });
+          reject(new Error(message));
+        }
       });
     }
   );
