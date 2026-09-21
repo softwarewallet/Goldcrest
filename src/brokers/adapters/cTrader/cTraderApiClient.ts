@@ -150,11 +150,18 @@ export async function fetchLiveCTraderAccounts(
                 permissionScope
               }));
               const endpointIsLive = isAuthoritativeLiveHost(host);
-              const eligibleAccounts = accList.filter(account => endpointIsLive ? account.isLive === true : account.isLive === false);
-              // Fallback to all accounts if specific filter yielded 0
-              const accountsToReturn = eligibleAccounts.length > 0 ? eligibleAccounts : accList;
+              // Goldcrest is LIVE-only. Never fall back to demo/non-live accounts
+              // when the authoritative live endpoint returns no LIVE accounts.
+              const accountsToReturn = endpointIsLive
+                ? accList.filter(account => account.isLive === true)
+                : accList.filter(account => account.isLive === false);
+
               if (accountsToReturn.length === 0) {
-                reject(new Error('cTrader returned accounts, but none match the connected Open API account environment.'));
+                reject(new Error(
+                  endpointIsLive
+                    ? 'cTrader returned no LIVE accounts for the authenticated access token.'
+                    : 'cTrader returned no accounts for the requested endpoint environment.'
+                ));
                 return;
               }
               resolve(accountsToReturn);
