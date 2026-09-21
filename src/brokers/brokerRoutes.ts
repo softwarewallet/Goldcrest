@@ -84,6 +84,34 @@ async function calculateAccountCurrencyExposure(
   quote: NormalizedQuote
 ): Promise<number> {
   let exposure = 0;
+  const conversionCache = new Map<string, number>();
+
+  const convertNotional = async (
+    symbol: string,
+    notional: number,
+    sourceCurrency: string,
+    preferredRate?: number
+  ): Promise<number> => {
+    const target = String(accountCurrency || '').toUpperCase();
+    const source = String(sourceCurrency || '').toUpperCase();
+    if (!target) throw new Error('ACCOUNT_CURRENCY_UNAVAILABLE');
+    if (!(notional >= 0)) throw new Error('INVALID_EXPOSURE_NOTIONAL');
+    if (source === target) return notional;
+    if (preferredRate !== undefined && Number.isFinite(preferredRate) && preferredRate > 0) {
+      return notional * preferredRate;
+    }
+
+    const key = `${source}->${target}`;
+    const cached = conversionCache.get(key);
+    if (cached !== undefined) return notional * cached;
+
+    const rate = await adapter.getAccountCurrencyConversionRate!(source, target);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      throw new Error(`Authoritative FX conversion returned an invalid rate for ${source} to ${target}.`);
+    }
+    conversionCache.set(key, rate);
+    return notional * rate;
+  };
 
   for (const position of positions) {
     const quantity = Math.abs(Number(position.quantity || 0));
@@ -97,8 +125,17 @@ async function calculateAccountCurrencyExposure(
 
     const currencies = forexQuoteCurrencies(position.symbol);
     if (!currencies) throw new Error(`Unable to determine Forex currencies for ${position.symbol}.`);
-    const baseNotional = quantity;
-    exposure += await convertForexNotionalToAccountCurrency(adapter, position.symbol, baseNotional, accountCurrency);
+
+    // For the common case where account currency equals the pair quote
+    // currency (e.g. GBP/USD in a USD account), the position's broker-reported
+    // current price is already the authoritative conversion rate.
+    if (currencies.quote === String(accountCurrency).toUpperCase()) {
+      exposure += quantity * price;
+    } else if (currencies.base === String(accountCurrency).toUpperCase()) {
+      exposure += quantity;
+    } else {
+      exposure += await convertNotional(position.symbol, quantity, currencies.base);
+    }
   }
 
   const proposedQuantity = Math.abs(Number(order.quantity || 0));
@@ -106,18 +143,26 @@ async function calculateAccountCurrencyExposure(
     if (order.market !== 'FOREX') {
       exposure += proposedQuantity * Number(order.price || (order.side === 'BUY' ? quote.ask : quote.bid) || 0);
     } else {
-      exposure += await convertForexNotionalToAccountCurrency(
-        adapter,
-        order.symbol,
-        proposedQuantity,
-        accountCurrency
-      );
+      const currencies = forexQuoteCurrencies(order.symbol);
+      if (!currencies) throw new Error(`Unable to determine Forex currencies for ${order.symbol}.`);
+
+      const target = String(accountCurrency).toUpperCase();
+      if (currencies.base === target) {
+        exposure += proposedQuantity;
+      } else if (currencies.quote === target) {
+        // The order quote is already fetched and freshness-gated before this
+        // calculation. Reuse it instead of making a second broker connection.
+        const conversionPrice = order.side === 'BUY' ? quote.ask : quote.bid;
+        if (!(conversionPrice > 0)) throw new Error(`Current quote unavailable for ${order.symbol} exposure conversion.`);
+        exposure += proposedQuantity * conversionPrice;
+      } else {
+        exposure += await convertNotional(order.symbol, proposedQuantity, currencies.base);
+      }
     }
   }
 
   return exposure;
 }
-
 
 async function loadPersistedBrokerAccount(broker: BrokerType): Promise<any | null> {
   try {
