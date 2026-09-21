@@ -410,9 +410,6 @@ async function hydratePersistedTradeLimits(): Promise<void> {
   }
 
   const stringKeys: Array<[string, string]> = [
-    ['SELECTED_CTRADER_ACCOUNT_ID', 'selectedCtraderAccountId'],
-    ['SELECTED_CTRADER_ACCOUNT_CURRENCY', 'selectedCtraderAccountCurrency'],
-    ['SELECTED_CTRADER_ACCOUNT_LABEL', 'selectedCtraderAccountLabel'],
     ['FINANCIAL_DISCLAIMER', 'financialDisclaimer']
   ];
 

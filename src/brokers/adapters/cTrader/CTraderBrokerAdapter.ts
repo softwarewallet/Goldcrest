@@ -110,18 +110,10 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
    * This is critical for authoritative account selection if multiple accounts exist.
    */
   protected syncConfig(): void {
-    const globalConfig = getSystemConfig();
-
-    // If the global config has a selected account ID, override the adapter's accountId.
-    // Conversion metadata is account-scoped, so invalidate it if the selected
-    // account changes during the lifetime of this adapter instance.
-    if (globalConfig.selectedCtraderAccountId) {
-      const previousAccountId = this.config.accountId;
-      this.config.accountId = globalConfig.selectedCtraderAccountId;
-      if (previousAccountId !== this.config.accountId) {
-        this.clearCache();
-      }
-    }
+    // Broker credentials are authoritative for account selection.
+    // Do not let persisted general system settings (or legacy SQLite values)
+    // silently replace the explicitly configured CTRADER_LIVE_ACCOUNT_ID.
+    // This prevents a stale/foreign account ID from hijacking LIVE connectivity.
   }
 
   protected getApiHost(): string {
