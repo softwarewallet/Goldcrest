@@ -508,8 +508,8 @@ function seedInitialData(db: Database) {
     ('MODEL_STATUS', 'BASELINE_UNCALIBRATED', ${now}),
     ('DEFAULT_RISK_PCT', '1.0', ${now}),
     ('STRIKE_DEPTH', '7', ${now}),
-    ('MAX_TRADE_VALUE_FOREX_USD', '200', ${now}),
-    ('MAX_TRADE_VALUE_INDIAN_INR', '20000', ${now});
+    ('MAX_TRADE_VALUE_FOREX_USD', '100000', ${now}),
+    ('MAX_TRADE_VALUE_INDIAN_INR', '1000000', ${now});
   `);
 
   // Enforce LIVE_ONLY persistence.
