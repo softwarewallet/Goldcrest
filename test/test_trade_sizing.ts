@@ -67,9 +67,20 @@ updateSystemConfig({
   maxTradeValueForexUsd: 100
 });
 
-await assert.rejects(
-  () => sizeForexOrderToMaxTradeValue(adapter, 'GBP/USD', 1.33785, instrument, 1),
-  /MAX_TRADE_VALUE_BELOW_BROKER_MINIMUM/
+const belowBrokerMinimum = await sizeForexOrderToMaxTradeValue(
+  adapter,
+  'GBP/USD',
+  1.33785,
+  instrument,
+  1
 );
+
+// A configured $100 cap produces a positive value-derived quantity even though
+// this fixture advertises a broker minimum of 1,000 units. The local sizing
+// layer must not reject or round the order up; cTrader receives the calculated
+// volume and is responsible for accepting or rejecting broker-side constraints.
+assert.equal(Number(belowBrokerMinimum.quantity.toFixed(6)), Number((100 / 1.33785).toFixed(6)));
+assert.ok(belowBrokerMinimum.quantity < instrument.minQuantity);
+assert.equal(Number(belowBrokerMinimum.estimatedTradeValueUsd.toFixed(2)), 100);
 
 console.log('Trade sizing tests passed.');
