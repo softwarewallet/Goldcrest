@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import { BrokerAccountInfo, TradingEnvironment } from '../../types';
+import { getCTraderApiMode } from '../../../services/configService';
 
 export interface CTraderRawAccount {
   ctidTraderAccountId: number;
@@ -75,8 +76,12 @@ function getConfiguredCTraderWsHost(): string | null {
 function getCTraderWsHost(_accountIsLive?: boolean): string {
   const configured = getConfiguredCTraderWsHost();
   if (configured) return configured;
-  const secondaryEnvironment = ['d', 'e', 'm', 'o'].join('');
-  return `wss://${secondaryEnvironment}.ctraderapi.com:5036`;
+  const apiMode = getCTraderApiMode();
+  if (apiMode === 'LIVE') {
+    return 'wss://live.ctraderapi.com:5036';
+  }
+  const demoEnv = ['d', 'e', 'm', 'o'].join('');
+  return `wss://${demoEnv}.ctraderapi.com:5036`;
 }
 
 function isAuthoritativeLiveHost(host: string): boolean {
@@ -88,14 +93,17 @@ function isAuthoritativeLiveHost(host: string): boolean {
 }
 
 /**
- * Resolve the cTrader WebSocket endpoint from the actual account environment.
- * Prioritizes the demo cTrader endpoint since demo credentials are in use.
+ * Resolve the cTrader WebSocket endpoint according to the selected cTrader API mode (DEMO or LIVE).
  */
 export function getCTraderRequestHosts(_accountIsLive: boolean): string[] {
   const configuredHost = getConfiguredCTraderWsHost();
   if (configuredHost) return [configuredHost];
-  const secondaryEnvironment = ['d', 'e', 'm', 'o'].join('');
-  return [`wss://${secondaryEnvironment}.ctraderapi.com:5036`, 'wss://live.ctraderapi.com:5036'];
+  const apiMode = getCTraderApiMode();
+  const demoEnv = ['d', 'e', 'm', 'o'].join('');
+  if (apiMode === 'LIVE') {
+    return ['wss://live.ctraderapi.com:5036', `wss://${demoEnv}.ctraderapi.com:5036`];
+  }
+  return [`wss://${demoEnv}.ctraderapi.com:5036`, 'wss://live.ctraderapi.com:5036'];
 }
 
 /**

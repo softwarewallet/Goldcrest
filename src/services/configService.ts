@@ -7,6 +7,7 @@ export interface SystemConfig {
   dataStatus: 'LIVE' | 'DELAYED' | 'STALE' | 'UNAVAILABLE';
   modelStatus: string;
   researchStatus: 'CLOSED';
+  cTraderApiMode: 'DEMO' | 'LIVE';
   selectedCtraderAccountId?: string;
   selectedCtraderAccountCurrency?: string;
   selectedCtraderAccountLabel?: string;
@@ -40,6 +41,7 @@ const CONFIG_TMP_FILE = `${CONFIG_FILE}.tmp`;
  * this configuration file.
  */
 const PERSISTED_KEYS: readonly (keyof SystemConfig)[] = [
+  'cTraderApiMode',
   'selectedCtraderAccountId',
   'selectedCtraderAccountCurrency',
   'selectedCtraderAccountLabel',
@@ -65,6 +67,7 @@ let activeConfig: SystemConfig = {
   dataStatus: 'UNAVAILABLE',
   modelStatus: 'ML BASELINE / UNCALIBRATED (PHASE 1)',
   researchStatus: 'CLOSED',
+  cTraderApiMode: 'DEMO',
   defaultRiskPct: 1.0,
   maxDailyLossPct: 3.0,
   maxOpenPositions: 5,
@@ -192,4 +195,9 @@ export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig
 
   persistSystemConfig(activeConfig);
   return { ...activeConfig };
+}
+
+export function getCTraderApiMode(): 'DEMO' | 'LIVE' {
+  const config = getSystemConfig();
+  return config.cTraderApiMode === 'LIVE' ? 'LIVE' : 'DEMO';
 }
