@@ -70,17 +70,28 @@ const MSG_ERROR_RES = 2142;
  * exercised with the same application flows before the account is promoted
  * to the broker's real-money environment.
  */
-function getConfiguredCTraderWsHost(): string | null {
+const LIVE_CTRADER_WS_HOST = 'wss://live.ctraderapi.com:5036';
+
+/**
+ * Goldcrest is LIVE-only. A LIVE cTrader adapter must never use a non-LIVE
+ * endpoint supplied through stale configuration.
+ *
+ * CTRADER_LIVE_API_HOST is accepted only when it resolves to the canonical
+ * live cTrader host; all other values are ignored.
+ */
+function getCTraderWsHost(): string {
   const configured = String(process.env.CTRADER_LIVE_API_HOST || '').trim();
-  if (!configured || configured.toLowerCase() === 'auto') return null;
-  return configured;
+  if (configured) {
+    try {
+      const parsed = new URL(configured);
+      if (parsed.hostname.toLowerCase() === 'live.ctraderapi.com') {
+        return configured.startsWith('wss://') ? configured : LIVE_CTRADER_WS_HOST;
+      }
+    } catch {}
+  }
+  return LIVE_CTRADER_WS_HOST;
 }
 
-function getCTraderWsHost(_accountIsLive?: boolean): string {
-  const configured = getConfiguredCTraderWsHost();
-  if (configured) return configured;
-  return 'wss://live.ctraderapi.com:5036';
-}
 
 function isAuthoritativeLiveHost(host: string): boolean {
   try {
@@ -91,12 +102,10 @@ function isAuthoritativeLiveHost(host: string): boolean {
 }
 
 /**
- * Goldcrest is LIVE-only: all cTrader Open API requests use the live endpoint.
+ * Goldcrest is LIVE-only: all cTrader Open API requests use the canonical live endpoint.
  */
 export function getCTraderRequestHosts(_accountIsLive: boolean): string[] {
-  const configuredHost = getConfiguredCTraderWsHost();
-  if (configuredHost) return [configuredHost];
-  return ['wss://live.ctraderapi.com:5036'];
+  return [getCTraderWsHost()];
 }
 
 /**
@@ -206,7 +215,7 @@ export async function fetchLiveCTraderAccountDetails(
   clientSecret: string,
   accessToken: string
 ): Promise<CTraderRealTraderDetails> {
-  const host = getCTraderWsHost(rawAccount.isLive);
+  const host = getCTraderWsHost();
 
   if (isAuthoritativeLiveHost(host) && !rawAccount.isLive) {
     return Promise.reject(new Error(`cTrader account ${rawAccount.ctidTraderAccountId} is not marked LIVE by Open API. The configured LIVE broker endpoint requires a LIVE cTrader account.`));
