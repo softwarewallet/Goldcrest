@@ -937,7 +937,12 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       minQuantity,
       maxQuantity,
       stepQuantity,
-      digits: p.digits,
+      // Use the broker's authoritative symbol precision when available.
+      // The static instrument catalog is only a fallback; cTrader may expose
+      // 3 digits for JPY crosses and 5 for most non-JPY FX pairs.
+      digits: Number.isInteger(Number(s.digits)) && Number(s.digits) >= 0
+        ? Number(s.digits)
+        : p.digits,
       supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP'],
       baseCurrency: p.symbol.split('/')[0],
       quoteCurrency: p.symbol.split('/')[1],
