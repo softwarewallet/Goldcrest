@@ -100,6 +100,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const GOLDCREST_RUNTIME_ID = `goldcrest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let databaseReady = false;
 
 function productionPreflight(enforce = false): { ok: boolean; checks: Record<string, string> } {
@@ -182,6 +183,25 @@ app.use((req: Request, res: Response, next) => {
   });
 
   next();
+});
+
+// Identify the actual Goldcrest backend process on every API response. This prevents
+// a stale Vite/proxy process from being mistaken for the current server.
+app.use('/api', (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Goldcrest-Runtime', GOLDCREST_RUNTIME_ID);
+  res.setHeader('X-Goldcrest-Api', 'express-live');
+  next();
+});
+
+app.get('/api/runtime', (_req: Request, res: Response) => {
+  res.type('application/json').json({
+    service: 'goldcrest',
+    runtime: GOLDCREST_RUNTIME_ID,
+    nodeEnv: process.env.NODE_ENV || 'development',
+    port: PORT,
+    tradingMode: 'LIVE_ONLY',
+    timestamp: Date.now()
+  });
 });
 
 // Operator authentication is a same-origin, HttpOnly session derived from the
@@ -1372,9 +1392,28 @@ async function startServer() {
         middlewareMode: true,
         hmr: process.env.DISABLE_HMR === 'true' ? false : undefined,
       },
-      appType: 'spa',
+      // Express owns /api and SPA routing. Vite must not generate an HTML
+      // fallback response for an unmatched API endpoint.
+      appType: 'custom',
     });
     app.use(vite.middlewares);
+
+    // Express handles SPA navigation explicitly after API routes. This preserves
+    // Vite HMR/transforms while preventing API requests from reaching HTML fallback.
+    app.use('*', async (req: Request, res: Response, next: NextFunction) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+      if (req.path.startsWith('/api/')) return next();
+
+      try {
+        const fs = await import('node:fs/promises');
+        const indexPath = path.join(process.cwd(), 'index.html');
+        const template = await fs.readFile(indexPath, 'utf8');
+        const html = await vite.transformIndexHtml(req.originalUrl, template);
+        res.status(200).setHeader('Content-Type', 'text/html').end(html);
+      } catch (error) {
+        next(error);
+      }
+    });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
