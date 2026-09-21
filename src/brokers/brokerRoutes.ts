@@ -746,6 +746,7 @@ brokerRouter.post('/execution/:idempotencyKey/retry-reconciliation', async (req:
 });
 
 brokerRouter.post('/order', async (req: Request, res: Response) => {
+  res.type('application/json');
   const orderReq = req.body as OrderRequest;
   const env: TradingEnvironment = 'LIVE';
 
