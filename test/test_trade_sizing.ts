@@ -39,11 +39,11 @@ const forcedFromOne = await sizeForexOrderToMaxTradeValue(
   1
 );
 
-assert.equal(forcedFromOne.quantity, 7_000);
+assert.equal(forcedFromOne.quantity, 7_474);
 assert.equal(forcedFromOne.adjusted, true);
 assert.equal(Number(forcedFromOne.rawMaxQuantity.toFixed(2)), 7474.68);
 assert.ok(forcedFromOne.estimatedTradeValueUsd <= 10_000);
-assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_364.95);
+assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_999.73);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 20_000
@@ -59,9 +59,9 @@ const forcedFromLargeRequest = await sizeForexOrderToMaxTradeValue(
 
 // The caller's requested 10,000 units cannot limit the forced maximum-value
 // calculation; the configured $20,000 cap sizes the order to 14,000 units.
-assert.equal(forcedFromLargeRequest.quantity, 14_000);
+assert.equal(forcedFromLargeRequest.quantity, 14_949);
 assert.equal(forcedFromLargeRequest.adjusted, true);
-assert.equal(Number(forcedFromLargeRequest.estimatedTradeValueUsd.toFixed(2)), 18_729.90);
+assert.equal(Number(forcedFromLargeRequest.estimatedTradeValueUsd.toFixed(2)), 19_999.27);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 100
@@ -79,8 +79,23 @@ const belowBrokerMinimum = await sizeForexOrderToMaxTradeValue(
 // this fixture advertises a broker minimum of 1,000 units. The local sizing
 // layer must not reject or round the order up; cTrader receives the calculated
 // volume and is responsible for accepting or rejecting broker-side constraints.
-assert.equal(Number(belowBrokerMinimum.quantity.toFixed(6)), Number((100 / 1.33785).toFixed(6)));
+assert.equal(belowBrokerMinimum.quantity, 74);
 assert.ok(belowBrokerMinimum.quantity < instrument.minQuantity);
-assert.equal(Number(belowBrokerMinimum.estimatedTradeValueUsd.toFixed(2)), 100);
+assert.equal(Number(belowBrokerMinimum.estimatedTradeValueUsd.toFixed(2)), 98.99);
 
 console.log('Trade sizing tests passed.');
+
+updateSystemConfig({ maxTradeValueForexUsd: 10.22 });
+
+const fractionalQuantity = await sizeForexOrderToMaxTradeValue(
+  adapter,
+  'GBP/USD',
+  1.33785,
+  instrument,
+  1
+);
+
+// Whole-unit policy: 10.22 / 1.33785 = 7.638...; submit exactly 7 units.
+assert.equal(fractionalQuantity.quantity, 7);
+assert.ok(Number.isInteger(fractionalQuantity.quantity));
+assert.ok(fractionalQuantity.estimatedTradeValueUsd <= 10.22);
