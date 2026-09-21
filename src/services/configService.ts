@@ -218,7 +218,3 @@ export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig
   return { ...activeConfig };
 }
 
-export function getCTraderApiMode(): 'DEMO' | 'LIVE' {
-  const config = getSystemConfig();
-  return config.cTraderApiMode === 'LIVE' ? 'LIVE' : 'DEMO';
-}
