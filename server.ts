@@ -12,7 +12,7 @@ import { getForexSessionState, getIndianSessionState } from './src/markets/commo
 import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments';
 import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
 import { ScannerService } from './src/services/scannerService';
-import { getSystemConfig, updateSystemConfig } from './src/services/configService';
+import { getSystemConfig, updateSystemConfig, applyPersistedSystemConfig } from './src/services/configService';
 import { calculateStrategyPayoff } from './src/markets/india_options/strategySkeleton';
 
 // Phase 2A Forex Engines
@@ -433,7 +433,7 @@ async function hydratePersistedTradeLimits(): Promise<void> {
   }
 
   if (Object.keys(persistedUpdates).length > 0) {
-    updateSystemConfig(persistedUpdates);
+    applyPersistedSystemConfig(persistedUpdates);
   }
 }
 
@@ -507,7 +507,6 @@ app.get('/api/config', async (_req: Request, res: Response) => {
     // before returning configuration. This prevents navigation/reload from
     // displaying the in-memory defaults while the DB contains operator values.
     await databaseInitPromise;
-    await hydratePersistedTradeLimits();
     res.json(getSystemConfig());
   } catch (err: any) {
     res.status(503).json({
