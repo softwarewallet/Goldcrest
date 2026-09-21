@@ -742,9 +742,12 @@ export async function submitLiveCTraderOrder(
               if (related) {
                 const description = String(p.description || p.errorCode || 'cTrader rejected the live order.');
                 if (/TRADE permission required/i.test(description)) {
-                  fail('cTrader rejected the live order: TRADE permission is not granted to the current access token/account. Re-authorize Goldcrest with the cTrader "trading" scope and ensure the account has FULL_ACCESS trading rights.');
+                  fail('BROKER_REJECTED [cTrader LIVE]: TRADE permission is not granted to the current access token/account. Re-authorize Goldcrest with the cTrader "trading" scope and ensure the account has FULL_ACCESS trading rights.');
                 } else {
-                  fail(description);
+                  // Preserve the broker's exact rejection and explicitly identify
+                  // cTrader as the source so UI/operator logs never imply that
+                  // Goldcrest invented the broker constraint.
+                  fail(`BROKER_REJECTED [cTrader LIVE]: ${description}`);
                 }
               }
               return;
