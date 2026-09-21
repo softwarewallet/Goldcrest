@@ -126,7 +126,7 @@ export async function fetchLiveCTraderAccounts(
         const timer = setTimeout(() => {
           try { ws.close(); } catch {}
           reject(new Error(`Timeout connecting to cTrader host: ${host}`));
-        }, 8000);
+        }, 15000);
 
         ws.on('open', () => {
           ws.send(JSON.stringify({
@@ -211,7 +211,7 @@ export async function fetchLiveCTraderAccountDetails(
     const timer = setTimeout(() => {
       try { ws.close(); } catch {}
       reject(new Error(`Timeout fetching account details from ${host}`));
-    }, 10000);
+    }, 15000);
 
     const assetMap: Record<number, string> = {
       1: 'EUR',

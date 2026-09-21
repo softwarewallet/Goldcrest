@@ -21,12 +21,12 @@ const LIVE_BROKERS: BrokerType[] = ['CTRADER', 'FIVE_PAISA'];
 // Share one short-lived broker snapshot and one in-flight request so normal
 // UI polling does not repeatedly hit broker account APIs and trigger provider
 // throttling. Order execution paths still request the broker directly.
-const BROKER_STATUS_CACHE_TTL_MS = 120_000;
+const BROKER_STATUS_CACHE_TTL_MS = 15_000;
 let brokerStatusCache: { payload: any; expiresAt: number } | null = null;
 let brokerStatusInFlight: Promise<any> | null = null;
 const lastKnownBrokerAccounts = new Map<BrokerType, any>();
 let brokerStatusLoopStarted = false;
-const BROKER_STATUS_BACKGROUND_REFRESH_MS = 120_000;
+const BROKER_STATUS_BACKGROUND_REFRESH_MS = 15_000;
 
 type BrokerCollectionCache = { payload: any[]; expiresAt: number };
 const positionsCache: BrokerCollectionCache = { payload: [], expiresAt: 0 };
@@ -187,7 +187,7 @@ async function persistBrokerAccountSnapshot(account: any): Promise<void> {
     // Persistence failure must never break broker status delivery.
   }
 }
-async function refreshBrokerStatusSnapshot(): Promise<any> {
+async function refreshBrokerStatusSnapshot(forceRefresh?: boolean): Promise<any> {
   const environment = brokerRegistry.getEnvironment();
   const controls = autoExecutionEngine.getControls();
   const haltDetails = killSwitch.getHaltDetails();
@@ -195,7 +195,10 @@ async function refreshBrokerStatusSnapshot(): Promise<any> {
   const brokerStatus = await Promise.all(LIVE_BROKERS.map(async (broker) => {
     try {
       const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
-      const account = await adapter.getAccount();
+      if (forceRefresh && typeof (adapter as any).clearCache === 'function') {
+        (adapter as any).clearCache();
+      }
+      const account = await (adapter as any).getAccount(forceRefresh);
       lastKnownBrokerAccounts.set(broker, account);
       await persistBrokerAccountSnapshot(account);
       return { broker, environment: 'LIVE', connected: true, account, error: null, stale: false };
@@ -279,10 +282,19 @@ function startBrokerStatusRefreshLoop(): void {
   setInterval(runRefresh, BROKER_STATUS_BACKGROUND_REFRESH_MS);
 }
 
-async function getBrokerStatusSnapshot(): Promise<any> {
+export function invalidateBrokerStatusCache(): void {
+  brokerStatusCache = null;
+}
+
+async function getBrokerStatusSnapshot(forceRefresh?: boolean): Promise<any> {
   startBrokerStatusRefreshLoop();
 
-  if (brokerStatusCache) {
+  if (forceRefresh) {
+    brokerStatusCache = null;
+    return refreshBrokerStatusSnapshot(true);
+  }
+
+  if (brokerStatusCache && Date.now() < brokerStatusCache.expiresAt) {
     return brokerStatusCache.payload;
   }
 
@@ -293,9 +305,10 @@ async function getBrokerStatusSnapshot(): Promise<any> {
   return refreshBrokerStatusSnapshot();
 }
 
-brokerRouter.get('/status', async (_req: Request, res: Response) => {
+brokerRouter.get('/status', async (req: Request, res: Response) => {
   try {
-    const payload = await getBrokerStatusSnapshot();
+    const forceRefresh = req.query.force === 'true' || req.query.refresh === 'true';
+    const payload = await getBrokerStatusSnapshot(forceRefresh);
     res.json(payload);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

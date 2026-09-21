@@ -1,6 +1,6 @@
 import { BaseBrokerAdapter } from '../BaseBrokerAdapter';
 import { FOREX_PAIRS } from '../../../markets/forex/instruments';
-import { getSystemConfig } from '../../../services/configService';
+import { getSystemConfig, getCTraderApiMode } from '../../../services/configService';
 import {
   BrokerAccountInfo,
   BrokerInstrument,
@@ -69,10 +69,19 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   private static readonly SYMBOL_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly ACCOUNT_DATA_CACHE_TTL_MS = 60 * 1000;
   private accountFetchInFlight: Promise<BrokerAccountInfo> | null = null;
+  private lastKnownApiMode: string | null = null;
 
   constructor(config: CTraderConfig) {
     super();
     this.config = config;
+  }
+
+  public clearCache(): void {
+    this.accountData = null;
+    this.rawAccountCache = null;
+    this.symbolCache = null;
+    this.conversionAssetCache = null;
+    this.conversionChainCache.clear();
   }
 
   /**
@@ -81,6 +90,13 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
    */
   protected syncConfig(): void {
     const globalConfig = getSystemConfig();
+    const currentApiMode = getCTraderApiMode();
+
+    if (this.lastKnownApiMode !== null && this.lastKnownApiMode !== currentApiMode) {
+      this.clearCache();
+    }
+    this.lastKnownApiMode = currentApiMode;
+
     // If the global config has a selected account ID, override the adapter's accountId.
     // Conversion metadata is account-scoped, so invalidate it if the selected
     // account changes during the lifetime of this adapter instance.
@@ -88,10 +104,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       const previousAccountId = this.config.accountId;
       this.config.accountId = globalConfig.selectedCtraderAccountId;
       if (previousAccountId !== this.config.accountId) {
-        this.conversionAssetCache = null;
-        this.conversionChainCache.clear();
-        this.rawAccountCache = null;
-        this.symbolCache = null;
+        this.clearCache();
       }
     }
   }
@@ -280,12 +293,17 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
    * Retrieves authoritative account information for the selected cTrader account.
    * If a specific accountId is configured, it MUST be found in the authenticated accounts.
    */
-  async getAccount(): Promise<BrokerAccountInfo> {
+  async getAccount(forceRefresh?: boolean): Promise<BrokerAccountInfo> {
     this.syncConfig();
     this.validateCredentials();
 
+    if (forceRefresh) {
+      this.clearCache();
+    }
+
     const now = Date.now();
     if (
+      !forceRefresh &&
       this.accountData
       && now - Number(this.accountData.lastUpdate || 0) < CTraderBrokerAdapter.ACCOUNT_DATA_CACHE_TTL_MS
     ) {

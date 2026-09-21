@@ -34,14 +34,15 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = () => {
   const [totpError, setTotpError] = useState<string | null>(null);
   const [totpSuccess, setTotpSuccess] = useState<string | null>(null);
 
-  const fetchBalances = async () => {
+  const fetchBalances = async (force: boolean = false) => {
     setLoading({ CTRADER: true, FIVE_PAISA: true });
 
     try {
       // Use the shared broker-status snapshot rather than making two additional
       // broker account calls from the header. The server coalesces/caches this
       // endpoint, preventing UI refresh loops from triggering broker throttling.
-      const response = await fetch('/api/brokers/status', {
+      const url = force ? '/api/brokers/status?force=true' : '/api/brokers/status';
+      const response = await fetch(url, {
         headers: { Accept: 'application/json' },
         cache: 'no-store'
       });
@@ -200,7 +201,7 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = () => {
             <button
               type="button"
               id={`btn_refresh_balance_${broker.toLowerCase()}`}
-              onClick={fetchBalances}
+              onClick={() => fetchBalances(true)}
               disabled={isLoading}
               className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-emerald-400 disabled:opacity-50 transition cursor-pointer"
               title="Refresh Balance"
