@@ -862,6 +862,7 @@ export async function submitLiveCTraderOrder(
             price,
             stopLoss,
             takeProfit,
+            trailingStopLoss: true,
             clientOrderId: requestClientId,
             packet: {
               clientMsgId: requestClientId,
