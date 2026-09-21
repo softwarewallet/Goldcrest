@@ -119,7 +119,7 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
     // Use the configured limit directly as broker protocol volume.
     if (!Number.isSafeInteger(maxTradeValueForexUsd)) {
       throw new BrokerError(
-        'INVALID_TRADE_VALUE',
+        'INVALID_QUANTITY',
         'Configured maximum Forex trade value must be a positive integer because cTrader volume is an integer protocol field.',
         'CTRADER',
         this.environment
