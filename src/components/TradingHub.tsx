@@ -265,6 +265,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'X-Idempotency-Key': idempotencyKey
         },
         body: JSON.stringify(payload)
@@ -393,7 +394,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
       const data = await safeParseJson(res);
       if (!res.ok) {
-        const errorMsg = data.error || data.message || 'Signal trigger submission rejected';
+        const errorMsg = data?.error || data?.message || `Signal trigger submission rejected (HTTP ${res.status})`;
         const detailsMsg = data.details?.length ? ` (${data.details.join(', ')})` : '';
         throw new Error(`${errorMsg}${detailsMsg}`);
       }
