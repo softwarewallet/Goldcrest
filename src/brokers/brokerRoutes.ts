@@ -35,7 +35,7 @@ const positionsCache: BrokerCollectionCache = { payload: [], expiresAt: 0 };
 const ordersCache: BrokerCollectionCache = { payload: [], expiresAt: 0 };
 let positionsInFlight: Promise<any[]> | null = null;
 let ordersInFlight: Promise<any[]> | null = null;
-const BROKER_COLLECTION_CACHE_TTL_MS = 15_000;
+const BROKER_COLLECTION_CACHE_TTL_MS = 10_000;
 
 function resolveMarketBroker(market: string): BrokerType {
   if (market === 'FOREX') return 'CTRADER';
