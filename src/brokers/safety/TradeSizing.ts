@@ -11,6 +11,8 @@ export interface ForexSizingResult {
   quoteCurrency: string;
   adjusted: boolean;
   brokerMaximumQuantity: number;
+  brokerMinimumQuantity: number;
+  brokerStepQuantity: number;
 }
 
 /**
@@ -61,10 +63,13 @@ function getForexQuoteCurrency(symbol: string, instrument: BrokerInstrument): st
  * The incoming/requested quantity is intentionally NOT an upper bound. It is
  * retained only for audit/telemetry so a caller cannot accidentally submit a
  * quantity such as 1 and bypass the configured maximum-trade-value sizing.
- * The broker minimum/step constraints are deliberately NOT enforced locally.
- * If cTrader rejects the calculated quantity because of broker-side volume
- * rules, the live order submission path surfaces that broker response instead
- * of inventing a larger order to satisfy a local minimum.
+ * Broker volume constraints are authoritative execution metadata. They are
+ * expressed by cTrader in protocol cents (1/100 of a base-currency unit) and
+ * are normalized into base-currency units by the cTrader adapter. Goldcrest
+ * quantizes the calculated quantity DOWN to the broker step so the order
+ * remains at or below the configured notional cap while still producing a
+ * broker-valid volume. It never rounds UP to satisfy a minimum because that
+ * could exceed the maximum trade-value limit.
  */
 export async function sizeForexOrderToMaxTradeValue(
   adapter: BrokerAdapter,
@@ -114,14 +119,42 @@ export async function sizeForexOrderToMaxTradeValue(
     throw new Error(`MAX_TRADE_VALUE_INVALID: Broker maximum quantity for ${symbol} is unavailable.`);
   }
 
-  // Forex order quantities are whole base-currency units. Always remove the
-  // fractional remainder so the submitted order can never exceed the configured
-  // notional cap because of a fractional quantity.
-  //
-  // Example: 7.65 -> 7.
-  // Broker min/step rules are still not enforced locally; cTrader remains the
-  // authority for whether the integer quantity is executable.
-  const quantity = Math.min(maximum, Math.floor(rawMaxQuantity));
+  const minimum = Number(instrument.minQuantity);
+  const step = Number(instrument.stepQuantity);
+  if (!(minimum > 0) || !Number.isFinite(minimum)) {
+    throw new Error(
+      `MAX_TRADE_VALUE_INVALID: Broker minimum quantity for ${symbol} is unavailable.`
+    );
+  }
+  if (!(step > 0) || !Number.isFinite(step)) {
+    throw new Error(
+      `MAX_TRADE_VALUE_INVALID: Broker volume step for ${symbol} is unavailable.`
+    );
+  }
+
+  // cTrader volume is an integer number of 0.01 base-currency units.
+  // Work in protocol cents rather than floating-point units so values such as
+  // 0.01, 0.02 and 0.09 are represented exactly and values such as 0.015 can
+  // never reach the broker.
+  const minimumVolumeCents = Math.max(1, Math.round(minimum * 100));
+  const stepVolumeCents = Math.max(1, Math.round(step * 100));
+  const maximumVolumeCents = Math.max(1, Math.floor(maximum * 100));
+  const rawMaxVolumeCents = Math.max(0, Math.floor(rawMaxQuantity * 100 + 1e-9));
+  const boundedRawVolumeCents = Math.min(maximumVolumeCents, rawMaxVolumeCents);
+
+  // cTrader's min/step are broker-authoritative. Quantize DOWN from the
+  // maximum affordable volume. Never round up because doing so could violate
+  // maxTradeValueForexUsd.
+  const quantityVolumeCents =
+    Math.floor(boundedRawVolumeCents / stepVolumeCents) * stepVolumeCents;
+
+  if (quantityVolumeCents < minimumVolumeCents) {
+    throw new Error(
+      `MAX_TRADE_VALUE_INVALID: Calculated Forex quantity for ${symbol} cannot satisfy the broker minimum volume of ${minimum.toFixed(2)} units without exceeding the configured maximum trade value of ${maxTradeValueUsd.toFixed(2)} USD.`
+    );
+  }
+
+  const quantity = quantityVolumeCents / 100;
   if (!(quantity > 0) || !Number.isFinite(quantity)) {
     throw new Error(`MAX_TRADE_VALUE_INVALID: Calculated Forex quantity for ${symbol} is invalid.`);
   }
@@ -145,6 +178,8 @@ export async function sizeForexOrderToMaxTradeValue(
     quoteToUsdRate,
     quoteCurrency,
     adjusted: Math.abs(quantity - requested) > 1e-9,
-    brokerMaximumQuantity: maximum
+    brokerMaximumQuantity: maximum,
+    brokerMinimumQuantity: minimum,
+    brokerStepQuantity: step
   };
 }
