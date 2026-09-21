@@ -56,22 +56,46 @@ async function convertForexNotionalToAccountCurrency(
   accountCurrency: string
 ): Promise<number> {
   if (!Number.isFinite(notional) || notional < 0) throw new Error('INVALID_EXPOSURE_NOTIONAL');
-  const currencies = forexQuoteCurrencies(symbol);
-  if (!currencies) throw new Error(`Unable to determine Forex currencies for ${symbol}.`);
+
+  const sourcePair = forexQuoteCurrencies(symbol);
+  if (!sourcePair) throw new Error(`Unable to determine Forex currencies for ${symbol}.`);
+
+  const from = sourcePair.base.toUpperCase();
   const target = String(accountCurrency || '').toUpperCase();
   if (!target) throw new Error('ACCOUNT_CURRENCY_UNAVAILABLE');
-  if (currencies.base === target) return notional;
+  if (from === target) return notional;
 
-  // cTrader exposes an authoritative native conversion-chain API for cases
-  // where no direct BASE/TARGET symbol exists. Do not fall back to guessed or
-  // derived cross-pairs on a live safety-gate path.
-  if (typeof adapter.getAccountCurrencyConversionRate !== 'function') {
-    throw new Error('BROKER_NATIVE_CURRENCY_CONVERSION_UNAVAILABLE');
+  // Prefer a directly tradable G10 conversion leg. This avoids the additional
+  // cTrader assets/conversion-chain WebSocket round trips that were timing out
+  // on the configured account transport.
+  const directSymbol = `${from}/${target}`;
+  const inverseSymbol = `${target}/${from}`;
+
+  try {
+    const direct = await adapter.getQuote(directSymbol);
+    if (direct.status === 'FRESH' && direct.bid > 0 && direct.ask > 0) {
+      return notional * direct.bid;
+    }
+  } catch {
+    // Try the inverse leg before falling back to native cTrader conversion.
   }
 
-  const rate = await adapter.getAccountCurrencyConversionRate(currencies.base, target);
+  try {
+    const inverse = await adapter.getQuote(inverseSymbol);
+    if (inverse.status === 'FRESH' && inverse.bid > 0 && inverse.ask > 0) {
+      return notional / inverse.ask;
+    }
+  } catch {
+    // Use cTrader's native conversion-chain API only when no direct pair is usable.
+  }
+
+  if (typeof adapter.getAccountCurrencyConversionRate !== 'function') {
+    throw new Error(`Authoritative currency conversion unavailable for ${from} to ${target}.`);
+  }
+
+  const rate = await adapter.getAccountCurrencyConversionRate(from, target);
   if (!Number.isFinite(rate) || rate <= 0) {
-    throw new Error(`Authoritative FX conversion returned an invalid rate for ${currencies.base} to ${target}.`);
+    throw new Error(`Authoritative FX conversion returned an invalid rate for ${from} to ${target}.`);
   }
   return notional * rate;
 }
