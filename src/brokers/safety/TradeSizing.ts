@@ -84,10 +84,14 @@ export async function sizeForexOrderToMaxTradeValue(
     throw new Error(`MAX_TRADE_VALUE_INVALID: Broker maximum quantity for ${symbol} is unavailable.`);
   }
 
-  // Preserve the value-derived quantity exactly (subject only to an authoritative
-  // broker maximum). Do not locally enforce minQuantity or stepQuantity: cTrader
-  // is the authority for whether the submitted volume is executable.
-  const quantity = Math.min(maximum, rawMaxQuantity);
+  // Forex order quantities are whole base-currency units. Always remove the
+  // fractional remainder so the submitted order can never exceed the configured
+  // notional cap because of a fractional quantity.
+  //
+  // Example: 7.65 -> 7.
+  // Broker min/step rules are still not enforced locally; cTrader remains the
+  // authority for whether the integer quantity is executable.
+  const quantity = Math.min(maximum, Math.floor(rawMaxQuantity));
   if (!(quantity > 0) || !Number.isFinite(quantity)) {
     throw new Error(`MAX_TRADE_VALUE_INVALID: Calculated Forex quantity for ${symbol} is invalid.`);
   }
@@ -95,8 +99,8 @@ export async function sizeForexOrderToMaxTradeValue(
   const estimatedTradeValueUsd = quantity * valuePerBaseUnitUsd;
 
   // Final invariant: no live order may leave this function above the configured
-  // notional cap, even because of floating-point rounding.
-  if (estimatedTradeValueUsd > maxTradeValueUsd + 1e-9) {
+  // notional cap, even because of floating-point noise.
+  if (estimatedTradeValueUsd > maxTradeValueUsd + 1e-8) {
     throw new Error(
       `MAX_TRADE_VALUE_EXCEEDED: Calculated Forex trade value ${estimatedTradeValueUsd.toFixed(2)} USD exceeds configured maximum ${maxTradeValueUsd.toFixed(2)} USD.`
     );
