@@ -213,17 +213,25 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     }
   }, [addLog]);
 
-  // Initial load and polling setup
+  // Initial load and polling setup.
+  // Active broker positions are live-monitoring data and must refresh every
+  // 10 seconds. Signals remain on a lighter 30-second cadence.
   useEffect(() => {
     fetchRealPositions();
     fetchRealSignals();
 
-    const interval = setInterval(() => {
+    const positionInterval = setInterval(() => {
       fetchRealPositions(true);
+    }, 10000);
+
+    const signalInterval = setInterval(() => {
       fetchRealSignals(true);
     }, 30000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(positionInterval);
+      clearInterval(signalInterval);
+    };
   }, [fetchRealPositions, fetchRealSignals]);
 
   // Handle market change configuration
