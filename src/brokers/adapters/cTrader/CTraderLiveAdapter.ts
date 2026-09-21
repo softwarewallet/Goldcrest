@@ -108,7 +108,7 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
     const maxTradeValueForexUsd = Number(config.maxTradeValueForexUsd);
     if (!(maxTradeValueForexUsd > 0) || !Number.isFinite(maxTradeValueForexUsd)) {
       throw new BrokerError(
-        'INVALID_TRADE_VALUE',
+        'INVALID_QUANTITY',
         'Configured maximum Forex trade value must be a positive finite number.',
         'CTRADER',
         this.environment
@@ -159,9 +159,7 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
 
     this.logAction('FORCE_MAX_TRADE_VALUE_VOLUME', 'SUCCESS', this.config.accountId || '', {
       symbol: order.symbol,
-      configuredMaxTradeValue: maxTradeValueForexUsd,
-      protocolVolume: maxTradeValueForexUsd,
-      quantityUnits: order.quantity,
+      quantity: order.quantity,
       price: normalizedExecutionPrice
     });
   }
