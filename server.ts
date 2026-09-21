@@ -12,7 +12,7 @@ import { getForexSessionState, getIndianSessionState } from './src/markets/commo
 import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments';
 import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
 import { ScannerService } from './src/services/scannerService';
-import { getSystemConfig, updateSystemConfig, applyPersistedSystemConfig } from './src/services/configService';
+import { getSystemConfig, updateSystemConfig, applyPersistedSystemConfig, getPersistedSystemConfigOverrides } from './src/services/configService';
 import { calculateStrategyPayoff } from './src/markets/india_options/strategySkeleton';
 
 // Phase 2A Forex Engines
@@ -372,12 +372,11 @@ function extractForexPair(req: Request): string {
 }
 
 async function hydratePersistedTradeLimits(): Promise<void> {
-  // SQLite remains the migration/source-of-record for settings already stored
-  // by older Goldcrest builds. The config service also maintains an atomic
-  // file-backed copy so settings survive a full server/process restart.
-  // Read all settings and filter known durable keys below. Avoid positional
-  // placeholder counts here because sql.js throws "column index out of range"
-  // when the query and bind list ever drift during schema evolution.
+  // Durable file-backed configuration is the current source of truth for
+  // operator settings. SQLite remains a compatibility/migration source for
+  // settings created by older builds. Do not let stale SQLite values overwrite
+  // newer values saved to data/system-config.json during a restart.
+  const fileOverrides = getPersistedSystemConfigOverrides();
   const rows = await executeQuery<any>('SELECT key, value FROM system_settings');
 
   const values = rows.reduce<Record<string, string>>((acc, row) => {
@@ -402,6 +401,9 @@ async function hydratePersistedTradeLimits(): Promise<void> {
   ];
 
   for (const [dbKey, configKey] of numericKeys) {
+    // A value already present in the durable config file wins. SQLite is only
+    // used to backfill settings that are absent from the file.
+    if ((fileOverrides as any)[configKey] !== undefined) continue;
     if (values[dbKey] === undefined) continue;
     const numberValue = Number(values[dbKey]);
     if (Number.isFinite(numberValue)) persistedUpdates[configKey] = numberValue;
@@ -415,6 +417,7 @@ async function hydratePersistedTradeLimits(): Promise<void> {
   ];
 
   for (const [dbKey, configKey] of stringKeys) {
+    if ((fileOverrides as any)[configKey] !== undefined) continue;
     if (values[dbKey] !== undefined && values[dbKey].trim() !== '') {
       persistedUpdates[configKey] = values[dbKey];
     }
@@ -424,6 +427,7 @@ async function hydratePersistedTradeLimits(): Promise<void> {
     ['AUTO_LIVE_FOREX_PAIRS', 'autoLiveForexPairs'],
     ['AUTO_LIVE_INDIAN_UNDERLYINGS', 'autoLiveIndianUnderlyings']
   ] as Array<[string, string]>) {
+    if ((fileOverrides as any)[configKey] !== undefined) continue;
     try {
       const parsed = JSON.parse(values[dbKey] || 'null');
       if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {

@@ -1,6 +1,6 @@
 import { BaseBrokerAdapter } from '../BaseBrokerAdapter';
 import { FOREX_PAIRS } from '../../../markets/forex/instruments';
-import { getSystemConfig, getCTraderApiMode } from '../../../services/configService';
+import { getSystemConfig } from '../../../services/configService';
 import {
   BrokerAccountInfo,
   BrokerInstrument,
@@ -36,6 +36,12 @@ import {
   CTraderRawAccount
 } from './cTraderApiClient';
 
+function normalizeCTraderTradeSide(value: unknown): 'BUY' | 'SELL' {
+  const raw = String(value ?? '').toUpperCase();
+  if (raw.includes('SELL') || Number(value) === 2) return 'SELL';
+  return 'BUY';
+}
+
 export interface CTraderConfig {
   clientId?: string;
   clientSecret?: string;
@@ -69,7 +75,6 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   private static readonly SYMBOL_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly ACCOUNT_DATA_CACHE_TTL_MS = 60 * 1000;
   private accountFetchInFlight: Promise<BrokerAccountInfo> | null = null;
-  private lastKnownApiMode: string | null = null;
 
   /**
    * Derives effective trading permissions from the authoritative cTrader
@@ -106,12 +111,6 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
    */
   protected syncConfig(): void {
     const globalConfig = getSystemConfig();
-    const currentApiMode = getCTraderApiMode();
-
-    if (this.lastKnownApiMode !== null && this.lastKnownApiMode !== currentApiMode) {
-      this.clearCache();
-    }
-    this.lastKnownApiMode = currentApiMode;
 
     // If the global config has a selected account ID, override the adapter's accountId.
     // Conversion metadata is account-scoped, so invalidate it if the selected
@@ -443,7 +442,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
 
     // Prefer a directly tradable conversion leg before opening the native
     // conversion-chain workflow. This avoids an unnecessary assets/chain
-    // request on the account-specific demo transport and is sufficient for
+    // request on the account-specific live transport and is sufficient for
     // the common G10 currencies used by Goldcrest.
     const directPair = FOREX_PAIRS.find(
       pair => pair.baseCurrency === from && pair.quoteCurrency === to
@@ -650,14 +649,19 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     );
     const symbols = await this.getCachedCTraderSymbols(raw);
     const byId = new Map(symbols.map(s => [s.symbolId, s]));
-    return state.positions.map((p: any) => {
+
+    const positionRows = state.positions.map((p: any) => {
       const trade = p.tradeData || {};
       const symbolInfo = byId.get(Number(trade.symbolId));
       if (!symbolInfo) return null;
-      const side = String(trade.tradeSide || '').toUpperCase().includes('SELL') ? 'SELL' : 'BUY';
-      const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0));
+
+      const side = normalizeCTraderTradeSide(trade.tradeSide);
+      // cTrader reports position volume in protocol cents (1/100 of a base unit).
+      // The common Goldcrest position model uses normalized base-currency units.
+      const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0)) / 100;
       const entryPrice = Number(trade.openPrice || p.price || 0);
       if (quantity <= 0 || entryPrice <= 0) return null;
+
       return {
         id: String(p.positionId),
         broker: 'CTRADER',
@@ -666,6 +670,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         symbol: symbolInfo.symbolName,
         side,
         quantity,
+        lotSize: symbolInfo.lotSize ? Number(symbolInfo.lotSize) / 100 : 100000,
         entryPrice,
         currentPrice: entryPrice,
         stopLoss: trade.stopLoss,
@@ -675,10 +680,52 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         currency: this.accountData?.currency || 'USD',
         timestamp: Date.now(),
         brokerPositionId: String(p.positionId)
-      } as NormalizedPosition;
-    }).filter(Boolean) as NormalizedPosition[];
-  }
+      } as NormalizedPosition & { lotSize?: number };
+    }).filter(Boolean) as Array<NormalizedPosition & { lotSize?: number }>;
 
+    // Refresh mark prices from the authoritative live quote for every open symbol.
+    // BUY positions are marked to bid; SELL positions are marked to ask because
+    // that is the executable side for closing the position.
+    const uniqueSymbols = [...new Set(positionRows.map(row => String(row.symbol)))];
+    const liveQuotes = new Map<string, { bid: number; ask: number; timestamp: number }>();
+    await Promise.all(uniqueSymbols.map(async symbolName => {
+      const symbolInfo = symbols.find(
+        s => s.symbolName.replace('/', '').toUpperCase() === symbolName.replace('/', '').toUpperCase()
+      );
+      if (!symbolInfo) return;
+      try {
+        const quote = await fetchLiveCTraderQuote(
+          raw.ctidTraderAccountId,
+          symbolInfo.symbolId,
+          symbolInfo.symbolName,
+          this.config.clientId!,
+          this.config.clientSecret!,
+          this.config.accessToken!,
+          raw.isLive,
+          symbolInfo.digits
+        );
+        if (quote.bid !== undefined && quote.ask !== undefined && quote.bid > 0 && quote.ask >= quote.bid) {
+          liveQuotes.set(symbolName, {
+            bid: quote.bid,
+            ask: quote.ask,
+            timestamp: quote.timestamp || Date.now()
+          });
+        }
+      } catch {
+        // Keep the authoritative broker entry price until the next successful quote refresh.
+      }
+    }));
+
+    return positionRows.map(row => {
+      const quote = liveQuotes.get(row.symbol);
+      if (!quote) return row;
+      return {
+        ...row,
+        currentPrice: row.side === 'BUY' ? quote.bid : quote.ask,
+        timestamp: quote.timestamp
+      };
+    });
+  }
   async getOpenOrders(): Promise<NormalizedOrder[]> {
     const raw = await this.resolveRawAccount();
     const state = await fetchCTraderReconcileState(
@@ -702,7 +749,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       if (!symbolInfo) return null;
       const orderTypeRaw = String(o.orderType || 'MARKET').toUpperCase();
       const orderType = orderTypeRaw.includes('STOP_LIMIT') ? 'STOP_LIMIT' : orderTypeRaw.includes('STOP') ? 'STOP' : orderTypeRaw.includes('LIMIT') ? 'LIMIT' : 'MARKET';
-      const side = String(trade.tradeSide || '').toUpperCase().includes('SELL') ? 'SELL' : 'BUY';
+      const side = normalizeCTraderTradeSide(trade.tradeSide);
       const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0)) / 100;
       const filledQuantity = Math.min(
         quantity,
@@ -929,6 +976,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       const minQuantity = s.minVolume ? Number(s.minVolume) / 100 : 1000;
       const maxQuantity = s.maxVolume ? Number(s.maxVolume) / 100 : 10000000;
       const stepQuantity = s.stepVolume ? Number(s.stepVolume) / 100 : 1000;
+      const lotSize = s.lotSize ? Number(s.lotSize) / 100 : 100000;
 
       return {
       symbol: p.symbol,
@@ -982,6 +1030,36 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         'CTRADER',
         this.environment
       );
+    }
+
+    // Adapter-level enforcement is the final boundary before the cTrader API.
+    // This prevents any dispatch path that bypasses brokerRoutes from submitting a
+    // quantity above the operator-configured USD notional limit.
+    const instrumentForSizing = await this.getInstrument(order.symbol);
+    if (!instrumentForSizing) {
+      throw new BrokerError(
+        'INVALID_SYMBOL',
+        `cTrader instrument metadata unavailable for ${order.symbol}.`,
+        'CTRADER',
+        this.environment
+      );
+    }
+
+    const sizingPrice = order.price && order.price > 0
+      ? order.price
+      : (await this.getQuote(order.symbol)).ask;
+
+    const sizing = await (await import('../../safety/TradeSizing')).sizeForexOrderToMaxTradeValue(
+      this,
+      order.symbol,
+      sizingPrice,
+      instrumentForSizing,
+      order.quantity
+    );
+
+    order.quantity = sizing.quantity;
+    if (!order.price || order.price <= 0) {
+      order.price = sizingPrice;
     }
 
     const raw = await this.resolveRawAccount();

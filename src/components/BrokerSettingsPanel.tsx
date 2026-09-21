@@ -72,9 +72,6 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   ]);
   const [savingUniverse, setSavingUniverse] = useState(false);
   const [universeMessage, setUniverseMessage] = useState('');
-  const [cTraderApiMode, setCTraderApiMode] = useState<'DEMO' | 'LIVE'>('DEMO');
-  const [savingMode, setSavingMode] = useState(false);
-  const [modeMessage, setModeMessage] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -105,9 +102,6 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         }
         if (Array.isArray(config.autoLiveIndianUnderlyings)) {
           setAutoLiveIndianUnderlyings(config.autoLiveIndianUnderlyings);
-        }
-        if (config.cTraderApiMode === 'LIVE' || config.cTraderApiMode === 'DEMO') {
-          setCTraderApiMode(config.cTraderApiMode);
         }
       }
     } finally {
@@ -230,7 +224,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                     });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error || 'Failed to save limits');
-                    setLimitMessage('Trade value limits saved to SQLite and enforced server-side.');
+                    setLimitMessage('Trade value limits saved to durable configuration and SQLite, and enforced server-side.');
                     onRefreshGlobal?.();
                   } catch (err: any) {
                     setLimitMessage(err.message || 'Failed to save limits');
@@ -336,7 +330,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                     });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error || 'Failed to save working universe.');
-                    setUniverseMessage('Working universe saved to SQLite. Auto Live will use the selected Forex pairs.');
+                    setUniverseMessage('Working universe saved to durable configuration and SQLite. Auto Live will use the selected Forex pairs.');
                     onRefreshGlobal?.();
                   } catch (err: any) {
                     setUniverseMessage(err.message || 'Failed to save working universe.');
@@ -365,60 +359,9 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
           return (
             <div key={broker} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2"><Server className="w-4 h-4 text-cyan-400" /><h3 className="text-sm font-bold text-white">{isC ? 'cTrader API' : '5paisa'} {isC ? `(${cTraderApiMode})` : 'LIVE'}</h3></div>
+                <div className="flex items-center gap-2"><Server className="w-4 h-4 text-cyan-400" /><h3 className="text-sm font-bold text-white">{isC ? 'cTrader API' : '5paisa'} {isC ? '(LIVE)' : 'LIVE'}</h3></div>
                 <span className={s?.configured ? 'text-emerald-400 text-[10px] font-bold' : 'text-amber-400 text-[10px] font-bold'}>{s?.configured ? 'CONFIGURED' : 'NOT CONFIGURED'}</span>
               </div>
-              {isC && (
-                <div className="mb-4 p-3 rounded bg-slate-950 border border-slate-800 space-y-2">
-                  <div className="text-[10px] uppercase text-slate-400 font-mono font-bold">cTrader API Mode (Demo vs Live)</div>
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs font-mono text-slate-200">
-                      <input
-                        type="radio"
-                        name="cTraderApiMode"
-                        checked={cTraderApiMode === 'DEMO'}
-                        onChange={() => setCTraderApiMode('DEMO')}
-                      />
-                      Demo API (Primary)
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer text-xs font-mono text-slate-200">
-                      <input
-                        type="radio"
-                        name="cTraderApiMode"
-                        checked={cTraderApiMode === 'LIVE'}
-                        onChange={() => setCTraderApiMode('LIVE')}
-                      />
-                      Live API
-                    </label>
-                    <button
-                      onClick={async () => {
-                        setSavingMode(true);
-                        setModeMessage('');
-                        try {
-                          const res = await fetch('/api/config', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ cTraderApiMode })
-                          });
-                          const data = await res.json();
-                          if (!res.ok) throw new Error(data.error || 'Failed to update cTrader API mode');
-                          setModeMessage(`cTrader API mode set to ${cTraderApiMode}`);
-                          onRefreshGlobal?.();
-                        } catch (err: any) {
-                          setModeMessage(err.message || 'Failed to update mode');
-                        } finally {
-                          setSavingMode(false);
-                        }
-                      }}
-                      disabled={savingMode}
-                      className="ml-auto px-3 py-1 rounded bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-[10px] font-bold"
-                    >
-                      {savingMode ? 'SAVING…' : 'APPLY MODE'}
-                    </button>
-                  </div>
-                  {modeMessage && <div className="text-[10px] text-emerald-400 font-mono">{modeMessage}</div>}
-                </div>
-              )}
               <div className="grid sm:grid-cols-2 gap-3">
                 {isC ? <>
                   <BrokerCredentialField broker={broker} name="clientId" label="Client ID" value={forms[broker].clientId || ''} onChange={updateField} inputClass={inputClass} />

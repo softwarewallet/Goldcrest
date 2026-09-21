@@ -7,7 +7,6 @@ export interface SystemConfig {
   dataStatus: 'LIVE' | 'DELAYED' | 'STALE' | 'UNAVAILABLE';
   modelStatus: string;
   researchStatus: 'CLOSED';
-  cTraderApiMode: 'DEMO' | 'LIVE';
   selectedCtraderAccountId?: string;
   selectedCtraderAccountCurrency?: string;
   selectedCtraderAccountLabel?: string;
@@ -41,7 +40,6 @@ const CONFIG_TMP_FILE = `${CONFIG_FILE}.tmp`;
  * this configuration file.
  */
 const PERSISTED_KEYS: readonly (keyof SystemConfig)[] = [
-  'cTraderApiMode',
   'selectedCtraderAccountId',
   'selectedCtraderAccountCurrency',
   'selectedCtraderAccountLabel',
@@ -67,7 +65,6 @@ let activeConfig: SystemConfig = {
   dataStatus: 'UNAVAILABLE',
   modelStatus: 'ML BASELINE / UNCALIBRATED (PHASE 1)',
   researchStatus: 'CLOSED',
-  cTraderApiMode: 'DEMO',
   defaultRiskPct: 1.0,
   maxDailyLossPct: 3.0,
   maxOpenPositions: 5,
@@ -174,6 +171,18 @@ export function persistSystemConfig(config: SystemConfig = activeConfig): void {
   }
 }
 
+export function getPersistedSystemConfigOverrides(): Partial<SystemConfig> {
+  if (!diskConfigLoaded) loadPersistedSystemConfig();
+
+  try {
+    if (!fs.existsSync(CONFIG_FILE)) return {};
+    const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
+    return sanitizePersistedConfig(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
 export function getSystemConfig(): SystemConfig {
   loadPersistedSystemConfig();
   return { ...activeConfig };
@@ -209,7 +218,3 @@ export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig
   return { ...activeConfig };
 }
 
-export function getCTraderApiMode(): 'DEMO' | 'LIVE' {
-  const config = getSystemConfig();
-  return config.cTraderApiMode === 'LIVE' ? 'LIVE' : 'DEMO';
-}

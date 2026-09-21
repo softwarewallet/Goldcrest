@@ -12,7 +12,8 @@ process.env.GOLDCREST_CONFIG_FILE = configFile;
 const {
   getSystemConfig,
   updateSystemConfig,
-  loadPersistedSystemConfig
+  loadPersistedSystemConfig,
+  getPersistedSystemConfigOverrides
 } = await import('../src/services/configService');
 
 try {
@@ -30,6 +31,8 @@ try {
   assert.equal(getSystemConfig().maxTradeValueIndianInr, 55555);
   assert.deepEqual(getSystemConfig().autoLiveForexPairs, ['EUR/USD', 'USD/JPY', 'XAU/USD']);
   assert.deepEqual(getSystemConfig().autoLiveIndianUnderlyings, ['FINNIFTY', 'MIDCPNIFTY']);
+  assert.deepEqual(getPersistedSystemConfigOverrides().maxTradeValueForexUsd, 777);
+  assert.deepEqual(getPersistedSystemConfigOverrides().maxTradeValueIndianInr, 55555);
 
   assert.equal(fs.existsSync(configFile), true);
   const persisted = JSON.parse(fs.readFileSync(configFile, 'utf8'));

@@ -447,7 +447,7 @@ export class AlphaVantageNewsService {
         throw new Error(`Alpha Vantage API error: ${data['Error Message']}`);
       }
 
-      // Check for Information message (e.g. demo key restrictions)
+      // Check for provider Information messages returned alongside API responses
       if (data.Information && (!data.feed || data.feed.length === 0)) {
         const snapshot: AlphaVantageNewsSnapshot = {
           status: 'NO_RESULTS',
