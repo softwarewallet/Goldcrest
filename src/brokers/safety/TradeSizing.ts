@@ -18,14 +18,29 @@ export interface ForexSizingResult {
  * the live instrument. Number(toFixed()) removes both excess decimals and
  * binary floating-point residue before the value reaches cTrader.
  */
-export function normalizePriceToInstrumentDigits(price: number, digits: number): number {
+/**
+ * Goldcrest-wide broker price precision policy.
+ *
+ * Every executable/order price is normalized to exactly the maximum of three
+ * decimal places, irrespective of the symbol's broker-reported precision.
+ * This is intentionally centralized so no execution path can send a 4th+
+ * decimal place to a broker.
+ */
+export const GOLD_CREST_PRICE_DIGITS = 3;
+
+export function normalizePriceToThreeDigits(price: number): number {
   if (!Number.isFinite(price) || price <= 0) {
     throw new Error('INVALID_PRICE: Price must be a positive finite number.');
   }
-  if (!Number.isInteger(digits) || digits < 0 || digits > 10) {
-    throw new Error('INVALID_PRICE: Instrument price precision is invalid.');
-  }
-  return Number(price.toFixed(digits));
+  return Number(price.toFixed(GOLD_CREST_PRICE_DIGITS));
+}
+
+/**
+ * Backward-compatible name used by existing execution code. The global
+ * three-digit policy intentionally ignores broker/symbol precision.
+ */
+export function normalizePriceToInstrumentDigits(price: number, _digits?: number): number {
+  return normalizePriceToThreeDigits(price);
 }
 
 function getForexQuoteCurrency(symbol: string, instrument: BrokerInstrument): string {
