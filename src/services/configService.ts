@@ -40,9 +40,6 @@ const CONFIG_TMP_FILE = `${CONFIG_FILE}.tmp`;
  * this configuration file.
  */
 const PERSISTED_KEYS: readonly (keyof SystemConfig)[] = [
-  'selectedCtraderAccountId',
-  'selectedCtraderAccountCurrency',
-  'selectedCtraderAccountLabel',
   'defaultRiskPct',
   'maxDailyLossPct',
   'maxOpenPositions',
