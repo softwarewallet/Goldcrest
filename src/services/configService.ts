@@ -179,6 +179,18 @@ export function getSystemConfig(): SystemConfig {
   return { ...activeConfig };
 }
 
+export function applyPersistedSystemConfig(updates: Partial<SystemConfig>): SystemConfig {
+  loadPersistedSystemConfig();
+
+  activeConfig = {
+    ...activeConfig,
+    ...updates,
+    tradingMode: 'LIVE_ONLY'
+  };
+
+  return { ...activeConfig };
+}
+
 export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig {
   loadPersistedSystemConfig();
 
