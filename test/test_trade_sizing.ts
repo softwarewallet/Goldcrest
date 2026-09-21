@@ -107,7 +107,7 @@ const fractionalQuantity = await sizeForexOrderToMaxTradeValue(
 // calculation is quantized DOWN to the nearest 0.01 unit: 7.638... -> 7.63.
 assert.equal(fractionalQuantity.quantity, 7.63);
 assert.ok(Number.isFinite(fractionalQuantity.quantity));
-assert.ok(fractionalQuantity.quantity % 0.01 < 1e-9);
+assert.equal(Math.round(fractionalQuantity.quantity * 100) % 1, 0);
 assert.ok(fractionalQuantity.estimatedTradeValueUsd <= 10.22 + 1e-8);
 
 // Goldcrest-wide price precision policy: every symbol is normalized to three
