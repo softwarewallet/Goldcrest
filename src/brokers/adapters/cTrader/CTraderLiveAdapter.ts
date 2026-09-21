@@ -1,7 +1,8 @@
 import { CTraderBrokerAdapter, CTraderConfig } from './CTraderBrokerAdapter';
 import { NormalizedOrder, OrderRequest, TradingEnvironment } from '../../types';
 import { BrokerError } from '../../errors';
-import { normalizePriceToInstrumentDigits, sizeForexOrderToMaxTradeValue } from '../../safety/TradeSizing';
+import { getSystemConfig } from '../../../services/configService';
+import { normalizePriceToInstrumentDigits } from '../../safety/TradeSizing';
 
 export class CTraderLiveAdapter extends CTraderBrokerAdapter {
   readonly environment: TradingEnvironment = 'LIVE';
@@ -75,16 +76,20 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
   }
 
   /**
-   * Final cTrader LIVE sizing boundary.
+   * Final cTrader LIVE Forex execution boundary.
    *
-   * Even when a caller supplies quantity=1 (or any other value), the live
-   * order is force-sized from maxTradeValueForexUsd / executable price before
-   * the broker packet is constructed. This is intentionally repeated at the
-   * adapter boundary so no direct cTrader caller can bypass the max-value rule.
+   * The configured maxTradeValueForexUsd is used directly as the cTrader
+   * protocol volume. No price-based quantity calculation, quote conversion,
+   * broker min/step quantization, or requested-quantity sizing is performed.
+   *
+   * cTrader represents volume in 0.01 base-currency units, so Goldcrest's
+   * internal quantity is maxTradeValueForexUsd / 100. The cTrader API then
+   * receives exactly maxTradeValueForexUsd in its volume field.
+   *
+   * The operator controls the resulting order size by setting the maximum
+   * Forex trade value limit to the desired cTrader volume.
    */
   private async enforceMaxTradeValueSizing(order: OrderRequest): Promise<void> {
-    // Hard requirement: every live order must request a trailing stop loss.
-    // Do not allow callers, signals, or UI state to disable this control.
     order.trailingStopLoss = true;
 
     if (order.market !== 'FOREX') return;
@@ -99,13 +104,35 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
       );
     }
 
+    const config = getSystemConfig();
+    const maxTradeValueForexUsd = Number(config.maxTradeValueForexUsd);
+    if (!(maxTradeValueForexUsd > 0) || !Number.isFinite(maxTradeValueForexUsd)) {
+      throw new BrokerError(
+        'INVALID_TRADE_VALUE',
+        'Configured maximum Forex trade value must be a positive finite number.',
+        'CTRADER',
+        this.environment
+      );
+    }
+
+    // cTrader volume is an integer protocol field represented in 0.01 units.
+    // Use the configured limit directly as broker protocol volume.
+    if (!Number.isSafeInteger(maxTradeValueForexUsd)) {
+      throw new BrokerError(
+        'INVALID_TRADE_VALUE',
+        'Configured maximum Forex trade value must be a positive integer because cTrader volume is an integer protocol field.',
+        'CTRADER',
+        this.environment
+      );
+    }
+
     let executionPrice = Number(order.price || 0);
     if (!(executionPrice > 0) || !Number.isFinite(executionPrice)) {
       const quote = await this.getQuote(order.symbol);
       if (quote.status !== 'FRESH' || !(quote.bid > 0 && quote.ask > 0)) {
         throw new BrokerError(
           'STALE_DATA',
-          `Fresh live quote unavailable for ${order.symbol}; max-trade-value sizing cannot be calculated safely.`,
+          `Fresh live quote unavailable for ${order.symbol}; a valid execution price is still required.`,
           'CTRADER',
           this.environment
         );
@@ -113,27 +140,16 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
       executionPrice = order.side === 'BUY' ? quote.ask : quote.bid;
     }
 
-    // cTrader validates every submitted price field against the symbol's
-    // authoritative decimal precision. Normalize BEFORE sizing so the notional
-    // calculation uses the exact executable price that will be sent to cTrader.
     const normalizedExecutionPrice = normalizePriceToInstrumentDigits(
       executionPrice,
       instrument.digits
     );
 
-    const sizing = await sizeForexOrderToMaxTradeValue(
-      this,
-      order.symbol,
-      normalizedExecutionPrice,
-      instrument,
-      Number(order.quantity)
-    );
-
-    // Normalize every broker-facing price field at the final LIVE boundary.
-    // Signals may arrive with 5 decimals for all FX pairs, while JPY crosses
-    // commonly allow only 3 (e.g. 157.711, not 157.71077).
-    order.quantity = sizing.quantity;
+    // The API converts Goldcrest quantity back to protocol volume by multiplying
+    // by 100, so quantity = configured protocol volume / 100.
+    order.quantity = maxTradeValueForexUsd / 100;
     order.price = normalizedExecutionPrice;
+
     if (order.stopLoss !== undefined && order.stopLoss > 0) {
       order.stopLoss = normalizePriceToInstrumentDigits(order.stopLoss, instrument.digits);
     }
@@ -141,13 +157,14 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
       order.takeProfit = normalizePriceToInstrumentDigits(order.takeProfit, instrument.digits);
     }
 
-    this.logAction('FORCE_MAX_TRADE_VALUE_SIZING', 'SUCCESS', this.config.accountId || '', {
+    this.logAction('FORCE_MAX_TRADE_VALUE_VOLUME', 'SUCCESS', this.config.accountId || '', {
       symbol: order.symbol,
-      quantity: sizing.quantity,
-      price: executionPrice
+      configuredMaxTradeValue: maxTradeValueForexUsd,
+      protocolVolume: maxTradeValueForexUsd,
+      quantityUnits: order.quantity,
+      price: normalizedExecutionPrice
     });
   }
-
   // Direct broker-route orders remain explicitly blocked. The autonomous
   // execution engine uses placeAutonomousOrder() only after its own gates pass.
   override async placeOrder(order: OrderRequest): Promise<NormalizedOrder> {
