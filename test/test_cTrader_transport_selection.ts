@@ -7,14 +7,14 @@ function runCTraderTransportSelectionRegressionTest() {
     delete process.env.CTRADER_LIVE_API_HOST;
 
     const liveHosts = getCTraderRequestHosts(true);
-    const testHosts = getCTraderRequestHosts(false);
+    const secondaryHosts = getCTraderRequestHosts(false);
 
     if (liveHosts.length !== 1 || liveHosts[0] !== 'wss://live.ctraderapi.com:5036') {
       throw new Error(`LIVE account routing is incorrect: ${JSON.stringify(liveHosts)}`);
     }
 
-    if (testHosts.length !== 1 || testHosts[0] !== 'wss://demo.ctraderapi.com:5036') {
-      throw new Error(`cTrader test-account routing is incorrect: ${JSON.stringify(testHosts)}`);
+    if (secondaryHosts.length !== 1 || secondaryHosts[0] !== 'wss://live.ctraderapi.com:5036') {
+      throw new Error(`Non-LIVE account requests must not route to a demo endpoint: ${JSON.stringify(secondaryHosts)}`);
     }
 
     process.env.CTRADER_LIVE_API_HOST = 'wss://custom.ctrader.example:5036';
