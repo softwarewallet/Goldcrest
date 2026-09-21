@@ -71,6 +71,22 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   private accountFetchInFlight: Promise<BrokerAccountInfo> | null = null;
   private lastKnownApiMode: string | null = null;
 
+  /**
+   * Derives effective trading permissions from the authoritative cTrader
+   * token scope and account access rights. The previous implementation
+   * hard-coded TRADE/READ/TRADING, which could report a connected account as
+   * tradable even when the access token was view-only.
+   */
+  private static getEffectivePermissions(permissionScope?: number, accessRights?: number): string[] {
+    const permissions = ['READ'];
+    if (permissionScope === 1 && (accessRights === undefined || accessRights === 0)) {
+      permissions.push('TRADE', 'TRADING');
+    } else if (permissionScope === 1 && accessRights === 1) {
+      permissions.push('CLOSE_ONLY');
+    }
+    return permissions;
+  }
+
   constructor(config: CTraderConfig) {
     super();
     this.config = config;
@@ -259,7 +275,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
             environment: this.environment,
             connectionStatus: 'CONNECTED',
             server: details.brokerName || raw.brokerTitleShort || 'cTrader-Live',
-            permissions: ['TRADE', 'READ', 'TRADING'],
+            permissions: CTraderBrokerAdapter.getEffectivePermissions(raw.permissionScope, details.accessRights),
             lastUpdate: Date.now(),
             isLiveAccount: details.isLive
           });
@@ -389,7 +405,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
           environment: this.environment,
           connectionStatus: 'CONNECTED',
           server: details.brokerName || matched.brokerTitleShort || 'cTrader-Live',
-          permissions: ['TRADE', 'READ', 'TRADING'],
+          permissions: CTraderBrokerAdapter.getEffectivePermissions(matched.permissionScope, details.accessRights),
           lastUpdate: Date.now(),
           isLiveAccount: details.isLive
         };
@@ -949,6 +965,20 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       throw new BrokerError(
         'INVALID_SYMBOL',
         `cTrader adapter only supports FOREX market, attempted ${order.market}`,
+        'CTRADER',
+        this.environment
+      );
+    }
+
+    const account = await this.getAccount();
+    const effectivePermissions = account.permissions || [];
+    if (!effectivePermissions.includes('TRADE')) {
+      const scopeDescription = effectivePermissions.includes('CLOSE_ONLY')
+        ? 'the cTrader account is CLOSE_ONLY'
+        : 'the cTrader access token/account is view-only';
+      throw new BrokerError(
+        'PERMISSION_DENIED',
+        `cTrader TRADE permission required: ${scopeDescription}. Re-authorize Goldcrest with the cTrader "trading" scope and ensure the account has FULL_ACCESS trading rights.`,
         'CTRADER',
         this.environment
       );
