@@ -500,6 +500,138 @@ app.get('/api/status', (req: Request, res: Response) => {
   });
 });
 
+
+const DATABASE_EXPLORER_TABLES = [
+  { name: 'execution_intents', label: 'Execution Intents', category: 'Execution', description: 'Trigger Now and autonomous execution idempotency records.' },
+  { name: 'execution_fill_observations', label: 'Fill Observations', category: 'Execution', description: 'Observed broker order fill state and quantities.' },
+  { name: 'execution_fill_events', label: 'Fill Events', category: 'Execution', description: 'Broker-native execution/fill ledger.' },
+  { name: 'trade_traces', label: 'Trade Trace Roots', category: 'Execution', description: 'Top-level lifecycle trace payloads.' },
+  { name: 'trade_trace_nodes', label: 'Trade Trace Nodes', category: 'Execution', description: 'Individual execution lifecycle nodes.' },
+  { name: 'orders', label: 'Orders', category: 'Trading', description: 'Normalized order records.' },
+  { name: 'trades', label: 'Trades', category: 'Trading', description: 'Trade entry/exit records and P&L.' },
+  { name: 'positions', label: 'Positions', category: 'Trading', description: 'Persisted position state.' },
+  { name: 'broker_accounts', label: 'Broker Accounts', category: 'Trading', description: 'Broker account snapshots and permissions.' },
+  { name: 'broker_reconciliation_snapshots', label: 'Reconciliation Snapshots', category: 'Trading', description: 'Broker account, position and order snapshots.' },
+  { name: 'market_data', label: 'Market Data', category: 'Market Data', description: 'Persisted market observations.' },
+  { name: 'candles', label: 'Candles', category: 'Market Data', description: 'OHLCV candle series.' },
+  { name: 'options_chain', label: 'Options Chains', category: 'Market Data', description: 'Persisted options-chain snapshots.' },
+  { name: 'option_contracts', label: 'Option Contracts', category: 'Market Data', description: 'Strike-level option observations.' },
+  { name: 'greeks', label: 'Greeks', category: 'Market Data', description: 'Option Greeks and IV records.' },
+  { name: 'signals', label: 'Signals', category: 'Strategy', description: 'Generated strategy signals and trade levels.' },
+  { name: 'signal_events', label: 'Signal Events', category: 'Strategy', description: 'Signal lifecycle and status events.' },
+  { name: 'strategy_configs', label: 'Strategy Configs', category: 'Strategy', description: 'Strategy thresholds and enablement.' },
+  { name: 'economic_events', label: 'Economic Events', category: 'Strategy', description: 'Calendar events used by the strategy layer.' },
+  { name: 'risk_configs', label: 'Risk Configs', category: 'Risk & System', description: 'Risk, loss and execution limits.' },
+  { name: 'system_settings', label: 'System Settings', category: 'Risk & System', description: 'Persisted Goldcrest configuration values.' },
+  { name: 'trade_notes', label: 'Trade Notes', category: 'Risk & System', description: 'Operator notes linked to trading context.' },
+  { name: 'users', label: 'Users', category: 'Reference', description: 'Application user records.' },
+  { name: 'markets', label: 'Markets', category: 'Reference', description: 'Market definitions.' },
+  { name: 'instruments', label: 'Instruments', category: 'Reference', description: 'Instrument metadata.' },
+  { name: 'currency_pairs', label: 'Currency Pairs', category: 'Reference', description: 'Forex pair reference metadata.' },
+  { name: 'underlyings', label: 'Underlyings', category: 'Reference', description: 'Indian market underlying metadata.' },
+  { name: 'contracts', label: 'Contracts', category: 'Reference', description: 'Derivative contract reference records.' },
+  { name: 'model_versions', label: 'Model Versions', category: 'ML & Research', description: 'Registered model versions.' },
+  { name: 'model_predictions', label: 'Model Predictions', category: 'ML & Research', description: 'Persisted model prediction records.' },
+  { name: 'backtest_runs', label: 'Backtest Runs', category: 'ML & Research', description: 'Historical backtest run summaries.' },
+  { name: 'backtest_trades', label: 'Backtest Trades', category: 'ML & Research', description: 'Historical backtest trade rows.' },
+  { name: 'ml_storage_records', label: 'ML Storage Records', category: 'ML & Research', description: 'Persisted ML bridge records.' }
+];
+
+const DATABASE_EXPLORER_REDACT_PATTERNS = /(password|secret|token|encryption.?key|totp|pin|client.?secret|access.?token)/i;
+
+function sanitizeDatabaseRow(row: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (DATABASE_EXPLORER_REDACT_PATTERNS.test(key)) {
+      result[key] = value === null || value === undefined || value === '' ? value : '[REDACTED]';
+      continue;
+    }
+    if (key === 'value' && DATABASE_EXPLORER_REDACT_PATTERNS.test(String(row.key || ''))) {
+      result[key] = '[REDACTED]';
+      continue;
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function quoteSqlIdentifier(value: string): string {
+  return '"' + value.replace(/"/g, '""') + '"';
+}
+
+app.get('/api/database/overview', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    const tables = [];
+    for (const definition of DATABASE_EXPLORER_TABLES) {
+      const rows = await executeQuery<any>('SELECT COUNT(*) AS count FROM ' + quoteSqlIdentifier(definition.name));
+      tables.push({ ...definition, count: Number(rows[0]?.count || 0) });
+    }
+    res.json({ database: 'data/trading_analyst.sqlite', tables, timestamp: Date.now() });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Database overview unavailable.' });
+  }
+});
+
+app.get('/api/database/table', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    const tableName = String(req.query.table || '').trim();
+    const definition = DATABASE_EXPLORER_TABLES.find(item => item.name === tableName);
+    if (!definition) return res.status(400).json({ error: 'Unknown database table.' });
+
+    const schema = await executeQuery<any>('PRAGMA table_info(' + quoteSqlIdentifier(tableName) + ')');
+    const columns = schema.map(column => ({ name: String(column.name), type: String(column.type || 'TEXT') }));
+    const columnNames = columns.map(column => column.name);
+    if (!columnNames.length) return res.status(404).json({ error: 'Selected database table has no columns.' });
+
+    const rawLimit = Number(req.query.limit || 50);
+    const rawOffset = Number(req.query.offset || 0);
+    const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 50, 1), 250);
+    const offset = Math.min(Math.max(Number.isFinite(rawOffset) ? Math.floor(rawOffset) : 0, 0), 100000);
+    const search = String(req.query.search || '').trim();
+
+    const requestedSort = String(req.query.sort || '').trim();
+    const sortColumn = columnNames.includes(requestedSort)
+      ? requestedSort
+      : (['timestamp', 'updated_at', 'created_at', 'observed_at', 'executed_at'].find(name => columnNames.includes(name)) || columnNames[0]);
+    const direction = String(req.query.dir || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+    const searchClause = search
+      ? ' WHERE ' + columnNames.map(column => 'CAST(' + quoteSqlIdentifier(column) + ' AS TEXT) LIKE ?').join(' OR ')
+      : '';
+    const searchParams = search ? columnNames.map(() => '%' + search + '%') : [];
+
+    const totalRows = await executeQuery<any>(
+      'SELECT COUNT(*) AS count FROM ' + quoteSqlIdentifier(tableName) + searchClause,
+      searchParams
+    );
+    const rows = await executeQuery<any>(
+      'SELECT ' + columnNames.map(quoteSqlIdentifier).join(', ') +
+      ' FROM ' + quoteSqlIdentifier(tableName) +
+      searchClause +
+      ' ORDER BY ' + quoteSqlIdentifier(sortColumn) + ' ' + direction +
+      ' LIMIT ? OFFSET ?',
+      [...searchParams, limit, offset]
+    );
+
+    res.json({
+      database: 'data/trading_analyst.sqlite',
+      table: tableName,
+      label: definition.label,
+      category: definition.category,
+      columns,
+      rows: rows.map(row => sanitizeDatabaseRow(row)),
+      total: Number(totalRows[0]?.count || 0),
+      limit,
+      offset,
+      updatedAt: Date.now()
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Database table unavailable.' });
+  }
+});
+
 // 2. Configuration API
 app.get('/api/config', async (_req: Request, res: Response) => {
   try {
