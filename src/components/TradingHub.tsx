@@ -141,11 +141,17 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   // Safe JSON parsing helper to prevent unexpected token '<' exceptions from non-JSON gateway error pages
   const safeParseJson = useCallback(async (res: Response): Promise<any> => {
     const text = await res.text();
+    const contentType = res.headers.get('content-type') || 'unknown';
+    const goldcrestRoute = res.headers.get('x-goldcrest-route');
     try {
       return JSON.parse(text);
     } catch {
       if (text.includes('<!DOCTYPE') || text.includes('<!doctype') || text.includes('<html')) {
-        throw new Error(`Endpoint returned HTTP ${res.status} (${res.statusText || 'HTML Document'}) instead of JSON`);
+        throw new Error(
+          goldcrestRoute === 'broker-order-live'
+            ? `Goldcrest order endpoint returned HTTP ${res.status} HTML unexpectedly (content-type: ${contentType}).`
+            : `HTTP ${res.status} returned HTML instead of the Goldcrest API JSON route (content-type: ${contentType}). The request may be hitting a stale/proxy/Vite process.`
+        );
       }
       throw new Error(text.substring(0, 150) || `Server returned status ${res.status}`);
     }
