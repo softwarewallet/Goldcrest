@@ -69,8 +69,6 @@ export function recordTradeRequest(params: {
   symbol: string;
   orderType: string;
   side: string;
-  quantityUnits: number;
-  protocolVolume: number;
   price?: number;
   stopLoss?: number;
   takeProfit?: number;
