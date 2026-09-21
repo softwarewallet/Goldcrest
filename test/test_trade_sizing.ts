@@ -85,11 +85,13 @@ assert.equal(belowBrokerMinimum.quantity, 74);
 assert.ok(belowBrokerMinimum.quantity < instrument.minQuantity);
 assert.equal(Number(belowBrokerMinimum.estimatedTradeValueUsd.toFixed(2)), 99.00);
 
-// cTrader price precision is symbol-specific. A USD/JPY price with five
-// incoming decimals must be normalized to the broker's three allowed digits.
+// Goldcrest-wide price precision policy: every symbol is normalized to three
+// decimal places, regardless of broker-reported symbol precision.
 assert.equal(normalizePriceToInstrumentDigits(157.71077, 3), 157.711);
 assert.equal(normalizePriceToInstrumentDigits(157.7104, 3), 157.71);
-assert.equal(normalizePriceToInstrumentDigits(1.123456, 5), 1.12346);
+assert.equal(normalizePriceToInstrumentDigits(1.123456, 5), 1.123);
+assert.equal(normalizePriceToInstrumentDigits(1.1239, 5), 1.124);
+assert.equal(normalizePriceToInstrumentDigits(210.70722, 3), 210.707);
 
 console.log('Trade sizing tests passed.');
 
