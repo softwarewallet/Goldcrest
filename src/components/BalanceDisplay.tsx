@@ -106,7 +106,7 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = () => {
   };
   useEffect(() => {
     fetchBalances();
-    const interval = setInterval(fetchBalances, 15000);
+    const interval = setInterval(fetchBalances, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -184,7 +184,7 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = () => {
     const error = errors[broker];
     const isLoading = loading[broker];
     const updated = lastUpdated[broker];
-    const isStale = updated ? Date.now() - updated > 300000 : false;
+    const isStale = updated ? Date.now() - updated > 30000 : false;
     const label = broker === 'CTRADER' ? 'cTrader' : '5paisa';
     const market = broker === 'CTRADER' ? 'FOREX' : 'INDIAN MARKETS';
 
