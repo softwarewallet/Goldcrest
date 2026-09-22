@@ -18,6 +18,14 @@ export interface LiveNewsArticle {
 export type LiveNewsSource = 'ALPHA_VANTAGE' | 'MARKETAUX' | 'GDELT_DOC_2' | 'GOOGLE_NEWS_RSS' | 'NONE';
 export type LiveNewsProviderStatus = 'LIVE' | 'NO_RESULTS' | 'RATE_LIMITED' | 'UNCONFIGURED' | 'ERROR';
 
+export interface LiveNewsProviderDiagnostic {
+  status: LiveNewsProviderStatus;
+  rawArticleCount: number;
+  freshArticleCount: number;
+  configured: boolean;
+  error?: string;
+}
+
 export interface LiveNewsSentimentSummary {
   averageScore: number;
   overallLabel: string;
@@ -43,6 +51,12 @@ export interface LiveNewsSnapshot {
     MARKETAUX?: LiveNewsProviderStatus;
     GDELT_DOC_2: LiveNewsProviderStatus;
     GOOGLE_NEWS_RSS: LiveNewsProviderStatus;
+  };
+  providerDiagnostics?: {
+    ALPHA_VANTAGE: LiveNewsProviderDiagnostic;
+    MARKETAUX: LiveNewsProviderDiagnostic;
+    GDELT_DOC_2: LiveNewsProviderDiagnostic;
+    GOOGLE_NEWS_RSS: LiveNewsProviderDiagnostic;
   };
   sentimentSummary?: LiveNewsSentimentSummary;
   latestArticleAt?: string | null;
@@ -696,6 +710,37 @@ async function fetchLiveForexNewsInternal(
   const errors = [gdeltRes.error, googleRes.error, avRes.error, marketauxRes.error]
     .filter(Boolean) as string[];
 
+  const providerDiagnostics: LiveNewsSnapshot['providerDiagnostics'] = {
+    ALPHA_VANTAGE: {
+      status: providerStatus.ALPHA_VANTAGE || 'UNCONFIGURED',
+      rawArticleCount: avRes.articles.length,
+      freshArticleCount: freshAv.length,
+      configured: alphaVantageNewsService.isConfigured(),
+      error: avRes.error
+    },
+    MARKETAUX: {
+      status: providerStatus.MARKETAUX || 'UNCONFIGURED',
+      rawArticleCount: marketauxRes.articles.length,
+      freshArticleCount: freshMarketaux.length,
+      configured: marketauxNewsService.isConfigured(),
+      error: marketauxRes.error
+    },
+    GDELT_DOC_2: {
+      status: providerStatus.GDELT_DOC_2,
+      rawArticleCount: gdeltRes.articles.length,
+      freshArticleCount: freshGdelt.length,
+      configured: true,
+      error: gdeltRes.error
+    },
+    GOOGLE_NEWS_RSS: {
+      status: providerStatus.GOOGLE_NEWS_RSS,
+      rawArticleCount: googleRes.articles.length,
+      freshArticleCount: freshGoogle.length,
+      configured: true,
+      error: googleRes.error
+    }
+  };
+
   // Prioritize sentiment providers (Alpha Vantage, Marketaux), then broad aggregators
   const fetchedArticles = [...freshAv, ...freshMarketaux, ...freshGdelt, ...freshGoogle];
   const articles = deduplicateArticles(fetchedArticles).slice(0, 35);
@@ -723,6 +768,7 @@ async function fetchLiveForexNewsInternal(
           articles: [],
           queryPairs,
           providerStatus,
+          providerDiagnostics,
           error: errors.length ? errors.join(' | ') : undefined
         };
 
@@ -770,6 +816,7 @@ async function fetchLiveForexNewsInternal(
     articles,
     queryPairs,
     providerStatus,
+    providerDiagnostics,
     sentimentSummary,
     latestArticleAt,
     error: errors.length ? errors.join(' | ') : undefined
