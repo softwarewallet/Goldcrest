@@ -189,6 +189,10 @@ class AutoTradingService {
   private preOpenNews: LiveNewsSnapshot | null = null;
   private preOpenStatus: 'IDLE' | 'RUNNING' | 'READY' | 'UNAVAILABLE' = 'IDLE';
   private cycleInFlight = false;
+  // Market analysis can run concurrently across the configured universe, but
+  // broker-side execution is serialized so two pairs cannot race the same
+  // account-position/exposure snapshot and bypass the global safety limits.
+  private executionQueue: Promise<void> = Promise.resolve();
   private currentExecution: AutoTradingExecutionStatus = {
     stage: 'IDLE',
     pair: null,
@@ -204,6 +208,22 @@ class AutoTradingService {
       && process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true')
       || process.env.NODE_ENV !== 'production'
       || process.env.GOLDCREST_LOCAL_DEVELOPMENT === 'true';
+  }
+
+
+  private async withExecutionLock<T>(worker: () => Promise<T>): Promise<T> {
+    const previous = this.executionQueue;
+    let release!: () => void;
+    this.executionQueue = new Promise<void>(resolve => {
+      release = resolve;
+    });
+
+    await previous;
+    try {
+      return await worker();
+    } finally {
+      release();
+    }
   }
 
   private setExecutionStatus(update: Partial<AutoTradingExecutionStatus> & Pick<AutoTradingExecutionStatus, 'stage' | 'message'>): void {
@@ -629,7 +649,11 @@ class AutoTradingService {
           continue;
         }
 
-        await this.evaluatePair(pair);
+      // Scan/analyze every configured pair in parallel. Each pair remains
+      // independently isolated, while the execution portion of evaluatePair
+      // is serialized by withExecutionLock(). This removes the old sequential
+      // scan bottleneck without weakening account-level safety gates.
+      await Promise.all(configuredPairs.map(pair => this.evaluatePair(pair)));
       }
 
       this.lastCycleResult = 'Cycle completed.';
@@ -669,6 +693,7 @@ class AutoTradingService {
         return;
       }
 
+      return this.withExecutionLock(async () => {
       const config = getSystemConfig();
       const minSignalScore = Math.max(0, Math.min(100, Math.round(Number(config.autoLiveMinSignalScore))));
       if (signal.score < minSignalScore) {
@@ -887,6 +912,7 @@ class AutoTradingService {
         orderId: result.order?.brokerOrderId || result.order?.id
       });
       liveRuntimeLog(result.executed ? 'TRADE' : 'WARN', result.executed ? 'AUTO_ORDER_EXECUTION_RESULT' : 'AUTO_ORDER_BLOCKED', { pair, signalId: signal.id, result: result.executed ? 'EXECUTED' : 'BLOCKED', code: result.code, reason: result.reason, brokerOrderId: result.order?.brokerOrderId, brokerStatus: result.order?.status });
+      });
     } catch (error: any) {
       this.finishExecution('REJECTED', pair + ' evaluation failed: ' + (error?.message || String(error)), { pair });
       this.lastActions.push({
