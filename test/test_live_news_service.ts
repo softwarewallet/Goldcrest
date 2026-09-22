@@ -70,6 +70,12 @@ try {
     const url = String(input);
     if (url.includes('api.gdeltproject.org')) return response('rate limited', 429);
 
+    // Simulate Forex Factory being unavailable/empty so Google News RSS is
+    // the actual fallback provider selected by the aggregation engine.
+    if (url.includes('forexfactory.com') || url.includes('rss.forexfactory.net')) {
+      return response('<rss><channel></channel></rss>');
+    }
+
     return response(`<rss><channel>
       <item>
         <title><![CDATA[GBP/USD rises on central bank update]]></title>
