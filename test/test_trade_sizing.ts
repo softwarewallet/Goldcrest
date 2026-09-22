@@ -43,11 +43,12 @@ const forcedFromOne = await sizeForexOrderToMaxTradeValue(
   1
 );
 
-assert.equal(forcedFromOne.quantity, 7_470);
+assert.equal(forcedFromOne.quantity, 10_000);
+assert.equal(forcedFromOne.directQuantity, 10_000);
 assert.equal(forcedFromOne.adjusted, true);
-assert.equal(Number(forcedFromOne.rawMaxQuantity.toFixed(2)), 7474.68);
-assert.ok(forcedFromOne.estimatedTradeValueUsd <= 10_000);
-assert.equal(Number(forcedFromOne.estimatedTradeValueUsd.toFixed(2)), 9_993.74);
+assert.equal(forcedFromOne.rawMaxQuantity, 10_000);
+assert.equal(forcedFromOne.estimatedTradeValueUsd, undefined);
+assert.equal(forcedFromOne.quoteToUsdRate, undefined);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 20_000
@@ -61,12 +62,12 @@ const forcedFromLargeRequest = await sizeForexOrderToMaxTradeValue(
   10_000
 );
 
-// The caller's requested 10,000 units cannot limit the forced maximum-value
-// calculation; the configured $20,000 cap sizes the order to the nearest
-// broker-valid 10-unit step below the cap.
-assert.equal(forcedFromLargeRequest.quantity, 14_940);
+// The configured maximum is used directly as the broker order quantity.
+// Price, quote currency and broker step/minimum calculations are not involved.
+assert.equal(forcedFromLargeRequest.quantity, 20_000);
+assert.equal(forcedFromLargeRequest.directQuantity, 20_000);
 assert.equal(forcedFromLargeRequest.adjusted, true);
-assert.equal(Number(forcedFromLargeRequest.estimatedTradeValueUsd.toFixed(2)), 19_987.48);
+assert.equal(forcedFromLargeRequest.estimatedTradeValueUsd, undefined);
 
 updateSystemConfig({
   maxTradeValueForexUsd: 100
@@ -80,10 +81,11 @@ const belowBrokerMinimum = await sizeForexOrderToMaxTradeValue(
   1
 );
 
-// The configured $100 cap yields 70 base units after broker 10-unit step
-// quantization and remains below the notional cap.
-assert.equal(belowBrokerMinimum.quantity, 70);
-assert.equal(Number(belowBrokerMinimum.estimatedTradeValueUsd.toFixed(2)), 93.65);
+// The configured value is passed directly. Broker minimum/step constraints
+// remain authoritative at the actual cTrader execution boundary.
+assert.equal(belowBrokerMinimum.quantity, 100);
+assert.equal(belowBrokerMinimum.directQuantity, 100);
+assert.equal(belowBrokerMinimum.estimatedTradeValueUsd, undefined);
 
 const fineGrainedInstrument = {
   ...instrument,
@@ -103,12 +105,12 @@ const fractionalQuantity = await sizeForexOrderToMaxTradeValue(
   1
 );
 
-// cTrader protocol volume is in 0.01 base-currency units. The maximum-value
-// calculation is quantized DOWN to the nearest 0.01 unit: 7.638... -> 7.63.
-assert.equal(fractionalQuantity.quantity, 7.63);
+// Direct quantity is floored to an integer because cTrader volume is an
+// integer protocol field: 10.22 -> 10.
+assert.equal(fractionalQuantity.quantity, 10);
 assert.ok(Number.isFinite(fractionalQuantity.quantity));
-assert.equal(Math.round(fractionalQuantity.quantity * 100) % 1, 0);
-assert.ok(fractionalQuantity.estimatedTradeValueUsd <= 10.22 + 1e-8);
+assert.equal(Number.isInteger(fractionalQuantity.quantity), true);
+assert.equal(fractionalQuantity.estimatedTradeValueUsd, undefined);
 
 // Goldcrest-wide price precision policy: every symbol is normalized to three
 // decimal places, regardless of broker-reported symbol precision.
@@ -234,9 +236,9 @@ assert.equal(realTradeOverage.checks.maximumTradeValueCheckPassed, false);
 assert.ok(realTradeOverage.failedReasons.some(reason => reason.includes('Condition 16 Failed')));
 
 
-// Live quote freshness regression: the gate must accept a 19.9s-old quote
-// and reject a quote older than the fixed 20s policy. No caller override exists.
-const quoteAt = Date.now() - 19_900;
+// Live quote freshness regression: the gate must accept a 29.9s-old quote
+// and reject a quote older than the fixed 30s policy. No caller override exists.
+const quoteAt = Date.now() - 29_900;
 const freshAt20s = await liveTradingGate.evaluate(gateAdapter, {
   order: { market: 'FOREX', symbol: 'GBP/USD', side: 'BUY', orderType: 'MARKET', quantity: 1, price: 1, stopLoss: 0.99 },
   signalAgeMs: 1000,
@@ -254,7 +256,7 @@ assert.equal(freshAt20s.checks.marketDataFresh, true);
 const staleAt20s = await liveTradingGate.evaluate(gateAdapter, {
   order: { market: 'FOREX', symbol: 'GBP/USD', side: 'BUY', orderType: 'MARKET', quantity: 1, price: 1, stopLoss: 0.99 },
   signalAgeMs: 1000,
-  currentQuote: { ...boundaryQuote, timestamp: Date.now() - 20_100 },
+  currentQuote: { ...boundaryQuote, timestamp: Date.now() - 30_100 },
   isMarketOpen: true,
   dailyRealizedLoss: 0,
   dailyLossLimit: 100,
@@ -264,4 +266,4 @@ const staleAt20s = await liveTradingGate.evaluate(gateAdapter, {
   maxOpenPositions: 5
 });
 assert.equal(staleAt20s.checks.marketDataFresh, false);
-assert.ok(staleAt20s.failedReasons.some(reason => reason.includes('>20s old')));
+assert.ok(staleAt20s.failedReasons.some(reason => reason.includes('>30s old')));
