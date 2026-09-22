@@ -784,13 +784,9 @@ return;
       }
 
       const account = await adapter.getAccount();
-      if (String(account.currency || '').toUpperCase() !== 'USD') {
-        const reason = 'Auto Forex sizing currently requires a USD-denominated cTrader account.';
-        this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
-                tradeAuditLog('ACCOUNT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
-return;
-      }
 
+      // Direct-quantity sizing does not require the cTrader account currency
+      // to be USD. The configured Forex quantity is sent directly to the broker.
       const instrument = await adapter.getInstrument(pair);
       if (!instrument) {
         const reason = 'Live broker instrument metadata unavailable.';
@@ -860,7 +856,7 @@ return;
       this.setExecutionStatus({
         stage: 'PREPARING_ORDER',
         pair,
-        side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
+        side: signalSide,
         signalId: signal.id,
         message: 'Preparing live order for ' + pair + '.'
       });
@@ -896,10 +892,10 @@ return;
         entryPrice,
         stopLoss: order.stopLoss,
         takeProfit: order.takeProfit,
-        notionalUsd: sizing.estimatedTradeValueUsd,
-        maxTradeValueUsd: sizing.maxTradeValueUsd,
+        directQuantity: sizing.directQuantity,
+        configuredQuantity: sizing.maxTradeValueUsd,
         sizingAdjusted: sizing.adjusted,
-        quoteToUsdRate: sizing.quoteToUsdRate
+        sizingMode: 'DIRECT_QUANTITY_NO_CURRENCY_CONVERSION'
       });
 
       this.setExecutionStatus({
