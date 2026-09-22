@@ -26,6 +26,34 @@ export interface OptionsOpportunityCandidate {
   expiry: string;
 }
 
+
+const FOREX_SCAN_CONCURRENCY = Math.max(
+  1,
+  Math.min(4, Number(process.env.GOLDCREST_FOREX_SCAN_CONCURRENCY || 4))
+);
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  const runWorker = async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker())
+  );
+  return results;
+}
+
 function mapForexSignal(signal: any): TradingSignal {
   const direction = String(signal.direction || 'NO_TRADE');
   const normalizedDirection: TradingSignal['direction'] =
@@ -95,34 +123,44 @@ export class ScannerService {
       ? configuredPairs.map(symbol => getForexPairConfig(symbol))
       : this.forexProvider.getAvailablePairs();
 
-    for (const pair of selected) {
-      try {
-        await this.forexProvider.refreshPair(pair.symbol);
-        const signal = await this.forexSignalEngine.generateSignal(pair.symbol);
-        const quote = this.forexProvider.getQuote(pair.symbol);
-        results.push({
-          symbol: pair.symbol,
-          description: pair.description,
-          bid: quote.bid,
-          ask: quote.ask,
-          spreadPips: quote.spreadPips,
-          changePips: quote.changePips24h,
-          changePercent: quote.changePercent24h,
-          digits: pair.digits,
-          signal: mapForexSignal(signal),
-          dataStatus: 'LIVE',
-          dataSource: quote.provider
-        });
-      } catch (error: any) {
-        results.push({
-          symbol: pair.symbol,
-          description: pair.description,
-          signal: null,
-          dataStatus: 'UNKNOWN',
-          error: error?.message || String(error)
-        });
+    const scanned = await mapWithConcurrency(
+      selected,
+      FOREX_SCAN_CONCURRENCY,
+      async pair => {
+        try {
+          await this.forexProvider.refreshPair(pair.symbol);
+          const signal = await this.forexSignalEngine.generateSignal(pair.symbol);
+          const quote = this.forexProvider.getQuote(pair.symbol);
+          return {
+            symbol: pair.symbol,
+            description: pair.description,
+            bid: quote.bid,
+            ask: quote.ask,
+            spreadPips: quote.spreadPips,
+            changePips: quote.changePips24h,
+            changePercent: quote.changePercent24h,
+            digits: pair.digits,
+            signal: mapForexSignal(signal),
+            dataStatus: 'LIVE',
+            dataSource: quote.provider
+          };
+        } catch (error: any) {
+          return {
+            symbol: pair.symbol,
+            description: pair.description,
+            signal: null,
+            dataStatus: 'UNKNOWN',
+            error: error?.message || String(error)
+          };
+        }
       }
-    }
+    );
+
+    // Preserve the configured working-universe order so the UI and Auto Live
+    // diagnostics always represent every selected pair, even when some pair
+    // requests fail independently. One slow/broken pair must never prevent the
+    // remaining configured pairs from being scanned.
+    results.push(...scanned);
     return results;
   }
 
