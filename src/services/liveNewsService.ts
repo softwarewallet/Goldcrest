@@ -104,7 +104,7 @@ const NEWS_HIGH_IMPACT_ACTIVE_WINDOW_MS = Math.max(
 );
 
 const CURRENCY_NEWS_ALIASES: Record<string, string[]> = {
-  USD: ['usd', 'u.s. dollar', 'us dollar', 'dollar', 'federal reserve', 'fed', 'fomc', 'united states', 'u.s.'],
+  USD: ['usd', 'u.s. dollar', 'us dollar', 'federal reserve', 'fed', 'fomc', 'united states', 'u.s.'],
   EUR: ['eur', 'euro', 'eurozone', 'european central bank', 'ecb'],
   GBP: ['gbp', 'pound', 'sterling', 'bank of england', 'boe', 'united kingdom', 'uk'],
   JPY: ['jpy', 'yen', 'bank of japan', 'boj', 'japan'],
