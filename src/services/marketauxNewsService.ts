@@ -620,7 +620,6 @@ export class MarketauxNewsService {
       search,
       countries: ['global'],
       publishedAfter,
-      sort: 'published_at',
       limit: Math.min(50, Math.max(20, Number(options.limit || 50)))
     });
   }
