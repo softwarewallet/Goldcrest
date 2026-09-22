@@ -233,6 +233,36 @@ try {
   assert.equal(unavailable.providerStatus?.GOOGLE_NEWS_RSS, 'ERROR');
 
   resetLiveForexNewsCacheForTest();
+
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('www.forexfactory.com/news')) {
+      return response(`
+        <html><body>
+          <a href="/news/1234567-rba-governor-speaks">RBA Governor Bullock: Supply shocks pose challenges for monetary policy</a>
+          <span>From @FirstSquawk | 5 min ago | 4 comments</span>
+          <p>RBA Governor Bullock discusses inflation and monetary policy.</p>
+          <a href="/news/1234566-us-dollar-holds-firm">US Dollar Holds Firm as Oil Eases</a>
+          <span>From forex.com | 12 min ago | 2 comments</span>
+          <p>US dollar and oil markets react to the latest Federal Reserve outlook.</p>
+        </body></html>
+      `);
+    }
+    if (url.includes('api.gdeltproject.org')) return response('<rss></rss>');
+    return response('<rss><channel></channel></rss>');
+  };
+
+  const forexFactory = await fetchLiveForexNews({ pairs: ['AUD/USD'], forceRefresh: true });
+  assert.equal(forexFactory.status, 'LIVE');
+  assert.equal(forexFactory.source, 'FOREX_FACTORY');
+  assert.equal(forexFactory.articleCount, 2);
+  assert.equal(forexFactory.providerStatus?.FOREX_FACTORY, 'LIVE');
+  assert.equal(forexFactory.providerDiagnostics?.FOREX_FACTORY?.rawArticleCount, 2);
+  assert.equal(forexFactory.providerDiagnostics?.FOREX_FACTORY?.freshArticleCount, 2);
+  assert.match(forexFactory.articles[0].url, /^https:\/\/www\.forexfactory\.com\/news\//);
+  assert.match(forexFactory.articles[0].publishedAt || '', /^20\\d\\d-/);
+
+  resetLiveForexNewsCacheForTest();
   console.log('LIVE NEWS SERVICE TEST PASSED');
 } finally {
   globalThis.fetch = originalFetch;
