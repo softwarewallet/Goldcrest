@@ -41,8 +41,14 @@ export function normalizePriceToThreeDigits(price: number): number {
  * Backward-compatible name used by existing execution code. The global
  * three-digit policy intentionally ignores broker/symbol precision.
  */
-export function normalizePriceToInstrumentDigits(price: number, _digits?: number): number {
-  return normalizePriceToThreeDigits(price);
+export function normalizePriceToInstrumentDigits(price: number, digits?: number): number {
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('INVALID_PRICE: Price must be a positive finite number.');
+  }
+  const resolvedDigits = Number.isInteger(digits) && Number(digits) >= 0
+    ? Math.min(10, Number(digits))
+    : GOLD_CREST_PRICE_DIGITS;
+  return Number(price.toFixed(resolvedDigits));
 }
 
 function getForexQuoteCurrency(symbol: string, instrument: BrokerInstrument): string {
