@@ -90,6 +90,7 @@ export class TradeValidator {
     order: OrderRequest,
     instrument?: BrokerInstrument | null
   ): TradeValidationResult {
+    const config = getSystemConfig();
     const checks = {
       emergencyHaltPassed: !killSwitch.isHalted(),
       marketCompatibilityPassed: true,
@@ -204,7 +205,6 @@ export class TradeValidator {
     // This check runs in TradeValidator because the signal-driven execution
     // pipeline must enforce the same limit even when it does not invoke the
     // HTTP broker route /api/brokers/order.
-    const config = getSystemConfig();
     const isForex = input.market === 'FOREX';
     const maxTradeValue = isForex ? config.maxTradeValueForexUsd : config.maxTradeValueIndianInr;
     const referencePrice = order.price && order.price > 0 ? order.price : input.currentPrice;
