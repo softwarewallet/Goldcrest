@@ -16,13 +16,17 @@ export interface LiveNewsArticle {
 }
 
 export type LiveNewsSource = 'ALPHA_VANTAGE' | 'MARKETAUX' | 'GDELT_DOC_2' | 'GOOGLE_NEWS_RSS' | 'NONE';
-export type LiveNewsProviderStatus = 'LIVE' | 'NO_RESULTS' | 'RATE_LIMITED' | 'UNCONFIGURED' | 'ERROR';
+export type LiveNewsProviderStatus = 'LIVE' | 'NO_RESULTS' | 'STALE' | 'RATE_LIMITED' | 'UNCONFIGURED' | 'ERROR';
 
 export interface LiveNewsProviderDiagnostic {
   status: LiveNewsProviderStatus;
   rawArticleCount: number;
   freshArticleCount: number;
+  staleArticleCount: number;
   configured: boolean;
+  latencyMs?: number;
+  latestRawArticleAt?: string | null;
+  latestFreshArticleAt?: string | null;
   error?: string;
 }
 
@@ -37,7 +41,7 @@ export interface LiveNewsSentimentSummary {
 export interface LiveNewsSnapshot {
   source: LiveNewsSource;
   fetchedAt: string;
-  status: 'LIVE' | 'NO_RESULTS' | 'UNAVAILABLE';
+  status: 'LIVE' | 'NO_RESULTS' | 'STALE' | 'UNAVAILABLE';
   articleCount: number;
   highImpactCount: number;
   elevatedCount: number;
@@ -58,6 +62,11 @@ export interface LiveNewsSnapshot {
     GDELT_DOC_2: LiveNewsProviderDiagnostic;
     GOOGLE_NEWS_RSS: LiveNewsProviderDiagnostic;
   };
+  pairRisk?: Record<string, {
+    highImpactCount: number;
+    elevatedCount: number;
+    riskLevel: 'HIGH' | 'ELEVATED' | 'LOW';
+  }>;
   sentimentSummary?: LiveNewsSentimentSummary;
   latestArticleAt?: string | null;
   error?: string;
@@ -143,11 +152,19 @@ const FAILURE_BACKOFF_MS = Math.max(
 );
 const REQUEST_TIMEOUT_MS = Math.max(
   3_000,
-  Number(process.env.GOLDCREST_NEWS_TIMEOUT_MS || 5_000)
+  Number(process.env.GOLDCREST_NEWS_TIMEOUT_MS || 8_000)
+);
+const GDELT_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.GOLDCREST_NEWS_GDELT_TIMEOUT_MS || 12_000)
+);
+const GOOGLE_NEWS_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.GOLDCREST_NEWS_GOOGLE_TIMEOUT_MS || 8_000)
 );
 const MAX_ARTICLE_AGE_MS = Math.max(
   15 * 60_000,
-  Number(process.env.GOLDCREST_NEWS_MAX_ARTICLE_AGE_MS || 48 * 60 * 60_000)
+  Number(process.env.GOLDCREST_NEWS_MAX_ARTICLE_AGE_MS || 24 * 60 * 60_000)
 );
 
 let newsCache: {
@@ -227,23 +244,28 @@ function normalizePairs(pairs: string[] | undefined): string[] {
   )].sort();
 }
 
-function buildPairQuery(pairs: string[]): string {
-  if (pairs.length === 0) return '';
-
-  const pairClauses = pairs.map(pair => {
-    const [base, quote] = pair.split('/');
-    const baseName = CURRENCY_NAMES[base] || base;
-    const quoteName = CURRENCY_NAMES[quote] || quote;
-    return `((${base} OR "${baseName}") (${quote} OR "${quoteName}"))`;
-  });
-
-  return pairClauses.join(' OR ');
-}
-
 function buildNewsQuery(pairs: string[]): string {
-  const macro = `(${MACRO_NEWS_QUERY.join(' OR ')})`;
-  const pairQuery = buildPairQuery(pairs);
-  return pairQuery ? `(${macro}) OR (${pairQuery})` : macro;
+  // GDELT supports OR blocks but does not support nesting OR blocks inside
+  // another OR block. The previous builder generated nested OR blocks,
+  // which can produce poor/empty results or slow requests.
+  // Use one flat OR block and enforce pair relevance after retrieval.
+  const terms = new Set<string>(MACRO_NEWS_QUERY);
+
+  for (const pair of pairs) {
+    const [base, quote] = pair.split('/');
+    for (const currency of [base, quote]) {
+      if (!currency) continue;
+      terms.add(currency);
+      const aliases = CURRENCY_NEWS_ALIASES[currency] || [];
+      aliases.forEach(alias => terms.add(alias));
+    }
+  }
+
+  const query = [...terms]
+    .map(term => term.includes(' ') ? `"${term}"` : term)
+    .join(' OR ');
+
+  return `(${query})`;
 }
 
 function articleText(article: LiveNewsArticle): string {
@@ -316,7 +338,7 @@ function scoreArticles(
   articles: LiveNewsArticle[],
   pairs: string[],
   now: number
-): Pick<LiveNewsSnapshot, 'highImpactCount' | 'elevatedCount' | 'riskLevel' | 'activeHighImpactCount'> {
+): Pick<LiveNewsSnapshot, 'highImpactCount' | 'elevatedCount' | 'riskLevel' | 'activeHighImpactCount' | 'pairRisk'> {
   const relevantCurrencies = getRelevantCurrencies(pairs);
   let highImpactCount = 0;
   let elevatedCount = 0;
@@ -327,6 +349,23 @@ function scoreArticles(
     else if (classification === 'ELEVATED') elevatedCount += 1;
   }
 
+  const pairRisk: NonNullable<LiveNewsSnapshot['pairRisk']> = {};
+  for (const pair of pairs) {
+    const pairCurrencies = getRelevantCurrencies([pair]);
+    let pairHigh = 0;
+    let pairElevated = 0;
+    for (const article of articles) {
+      const classification = classifyArticle(article, pairCurrencies, now);
+      if (classification === 'HIGH') pairHigh += 1;
+      else if (classification === 'ELEVATED') pairElevated += 1;
+    }
+    pairRisk[pair] = {
+      highImpactCount: pairHigh,
+      elevatedCount: pairElevated,
+      riskLevel: pairHigh > 0 ? 'HIGH' : pairElevated >= 4 ? 'ELEVATED' : 'LOW'
+    };
+  }
+
   return {
     highImpactCount,
     elevatedCount,
@@ -335,7 +374,8 @@ function scoreArticles(
       ? 'HIGH'
       : elevatedCount >= 4
         ? 'ELEVATED'
-        : 'LOW'
+        : 'LOW',
+    pairRisk
   };
 }
 
@@ -452,9 +492,9 @@ function deduplicateArticles(articles: LiveNewsArticle[]): LiveNewsArticle[] {
   return [...byKey.values()];
 }
 
-async function fetchText(url: URL): Promise<string> {
+async function fetchText(url: URL, timeoutMs = REQUEST_TIMEOUT_MS): Promise<string> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -476,7 +516,7 @@ async function fetchText(url: URL): Promise<string> {
   }
 }
 
-async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string }> {
+async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string; latencyMs?: number }> {
   const url = new URL(GDELT_ENDPOINT);
   url.searchParams.set('query', query);
   url.searchParams.set('mode', 'artlist');
@@ -485,8 +525,9 @@ async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProvider
   url.searchParams.set('maxrecords', process.env.GOLDCREST_NEWS_MAX_RECORDS || '50');
   url.searchParams.set('sort', 'datedesc');
 
+  const startedAt = Date.now();
   try {
-    const text = await fetchText(url);
+    const text = await fetchText(url, GDELT_TIMEOUT_MS);
     let payload: any;
 
     try {
@@ -498,36 +539,41 @@ async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProvider
     const articles = parseGdeltArticles(payload);
     return {
       status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
-      articles
+      articles,
+      latencyMs: Date.now() - startedAt
     };
   } catch (error) {
     return {
       status: 'ERROR',
       articles: [],
-      error: asErrorMessage(error)
+      error: asErrorMessage(error),
+      latencyMs: Date.now() - startedAt
     };
   }
 }
 
-async function fetchFromGoogleNewsRss(query: string): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string }> {
+async function fetchFromGoogleNewsRss(query: string): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string; latencyMs?: number }> {
   const url = new URL(GOOGLE_NEWS_RSS_ENDPOINT);
   url.searchParams.set('q', `${query} when:24h`);
   url.searchParams.set('hl', process.env.GOLDCREST_NEWS_LANGUAGE || 'en-US');
   url.searchParams.set('gl', process.env.GOLDCREST_NEWS_COUNTRY || 'US');
   url.searchParams.set('ceid', `${process.env.GOLDCREST_NEWS_COUNTRY || 'US'}:${(process.env.GOLDCREST_NEWS_LANGUAGE || 'en').split('-')[0]}`);
 
+  const startedAt = Date.now();
   try {
-    const xml = await fetchText(url);
+    const xml = await fetchText(url, GOOGLE_NEWS_TIMEOUT_MS);
     const articles = parseGoogleNewsRss(xml);
     return {
       status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
-      articles
+      articles,
+      latencyMs: Date.now() - startedAt
     };
   } catch (error) {
     return {
       status: 'ERROR',
       articles: [],
-      error: asErrorMessage(error)
+      error: asErrorMessage(error),
+      latencyMs: Date.now() - startedAt
     };
   }
 }
@@ -634,6 +680,27 @@ async function fetchFromAlphaVantage(pairs: string[]): Promise<{
   }
 }
 
+function latestArticleAt(articles: LiveNewsArticle[]): string | null {
+  return articles.reduce<string | null>((latest, article) => {
+    if (!article.publishedAt) return latest;
+    if (!latest) return article.publishedAt;
+    return Date.parse(article.publishedAt) > Date.parse(latest) ? article.publishedAt : latest;
+  }, null);
+}
+
+function providerEffectiveStatus(
+  rawStatus: LiveNewsProviderStatus,
+  rawCount: number,
+  freshCount: number
+): LiveNewsProviderStatus {
+  if (rawStatus === 'UNCONFIGURED' || rawStatus === 'ERROR' || rawStatus === 'RATE_LIMITED') {
+    return rawStatus;
+  }
+  if (freshCount > 0) return 'LIVE';
+  if (rawCount > 0) return 'STALE';
+  return 'NO_RESULTS';
+}
+
 function unavailableSnapshot(
   error: unknown,
   queryPairs: string[],
@@ -677,34 +744,10 @@ async function fetchLiveForexNewsInternal(
   const freshMarketaux = filterFreshArticles(marketauxRes.articles, now);
 
   const providerStatus: LiveNewsSnapshot['providerStatus'] = {
-    ALPHA_VANTAGE: avRes.status === 'UNCONFIGURED'
-      ? 'UNCONFIGURED'
-      : avRes.status === 'RATE_LIMITED'
-        ? 'RATE_LIMITED'
-        : avRes.status === 'ERROR'
-          ? 'ERROR'
-          : freshAv.length > 0
-            ? 'LIVE'
-            : 'NO_RESULTS',
-    MARKETAUX: marketauxRes.status === 'UNCONFIGURED'
-      ? 'UNCONFIGURED'
-      : marketauxRes.status === 'RATE_LIMITED'
-        ? 'RATE_LIMITED'
-        : marketauxRes.status === 'ERROR'
-          ? 'ERROR'
-          : freshMarketaux.length > 0
-            ? 'LIVE'
-            : 'NO_RESULTS',
-    GDELT_DOC_2: gdeltRes.status === 'ERROR'
-      ? 'ERROR'
-      : freshGdelt.length > 0
-        ? 'LIVE'
-        : 'NO_RESULTS',
-    GOOGLE_NEWS_RSS: googleRes.status === 'ERROR'
-      ? 'ERROR'
-      : freshGoogle.length > 0
-        ? 'LIVE'
-        : 'NO_RESULTS'
+    ALPHA_VANTAGE: providerEffectiveStatus(avRes.status, avRes.articles.length, freshAv.length),
+    MARKETAUX: providerEffectiveStatus(marketauxRes.status, marketauxRes.articles.length, freshMarketaux.length),
+    GDELT_DOC_2: providerEffectiveStatus(gdeltRes.status, gdeltRes.articles.length, freshGdelt.length),
+    GOOGLE_NEWS_RSS: providerEffectiveStatus(googleRes.status, googleRes.articles.length, freshGoogle.length)
   };
 
   const errors = [gdeltRes.error, googleRes.error, avRes.error, marketauxRes.error]
@@ -715,28 +758,44 @@ async function fetchLiveForexNewsInternal(
       status: providerStatus.ALPHA_VANTAGE || 'UNCONFIGURED',
       rawArticleCount: avRes.articles.length,
       freshArticleCount: freshAv.length,
+      staleArticleCount: Math.max(0, avRes.articles.length - freshAv.length),
       configured: alphaVantageNewsService.isConfigured(),
+      latencyMs: avRes.latencyMs,
+      latestRawArticleAt: latestArticleAt(avRes.articles),
+      latestFreshArticleAt: latestArticleAt(freshAv),
       error: avRes.error
     },
     MARKETAUX: {
       status: providerStatus.MARKETAUX || 'UNCONFIGURED',
       rawArticleCount: marketauxRes.articles.length,
       freshArticleCount: freshMarketaux.length,
+      staleArticleCount: Math.max(0, marketauxRes.articles.length - freshMarketaux.length),
       configured: marketauxNewsService.isConfigured(),
+      latencyMs: marketauxRes.latencyMs,
+      latestRawArticleAt: latestArticleAt(marketauxRes.articles),
+      latestFreshArticleAt: latestArticleAt(freshMarketaux),
       error: marketauxRes.error
     },
     GDELT_DOC_2: {
       status: providerStatus.GDELT_DOC_2,
       rawArticleCount: gdeltRes.articles.length,
       freshArticleCount: freshGdelt.length,
+      staleArticleCount: Math.max(0, gdeltRes.articles.length - freshGdelt.length),
       configured: true,
+      latencyMs: gdeltRes.latencyMs,
+      latestRawArticleAt: latestArticleAt(gdeltRes.articles),
+      latestFreshArticleAt: latestArticleAt(freshGdelt),
       error: gdeltRes.error
     },
     GOOGLE_NEWS_RSS: {
       status: providerStatus.GOOGLE_NEWS_RSS,
       rawArticleCount: googleRes.articles.length,
       freshArticleCount: freshGoogle.length,
+      staleArticleCount: Math.max(0, googleRes.articles.length - freshGoogle.length),
       configured: true,
+      latencyMs: googleRes.latencyMs,
+      latestRawArticleAt: latestArticleAt(googleRes.articles),
+      latestFreshArticleAt: latestArticleAt(freshGoogle),
       error: googleRes.error
     }
   };
@@ -749,7 +808,9 @@ async function fetchLiveForexNewsInternal(
     const activeProviders = [gdeltRes, googleRes];
     if (avRes.status !== 'UNCONFIGURED') activeProviders.push(avRes);
     if (marketauxRes.status !== 'UNCONFIGURED') activeProviders.push(marketauxRes);
-    const allErrored = activeProviders.every(result => result.status === 'ERROR');
+    const allErrored = activeProviders.length > 0
+      && activeProviders.every(result => result.status === 'ERROR');
+    const hasRawArticles = activeProviders.some(result => result.articles.length > 0);
 
     const snapshot: LiveNewsSnapshot = allErrored
       ? unavailableSnapshot(
@@ -760,10 +821,11 @@ async function fetchLiveForexNewsInternal(
       : {
           source: 'NONE',
           fetchedAt: new Date().toISOString(),
-          status: 'NO_RESULTS',
+          status: hasRawArticles ? 'STALE' : 'NO_RESULTS',
           articleCount: 0,
           highImpactCount: 0,
           elevatedCount: 0,
+          activeHighImpactCount: 0,
           riskLevel: 'LOW',
           articles: [],
           queryPairs,
@@ -817,6 +879,7 @@ async function fetchLiveForexNewsInternal(
     queryPairs,
     providerStatus,
     providerDiagnostics,
+    pairRisk: score.pairRisk,
     sentimentSummary,
     latestArticleAt,
     error: errors.length ? errors.join(' | ') : undefined
