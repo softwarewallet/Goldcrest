@@ -584,8 +584,11 @@ export class AlphaVantageNewsService {
     _pairs: string[] = ['EUR/USD', 'GBP/USD', 'USD/JPY'],
     options: Omit<AlphaVantageNewsOptions, 'tickers' | 'topics'> = {}
   ): Promise<AlphaVantageNewsSnapshot> {
-    // High relevance macroeconomic & monetary topics for global currency markets
-    const topics = ['economy_monetary', 'economy_macro', 'financial_markets'];
+    // Alpha Vantage treats comma-separated topics as an AND filter.
+    // Do not request economy_monetary + economy_macro + financial_markets together:
+    // that can collapse the feed to zero articles. Use one broad market topic and
+    // apply pair/currency relevance in the Goldcrest aggregation layer.
+    const topics = 'financial_markets';
 
     return this.fetchNewsSentiment({
       ...options,
