@@ -8,7 +8,7 @@ export interface SystemConfig {
   dataStatus: 'LIVE' | 'DELAYED' | 'STALE' | 'UNAVAILABLE';
   modelStatus: string;
   researchStatus: 'CLOSED';
-  cTraderApiMode: 'LIVE';
+  cTraderApiMode: 'LIVE' | 'DEMO';
   selectedCtraderAccountId?: string;
   selectedCtraderAccountCurrency?: string;
   selectedCtraderAccountLabel?: string;
@@ -222,6 +222,7 @@ export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig
   return { ...activeConfig };
 }
 
-export function getCTraderApiMode(): 'LIVE' {
-  return 'LIVE';
+export function getCTraderApiMode(): 'LIVE' | 'DEMO' {
+  loadPersistedSystemConfig();
+  return activeConfig.cTraderApiMode === 'DEMO' ? 'DEMO' : 'LIVE';
 }
