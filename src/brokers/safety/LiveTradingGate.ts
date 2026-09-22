@@ -16,6 +16,8 @@ export interface LiveGateEvaluationParams {
   maxAllowedExposure: number;
   activePositionsCount: number;
   maxOpenPositions: number;
+  activePairPositionsCount: number;
+  maxPairPositions: number;
   /** Maximum acceptable age of the authoritative broker quote. Goldcrest live policy is fixed at 30 seconds. */
 }
 
@@ -176,21 +178,36 @@ export class LiveTradingGate {
       });
     }
 
-    // Check 13: Duplicate-position check passed
+    // Check 13: Per-pair simultaneous-position limit.
+    // Multiple positions on the same Forex pair are intentionally allowed up
+    // to the operator-configured Auto Live per-pair limit. A single existing
+    // position must NOT automatically reject a second/third/fourth trade.
     let duplicatePositionCheckPassed = true;
     try {
       const positions = await adapter.getPositions();
-      const duplicate = positions.find(p => p.symbol === params.order.symbol && p.side === params.order.side);
-      if (duplicate) {
-        duplicatePositionCheckPassed = false;
-        failedReasons.push(`Condition 13 Failed: Active live position already exists for ${params.order.symbol} (${params.order.side}).`);
+      const authoritativePairPositionsCount = positions.filter(
+        position => String(position.symbol || '').toUpperCase() === String(params.order.symbol || '').toUpperCase()
+      ).length;
+      const pairPositionLimit = Number(params.maxPairPositions);
+      const pairLimitCount = Number.isFinite(authoritativePairPositionsCount)
+        ? authoritativePairPositionsCount
+        : params.activePairPositionsCount;
+
+      duplicatePositionCheckPassed = Number.isInteger(pairPositionLimit)
+        && pairPositionLimit > 0
+        && pairLimitCount < pairPositionLimit;
+
+      if (!duplicatePositionCheckPassed) {
+        failedReasons.push(
+          `Condition 13 Failed: Maximum simultaneous live trades for ${params.order.symbol} (${pairPositionLimit}) reached. Current positions: ${pairLimitCount}.`
+        );
       }
     } catch {
       duplicatePositionCheckPassed = false;
       failedReasons.push('Condition 13 Failed: Unable to verify existing positions.');
     }
 
-    // Check 13B: Maximum number of simultaneous live positions.
+    // Check 13B: Maximum number of simultaneous live positions across the account.
     const maxOpenPositionsCheckPassed = params.activePositionsCount < params.maxOpenPositions;
     if (!maxOpenPositionsCheckPassed) {
       failedReasons.push(`Condition 13B Failed: Maximum open live positions (${params.maxOpenPositions}) reached.`);
