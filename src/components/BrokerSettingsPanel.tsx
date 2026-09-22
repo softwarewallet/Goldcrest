@@ -490,7 +490,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
           return (
             <div key={broker} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2"><Server className="w-4 h-4 text-cyan-400" /><h3 className="text-sm font-bold text-white">{isC ? 'cTrader API' : '5paisa'} {isC ? `(${cTraderApiMode})` : 'LIVE'}</h3></div>
+                <div className="flex items-center gap-2"><Server className="w-4 h-4 text-cyan-400" /><h3 className="text-sm font-bold text-white">{isC ? 'cTrader API' : '5paisa'} {isC ? '(LIVE)' : 'LIVE'}</h3></div>
                 <span className={s?.configured ? 'text-emerald-400 text-[10px] font-bold' : 'text-amber-400 text-[10px] font-bold'}>{s?.configured ? 'CONFIGURED' : 'NOT CONFIGURED'}</span>
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
