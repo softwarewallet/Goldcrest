@@ -89,17 +89,6 @@ const MACRO_NEWS_QUERY = [
   'war', 'conflict', 'emergency', '"central bank"'
 ];
 
-const CURRENCY_NAMES: Record<string, string> = {
-  USD: 'dollar',
-  EUR: 'euro',
-  GBP: 'pound',
-  JPY: 'yen',
-  CHF: 'franc',
-  AUD: 'australian dollar',
-  NZD: 'new zealand dollar',
-  CAD: 'canadian dollar'
-};
-
 const HIGH_IMPACT_EVENT_PATTERNS: RegExp[] = [
   /\bfomc\b.*\b(rate decision|statement|minutes|rate|raises?|cuts?|hikes?|holds?)\b/i,
   /\bfederal reserve\b.*\b(rate|decision|meeting|cut|hike|hold)\b/i,
