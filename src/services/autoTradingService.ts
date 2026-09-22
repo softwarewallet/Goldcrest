@@ -576,18 +576,23 @@ class AutoTradingService {
         return;
       }
 
-      if (cycleNews.riskLevel === 'HIGH') {
-        this.lastActions = getConfiguredAutoForexPairs().map(pair => ({
-          pair,
-          result: 'BLOCKED',
-          reason: 'An active, pair-relevant high-impact news event is inside the configured blackout window; new autonomous entries are paused for this cycle.'
-        }));
-        this.lastCycleResult = 'Auto Live cycle blocked: an active pair-relevant high-impact news event is inside the blackout window. No new trade is submitted.';
-        liveRuntimeLog('WARN', 'AUTO_TRADING_BLOCKED_HIGH_IMPACT_NEWS', {
+      const configuredPairs = getConfiguredAutoForexPairs();
+      const blockedNewsPairs = configuredPairs.filter(pair => {
+        const pairRisk = cycleNews.pairRisk?.[pair];
+        // Backward-compatible fallback for snapshots produced by an older
+        // process without pairRisk diagnostics.
+        return pairRisk
+          ? pairRisk.riskLevel === 'HIGH'
+          : cycleNews.riskLevel === 'HIGH';
+      });
+
+      if (blockedNewsPairs.length > 0) {
+        liveRuntimeLog('WARN', 'AUTO_TRADING_PAIR_NEWS_BLOCKS', {
+          blockedPairs: blockedNewsPairs,
           articleCount: cycleNews.articleCount,
-          highImpactCount: cycleNews.highImpactCount
+          highImpactCount: cycleNews.highImpactCount,
+          pairRisk: cycleNews.pairRisk
         });
-        return;
       }
 
       const session = getForexSessionState();
@@ -598,7 +603,28 @@ class AutoTradingService {
         return;
       }
 
-      for (const pair of getConfiguredAutoForexPairs()) {
+      for (const pair of configuredPairs) {
+        const pairRisk = cycleNews.pairRisk?.[pair];
+        const highImpactBlocked = pairRisk
+          ? pairRisk.riskLevel === 'HIGH'
+          : cycleNews.riskLevel === 'HIGH';
+
+        if (highImpactBlocked) {
+          const reason = 'Active pair-relevant high-impact news is inside the configured blackout window for ' + pair + '.';
+          this.lastActions.push({
+            pair,
+            result: 'BLOCKED',
+            reason
+          });
+          liveRuntimeLog('WARN', 'AUTO_TRADING_PAIR_BLOCKED_NEWS', {
+            pair,
+            signalId: undefined,
+            reason,
+            pairRisk: pairRisk || null
+          });
+          continue;
+        }
+
         await this.evaluatePair(pair);
       }
 
