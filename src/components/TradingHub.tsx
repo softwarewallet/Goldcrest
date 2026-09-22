@@ -270,12 +270,18 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     fetchRealPositions();
     fetchRealSignals();
 
-    const interval = setInterval(() => {
+    const positionsInterval = setInterval(() => {
       fetchRealPositions(true);
+    }, 10000);
+
+    const signalsInterval = setInterval(() => {
       fetchRealSignals(true);
     }, 30000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(positionsInterval);
+      clearInterval(signalsInterval);
+    };
   }, [fetchRealPositions, fetchRealSignals]);
 
   // Keep the displayed record-age counter moving once per second without refetching.
