@@ -11,7 +11,7 @@ import { autoTradeReadinessService } from '../brokers/safety/AutoTradeReadiness'
 import { getSystemConfig } from './configService';
 import { killSwitch } from '../brokers/safety/KillSwitch';
 import { BrokerAdapter, NormalizedQuote, OrderRequest } from '../brokers/types';
-import { liveRuntimeLog } from './liveRuntimeLog';
+import { liveRuntimeLog, tradeAuditLog } from './liveRuntimeLog';
 import { sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
 
 const LIVE_QUOTE_MAX_AGE_MS = 30_000;
@@ -229,6 +229,7 @@ class AutoTradingService {
   private setExecutionStatus(update: Partial<AutoTradingExecutionStatus> & Pick<AutoTradingExecutionStatus, 'stage' | 'message'>): void {
     this.currentExecution = { ...this.currentExecution, ...update, updatedAt: Date.now() };
     liveRuntimeLog('INFO', 'AUTO_TRADING_EXECUTION_STAGE', this.currentExecution);
+    tradeAuditLog('EXECUTION_STAGE', this.currentExecution);
   }
 
   private finishExecution(stage: 'TRADE_EXECUTED' | 'REJECTED', message: string, extra: Partial<AutoTradingExecutionStatus> = {}): void {
@@ -544,7 +545,15 @@ class AutoTradingService {
 
     this.lastCycleAt = Date.now();
     this.lastActions = [];
+    this.setExecutionStatus({
+      stage: 'SCANNING_MARKET',
+      pair: null,
+      side: null,
+      signalId: null,
+      message: 'Scanning configured Forex pairs for executable signals.'
+    });
     liveRuntimeLog('INFO', 'AUTO_TRADING_CYCLE_STARTED', { timestamp: this.lastCycleAt, pairs: getConfiguredAutoForexPairs() });
+    tradeAuditLog('CYCLE_STARTED', { timestamp: this.lastCycleAt, pairs: getConfiguredAutoForexPairs() });
 
     try {
       if (killSwitch.isHalted()) {
@@ -659,8 +668,26 @@ class AutoTradingService {
       // scan bottleneck without weakening account-level safety gates.
       await Promise.all(pairsToEvaluate.map(pair => this.evaluatePair(pair)));
 
-      this.lastCycleResult = 'Cycle completed.';
+      const executed = this.lastActions.find(action => action.result === 'EXECUTED');
+      if (!executed) {
+        const reasons = this.lastActions
+          .filter(action => action.reason)
+          .map(action => `${action.pair}: ${action.reason}`)
+          .slice(-8);
+        const message = reasons.length
+          ? `No trade executed this cycle. ${reasons.join(' | ')}`
+          : 'No trade executed this cycle; see TradeLog for pair-level decisions.';
+        this.finishExecution('REJECTED', message, {
+          pair: null,
+          side: null,
+          signalId: null
+        });
+      }
+      this.lastCycleResult = executed
+        ? `Cycle completed. Executed ${executed.pair}.`
+        : 'Cycle completed. No trade executed.';
       liveRuntimeLog('INFO', 'AUTO_TRADING_CYCLE_COMPLETED', { actions: this.lastActions });
+      tradeAuditLog('CYCLE_COMPLETED', { actions: this.lastActions, result: this.lastCycleResult });
     } catch (error: any) {
       this.lastCycleResult = error?.message || String(error);
       liveRuntimeLog('ERROR', 'AUTO_TRADING_CYCLE_ERROR', { error: this.lastCycleResult });
@@ -699,7 +726,8 @@ class AutoTradingService {
           side: signal.direction === 'BUY' || signal.direction === 'SELL' ? signal.direction : null,
           signalId: signal.id
         });
-        return;
+                tradeAuditLog('NO_TRADE', { pair, signalId: signal.id, direction: signal.direction, score: signal.score, reason });
+return;
       }
 
       return this.withExecutionLock(async () => {
@@ -714,7 +742,8 @@ class AutoTradingService {
           side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
           signalId: signal.id
         });
-        return;
+                tradeAuditLog('SIGNAL_FILTERED', { pair, signalId: signal.id, score: signal.score, reason });
+return;
       }
 
       const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
@@ -727,7 +756,8 @@ class AutoTradingService {
           side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
           signalId: signal.id
         });
-        return;
+                tradeAuditLog('QUOTE_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
+return;
       }
 
       const plan = signal.tradePlan;
@@ -741,7 +771,8 @@ class AutoTradingService {
           side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
           signalId: signal.id
         });
-        return;
+                tradeAuditLog('ENTRY_WAITING', { pair, signalId: signal.id, score: signal.score, reason });
+return;
       }
 
       const account = await adapter.getAccount();
@@ -753,7 +784,8 @@ class AutoTradingService {
           side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
           signalId: signal.id
         });
-        return;
+                tradeAuditLog('ACCOUNT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
+return;
       }
 
       const instrument = await adapter.getInstrument(pair);
@@ -765,7 +797,8 @@ class AutoTradingService {
           side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
           signalId: signal.id
         });
-        return;
+                tradeAuditLog('INSTRUMENT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
+return;
       }
 
       const maxTradesPerPair = Math.max(1, Math.min(20, Math.floor(Number(config.autoLiveMaxTradesPerPair))));
@@ -788,7 +821,8 @@ class AutoTradingService {
           side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
           signalId: signal.id
         });
-        return;
+                tradeAuditLog('PAIR_LIMIT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
+return;
       }
 
       const riskBudget = Math.max(0, Number(account.balance || 0) * (Number(getSystemConfig().defaultRiskPct) / 100));
@@ -801,7 +835,8 @@ class AutoTradingService {
           side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
           signalId: signal.id
         });
-        return;
+                tradeAuditLog('RISK_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
+return;
       }
 
       const riskQuantity = riskBudget / stopDistance;
