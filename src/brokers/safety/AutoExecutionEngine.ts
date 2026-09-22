@@ -237,7 +237,8 @@ class AutoExecutionEngine {
   async processSignal(
     signalInput: SignalValidationInput,
     order: OrderRequest,
-    gateParams: Omit<LiveGateEvaluationParams, 'order'>
+    gateParams: Omit<LiveGateEvaluationParams, 'order'>,
+    onReadyToSubmit?: () => void
   ): Promise<{ executed: boolean; order?: NormalizedOrder; reason?: string; code?: string }> {
     const env = brokerRegistry.getEnvironment();
     const adapter = brokerRegistry.getAdapterForMarket(order.market);
@@ -403,6 +404,8 @@ class AutoExecutionEngine {
         };
       }
 
+      // This is the last guarded application-level point before the live broker API call.
+      onReadyToSubmit?.();
       const placedOrder = await autonomousPlacer.call(adapter, order);
 
       if (placedOrder.status === 'FILLED') {
