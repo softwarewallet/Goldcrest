@@ -237,6 +237,7 @@ export async function fetchLiveCTraderAccountDetails(
     };
 
     let traderData: any = null;
+    let reconcilePositions: any[] = [];
 
     ws.on('open', () => {
       ws.send(JSON.stringify({
@@ -318,8 +319,7 @@ export async function fetchLiveCTraderAccountDetails(
           // broker-calculated unrealized P&L in deposit currency. Use those broker
           // values instead of looking for non-existent margin/equity fields on
           // ProtoOATrader or trying to infer P&L from reconcile position objects.
-          const reconcilePositions = Array.isArray(msg.payload?.position) ? msg.payload.position : [];
-          (msg as any).__reconcilePositions = reconcilePositions;
+          reconcilePositions = Array.isArray(msg.payload?.position) ? msg.payload.position : [];
           const usedMargin = reconcilePositions.reduce((sum: number, position: any) => {
             const raw = Number(position?.usedMargin ?? 0);
             if (!Number.isFinite(raw) || raw < 0) return sum;
@@ -369,9 +369,6 @@ export async function fetchLiveCTraderAccountDetails(
 
           // Used margin was calculated from the authoritative ProtoOAPosition
           // objects received immediately before this P&L response.
-          const reconcilePositions = Array.isArray((msg as any).__reconcilePositions)
-            ? (msg as any).__reconcilePositions
-            : [];
           const usedMargin = reconcilePositions.reduce((sum: number, position: any) => {
             const raw = Number(position?.usedMargin ?? 0);
             if (!Number.isFinite(raw) || raw < 0) return sum;
