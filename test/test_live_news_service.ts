@@ -92,6 +92,20 @@ try {
   globalThis.fetch = async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('api.gdeltproject.org')) {
+      return response('Please limit requests to one every 5 seconds.');
+    }
+    return response('<rss><channel></channel></rss>');
+  };
+
+  const rateLimited = await fetchLiveForexNews({ pairs: ['EUR/USD'], forceRefresh: true });
+  assert.equal(rateLimited.providerStatus?.GDELT_DOC_2, 'RATE_LIMITED');
+  assert.match(rateLimited.providerDiagnostics?.GDELT_DOC_2.error || '', /rate limited/i);
+
+  resetLiveForexNewsCacheForTest();
+
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('api.gdeltproject.org')) {
       return response(JSON.stringify({
         articles: [
           {
