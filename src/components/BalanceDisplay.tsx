@@ -106,7 +106,7 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = () => {
   };
   useEffect(() => {
     fetchBalances();
-    const interval = setInterval(fetchBalances, 60000);
+    const interval = setInterval(fetchBalances, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -188,15 +188,30 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = () => {
     const label = broker === 'CTRADER' ? 'cTrader' : '5paisa';
     const market = broker === 'CTRADER' ? 'FOREX' : 'INDIAN MARKETS';
 
+    const metric = (
+      title: string,
+      value: number | undefined,
+      tone: string = 'text-white'
+    ) => (
+      <div className="min-w-0">
+        <div className="flex items-center gap-1 text-[9px] text-slate-500">
+          <span>{title}</span>
+        </div>
+        <div className={`mt-0.5 text-[12px] font-semibold font-mono ${tone}`}>
+          {formatCurrency(value, account?.currency)}
+        </div>
+      </div>
+    );
+
     return (
-      <div key={broker} id={`balance_display_${broker.toLowerCase()}`} className="flex flex-col bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg py-[5px] px-2.5 min-w-[210px] shadow-sm font-mono">
-        <div className="flex items-start justify-between mb-1">
-          <div className="flex items-center space-x-1.5 mt-0.5">
+      <div key={broker} id={`balance_display_${broker.toLowerCase()}`} className="flex flex-col bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg py-2 px-3 min-w-[330px] shadow-sm font-mono">
+        <div className="flex items-start justify-between mb-1.5">
+          <div className="flex items-center gap-1.5">
             <span className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-amber-400 animate-pulse' : account?.connectionStatus === 'CONNECTED' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
             <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">{label}</span>
             <span className="text-[8px] px-1 rounded bg-slate-800 text-slate-500 border border-slate-700">{market}</span>
           </div>
-          <div className="flex items-center space-x-1.5 ml-2">
+          <div className="flex items-center gap-1.5">
             <Wallet className="w-3.5 h-3.5 text-emerald-500" />
             <button
               type="button"
@@ -213,21 +228,18 @@ export const BalanceDisplay: React.FC<BalanceDisplayProps> = () => {
 
         {account ? (
           <>
-            <div className="flex items-baseline space-x-1.5">
-              <div className="text-lg font-bold text-white tracking-tight">{formatCurrency(account.balance, account.currency)}</div>
-              <div className="text-[9px] font-bold text-slate-500">{account.currency}</div>
+            <div className="grid grid-cols-4 gap-2 border-t border-slate-800/60 pt-2">
+              {metric('Balance', account.balance)}
+              {metric('Equity', account.equity)}
+              {metric('Used margin', account.usedMargin, 'text-amber-300')}
+              {metric('Free margin', account.freeMargin ?? account.availableMargin, 'text-emerald-300')}
             </div>
-            <div className="mt-1 pt-1 border-t border-slate-800/60 text-[9px] text-slate-400 space-y-0.5">
-              <div className="flex justify-between">
-                <span>Equity <strong className="text-slate-200">{formatCurrency(account.equity, account.currency)}</strong></span>
-                <span>Free <strong className="text-slate-200">{formatCurrency(account.availableMargin ?? account.freeMargin, account.currency)}</strong></span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="truncate max-w-[105px]" title={account.accountId}>A/C {account.accountId}</span>
-                <span className={isStale ? 'text-amber-400 font-bold' : 'text-slate-500'}>
-                  <Clock className="inline w-2.5 h-2.5 mr-0.5" />{isStale ? 'STALE' : timeAgo(updated)}
-                </span>
-              </div>
+            <div className="mt-1.5 pt-1.5 border-t border-slate-800/60 flex items-center justify-between text-[9px] text-slate-500">
+              <span className="truncate max-w-[145px]" title={account.accountId}>A/C {account.accountId}</span>
+              <span>{account.currency}</span>
+              <span className={isStale ? 'text-amber-400 font-bold' : 'text-slate-500'}>
+                <Clock className="inline w-2.5 h-2.5 mr-0.5" />{isStale ? 'STALE' : timeAgo(updated)}
+              </span>
             </div>
           </>
         ) : (
