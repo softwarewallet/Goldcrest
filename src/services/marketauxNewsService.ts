@@ -151,12 +151,6 @@ export class MarketauxNewsService {
         const match = content.match(/^MARKETAUX_API_KEY\s*=\s*["']?([^"'\r\n]+)["']?/m);
         if (match && match[1]?.trim()) return match[1].trim();
       }
-      const envExPath = path.join(process.cwd(), '.env.example');
-      if (fs.existsSync(envExPath)) {
-        const content = fs.readFileSync(envExPath, 'utf8');
-        const match = content.match(/^MARKETAUX_API_KEY\s*=\s*["']?([^"'\r\n]+)["']?/m);
-        if (match && match[1]?.trim()) return match[1].trim();
-      }
     } catch {
       // ignore
     }
@@ -318,7 +312,7 @@ export class MarketauxNewsService {
     }
 
     // Check rate limit backoff
-    if (now < this.rateLimitedUntil && !options.forceRefresh) {
+    if (now < this.rateLimitedUntil) {
       return {
         status: 'RATE_LIMITED',
         source: 'MARKETAUX',
@@ -617,7 +611,7 @@ export class MarketauxNewsService {
     // those filters together, which can become an unnecessarily narrow AND query.
     // Fetch a fresh global macro/FX news stream and let Goldcrest perform the
     // configured-pair relevance test locally.
-    const search = 'Federal Reserve OR ECB OR Bank of Japan OR Bank of England OR RBA OR Bank of Canada OR SNB OR interest rate OR inflation OR forex OR currency OR central bank OR FOMC OR CPI OR NFP';
+    const search = '"Federal Reserve"|"European Central Bank"|"Bank of Japan"|"Bank of England"|RBA|"Bank of Canada"|SNB|"interest rate"|inflation|forex|currency|"central bank"|FOMC|CPI|NFP';
 
     const publishedAfter = new Date(Date.now() - 24 * 60 * 60_000).toISOString().slice(0, 16);
 
