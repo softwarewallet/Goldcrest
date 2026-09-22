@@ -69,14 +69,19 @@ export class TradeValidator {
   }
 
   isDuplicatePosition(symbol: string, side: string, strategyId?: string, signalId?: string): { isDuplicate: boolean; reason?: string } {
-    for (const [_, pos] of this.activeStrategyPositions.entries()) {
-      if (pos.symbol === symbol && pos.side === side) {
-        return {
-          isDuplicate: true,
-          reason: `Active ${side} position already exists for ${symbol}`
-        };
-      }
+    const config = getSystemConfig();
+    const maxTradesPerPair = Number(config.autoLiveMaxTradesPerPair);
+    const samePairCount = [...this.activeStrategyPositions.values()]
+      .filter(pos => String(pos.symbol || '').toUpperCase() === String(symbol || '').toUpperCase())
+      .length;
+
+    if (Number.isInteger(maxTradesPerPair) && maxTradesPerPair > 0 && samePairCount >= maxTradesPerPair) {
+      return {
+        isDuplicate: true,
+        reason: `Maximum simultaneous trades for ${symbol} reached (${samePairCount}/${maxTradesPerPair}).`
+      };
     }
+
     return { isDuplicate: false };
   }
 
@@ -131,16 +136,21 @@ export class TradeValidator {
       };
     }
 
-    // 4. Duplicate Trade Protection (Requirement 28)
-    for (const [_, pos] of this.activeStrategyPositions.entries()) {
-      if (pos.symbol === input.symbol && pos.side === input.side) {
-        checks.duplicateCheckPassed = false;
-        return {
-          valid: false,
-          rejectionReason: `DUPLICATE TRADE BLOCKED: An active ${pos.side} position for ${input.symbol} already exists in strategy portfolio.`,
-          checks
-        };
-      }
+    // 4. Per-pair simultaneous trade limit.
+    // Multiple trades on the same pair are allowed while the operator-configured
+    // Auto Live limit has not been reached. The authoritative broker position
+    // check in LiveTradingGate performs the final server-side enforcement.
+    const maxTradesPerPair = Number(config.autoLiveMaxTradesPerPair);
+    const samePairPositions = [...this.activeStrategyPositions.values()]
+      .filter(pos => String(pos.symbol || '').toUpperCase() === String(input.symbol || '').toUpperCase())
+      .length;
+    if (!Number.isInteger(maxTradesPerPair) || maxTradesPerPair < 1 || samePairPositions >= maxTradesPerPair) {
+      checks.duplicateCheckPassed = false;
+      return {
+        valid: false,
+        rejectionReason: `PAIR_POSITION_LIMIT: ${input.symbol} has ${samePairPositions} tracked position(s); configured Auto Live maximum is ${maxTradesPerPair}.`,
+        checks
+      };
     }
 
     // 5. Risk / Reward and Stop Loss validation
