@@ -100,6 +100,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [isLoadingSignals, setIsLoadingSignals] = useState<boolean>(true);
   const [signalsAgeNow, setSignalsAgeNow] = useState<number>(Date.now());
   const [signalsScanCompletedAt, setSignalsScanCompletedAt] = useState<number | null>(null);
+  const [signalScanStats, setSignalScanStats] = useState({ total: 0, actionable: 0, noTrade: 0, errors: 0 });
 
   const [logs, setLogs] = useState<TerminalLog[]>([
     {
@@ -213,7 +214,11 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       if (res.ok) {
         const data = await safeParseJson(res);
         if (Array.isArray(data)) {
-          setPlannedTrades(data.filter((signal: RealSignal) => String(signal.direction || '').toUpperCase() !== 'NO_TRADE'));
+          const actionable = data.filter((signal: RealSignal) => ['BUY', 'SELL'].includes(String(signal.direction || '').toUpperCase()));
+          const noTrade = data.filter((signal: RealSignal) => String(signal.direction || '').toUpperCase() === 'NO_TRADE');
+          const errors = data.filter((signal: RealSignal) => !signal || !signal.direction || String(signal.status || '').toUpperCase() === 'ERROR');
+          setSignalScanStats({ total: data.length, actionable: actionable.length, noTrade: noTrade.length, errors: errors.length });
+          setPlannedTrades(actionable);
           // Start the freshness counter only after the complete signal scan/fetch has finished.
           // This measures scanner-result age, not the timestamp embedded in an individual signal.
           setSignalsScanCompletedAt(Date.now());
@@ -676,7 +681,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
       {activeTab === 'signals' && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-          <div className="flex flex-wrap justify-between gap-2"><div><div className="text-sm font-bold text-white font-mono">Actionable Signals</div><div className="text-[10px] text-slate-500">NO_TRADE records hidden · Auto Live minimum score: <span className="text-cyan-300">{autoStatus?.minSignalScore ?? '—'}</span></div></div><div className="flex gap-2 items-center"><span className="text-[11px] font-mono text-slate-400">Scan Age: <b className="text-cyan-300">{signalsScanCompletedAt ? formatAge(signalsScanCompletedAt) : 'N/A'}</b></span><button type="button" onClick={() => fetchRealSignals(false)} disabled={isLoadingSignals} className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">Refresh</button></div></div>
+          <div className="flex flex-wrap justify-between gap-2"><div><div className="text-sm font-bold text-white font-mono">Actionable Signals</div><div className="text-[10px] text-slate-500">Scanned: <span className="text-cyan-300">{signalScanStats.total}</span> · Actionable: <span className="text-emerald-300">{signalScanStats.actionable}</span> · NO_TRADE: <span className="text-slate-400">{signalScanStats.noTrade}</span> · Errors: <span className="text-rose-300">{signalScanStats.errors}</span> · Auto Live minimum score: <span className="text-cyan-300">{autoStatus?.minSignalScore ?? '—'}</span></div></div><div className="flex gap-2 items-center"><span className="text-[11px] font-mono text-slate-400">Scan Age: <b className="text-cyan-300">{signalsScanCompletedAt ? formatAge(signalsScanCompletedAt) : 'N/A'}</b></span><button type="button" onClick={() => fetchRealSignals(false)} disabled={isLoadingSignals} className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">Refresh</button></div></div>
           {triggerNotification && <div className={"p-3 rounded-lg border text-xs font-mono " + (triggerNotification.type === 'error' ? "border-rose-800 bg-rose-950/40 text-rose-300" : "border-emerald-800 bg-emerald-950/40 text-emerald-300")}>{triggerNotification.message}</div>}
           <div className="overflow-x-auto"><table className="w-full text-xs font-mono"><thead><tr className="text-slate-500 border-b border-slate-800"><th className="py-2 text-left">Market</th><th>Symbol</th><th>Side</th><th>Strategy</th><th className="text-right">SL</th><th className="text-right">TP</th><th>Score</th><th>ML</th><th>Age</th><th>Action</th></tr></thead>
           <tbody>{visiblePlannedTrades.map(signal => <tr key={signal.id} className="border-b border-slate-800/60"><td className="py-2 text-slate-500">{signal.market}</td><td className="text-white font-bold">{signal.instrument}</td><td className={signal.direction === 'BUY' ? "text-emerald-400" : "text-rose-400"}>{signal.direction}</td><td className="max-w-xs truncate" title={signal.reasons?.join(', ') || signal.strategy}>{signal.strategy}</td><td className="text-right text-rose-300">{signal.stopLoss?.toLocaleString() || 'N/A'}</td><td className="text-right text-emerald-300">{signal.target1?.toLocaleString() || 'N/A'}</td><td className="text-center">{signal.score}</td><td className="text-center text-emerald-400">{(signal.mlProbability * 100).toFixed(0)}%</td><td className="text-center text-cyan-300">{formatAge(signalsScanCompletedAt)}</td><td className="text-center"><button type="button" onClick={() => triggerSignalExecution(signal)} disabled={triggeringSignalId === signal.id} className="text-[10px] px-2.5 py-1 rounded bg-emerald-700 text-white disabled:opacity-50">{triggeringSignalId === signal.id ? 'Triggering...' : 'Trigger Now'}</button></td></tr>)}</tbody></table></div>
