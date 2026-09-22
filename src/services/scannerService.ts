@@ -5,6 +5,7 @@ import { LiveForexProvider } from '../markets/forex/provider';
 import { getForexPairConfig } from '../markets/forex/instruments';
 import { ForexSignalEngine } from '../markets/forex/signalEngine';
 import { getSystemConfig } from './configService';
+import { liveRuntimeLog } from './liveRuntimeLog';
 
 export interface OptionsOpportunityCandidate {
   id: string;
@@ -161,6 +162,28 @@ export class ScannerService {
     // requests fail independently. One slow/broken pair must never prevent the
     // remaining configured pairs from being scanned.
     results.push(...scanned);
+
+    const actionableCount = scanned.filter(item =>
+      item.signal && ['BUY', 'SELL'].includes(item.signal.direction)
+    ).length;
+    const noTradeCount = scanned.filter(item =>
+      item.signal && item.signal.direction === 'NO_TRADE'
+    ).length;
+    const errorCount = scanned.filter(item => !item.signal || item.dataStatus !== 'LIVE').length;
+
+    liveRuntimeLog('INFO', 'FOREX_SCANNER_COMPLETED', {
+      configuredPairCount: selected.length,
+      configuredPairs: selected.map(pair => pair.symbol),
+      scannedPairCount: scanned.length,
+      actionableCount,
+      noTradeCount,
+      errorCount,
+      scanConcurrency: FOREX_SCAN_CONCURRENCY,
+      failedPairs: scanned
+        .filter(item => !item.signal)
+        .map(item => ({ symbol: item.symbol, error: item.error }))
+    });
+
     return results;
   }
 
