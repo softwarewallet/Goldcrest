@@ -1115,7 +1115,9 @@ async function fetchLiveForexNewsInternal(
     pairRisk: score.pairRisk,
     sentimentSummary,
     latestArticleAt: latestSnapshotArticleAt,
-    error: errors.length ? errors.join(' | ') : undefined
+    // Individual provider failures remain visible in the provider matrix. Do not
+    // mark the whole engine as errored when at least one provider supplied fresh data.
+    error: articles.length > 0 ? undefined : (errors.length ? errors.join(' | ') : undefined)
   };
 
   newsCache = {
