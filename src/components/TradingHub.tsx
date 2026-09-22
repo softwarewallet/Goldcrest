@@ -127,6 +127,32 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   // Triggering State & Notifications
   const [triggeringSignalId, setTriggeringSignalId] = useState<string | null>(null);
   const [triggerNotification, setTriggerNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  type AutoExecutionStage = 'IDLE' | 'SCANNING_MARKET' | 'ANALYZING_SIGNAL' | 'PREPARING_ORDER' | 'SAFETY_GATE' | 'SUBMITTING_ORDER' | 'TRADE_EXECUTED' | 'REJECTED';
+  interface AutoTradingStatusSnapshot {
+    state: 'STOPPED' | 'PREPARING' | 'RUNNING' | 'BLOCKED';
+    autonomousPermission: boolean;
+    lastCycleAt: number | null;
+    lastCycleResult: string | null;
+    currentExecution: {
+      stage: AutoExecutionStage;
+      pair: string | null;
+      side: 'BUY' | 'SELL' | null;
+      signalId: string | null;
+      message: string;
+      updatedAt: number;
+    };
+    lastExecution: {
+      stage: AutoExecutionStage;
+      pair: string | null;
+      side: 'BUY' | 'SELL' | null;
+      signalId: string | null;
+      message: string;
+      updatedAt: number;
+    } | null;
+  }
+  const [activeTab, setActiveTab] = useState<'cockpit' | 'positions' | 'signals' | 'execution' | 'controls'>('cockpit');
+  const [autoStatus, setAutoStatus] = useState<AutoTradingStatusSnapshot | null>(null);
+  const [autoStatusError, setAutoStatusError] = useState<string | null>(null);
 
   // Helper to append telemetry console logs
   const addLog = useCallback((type: 'info' | 'success' | 'error' | 'warning' | 'nlp', message: string) => {
@@ -217,6 +243,27 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       addLog('error', `Failed to sync autonomous status with system: ${err.message}`);
     }
   }, [addLog]);
+
+  // Poll the authoritative Auto Live lifecycle so the cockpit reflects the server-side execution state.
+  useEffect(() => {
+    let mounted = true;
+    const fetchAutoStatus = async () => {
+      try {
+        const res = await fetch('/api/brokers/controls', { cache: 'no-store' });
+        if (!res.ok) throw new Error('Auto Live status endpoint returned HTTP ' + res.status);
+        const data = await safeParseJson(res);
+        if (mounted && data?.autoTrading) {
+          setAutoStatus(data.autoTrading);
+          setAutoStatusError(null);
+        }
+      } catch (err: any) {
+        if (mounted) setAutoStatusError(err?.message || 'Auto Live status unavailable');
+      }
+    };
+    void fetchAutoStatus();
+    const statusTimer = setInterval(fetchAutoStatus, 2000);
+    return () => { mounted = false; clearInterval(statusTimer); };
+  }, [safeParseJson]);
 
   // Initial load and polling setup
   useEffect(() => {
@@ -493,694 +540,164 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     }
   };
 
-  return (
-    <div id="unified_trading_hub" className="space-y-6">
-      {/* 3. MAIN INTERACTIVE CONTROLS */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* COLUMN A: AI AUTONOMOUS EXECUTION CONTROLLER */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Cpu className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm font-bold text-white font-mono">Auto-Trading NLP Instruction Panel</h3>
-            </div>
-            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-              Define target trade instructions, operational strategies, and quantitative parameters. The Goldcrest core engine evaluates signals continuously and dispatches trades autonomously based on these parameters.
-            </p>
-
-            <form onSubmit={handleSaveAutoInstructions} className="space-y-4">
-              <div>
-                <label className="block text-[11px] text-slate-400 font-mono font-bold mb-1.5 uppercase">
-                  Autonomous System Instructions (NLP Prompt)
-                </label>
-                <textarea
-                  value={autoInstruction}
-                  onChange={(e) => setAutoInstruction(e.target.value)}
-                  rows={4}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-700 font-mono resize-none leading-relaxed"
-                  placeholder="Describe your strategy here..."
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[11px] text-slate-400 font-mono font-bold mb-1.5 uppercase">
-                    Min Signal Confidence (%)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min="50"
-                      max="100"
-                      value={confidenceThreshold}
-                      onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
-                      className="w-full accent-emerald-500 bg-slate-950 h-1 rounded"
-                    />
-                    <span className="text-xs text-emerald-400 font-mono font-bold whitespace-nowrap">
-                      {confidenceThreshold}%
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-400 font-mono font-bold mb-1.5 uppercase">
-                    Max Open Positions
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={maxPositions}
-                    onChange={(e) => setMaxPositions(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-emerald-700 font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* Toggle Switch */}
-              <div className="flex items-center justify-between bg-slate-950 border border-slate-800 p-3 rounded-lg">
-                <div className="flex items-center gap-2">
-                  {isAutoTradingActive ? (
-                    <Play className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                  ) : (
-                    <Pause className="w-3.5 h-3.5 text-slate-500" />
-                  )}
-                  <div>
-                    <div className="text-xs font-bold text-white font-mono">
-                      Autonomous Trading Mode
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      Toggle active system automated trade scanning
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextVal = !isAutoTradingActive;
-                    setIsAutoTradingActive(nextVal);
-                    syncAutoControls(nextVal);
-                  }}
-                  className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    isAutoTradingActive ? 'bg-emerald-600' : 'bg-slate-800'
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      isAutoTradingActive ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {saveMessage && (
-                <div className="p-3 bg-emerald-950/70 border border-emerald-800 text-emerald-300 rounded-lg text-[11px] flex items-start gap-2 animate-fadeIn font-mono">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                  <span>{saveMessage}</span>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isSavingInstructions}
-                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold font-mono text-xs shadow-md transition disabled:opacity-50"
-              >
-                {isSavingInstructions ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>SAVING STRATEGY RULES...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-3.5 h-3.5" />
-                    <span>SAVE & START AUTOMATIC TRADES</span>
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
-
-        {/* COLUMN B: DIRECT INTERACTIVE TRADE LAUNCHER */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
-          <form onSubmit={handleExecuteTrade} className="space-y-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Send className="w-4 h-4 text-cyan-400" />
-              <h3 className="text-sm font-bold text-white font-mono">Manual Order Placement Form</h3>
-            </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Dispatch orders directly into the cTrader or 5paisa gateways. These orders bypass ML confidence scores but undergo real-time Safety Gate risk evaluation.
-            </p>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono font-bold mb-1 uppercase">
-                  Market Category
-                </label>
-                <select
-                  value={market}
-                  onChange={(e) => handleMarketChange(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-700 font-mono"
-                >
-                  <option value="FOREX">FOREX</option>
-                  <option value="INDIAN_EQUITY">INDIAN EQUITY</option>
-                  <option value="INDIAN_FUTURES">INDIAN FUTURES</option>
-                  <option value="INDIAN_OPTIONS">INDIAN OPTIONS</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono font-bold mb-1 uppercase">
-                  Trading Symbol
-                </label>
-                <input
-                  type="text"
-                  value={symbol}
-                  onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-700 font-mono font-bold"
-                  placeholder="e.g. EUR/USD"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono font-bold mb-1 uppercase">
-                  Transaction Side
-                </label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setSide('BUY')}
-                    className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition ${
-                      side === 'BUY'
-                        ? 'bg-emerald-600/20 text-emerald-400 border-emerald-600'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    BUY
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSide('SELL')}
-                    className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition ${
-                      side === 'SELL'
-                        ? 'bg-rose-600/20 text-rose-400 border-rose-600'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    SELL
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono font-bold mb-1 uppercase">
-                  Execution Type
-                </label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setOrderType('MARKET')}
-                    className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition ${
-                      orderType === 'MARKET'
-                        ? 'bg-cyan-600/20 text-cyan-400 border-cyan-600'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    MARKET
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOrderType('LIMIT')}
-                    className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition ${
-                      orderType === 'LIMIT'
-                        ? 'bg-cyan-600/20 text-cyan-400 border-cyan-600'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    LIMIT
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono font-bold mb-1 uppercase">
-                  Volume / Quantity
-                </label>
-                <input
-                  type="number"
-                  value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-700 font-mono"
-                  placeholder="10000"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono font-bold mb-1 uppercase">
-                  Limit Price
-                </label>
-                <input
-                  type="text"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  disabled={orderType === 'MARKET'}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-700 font-mono disabled:opacity-40"
-                  placeholder={orderType === 'MARKET' ? 'Market Executed' : 'e.g. 1.0825'}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono font-bold mb-1 uppercase">
-                  Stop Loss (Auto-Calculated)
-                </label>
-                <input
-                  type="text"
-                  value={stopLoss}
-                  onChange={(e) => setStopLoss(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-700 font-mono"
-                  placeholder="Leave blank for auto SL"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono font-bold mb-1 uppercase">
-                  Take Profit (Auto-Calculated)
-                </label>
-                <input
-                  type="text"
-                  value={takeProfit}
-                  onChange={(e) => setTakeProfit(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-700 font-mono"
-                  placeholder="Leave blank for auto TP"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isPlacingOrder || isEmergencyHalted}
-              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold font-mono text-xs shadow-md transition disabled:opacity-50"
-            >
-              {isPlacingOrder ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>TRANSMITTING TO GATEWAY...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-3.5 h-3.5" />
-                  <span>EXECUTE DIRECT MANUAL TRADE</span>
-                </>
-              )}
-            </button>
-          </form>
-        </div>
-      </div>
-
-      {/* 4. REAL-TIME MULTI-TAB MONITORING GRIDS */}
-      <div id="execution_monitoring_grids" className="space-y-6">
-        
-        {/* ROW 1: ACTIVE RUNNING AUTO TRADES */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4 mb-4">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-              <Activity className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
-                Active Running Trades (Active Positions)
-              </h3>
-            </div>
-            <div className="text-[11px] font-mono text-slate-400 bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg flex items-center gap-2">
-              {isLoadingPositions && <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />}
-              Live Exposure: <strong className="text-white">{runningTrades.length} Positions</strong>
-            </div>
-          </div>
-
-          {runningTrades.length === 0 ? (
-            <div className="text-center py-8 bg-slate-950/40 rounded-lg border border-slate-800/60 font-mono text-xs text-slate-400">
-              <Activity className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-              No active positions currently executing on active gateways.
-              <p className="text-[10px] text-slate-500 mt-1">Start automatic trades or submit a manual trade ticket above.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left font-mono text-xs">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
-                    <th className="py-2.5 px-3">Position ID</th>
-                    <th className="py-2.5 px-3">Broker</th>
-                    <th className="py-2.5 px-3">Symbol</th>
-                    <th className="py-2.5 px-3">Side</th>
-                    <th className="py-2.5 px-3 text-right">Entry Price</th>
-                    <th className="py-2.5 px-3 text-right">Live Price</th>
-                    <th className="py-2.5 px-3 text-right">Size</th>
-                    <th className="py-2.5 px-3 text-right">Stop Loss</th>
-                    <th className="py-2.5 px-3 text-right">Take Profit</th>
-                    <th className="py-2.5 px-3 text-right">Floating P&L</th>
-                    <th className="py-2.5 px-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {runningTrades.map(trade => {
-                    const isProfit = trade.unrealizedPnL >= 0;
-                    return (
-                      <tr key={trade.id} className="hover:bg-slate-950/60 transition">
-                        <td className="py-3 px-3 text-slate-400 font-bold">{trade.id}</td>
-                        <td className="py-3 px-3 text-slate-300 font-semibold">{trade.broker}</td>
-                        <td className="py-3 px-3 text-white font-bold">{trade.symbol}</td>
-                        <td className="py-3 px-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            trade.side === 'BUY' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/40' : 'bg-rose-950 text-rose-400 border border-rose-800/40'
-                          }`}>
-                            {trade.side}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-right text-slate-300 font-bold">{trade.entryPrice.toLocaleString()}</td>
-                        <td className="py-3 px-3 text-right text-cyan-400 font-bold animate-pulse">{trade.currentPrice.toLocaleString()}</td>
-                        <td className="py-3 px-3 text-right text-slate-400">{trade.quantity.toLocaleString()}</td>
-                        <td className="py-3 px-3 text-right text-rose-400/90">{trade.stopLoss ? trade.stopLoss.toLocaleString() : 'N/A'}</td>
-                        <td className="py-3 px-3 text-right text-emerald-400/90">{trade.takeProfit ? trade.takeProfit.toLocaleString() : 'N/A'}</td>
-                        <td className={`py-3 px-3 text-right font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {isProfit ? '+' : ''}${trade.unrealizedPnL.toLocaleString()}
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <button
-                            onClick={() => handleClosePosition(trade.id, trade.broker)}
-                            className="text-[10px] font-bold px-2.5 py-1 rounded bg-slate-950 text-rose-400 border border-slate-800 hover:border-rose-900/60 transition"
-                          >
-                            Exit Trade
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* ROW 2: PLANNED AUTO TRADES (CONTINUOUS BACKGROUND SCANNERS) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-            <div className="flex items-center gap-2">
-              <Target className="w-4 h-4 text-cyan-400" />
-              <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
-                Planned Auto Trades (Continuous Pattern & Trigger Scanners)
-              </h3>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="text-[11px] font-mono text-slate-400 bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg flex items-center gap-2">
-                {isLoadingSignals && <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />}
-                Active Scans: <strong className="text-white">{visiblePlannedTrades.length} Triggers</strong>
-              </div>
-              <div className="text-[11px] font-mono text-slate-400 bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg">
-                Scan Age: <strong className="text-cyan-300">{signalsScanCompletedAt ? formatAge(signalsScanCompletedAt) : 'N/A'}</strong>
-              </div>
-              <button
-                type="button"
-                onClick={() => fetchRealSignals(false)}
-                disabled={isLoadingSignals}
-                className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 hover:text-white hover:border-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-1.5 text-[11px] font-mono"
-                title="Manually refresh planned auto trades"
-              >
-                <RefreshCw className={'w-3.5 h-3.5 ' + (isLoadingSignals ? 'animate-spin' : '')} />
-                Refresh
-              </button>
-            </div>
-          </div>
-
-          {/* Trigger Banner Notification */}
-          {triggerNotification && (
-            <div className={`p-3 rounded-lg text-xs font-mono border flex items-center justify-between transition-all ${
-              triggerNotification.type === 'success'
-                ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300'
-                : triggerNotification.type === 'error'
-                ? 'bg-rose-950/80 border-rose-800 text-rose-300'
-                : 'bg-cyan-950/80 border-cyan-800 text-cyan-300'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span className="font-bold">[{triggerNotification.type.toUpperCase()}]</span>
-                <span>{triggerNotification.message}</span>
-              </div>
-              <button
-                onClick={() => setTriggerNotification(null)}
-                className="text-slate-400 hover:text-white text-[10px] font-mono underline ml-4"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
-          {visiblePlannedTrades.length === 0 ? (
-            <div className="text-center py-8 bg-slate-950/40 rounded-lg border border-slate-800/60 font-mono text-xs text-slate-400">
-              <Target className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-              No background triggers or target pattern monitors configured.
-              <p className="text-[10px] text-slate-500 mt-1">Specify new instructions in the NLP instruction box above to build scanners.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left font-mono text-xs">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
-                    <th className="py-2.5 px-3">Market</th>
-                    <th className="py-2.5 px-3">Target Asset</th>
-                    <th className="py-2.5 px-3">Side</th>
-                    <th className="py-2.5 px-3">Pattern / Trigger Strategy</th>
-                    <th className="py-2.5 px-3 text-right">SL Limit</th>
-                    <th className="py-2.5 px-3 text-right">Target Price</th>
-                    <th className="py-2.5 px-3 text-center">Score</th>
-                    <th className="py-2.5 px-3 text-center">ML Confidence</th>
-                    <th className="py-2.5 px-3 text-center">Age</th>
-                    <th className="py-2.5 px-3 text-center">Operator Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {visiblePlannedTrades.map(signal => {
-                    const isTriggering = triggeringSignalId === signal.id;
-                    const dirStr = String(signal.direction || 'WAIT').toUpperCase();
-
-                    return (
-                      <tr key={signal.id} className="hover:bg-slate-950/60 transition">
-                        <td className="py-3 px-3 text-slate-400">{signal.market}</td>
-                        <td className="py-3 px-3 text-white font-bold">{signal.instrument}</td>
-                        <td className="py-3 px-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            dirStr.includes('BUY')
-                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/40'
-                              : dirStr.includes('SELL')
-                              ? 'bg-rose-950 text-rose-400 border border-rose-800/40'
-                              : dirStr === 'WAIT'
-                              ? 'bg-amber-950/80 text-amber-400 border border-amber-800/40'
-                              : 'bg-slate-800 text-slate-400 border border-slate-700'
-                          }`}>
-                            {signal.direction}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-slate-300 max-w-xs truncate" title={signal.reasons?.join(', ') || signal.strategy}>
-                          {signal.strategy}
-                        </td>
-                        <td className="py-3 px-3 text-right text-rose-400/80">{signal.stopLoss ? signal.stopLoss.toLocaleString() : 'N/A'}</td>
-                        <td className="py-3 px-3 text-right text-emerald-400/80">{signal.target1 ? signal.target1.toLocaleString() : 'N/A'}</td>
-                        <td className="py-3 px-3 text-center text-slate-300">{signal.score}</td>
-                        <td className="py-3 px-3 text-center">
-                          <span className="text-emerald-400 font-bold">{(signal.mlProbability * 100).toFixed(0)}%</span>
-                        </td>
-                        <td className="py-3 px-3 text-center text-cyan-300 font-bold whitespace-nowrap">
-                          {formatAge(signalsScanCompletedAt)}
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <button
-                            onClick={() => triggerSignalExecution(signal)}
-                            disabled={isTriggering}
-                            className={`text-[10px] font-bold px-3 py-1.5 rounded shadow-sm transition flex items-center justify-center mx-auto gap-1 ${
-                              isTriggering
-                                ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
-                                : 'bg-emerald-600 hover:bg-emerald-500 text-white active:scale-95'
-                            }`}
-                            title="Instantly trigger execution"
-                          >
-                            {isTriggering ? (
-                              <>
-                                <RefreshCw className="w-3 h-3 animate-spin" />
-                                <span>Triggering...</span>
-                              </>
-                            ) : (
-                              <span>Trigger Now</span>
-                            )}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 5. REAL-TIME TELEMETRY LOGS */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-3">
-          <div className="flex items-center gap-2">
-            <TerminalIcon className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-              Real-time Order Telemetry Logs & Output Console
-            </h3>
-          </div>
-          <button
-            onClick={() => setLogs([])}
-            className="text-[10px] text-slate-400 hover:text-slate-200 font-mono uppercase border border-slate-800 px-2 py-0.5 rounded"
-          >
-            Clear Console
-          </button>
-        </div>
-
-        <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-[11px] leading-relaxed max-h-56 overflow-y-auto space-y-2 select-text">
-          {logs.length === 0 ? (
-            <div className="text-slate-600 italic">Terminal empty. Awaiting signals or direct manual dispatches...</div>
-          ) : (
-            logs.map((log, idx) => (
-              <div key={idx} className="flex items-start gap-2">
-                <span className="text-slate-500">[{log.timestamp}]</span>
-                <span
-                  className={`font-bold ${
-                    log.type === 'success'
-                      ? 'text-emerald-400'
-                      : log.type === 'error'
-                      ? 'text-rose-400'
-                      : log.type === 'warning'
-                      ? 'text-amber-400'
-                      : log.type === 'nlp'
-                      ? 'text-indigo-400 font-bold'
-                      : 'text-cyan-400'
-                  }`}
-                >
-                  [{log.type.toUpperCase()}]
-                </span>
-                <span className="text-slate-300">{log.message}</span>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Automatic Broker Routing and Execution Safety State */}
-        <div className="mt-4 bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <ShieldCheck className="w-4 h-4 text-emerald-500" />
-            <h3 className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-              Automatic Broker Routing & Execution Safety State
-            </h3>
-          </div>
-          <div className="grid grid-cols-2 gap-4 text-[11px] font-mono">
-            <div className="bg-slate-950 p-2.5 rounded border border-slate-800">
-              <div className="text-slate-400 mb-0.5">Routing Status</div>
-              <div className={`font-bold ${isAutoTradingActive ? 'text-emerald-400' : 'text-slate-500'}`}>
-                {isAutoTradingActive ? 'ACTIVE (Gateway Open)' : 'HALTED (Manual Only)'}
-              </div>
-            </div>
-            <div className="bg-slate-950 p-2.5 rounded border border-slate-800">
-              <div className="text-slate-400 mb-0.5">Safety Gate Invariant</div>
-              <div className="font-bold text-emerald-400">PASSED (All Systems Nominal)</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 6. WARNING AND NOTICE */}
-      <div className="bg-slate-900 border border-emerald-900/40 rounded-xl p-5">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-emerald-400 mt-0.5" />
-          <div>
-            <div className="text-sm font-bold text-emerald-300">Operational Guideline & Gate Clearance</div>
-            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-              Every dispatched trade (automated or manual) undergoes structural pre-flight safety analysis by the Goldcrest Live Trading Safety Gate. Confirm active live connections in Settings.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* 1. HEADER HERO BAR */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <Activity className="w-6 h-6 animate-pulse" />
-            </div>
-            <div>
-              <div className="font-bold text-white text-base">Trading Execution & Portfolio Engine</div>
-              <p className="text-slate-400 text-xs mt-0.5">
-                Connected to active live gateways with direct automated broker routing
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
-            <span className="px-3 py-1 rounded-lg border bg-rose-950/80 text-rose-300 border-rose-800 font-bold">
-              'LIVE BROKER ACCOUNT'
-            </span>
-            <span className="px-3 py-1 rounded-lg border bg-emerald-950/80 text-emerald-300 border-emerald-800 font-bold flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> AUTONOMOUS EXECUTION: ENABLED
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. CORE SAFETY STATE INFO */}
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
-            <h3 className="text-sm font-bold text-white font-mono">Automatic Broker Routing</h3>
-          </div>
-          <div className="space-y-2 font-mono text-xs">
-            {[
-              ['FOREX', 'cTrader LIVE (Active)'],
-              ['INDIAN_EQUITY', '5paisa LIVE (Active)'],
-              ['INDIAN_FUTURES', '5paisa LIVE (Active)'],
-              ['INDIAN_OPTIONS', '5paisa LIVE (Active)']
-            ].map(([marketName, brokerLabel]) => (
-              <div key={marketName} className="flex items-center justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
-                <span className="text-slate-300">{marketName}</span>
-                <span className="text-emerald-400 font-bold flex items-center gap-1">
-                  {brokerLabel}
-                  <ArrowRight className="w-3 h-3" />
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <ShieldCheck className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-sm font-bold text-white font-mono">Execution Safety State</h3>
-          </div>
-          <div className="space-y-2 font-mono text-xs">
-            <div className="flex justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
-              <span className="text-slate-400">LIVE Account Connectivity</span>
-              <span className="text-emerald-400 font-bold">ALLOWED & STABLE</span>
-            </div>
-            <div className="flex justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
-              <span className="text-slate-400">Autonomous Live Submission</span>
-              <span className="text-emerald-400 font-bold">ACTIVE & OPERATIONAL</span>
-            </div>
-            <div className="flex justify-between p-2.5 rounded bg-slate-950 border border-slate-800">
-              <span className="text-slate-400">Emergency Stop Status</span>
-              <span className={isEmergencyHalted ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
-                {isEmergencyHalted ? 'EMERGENCY HALTED' : 'STANDBY READY'}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
+  const executionStage: AutoExecutionStage = autoStatus?.currentExecution?.stage || 'IDLE';
+  const executionPair = autoStatus?.currentExecution?.pair;
+  const executionSide = autoStatus?.currentExecution?.side;
+  const executionMessage = autoStatus?.currentExecution?.message || 'Waiting for the next Auto Live cycle.';
+  const stageLabel: Record<AutoExecutionStage, string> = {
+    IDLE: 'STANDBY',
+    SCANNING_MARKET: 'SCANNING MARKET',
+    ANALYZING_SIGNAL: 'ANALYZING SIGNAL',
+    PREPARING_ORDER: 'PREPARING ORDER',
+    SAFETY_GATE: 'SAFETY GATE',
+    SUBMITTING_ORDER: 'SUBMITTING ORDER',
+    TRADE_EXECUTED: 'TRADE EXECUTED',
+    REJECTED: 'REJECTED'
+  };
+  const renderTabs = () => (
+    <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
+      {[
+        ['cockpit', 'Auto Live'],
+        ['positions', 'Positions'],
+        ['signals', 'Signals'],
+        ['execution', 'Execution Log'],
+        ['controls', 'Controls']
+      ].map(([id, label]) => (
+        <button key={id} type="button" onClick={() => setActiveTab(id as typeof activeTab)}
+          className={"px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition " +
+            (activeTab === id ? "bg-cyan-950 text-cyan-300 border-cyan-700" : "bg-slate-950 text-slate-400 border-slate-800 hover:text-white")}>
+          {label}
+        </button>
+      ))}
     </div>
   );
+
+  return (
+    <div id="unified_trading_hub" className="space-y-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div>
+            <div className="text-white font-bold text-base">Auto Live Trading Cockpit</div>
+            <div className="text-slate-500 text-xs font-mono mt-1">Operational view for live execution only.</div>
+          </div>
+          <div className="flex flex-wrap gap-2 font-mono text-[11px]">
+            <span className={"px-3 py-1 rounded-lg border font-bold " +
+              (autoStatus?.state === 'RUNNING' ? "text-emerald-300 bg-emerald-950/60 border-emerald-800" :
+               autoStatus?.state === 'BLOCKED' ? "text-rose-300 bg-rose-950/60 border-rose-800" :
+               "text-amber-300 bg-amber-950/60 border-amber-800")}>
+              AUTO LIVE: {autoStatus?.state || 'LOADING'}
+            </span>
+            <span className="px-3 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300">{selectedBroker} · LIVE</span>
+          </div>
+        </div>
+      </div>
+
+      {renderTabs()}
+
+      {activeTab === 'cockpit' && (
+        <>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Current Activity</div>
+            <div className="mt-2 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div>
+                <div className={"text-xl font-black font-mono " +
+                  (executionStage === 'TRADE_EXECUTED' ? "text-emerald-400" :
+                   executionStage === 'REJECTED' ? "text-rose-400" :
+                   executionStage === 'IDLE' ? "text-slate-300" : "text-cyan-300")}>
+                  {stageLabel[executionStage]}
+                </div>
+                <div className="text-slate-300 text-sm mt-1">
+                  {executionPair ? executionPair + (executionSide ? " · " + executionSide : "") : "No trade currently being prepared"}
+                </div>
+                <div className="text-slate-500 text-xs mt-2">{executionMessage}</div>
+              </div>
+              <div className="px-4 py-3 rounded-xl border border-cyan-800 bg-cyan-950/40 text-cyan-300 font-mono text-xs font-bold">
+                {executionStage === 'SUBMITTING_ORDER' ? 'BROKER REQUEST IN PROGRESS' :
+                 executionStage === 'TRADE_EXECUTED' ? 'BROKER CONFIRMATION RECEIVED' :
+                 executionStage === 'REJECTED' ? 'TRADE NOT EXECUTED' : 'AUTO LIVE MONITORING'}
+              </div>
+            </div>
+            <div className="grid grid-cols-5 gap-1 mt-5">
+              {['SCANNING_MARKET','ANALYZING_SIGNAL','PREPARING_ORDER','SAFETY_GATE','SUBMITTING_ORDER'].map(stage => (
+                <div key={stage} className={"h-1.5 rounded " +
+                  (executionStage === stage ? "bg-cyan-400 animate-pulse" :
+                   (executionStage === 'TRADE_EXECUTED' || executionStage === 'REJECTED') ? "bg-slate-700" : "bg-slate-800")} />
+              ))}
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-3">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4"><div className="text-[10px] text-slate-500 font-mono uppercase">Active Positions</div><div className="text-2xl font-bold text-white mt-1">{runningTrades.length}</div></div>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4"><div className="text-[10px] text-slate-500 font-mono uppercase">Actionable Signals</div><div className="text-2xl font-bold text-white mt-1">{visiblePlannedTrades.length}</div></div>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4"><div className="text-[10px] text-slate-500 font-mono uppercase">Last Cycle</div><div className="text-xs text-slate-300 mt-2">{autoStatus?.lastCycleResult || 'Waiting.'}</div></div>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div><div className="text-xs font-bold text-white font-mono uppercase">Active Positions</div><div className="text-[10px] text-slate-500 mt-1">Broker-authoritative · refreshes every 10 seconds</div></div>
+              <button type="button" onClick={() => fetchRealPositions(false)} className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">Refresh</button>
+            </div>
+            {runningTrades.length === 0 ? <div className="py-7 text-center text-xs text-slate-500 font-mono">No active live positions.</div> : (
+              <div className="overflow-x-auto"><table className="w-full text-xs font-mono">
+                <thead><tr className="text-slate-500 border-b border-slate-800">
+                  <th className="py-2 text-left">Symbol</th><th>Side</th><th className="text-right">Qty</th><th className="text-right">Entry</th><th className="text-right">Current</th><th className="text-right">Stop Loss</th><th className="text-right">Take Profit</th><th className="text-right">Floating P&L</th><th>Action</th>
+                </tr></thead>
+                <tbody>{runningTrades.map(trade => (
+                  <tr key={trade.id} className="border-b border-slate-800/60">
+                    <td className="py-2 text-white font-bold">{trade.symbol}</td><td className={trade.side === 'BUY' ? "text-emerald-400" : "text-rose-400"}>{trade.side}</td>
+                    <td className="text-right">{trade.quantity.toLocaleString()}</td><td className="text-right">{trade.entryPrice.toLocaleString()}</td><td className="text-right text-cyan-300">{trade.currentPrice.toLocaleString()}</td>
+                    <td className="text-right text-rose-300">{trade.stopLoss ? trade.stopLoss.toLocaleString() : 'N/A'}</td><td className="text-right text-emerald-300">{trade.takeProfit ? trade.takeProfit.toLocaleString() : 'N/A'}</td>
+                    <td className={"text-right font-bold " + (trade.unrealizedPnL >= 0 ? "text-emerald-400" : "text-rose-400")}>{trade.unrealizedPnL >= 0 ? '+' : ''}{trade.unrealizedPnL.toLocaleString()}</td>
+                    <td className="text-center"><button type="button" onClick={() => handleClosePosition(trade.id, trade.broker)} className="text-[10px] px-2 py-1 rounded border border-slate-700 text-rose-300">Exit</button></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            )}
+          </div>
+        </>
+      )}
+
+      {activeTab === 'positions' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="flex justify-between mb-3"><div><div className="text-sm font-bold text-white font-mono">Live Positions</div><div className="text-[10px] text-slate-500">Complete broker data</div></div><button type="button" onClick={() => fetchRealPositions(false)} className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">Refresh</button></div>
+          <div className="overflow-x-auto"><table className="w-full text-xs font-mono"><thead><tr className="text-slate-500 border-b border-slate-800">
+            <th className="py-2 text-left">ID</th><th>Broker</th><th>Symbol</th><th>Side</th><th className="text-right">Qty</th><th className="text-right">Entry</th><th className="text-right">Current</th><th className="text-right">Stop Loss</th><th className="text-right">Take Profit</th><th className="text-right">Floating P&L</th><th></th>
+          </tr></thead><tbody>{runningTrades.map(trade => (
+            <tr key={trade.id} className="border-b border-slate-800/60"><td className="py-2 text-slate-500">{trade.id}</td><td>{trade.broker}</td><td className="text-white font-bold">{trade.symbol}</td><td className={trade.side === 'BUY' ? "text-emerald-400" : "text-rose-400"}>{trade.side}</td><td className="text-right">{trade.quantity.toLocaleString()}</td><td className="text-right">{trade.entryPrice.toLocaleString()}</td><td className="text-right text-cyan-300">{trade.currentPrice.toLocaleString()}</td><td className="text-right text-rose-300">{trade.stopLoss ? trade.stopLoss.toLocaleString() : 'N/A'}</td><td className="text-right text-emerald-300">{trade.takeProfit ? trade.takeProfit.toLocaleString() : 'N/A'}</td><td className={"text-right font-bold " + (trade.unrealizedPnL >= 0 ? "text-emerald-400" : "text-rose-400")}>{trade.unrealizedPnL >= 0 ? '+' : ''}{trade.unrealizedPnL.toLocaleString()}</td><td className="text-center"><button type="button" onClick={() => handleClosePosition(trade.id, trade.broker)} className="text-[10px] px-2 py-1 rounded border border-slate-700 text-rose-300">Exit</button></td></tr>
+          ))}</tbody></table></div>
+        </div>
+      )}
+
+      {activeTab === 'signals' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+          <div className="flex flex-wrap justify-between gap-2"><div><div className="text-sm font-bold text-white font-mono">Actionable Signals</div><div className="text-[10px] text-slate-500">NO_TRADE records hidden</div></div><div className="flex gap-2 items-center"><span className="text-[11px] font-mono text-slate-400">Scan Age: <b className="text-cyan-300">{signalsScanCompletedAt ? formatAge(signalsScanCompletedAt) : 'N/A'}</b></span><button type="button" onClick={() => fetchRealSignals(false)} disabled={isLoadingSignals} className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">Refresh</button></div></div>
+          {triggerNotification && <div className={"p-3 rounded-lg border text-xs font-mono " + (triggerNotification.type === 'error' ? "border-rose-800 bg-rose-950/40 text-rose-300" : "border-emerald-800 bg-emerald-950/40 text-emerald-300")}>{triggerNotification.message}</div>}
+          <div className="overflow-x-auto"><table className="w-full text-xs font-mono"><thead><tr className="text-slate-500 border-b border-slate-800"><th className="py-2 text-left">Market</th><th>Symbol</th><th>Side</th><th>Strategy</th><th className="text-right">SL</th><th className="text-right">TP</th><th>Score</th><th>ML</th><th>Age</th><th>Action</th></tr></thead>
+          <tbody>{visiblePlannedTrades.map(signal => <tr key={signal.id} className="border-b border-slate-800/60"><td className="py-2 text-slate-500">{signal.market}</td><td className="text-white font-bold">{signal.instrument}</td><td className={signal.direction === 'BUY' ? "text-emerald-400" : "text-rose-400"}>{signal.direction}</td><td className="max-w-xs truncate" title={signal.reasons?.join(', ') || signal.strategy}>{signal.strategy}</td><td className="text-right text-rose-300">{signal.stopLoss?.toLocaleString() || 'N/A'}</td><td className="text-right text-emerald-300">{signal.target1?.toLocaleString() || 'N/A'}</td><td className="text-center">{signal.score}</td><td className="text-center text-emerald-400">{(signal.mlProbability * 100).toFixed(0)}%</td><td className="text-center text-cyan-300">{formatAge(signalsScanCompletedAt)}</td><td className="text-center"><button type="button" onClick={() => triggerSignalExecution(signal)} disabled={triggeringSignalId === signal.id} className="text-[10px] px-2.5 py-1 rounded bg-emerald-700 text-white disabled:opacity-50">{triggeringSignalId === signal.id ? 'Triggering...' : 'Trigger Now'}</button></td></tr>)}</tbody></table></div>
+        </div>
+      )}
+
+      {activeTab === 'execution' && (
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4"><div className="text-sm font-bold text-white font-mono mb-3">Execution Lifecycle</div><div className="space-y-2">
+            {['SCANNING_MARKET','ANALYZING_SIGNAL','PREPARING_ORDER','SAFETY_GATE','SUBMITTING_ORDER','TRADE_EXECUTED','REJECTED'].map(stage => <div key={stage} className={"flex items-center justify-between px-3 py-2 rounded border " + (executionStage === stage ? "border-cyan-700 bg-cyan-950/40 text-cyan-300" : "border-slate-800 bg-slate-950 text-slate-500")}><span className="font-mono text-xs">{stageLabel[stage as AutoExecutionStage]}</span>{executionStage === stage && <span className="text-[10px]">CURRENT</span>}</div>)}
+          </div></div>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4"><div className="text-sm font-bold text-white font-mono mb-3">Runtime Output</div><div className="bg-slate-950 rounded-lg p-3 max-h-96 overflow-y-auto font-mono text-[11px] space-y-1">{logs.length === 0 ? <div className="text-slate-600">No UI telemetry.</div> : logs.map((log, i) => <div key={i}><span className="text-slate-600">[{log.timestamp}]</span> <span className={log.type === 'error' ? "text-rose-400" : log.type === 'success' ? "text-emerald-400" : "text-cyan-400"}>[{log.type.toUpperCase()}]</span> <span className="text-slate-300">{log.message}</span></div>)}</div></div>
+        </div>
+      )}
+
+      {activeTab === 'controls' && (
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4"><div className="text-sm font-bold text-white font-mono mb-3">Auto Live Status</div><div className="space-y-3 text-xs font-mono">
+            <div className="flex justify-between"><span className="text-slate-500">Engine State</span><span className="text-white">{autoStatus?.state || 'LOADING'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Autonomous Permission</span><span className={autoStatus?.autonomousPermission ? "text-emerald-400" : "text-rose-400"}>{autoStatus?.autonomousPermission ? 'ALLOWED' : 'BLOCKED'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Emergency Halt</span><span className={isEmergencyHalted ? "text-rose-400" : "text-emerald-400"}>{isEmergencyHalted ? 'ACTIVE' : 'READY'}</span></div>
+            {autoStatusError && <div className="text-rose-300 border border-rose-900 bg-rose-950/30 rounded p-2">{autoStatusError}</div>}
+          </div></div>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4"><div className="text-sm font-bold text-white font-mono mb-3">Secondary Tools</div><div className="text-xs text-slate-500">Detailed diagnostics, configuration and historical information should be kept in dedicated application pages rather than the default Auto Live cockpit.</div></div>
+        </div>
+      )}
+    </div>
+  );
+
 };
