@@ -263,6 +263,31 @@ try {
   assert.match(forexFactory.articles[0].publishedAt || '', /^20\d\d-/);
 
   resetLiveForexNewsCacheForTest();
+
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('www.forexfactory.com/news')) return response('<html>403</html>', 403);
+    if (url.includes('cdn.rss.forexfactory.net/news/all.xml')) {
+      return response(`<rss><channel>
+        <item>
+          <title>US Dollar reacts to fresh Fed rate decision</title>
+          <link>https://www.forexfactory.com/news/1234568-fed-rate-decision</link>
+          <source>Forex Factory RSS</source>
+          <pubDate>${new Date(Date.now() - 2 * 60_000).toUTCString()}</pubDate>
+        </item>
+      </channel></rss>`);
+    }
+    return response('<rss><channel></channel></rss>');
+  };
+
+  const forexFactoryRssFallback = await fetchLiveForexNews({ pairs: ['EUR/USD'], forceRefresh: true });
+  assert.equal(forexFactoryRssFallback.status, 'LIVE');
+  assert.equal(forexFactoryRssFallback.source, 'FOREX_FACTORY');
+  assert.equal(forexFactoryRssFallback.providerStatus?.FOREX_FACTORY, 'LIVE');
+  assert.equal(forexFactoryRssFallback.providerDiagnostics?.FOREX_FACTORY?.rawArticleCount, 1);
+  assert.equal(forexFactoryRssFallback.providerDiagnostics?.FOREX_FACTORY?.freshArticleCount, 1);
+
+  resetLiveForexNewsCacheForTest();
   console.log('LIVE NEWS SERVICE TEST PASSED');
 } finally {
   globalThis.fetch = originalFetch;
