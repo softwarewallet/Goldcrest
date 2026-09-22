@@ -399,7 +399,9 @@ async function hydratePersistedTradeLimits(): Promise<void> {
     ['EVENT_PROXIMITY_THRESHOLD_MINUTES', 'eventProximityThresholdMinutes'],
     ['STRIKE_DEPTH', 'strikeDepth'],
     ['MAX_TRADE_VALUE_FOREX_USD', 'maxTradeValueForexUsd'],
-    ['MAX_TRADE_VALUE_INDIAN_INR', 'maxTradeValueIndianInr']
+    ['MAX_TRADE_VALUE_INDIAN_INR', 'maxTradeValueIndianInr'],
+    ['AUTO_LIVE_MIN_SIGNAL_SCORE', 'autoLiveMinSignalScore'],
+    ['AUTO_LIVE_MAX_TRADES_PER_PAIR', 'autoLiveMaxTradesPerPair']
   ];
 
   for (const [dbKey, configKey] of numericKeys) {
@@ -659,6 +661,8 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
 
     const requestedForex = req.body?.maxTradeValueForexUsd;
     const requestedIndian = req.body?.maxTradeValueIndianInr;
+    const requestedAutoLiveMinSignalScore = req.body?.autoLiveMinSignalScore;
+    const requestedAutoLiveMaxTradesPerPair = req.body?.autoLiveMaxTradesPerPair;
     const requestedForexPairs = req.body?.autoLiveForexPairs;
     const requestedIndianUnderlyings = req.body?.autoLiveIndianUnderlyings;
     const updates: any = { ...req.body };
@@ -673,6 +677,22 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
       const value = Number(requestedIndian);
       if (!Number.isFinite(value) || value <= 0) return res.status(400).json({ error: 'maxTradeValueIndianInr must be a positive number.' });
       updates.maxTradeValueIndianInr = value;
+    }
+
+    if (requestedAutoLiveMinSignalScore !== undefined) {
+      const value = Number(requestedAutoLiveMinSignalScore);
+      if (!Number.isInteger(value) || value < 0 || value > 100) {
+        return res.status(400).json({ error: 'autoLiveMinSignalScore must be an integer from 0 to 100.' });
+      }
+      updates.autoLiveMinSignalScore = value;
+    }
+
+    if (requestedAutoLiveMaxTradesPerPair !== undefined) {
+      const value = Number(requestedAutoLiveMaxTradesPerPair);
+      if (!Number.isInteger(value) || value < 1 || value > 20) {
+        return res.status(400).json({ error: 'autoLiveMaxTradesPerPair must be an integer from 1 to 20.' });
+      }
+      updates.autoLiveMaxTradesPerPair = value;
     }
 
     const validForexPairs = new Set(FOREX_PAIRS.map(pair => pair.symbol.toUpperCase()));
@@ -708,7 +728,7 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
     // cannot reset a different setting. configService has already written the
     // same merged configuration to an atomic JSON file.
     await executeRun(
-      'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)',
+      'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)',
       [
         'SELECTED_CTRADER_ACCOUNT_ID', String(updated.selectedCtraderAccountId || ''), now,
         'SELECTED_CTRADER_ACCOUNT_CURRENCY', String(updated.selectedCtraderAccountCurrency || ''), now,
@@ -724,6 +744,8 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
         'STRIKE_DEPTH', String(updated.strikeDepth), now,
         'MAX_TRADE_VALUE_FOREX_USD', String(updated.maxTradeValueForexUsd), now,
         'MAX_TRADE_VALUE_INDIAN_INR', String(updated.maxTradeValueIndianInr), now,
+        'AUTO_LIVE_MIN_SIGNAL_SCORE', String(updated.autoLiveMinSignalScore), now,
+        'AUTO_LIVE_MAX_TRADES_PER_PAIR', String(updated.autoLiveMaxTradesPerPair), now,
         'AUTO_LIVE_FOREX_PAIRS', JSON.stringify(updated.autoLiveForexPairs || []), now,
         'AUTO_LIVE_INDIAN_UNDERLYINGS', JSON.stringify(updated.autoLiveIndianUnderlyings || []), now,
         'FINANCIAL_DISCLAIMER', String(updated.financialDisclaimer || ''), now
