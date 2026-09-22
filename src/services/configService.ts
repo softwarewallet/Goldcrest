@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { FOREX_PAIRS } from '../markets/forex/instruments';
 
 export interface SystemConfig {
   tradingMode: 'LIVE_ONLY';
@@ -85,7 +86,10 @@ let activeConfig: SystemConfig = {
   maxTradeValueIndianInr: 1000000,
   autoLiveMinSignalScore: 75,
   autoLiveMaxTradesPerPair: 4,
-  autoLiveForexPairs: ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD'],
+  // If the operator has not persisted a working-universe selection yet,
+  // Auto Live evaluates the complete supported Forex universe rather than
+  // silently falling back to the old five-pair subset.
+  autoLiveForexPairs: FOREX_PAIRS.map(pair => pair.symbol),
   autoLiveIndianUnderlyings: ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'],
   financialDisclaimer:
     'Trading in Forex and derivatives involves substantial risk of loss. Model outputs, signals, probabilities and technical analysis are estimates for informational and analytical purposes only and are not financial advice, guarantees, or assurances of future performance.'
