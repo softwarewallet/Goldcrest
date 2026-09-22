@@ -33,6 +33,8 @@ export interface LiveNewsSnapshot {
   articleCount: number;
   highImpactCount: number;
   elevatedCount: number;
+  /** Number of currently-active high-impact events relevant to the configured FX universe. */
+  activeHighImpactCount?: number;
   riskLevel: 'HIGH' | 'ELEVATED' | 'LOW' | 'UNAVAILABLE';
   articles: LiveNewsArticle[];
   queryPairs?: string[];
@@ -75,12 +77,42 @@ const CURRENCY_NAMES: Record<string, string> = {
   CAD: 'canadian dollar'
 };
 
-const HIGH_IMPACT_TERMS = [
-  'fomc', 'federal reserve', 'rate decision', 'interest rate', 'rate hike',
-  'rate cut', 'rate hold', 'cpi', 'inflation', 'nonfarm payroll',
-  'nfp', 'jobs report', 'tariff', 'sanction', 'intervention',
-  'war', 'conflict', 'emergency', 'bank of japan', 'boj', 'ecb'
+const HIGH_IMPACT_EVENT_PATTERNS: RegExp[] = [
+  /\bfomc\b/i,
+  /\bfederal reserve\b.*\b(rate|decision|meeting|cut|hike|hold)\b/i,
+  /\b(rate decision|rate hike|rate cut|rate hold|interest rate decision)\b/i,
+  /\b(cpi|consumer price index)\b/i,
+  /\binflation (data|report|release|reading)\b/i,
+  /\b(non[- ]?farm payrolls?|nfp|jobs report|employment report)\b/i,
+  /\b(ecb|european central bank|boe|bank of england|boj|bank of japan|rba|reserve bank of australia|rbnz|reserve bank of new zealand|bank of canada|boc|snb|swiss national bank)\b.*\b(rate|decision|meeting|cut|hike|hold|policy)\b/i,
+  /\b(new|unexpected|surprise) tariffs?\b/i,
+  /\bsanctions? (announced|imposed|expanded|eased)\b/i,
+  /\b(currency|fx) intervention\b/i,
+  /\b(emergency|unscheduled) (rate|central bank|policy)\b/i
 ];
+
+const GLOBAL_HIGH_IMPACT_PATTERNS: RegExp[] = [
+  /\bwar (breaks out|declared|erupts)\b/i,
+  /\binvasion\b/i,
+  /\bmilitary (attack|strike|conflict)\b/i,
+  /\bmarket (halt|closure|circuit breaker)\b/i
+];
+
+const NEWS_HIGH_IMPACT_ACTIVE_WINDOW_MS = Math.max(
+  5 * 60_000,
+  Number(process.env.GOLDCREST_NEWS_HIGH_IMPACT_ACTIVE_WINDOW_MS || 45 * 60_000)
+);
+
+const CURRENCY_NEWS_ALIASES: Record<string, string[]> = {
+  USD: ['usd', 'u.s. dollar', 'us dollar', 'dollar', 'federal reserve', 'fed', 'fomc', 'united states', 'u.s.'],
+  EUR: ['eur', 'euro', 'eurozone', 'european central bank', 'ecb'],
+  GBP: ['gbp', 'pound', 'sterling', 'bank of england', 'boe', 'united kingdom', 'uk'],
+  JPY: ['jpy', 'yen', 'bank of japan', 'boj', 'japan'],
+  CHF: ['chf', 'franc', 'swiss national bank', 'snb', 'switzerland'],
+  AUD: ['aud', 'australian dollar', 'reserve bank of australia', 'rba', 'australia'],
+  NZD: ['nzd', 'new zealand dollar', 'reserve bank of new zealand', 'rbnz', 'new zealand'],
+  CAD: ['cad', 'canadian dollar', 'bank of canada', 'boc', 'canada']
+};
 
 const ELEVATED_TERMS = [
   'central bank', 'pmi', 'retail sales', 'gdp', 'employment', 'yield',
@@ -200,32 +232,83 @@ function buildNewsQuery(pairs: string[]): string {
   return pairQuery ? `(${macro}) OR (${pairQuery})` : macro;
 }
 
-function classifyArticle(article: LiveNewsArticle): 'HIGH' | 'ELEVATED' | 'LOW' {
-  if (typeof article.sentimentScore === 'number' && Math.abs(article.sentimentScore) >= 0.45) {
+function articleText(article: LiveNewsArticle): string {
+  return [article.title, article.summary].filter(Boolean).join(' ').toLowerCase();
+}
+
+function getRelevantCurrencies(pairs: string[]): Set<string> {
+  const currencies = new Set<string>();
+  for (const pair of pairs) {
+    const [base, quote] = pair.split('/');
+    if (base) currencies.add(base);
+    if (quote) currencies.add(quote);
+  }
+  return currencies;
+}
+
+function articleMentionsRelevantCurrency(article: LiveNewsArticle, relevantCurrencies: Set<string>): boolean {
+  const text = articleText(article).replace(/[^a-z0-9.]+/g, ' ');
+  for (const currency of relevantCurrencies) {
+    const aliases = CURRENCY_NEWS_ALIASES[currency] || [currency.toLowerCase()];
+    if (aliases.some(alias => {
+      const normalizedAlias = alias.toLowerCase().replace(/[^a-z0-9.]+/g, ' ').trim();
+      return ` ${text} `.includes(` ${normalizedAlias} `);
+    })) return true;
+  }
+  return false;
+}
+
+function hasHighImpactEvent(article: LiveNewsArticle): boolean {
+  const text = articleText(article);
+  return HIGH_IMPACT_EVENT_PATTERNS.some(pattern => pattern.test(text))
+    || GLOBAL_HIGH_IMPACT_PATTERNS.some(pattern => pattern.test(text));
+}
+
+function isArticleInsideHighImpactWindow(article: LiveNewsArticle, now: number): boolean {
+  if (!article.publishedAt) return false;
+  const timestamp = Date.parse(article.publishedAt);
+  if (!Number.isFinite(timestamp)) return false;
+  const age = now - timestamp;
+  return age >= -5 * 60_000 && age <= NEWS_HIGH_IMPACT_ACTIVE_WINDOW_MS;
+}
+
+function classifyArticle(
+  article: LiveNewsArticle,
+  relevantCurrencies: Set<string>,
+  now: number
+): 'HIGH' | 'ELEVATED' | 'LOW' {
+  const highImpactEvent = hasHighImpactEvent(article);
+  const currencyRelevant = articleMentionsRelevantCurrency(article, relevantCurrencies);
+  const globalEvent = GLOBAL_HIGH_IMPACT_PATTERNS.some(pattern => pattern.test(articleText(article)));
+
+  // IMPORTANT: sentiment is never sufficient to classify a headline as HIGH.
+  // A strongly bullish/bearish article is market information, not an economic
+  // calendar event. HIGH is reserved for a specific event-type headline that
+  // is both relevant to the FX universe and inside the short active window.
+  if (highImpactEvent
+    && (currencyRelevant || globalEvent)
+    && isArticleInsideHighImpactWindow(article, now)) {
     return 'HIGH';
   }
-  const normalized = article.title.toLowerCase();
-
-  // A generic mention of the Fed/ECB/etc. is not by itself a high-risk event.
-  // Require an explicit rate/macro/event term before classifying a headline HIGH.
-  const highImpact = HIGH_IMPACT_TERMS.some(term => normalized.includes(term));
-  if (highImpact) return 'HIGH';
 
   if (typeof article.sentimentScore === 'number' && Math.abs(article.sentimentScore) >= 0.25) {
     return 'ELEVATED';
   }
-  if (ELEVATED_TERMS.some(term => normalized.includes(term))) return 'ELEVATED';
+  if (ELEVATED_TERMS.some(term => articleText(article).includes(term))) return 'ELEVATED';
   return 'LOW';
 }
 
 function scoreArticles(
-  articles: LiveNewsArticle[]
-): Pick<LiveNewsSnapshot, 'highImpactCount' | 'elevatedCount' | 'riskLevel'> {
+  articles: LiveNewsArticle[],
+  pairs: string[],
+  now: number
+): Pick<LiveNewsSnapshot, 'highImpactCount' | 'elevatedCount' | 'riskLevel' | 'activeHighImpactCount'> {
+  const relevantCurrencies = getRelevantCurrencies(pairs);
   let highImpactCount = 0;
   let elevatedCount = 0;
 
   for (const article of articles) {
-    const classification = classifyArticle(article);
+    const classification = classifyArticle(article, relevantCurrencies, now);
     if (classification === 'HIGH') highImpactCount += 1;
     else if (classification === 'ELEVATED') elevatedCount += 1;
   }
@@ -233,8 +316,7 @@ function scoreArticles(
   return {
     highImpactCount,
     elevatedCount,
-    // A single fresh, explicitly high-impact macro headline is sufficient to
-    // pause autonomous entries. This keeps the safety gate conservative.
+    activeHighImpactCount: highImpactCount,
     riskLevel: highImpactCount > 0
       ? 'HIGH'
       : elevatedCount >= 4
@@ -550,6 +632,7 @@ function unavailableSnapshot(
     articleCount: 0,
     highImpactCount: 0,
     elevatedCount: 0,
+    activeHighImpactCount: 0,
     riskLevel: 'UNAVAILABLE',
     articles: [],
     queryPairs,
@@ -663,7 +746,7 @@ async function fetchLiveForexNewsInternal(
     return snapshot;
   }
 
-  const score = scoreArticles(articles);
+  const score = scoreArticles(articles, queryPairs, now);
   const latestArticleAt = articles[0]?.publishedAt || null;
   const sentimentSummary = computeAggregatedSentiment(articles);
 
@@ -682,6 +765,7 @@ async function fetchLiveForexNewsInternal(
     articleCount: articles.length,
     highImpactCount: score.highImpactCount,
     elevatedCount: score.elevatedCount,
+    activeHighImpactCount: score.activeHighImpactCount,
     riskLevel: score.riskLevel,
     articles,
     queryPairs,
