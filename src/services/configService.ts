@@ -207,9 +207,13 @@ export function applyPersistedSystemConfig(updates: Partial<SystemConfig>): Syst
 export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig {
   loadPersistedSystemConfig();
 
-  // LIVE_ONLY is the only supported user-facing trading mode.
+  // Goldcrest's broker routing remains explicit, while cTrader Open API
+  // endpoint mode may be selected independently for connection/testing.
   if (updates.tradingMode !== undefined && updates.tradingMode !== 'LIVE_ONLY') {
     throw new Error('Trading mode rejected: Goldcrest supports LIVE_ONLY mode only.');
+  }
+  if (updates.cTraderApiMode !== undefined && !['LIVE', 'DEMO'].includes(updates.cTraderApiMode)) {
+    throw new Error('cTrader API mode must be LIVE or DEMO.');
   }
 
   activeConfig = {
