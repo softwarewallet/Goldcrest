@@ -956,13 +956,15 @@ return;
       liveRuntimeLog(result.executed ? 'TRADE' : 'WARN', result.executed ? 'AUTO_ORDER_EXECUTION_RESULT' : 'AUTO_ORDER_BLOCKED', { pair, signalId: signal.id, result: result.executed ? 'EXECUTED' : 'BLOCKED', code: result.code, reason: result.reason, brokerOrderId: result.order?.brokerOrderId, brokerStatus: result.order?.status });
       });
     } catch (error: any) {
-      this.finishExecution('REJECTED', pair + ' evaluation failed: ' + (error?.message || String(error)), { pair });
+      const reason = error?.message || String(error);
+      this.finishExecution('REJECTED', pair + ' evaluation failed: ' + reason, { pair });
       this.lastActions.push({
         pair,
         result: 'ERROR',
-        reason: error?.message || String(error)
+        reason
       });
-      liveRuntimeLog('ERROR', 'PAIR_EVALUATION_ERROR', { pair, error: error?.message || String(error) });
+      liveRuntimeLog('ERROR', 'PAIR_EVALUATION_ERROR', { pair, error: reason });
+      tradeAuditLog('PAIR_EVALUATION_ERROR', { pair, reason });
     }
   }
 }
