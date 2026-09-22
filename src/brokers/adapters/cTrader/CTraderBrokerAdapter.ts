@@ -445,7 +445,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
 
     // Prefer a directly tradable conversion leg before opening the native
     // conversion-chain workflow. This avoids an unnecessary assets/chain
-    // request on the account-specific demo transport and is sufficient for
+    // request on the account-specific broker transport and is sufficient for
     // the common G10 currencies used by Goldcrest.
     const directPair = FOREX_PAIRS.find(
       pair => pair.baseCurrency === from && pair.quoteCurrency === to
