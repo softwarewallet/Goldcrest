@@ -99,6 +99,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [isLoadingPositions, setIsLoadingPositions] = useState<boolean>(true);
   const [isLoadingSignals, setIsLoadingSignals] = useState<boolean>(true);
   const [signalsAgeNow, setSignalsAgeNow] = useState<number>(Date.now());
+  const [signalsScanCompletedAt, setSignalsScanCompletedAt] = useState<number | null>(null);
 
   const [logs, setLogs] = useState<TerminalLog[]>([
     {
@@ -187,6 +188,9 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         const data = await safeParseJson(res);
         if (Array.isArray(data)) {
           setPlannedTrades(data.filter((signal: RealSignal) => String(signal.direction || '').toUpperCase() !== 'NO_TRADE'));
+          // Start the freshness counter only after the complete signal scan/fetch has finished.
+          // This measures scanner-result age, not the timestamp embedded in an individual signal.
+          setSignalsScanCompletedAt(Date.now());
         }
       } else {
         throw new Error('Signals endpoint returned non-ok status');
@@ -249,12 +253,9 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     [plannedTrades]
   );
 
-  const oldestVisibleSignalTimestamp = useMemo(() => {
-    const timestamps = visiblePlannedTrades
-      .map(signal => Number(signal.timestamp))
-      .filter(timestamp => Number.isFinite(timestamp) && timestamp > 0);
-    return timestamps.length ? Math.min(...timestamps) : null;
-  }, [visiblePlannedTrades]);
+  // All rows belong to the same completed scanner pass, so their displayed age is
+  // measured from the time that pass completed. This prevents an old signal timestamp
+  // from consuming the execution freshness window before the scanner has finished.
 
   // Handle market change configuration
   const handleMarketChange = (newMarket: string) => {
@@ -900,7 +901,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 Active Scans: <strong className="text-white">{visiblePlannedTrades.length} Triggers</strong>
               </div>
               <div className="text-[11px] font-mono text-slate-400 bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg">
-                Data Age: <strong className="text-cyan-300">{oldestVisibleSignalTimestamp ? formatAge(oldestVisibleSignalTimestamp) : 'N/A'}</strong>
+                Scan Age: <strong className="text-cyan-300">{signalsScanCompletedAt ? formatAge(signalsScanCompletedAt) : 'N/A'}</strong>
               </div>
               <button
                 type="button"
@@ -992,7 +993,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                           <span className="text-emerald-400 font-bold">{(signal.mlProbability * 100).toFixed(0)}%</span>
                         </td>
                         <td className="py-3 px-3 text-center text-cyan-300 font-bold whitespace-nowrap">
-                          {formatAge(signal.timestamp)}
+                          {formatAge(signalsScanCompletedAt)}
                         </td>
                         <td className="py-2 px-3 text-center">
                           <button
