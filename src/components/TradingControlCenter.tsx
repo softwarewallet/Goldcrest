@@ -1184,8 +1184,9 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
               {[
+                ['FOREX_FACTORY', 'Forex Factory'],
                 ['ALPHA_VANTAGE', 'Alpha Vantage'],
                 ['MARKETAUX', 'Marketaux'],
                 ['GDELT_DOC_2', 'GDELT DOC 2'],
