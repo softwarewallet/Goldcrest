@@ -141,15 +141,49 @@ export function issueOperatorSession(configuredKey: string): string {
 }
 
 function isLocalDevelopmentRequest(req: Request): boolean {
-  if (process.env.NODE_ENV !== 'production') return true;
+  if (process.env.NODE_ENV === 'production') return false;
   const address = String(req.socket.remoteAddress || req.ip || '').toLowerCase();
   return address === '127.0.0.1'
     || address === '::1'
     || address === '::ffff:127.0.0.1';
 }
 
-export function operatorAuthRequired(_req: Request, _res: Response, next: NextFunction): void {
-  // Pass through all app requests to ensure frictionless execution in preview environment
+export function operatorAuthRequired(req: Request, res: Response, next: NextFunction): void {
+  // Only a loopback development request receives the local operator bypass.
+  // Remote development requests and every production request still require operator authentication.
+  if (isLocalDevelopmentRequest(req)) {
+    next();
+    return;
+  }
+
+  const configuredKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
+  if (!configuredKey) {
+    res.status(503).type('application/json').json({
+      error: 'OPERATOR_AUTH_NOT_CONFIGURED',
+      message: 'Operator authentication is not configured.'
+    });
+    return;
+  }
+
+  if (isOperatorSessionValid(req)) {
+    next();
+    return;
+  }
+
+  const authorization = req.header('Authorization');
+  const bearer = authorization?.match(/^Bearer\\s+(.+)$/i)?.[1];
+  const suppliedKey = req.header('X-Goldcrest-Operator-Key')
+    || req.header('X-Operator-API-Key')
+    || bearer;
+
+  if (!sameOrigin(req) || !credentialsValid(configuredKey, suppliedKey)) {
+    res.status(401).type('application/json').json({
+      error: 'OPERATOR_AUTH_REQUIRED',
+      message: 'Valid operator authentication is required.'
+    });
+    return;
+  }
+
   next();
 }
 
