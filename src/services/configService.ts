@@ -22,6 +22,8 @@ export interface SystemConfig {
   strikeDepth: number;
   maxTradeValueForexUsd: number;
   maxTradeValueIndianInr: number;
+  autoLiveMinSignalScore: number;
+  autoLiveMaxTradesPerPair: number;
   autoLiveForexPairs: string[];
   autoLiveIndianUnderlyings: string[];
   financialDisclaimer: string;
@@ -56,6 +58,8 @@ const PERSISTED_KEYS: readonly (keyof SystemConfig)[] = [
   'strikeDepth',
   'maxTradeValueForexUsd',
   'maxTradeValueIndianInr',
+  'autoLiveMinSignalScore',
+  'autoLiveMaxTradesPerPair',
   'autoLiveForexPairs',
   'autoLiveIndianUnderlyings',
   'financialDisclaimer'
@@ -79,6 +83,8 @@ let activeConfig: SystemConfig = {
   strikeDepth: 7,
   maxTradeValueForexUsd: 100000,
   maxTradeValueIndianInr: 1000000,
+  autoLiveMinSignalScore: 75,
+  autoLiveMaxTradesPerPair: 4,
   autoLiveForexPairs: ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD'],
   autoLiveIndianUnderlyings: ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'],
   financialDisclaimer:
