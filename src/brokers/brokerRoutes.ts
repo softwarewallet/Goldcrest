@@ -918,11 +918,10 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
           market: orderReq.market,
           symbol: orderReq.symbol,
           requestedQuantity,
-          calculatedQuantity: sizingResult.quantity,
-          estimatedTradeValueUsd: sizingResult.estimatedTradeValueUsd,
-          maxTradeValueUsd: sizingResult.maxTradeValueUsd,
+          directQuantity: sizingResult.directQuantity,
+          configuredQuantity: sizingResult.maxTradeValueUsd,
           sizingAdjusted: sizingResult.adjusted,
-          quoteToUsdRate: sizingResult.quoteToUsdRate
+          sizingMode: 'DIRECT_QUANTITY_NO_CURRENCY_CONVERSION'
         });
       } catch (sizingError: any) {
         return res.status(403).json({
@@ -1033,10 +1032,10 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
         quantity: orderReq.quantity,
         ...(sizingResult ? {
           requestedQuantity: sizingResult.requestedQuantity,
-          calculatedQuantity: sizingResult.quantity,
-          estimatedTradeValueUsd: sizingResult.estimatedTradeValueUsd,
-          maxTradeValueUsd: sizingResult.maxTradeValueUsd,
-          sizingAdjusted: sizingResult.adjusted
+          directQuantity: sizingResult.directQuantity,
+          configuredQuantity: sizingResult.maxTradeValueUsd,
+          sizingAdjusted: sizingResult.adjusted,
+          sizingMode: 'DIRECT_QUANTITY_NO_CURRENCY_CONVERSION'
         } : {}),
         message: 'Order pre-flight checks passed. Live dispatch is permitted by the current server controls.'
       });
