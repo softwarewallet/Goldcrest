@@ -12,7 +12,7 @@ import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, mar
 import { reconcileExecutionIntent } from '../services/executionReconciliationService';
 import { getSystemConfig } from '../services/configService';
 import { executeQuery, executeRun } from '../database/db';
-import { normalizePriceToThreeDigits, sizeForexOrderToMaxTradeValue } from './safety/TradeSizing';
+import { normalizePriceToThreeDigits, normalizePriceToInstrumentDigits, sizeForexOrderToMaxTradeValue } from './safety/TradeSizing';
 import { liveRuntimeLog } from '../services/liveRuntimeLog';
 import { autoTradingService } from '../services/autoTradingService';
 
@@ -878,13 +878,21 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Authoritative real-time quote is currently unavailable.', code: 'STALE_DATA' });
     }
 
-    // Goldcrest-wide execution-price policy: every order price is normalized
-    // to three decimal places before sizing, safety-gate evaluation, logging,
-    // idempotency persistence, and broker dispatch.
+    // Resolve broker instrument precision before sizing or dispatch. Symbol
+    // precision is authoritative: XAU/USD can allow 2 decimals while other
+    // instruments may allow 3 or more.
+    const precisionInstrument = await adapter.getInstrument(orderReq.symbol);
+    if (!precisionInstrument) {
+      return res.status(400).json({
+        error: `Live broker instrument metadata unavailable for ${orderReq.symbol}.`,
+        code: 'INVALID_SYMBOL'
+      });
+    }
+
     if (!orderReq.price || orderReq.price <= 0) {
       orderReq.price = orderReq.side === 'BUY' ? quote.ask : quote.bid;
     }
-    orderReq.price = normalizePriceToThreeDigits(Number(orderReq.price));
+    orderReq.price = normalizePriceToInstrumentDigits(Number(orderReq.price), precisionInstrument.digits);
 
     // Hard position-sizing boundary: calculate the Forex quantity directly from
     // the operator-configured maximum trade value immediately before execution.
@@ -892,13 +900,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
     // Broker-side minimum/step volume rules are intentionally left to cTrader.
     let sizingResult: Awaited<ReturnType<typeof sizeForexOrderToMaxTradeValue>> | null = null;
     if (orderReq.market === 'FOREX') {
-      const instrument = await adapter.getInstrument(orderReq.symbol);
-      if (!instrument) {
-        return res.status(400).json({
-          error: `Live broker instrument metadata unavailable for ${orderReq.symbol}.`,
-          code: 'INVALID_SYMBOL'
-        });
-      }
+      const instrument = precisionInstrument;
 
       try {
         sizingResult = await sizeForexOrderToMaxTradeValue(
@@ -937,14 +939,14 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       const referencePrice = orderReq.price;
       const pct = isForex ? 0.005 : 0.01; // 50 pips (0.5%) for Forex, 1.0% for others
       if (orderReq.side === 'BUY') {
-        orderReq.stopLoss = normalizePriceToThreeDigits(referencePrice * (1 - pct));
+        orderReq.stopLoss = normalizePriceToInstrumentDigits(referencePrice * (1 - pct), precisionInstrument.digits);
         if (!orderReq.takeProfit || orderReq.takeProfit <= 0) {
-          orderReq.takeProfit = normalizePriceToThreeDigits(referencePrice * (1 + pct * 2));
+          orderReq.takeProfit = normalizePriceToInstrumentDigits(referencePrice * (1 + pct * 2), precisionInstrument.digits);
         }
       } else {
-        orderReq.stopLoss = normalizePriceToThreeDigits(referencePrice * (1 + pct));
+        orderReq.stopLoss = normalizePriceToInstrumentDigits(referencePrice * (1 + pct), precisionInstrument.digits);
         if (!orderReq.takeProfit || orderReq.takeProfit <= 0) {
-          orderReq.takeProfit = normalizePriceToThreeDigits(referencePrice * (1 - pct * 2));
+          orderReq.takeProfit = normalizePriceToInstrumentDigits(referencePrice * (1 - pct * 2), precisionInstrument.digits);
         }
       }
     }
@@ -952,10 +954,10 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
     // Normalize caller-provided SL/TP as well. This covers orders that arrive
     // with explicit risk prices instead of auto-populated values.
     if (orderReq.stopLoss !== undefined && Number(orderReq.stopLoss) > 0) {
-      orderReq.stopLoss = normalizePriceToThreeDigits(Number(orderReq.stopLoss));
+      orderReq.stopLoss = normalizePriceToInstrumentDigits(Number(orderReq.stopLoss), precisionInstrument.digits);
     }
     if (orderReq.takeProfit !== undefined && Number(orderReq.takeProfit) > 0) {
-      orderReq.takeProfit = normalizePriceToThreeDigits(Number(orderReq.takeProfit));
+      orderReq.takeProfit = normalizePriceToInstrumentDigits(Number(orderReq.takeProfit), precisionInstrument.digits);
     }
 
     const account = await adapter.getAccount();
