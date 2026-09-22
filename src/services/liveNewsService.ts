@@ -147,6 +147,10 @@ const GDELT_TIMEOUT_MS = Math.max(
   5_000,
   Number(process.env.GOLDCREST_NEWS_GDELT_TIMEOUT_MS || 12_000)
 );
+const GDELT_MIN_INTERVAL_MS = Math.max(
+  5_000,
+  Number(process.env.GOLDCREST_NEWS_GDELT_MIN_INTERVAL_MS || 30_000)
+);
 const GOOGLE_NEWS_TIMEOUT_MS = Math.max(
   5_000,
   Number(process.env.GOLDCREST_NEWS_GOOGLE_TIMEOUT_MS || 8_000)
@@ -171,6 +175,8 @@ let inFlight: {
   key: string;
   promise: Promise<LiveNewsSnapshot>;
 } | null = null;
+
+let gdeltNextAllowedAt = 0;
 
 function asErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -234,10 +240,6 @@ function normalizePairs(pairs: string[] | undefined): string[] {
 }
 
 function buildNewsQuery(pairs: string[]): string {
-  // GDELT supports OR blocks but does not support nesting OR blocks inside
-  // another OR block. The previous builder generated nested OR blocks,
-  // which can produce poor/empty results or slow requests.
-  // Use one flat OR block and enforce pair relevance after retrieval.
   const terms = new Set<string>(MACRO_NEWS_QUERY);
 
   for (const pair of pairs) {
@@ -250,11 +252,19 @@ function buildNewsQuery(pairs: string[]): string {
     }
   }
 
-  const query = [...terms]
+  return `(${[...terms]
     .map(term => term.includes(' ') ? `"${term}"` : term)
-    .join(' OR ');
+    .join(' OR ')})`;
+}
 
-  return `(${query})`;
+function buildGdeltQuery(): string {
+  // GDELT is the slowest and most rate-limited provider. Keep its query
+  // deliberately small and stable; pair relevance is enforced after
+  // retrieval by the Goldcrest classifier. This avoids expensive broad
+  // currency-alias searches that can time out.
+  return `(${MACRO_NEWS_QUERY
+    .map(term => term.includes(' ') ? term : term)
+    .join(' OR ')})`;
 }
 
 function articleText(article: LiveNewsArticle): string {
@@ -506,12 +516,22 @@ async function fetchText(url: URL, timeoutMs = REQUEST_TIMEOUT_MS): Promise<stri
 }
 
 async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string; latencyMs?: number }> {
+  const now = Date.now();
+  if (now < gdeltNextAllowedAt) {
+    return {
+      status: 'RATE_LIMITED',
+      articles: [],
+      error: `GDELT provider backoff is active until ${new Date(gdeltNextAllowedAt).toISOString()}.`
+    };
+  }
+
   const url = new URL(GDELT_ENDPOINT);
   url.searchParams.set('query', query);
   url.searchParams.set('mode', 'artlist');
   url.searchParams.set('format', 'json');
   url.searchParams.set('timespan', process.env.GOLDCREST_NEWS_TIMESPAN || '24h');
-  url.searchParams.set('maxrecords', process.env.GOLDCREST_NEWS_MAX_RECORDS || '50');
+  const configuredMaxRecords = Number(process.env.GOLDCREST_NEWS_MAX_RECORDS || 50);
+  url.searchParams.set('maxrecords', String(Math.min(75, Math.max(1, Number.isFinite(configuredMaxRecords) ? configuredMaxRecords : 50))));
   url.searchParams.set('sort', 'datedesc');
 
   const startedAt = Date.now();
@@ -522,7 +542,27 @@ async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProvider
     try {
       payload = JSON.parse(text);
     } catch {
-      throw new Error('GDELT returned a non-JSON response.');
+      const notice = text.replace(/\s+/g, ' ').trim().slice(0, 220);
+      const lower = notice.toLowerCase();
+      const rateLimited = lower.includes('please limit requests')
+        || lower.includes('one every 5 seconds')
+        || lower.includes('rate limit')
+        || lower.includes('too many requests');
+      if (rateLimited) {
+        gdeltNextAllowedAt = Date.now() + GDELT_MIN_INTERVAL_MS;
+        return {
+          status: 'RATE_LIMITED',
+          articles: [],
+          error: `GDELT rate limited the request: ${notice || 'provider returned a non-JSON throttle response.'}`,
+          latencyMs: Date.now() - startedAt
+        };
+      }
+      return {
+        status: 'ERROR',
+        articles: [],
+        error: `GDELT returned a non-JSON response: ${notice || 'empty response'}`,
+        latencyMs: Date.now() - startedAt
+      };
     }
 
     const articles = parseGdeltArticles(payload);
@@ -719,9 +759,10 @@ async function fetchLiveForexNewsInternal(
   const queryKey = queryPairs.join(',');
 
   const newsQuery = buildNewsQuery(queryPairs);
+  const gdeltQuery = buildGdeltQuery();
 
   const [gdeltRes, googleRes, avRes, marketauxRes] = await Promise.all([
-    fetchFromGdelt(newsQuery),
+    fetchFromGdelt(gdeltQuery),
     fetchFromGoogleNewsRss(newsQuery),
     fetchFromAlphaVantage(queryPairs),
     fetchFromMarketaux(queryPairs)
@@ -797,11 +838,11 @@ async function fetchLiveForexNewsInternal(
     const activeProviders = [gdeltRes, googleRes];
     if (avRes.status !== 'UNCONFIGURED') activeProviders.push(avRes);
     if (marketauxRes.status !== 'UNCONFIGURED') activeProviders.push(marketauxRes);
-    const allErrored = activeProviders.length > 0
-      && activeProviders.every(result => result.status === 'ERROR');
+    const allUnavailable = activeProviders.length > 0
+      && activeProviders.every(result => ['ERROR', 'RATE_LIMITED'].includes(result.status));
     const hasRawArticles = activeProviders.some(result => result.articles.length > 0);
 
-    const snapshot: LiveNewsSnapshot = allErrored
+    const snapshot: LiveNewsSnapshot = allUnavailable
       ? unavailableSnapshot(
           errors.join(' | ') || 'All live news providers failed.',
           queryPairs,
@@ -929,4 +970,5 @@ export function resetLiveForexNewsCacheForTest(): void {
   newsCache = null;
   unavailableBackoff = null;
   inFlight = null;
+  gdeltNextAllowedAt = 0;
 }
