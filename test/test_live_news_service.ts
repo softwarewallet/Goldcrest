@@ -90,7 +90,7 @@ try {
   assert.equal(fallback.status, 'LIVE');
   assert.equal(fallback.source, 'GOOGLE_NEWS_RSS');
   assert.equal(fallback.articleCount, 1);
-  assert.equal(fallback.providerStatus?.GDELT_DOC_2, 'ERROR');
+  assert.equal(fallback.providerStatus?.GDELT_DOC_2, 'RATE_LIMITED');
   assert.equal(fallback.providerStatus?.GOOGLE_NEWS_RSS, 'LIVE');
   assert.equal(fallback.articles[0].source, 'Example News');
 
