@@ -737,10 +737,12 @@ async function fetchFromMarketaux(pairs: string[]): Promise<{
   status: LiveNewsProviderStatus;
   articles: LiveNewsArticle[];
   error?: string;
+  latencyMs?: number;
 }> {
   if (!marketauxNewsService.isConfigured()) {
     return { status: 'UNCONFIGURED', articles: [] };
   }
+  const startedAt = Date.now();
   try {
     const res = await marketauxNewsService.fetchForexNews(pairs.length > 0 ? pairs : undefined);
     if (res.status === 'RATE_LIMITED') {
@@ -755,10 +757,10 @@ async function fetchFromMarketaux(pairs: string[]): Promise<{
         sentimentLabel: a.sentimentLabel,
         topics: a.keywords
       }));
-      return { status: 'RATE_LIMITED', articles, error: res.error };
+      return { status: 'RATE_LIMITED', articles, error: res.error, latencyMs: Date.now() - startedAt };
     }
     if (res.status === 'ERROR') {
-      return { status: 'ERROR', articles: [], error: res.error };
+      return { status: 'ERROR', articles: [], error: res.error, latencyMs: Date.now() - startedAt };
     }
     const articles: LiveNewsArticle[] = res.articles.map(a => ({
       title: a.title,
@@ -773,13 +775,15 @@ async function fetchFromMarketaux(pairs: string[]): Promise<{
     }));
     return {
       status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
-      articles
+      articles,
+      latencyMs: Date.now() - startedAt
     };
   } catch (err: any) {
     return {
       status: 'ERROR',
       articles: [],
-      error: asErrorMessage(err)
+      error: asErrorMessage(err),
+      latencyMs: Date.now() - startedAt
     };
   }
 }
@@ -788,10 +792,12 @@ async function fetchFromAlphaVantage(pairs: string[]): Promise<{
   status: LiveNewsProviderStatus;
   articles: LiveNewsArticle[];
   error?: string;
+  latencyMs?: number;
 }> {
   if (!alphaVantageNewsService.isConfigured()) {
     return { status: 'UNCONFIGURED', articles: [] };
   }
+  const startedAt = Date.now();
   try {
     const res = await alphaVantageNewsService.fetchForexNews(pairs.length > 0 ? pairs : undefined);
     if (res.status === 'RATE_LIMITED') {
@@ -806,10 +812,10 @@ async function fetchFromAlphaVantage(pairs: string[]): Promise<{
         sentimentLabel: a.sentimentLabel,
         topics: a.topics
       }));
-      return { status: 'RATE_LIMITED', articles, error: res.error };
+      return { status: 'RATE_LIMITED', articles, error: res.error, latencyMs: Date.now() - startedAt };
     }
     if (res.status === 'ERROR') {
-      return { status: 'ERROR', articles: [], error: res.error };
+      return { status: 'ERROR', articles: [], error: res.error, latencyMs: Date.now() - startedAt };
     }
     const articles: LiveNewsArticle[] = res.articles.map(a => ({
       title: a.title,
@@ -824,13 +830,15 @@ async function fetchFromAlphaVantage(pairs: string[]): Promise<{
     }));
     return {
       status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
-      articles
+      articles,
+      latencyMs: Date.now() - startedAt
     };
   } catch (err: any) {
     return {
       status: 'ERROR',
       articles: [],
-      error: asErrorMessage(err)
+      error: asErrorMessage(err),
+      latencyMs: Date.now() - startedAt
     };
   }
 }
@@ -1025,7 +1033,7 @@ async function fetchLiveForexNewsInternal(
   }
 
   const score = scoreArticles(articles, queryPairs, now);
-  const latestArticleAt = articles[0]?.publishedAt || null;
+  const latestSnapshotArticleAt = articles[0]?.publishedAt || null;
   const sentimentSummary = computeAggregatedSentiment(articles);
 
   const source: LiveNewsSource = freshForexFactory.length > 0
@@ -1053,7 +1061,7 @@ async function fetchLiveForexNewsInternal(
     providerDiagnostics,
     pairRisk: score.pairRisk,
     sentimentSummary,
-    latestArticleAt,
+    latestArticleAt: latestSnapshotArticleAt,
     error: errors.length ? errors.join(' | ') : undefined
   };
 
