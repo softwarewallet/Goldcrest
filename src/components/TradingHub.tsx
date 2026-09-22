@@ -693,7 +693,25 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4"><div className="text-sm font-bold text-white font-mono mb-3">Execution Lifecycle</div><div className="space-y-2">
             {['SCANNING_MARKET','ANALYZING_SIGNAL','PREPARING_ORDER','SAFETY_GATE','SUBMITTING_ORDER','TRADE_EXECUTED','REJECTED'].map(stage => <div key={stage} className={"flex items-center justify-between px-3 py-2 rounded border " + (executionStage === stage ? "border-cyan-700 bg-cyan-950/40 text-cyan-300" : "border-slate-800 bg-slate-950 text-slate-500")}><span className="font-mono text-xs">{stageLabel[stage as AutoExecutionStage]}</span>{executionStage === stage && <span className="text-[10px]">CURRENT</span>}</div>)}
           </div></div>
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4"><div className="text-sm font-bold text-white font-mono mb-3">Runtime Output</div><div className="bg-slate-950 rounded-lg p-3 max-h-96 overflow-y-auto font-mono text-[11px] space-y-1">{logs.length === 0 ? <div className="text-slate-600">No UI telemetry.</div> : logs.map((log, i) => <div key={i}><span className="text-slate-600">[{log.timestamp}]</span> <span className={log.type === 'error' ? "text-rose-400" : log.type === 'success' ? "text-emerald-400" : "text-cyan-400"}>[{log.type.toUpperCase()}]</span> <span className="text-slate-300">{log.message}</span></div>)}</div></div>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+            <div className="text-sm font-bold text-white font-mono">Execution Decision</div>
+            <div className={"rounded-lg border p-3 text-xs font-mono " + (executionStage === 'REJECTED' ? "border-rose-800 bg-rose-950/30 text-rose-300" : executionStage === 'TRADE_EXECUTED' ? "border-emerald-800 bg-emerald-950/30 text-emerald-300" : "border-cyan-800 bg-cyan-950/30 text-cyan-300")}>
+              <div className="font-bold">{executionPair ? executionPair : 'AUTO LIVE'}{executionSide ? " · " + executionSide : ""}</div>
+              <div className="mt-1">{executionMessage}</div>
+            </div>
+            <div className="text-sm font-bold text-white font-mono">Pair Decisions</div>
+            <div className="bg-slate-950 rounded-lg p-3 max-h-72 overflow-y-auto font-mono text-[11px] space-y-2">
+              {!autoStatus?.lastActions?.length ? <div className="text-slate-600">No pair decisions recorded yet.</div> : autoStatus.lastActions.slice(-12).map((action, i) => (
+                <div key={i} className="border-b border-slate-800 pb-2 last:border-b-0">
+                  <div><span className="text-white font-bold">{action.pair}</span> <span className="text-cyan-400">[{action.result}]</span></div>
+                  {action.reason && <div className="text-rose-300 mt-1">{action.reason}</div>}
+                  {action.orderId && <div className="text-emerald-300 mt-1">Order: {action.orderId}</div>}
+                </div>
+              ))}
+            </div>
+            <div className="text-sm font-bold text-white font-mono">Runtime Output</div>
+            <div className="bg-slate-950 rounded-lg p-3 max-h-72 overflow-y-auto font-mono text-[11px] space-y-1">{logs.length === 0 ? <div className="text-slate-600">No UI telemetry.</div> : logs.map((log, i) => <div key={i}><span className="text-slate-600">[{log.timestamp}]</span> <span className={log.type === 'error' ? "text-rose-400" : log.type === 'success' ? "text-emerald-400" : "text-cyan-400"}>[{log.type.toUpperCase()}]</span> <span className="text-slate-300">{log.message}</span></div>)}</div>
+          </div>
         </div>
       )}
 
