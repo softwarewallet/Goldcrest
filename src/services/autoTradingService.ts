@@ -136,6 +136,16 @@ class LiveForexSignalProvider implements ForexDataProvider {
 }
 
 export type AutoTradingState = 'STOPPED' | 'PREPARING' | 'RUNNING' | 'BLOCKED';
+export type AutoTradingExecutionStage = 'IDLE' | 'SCANNING_MARKET' | 'ANALYZING_SIGNAL' | 'PREPARING_ORDER' | 'SAFETY_GATE' | 'SUBMITTING_ORDER' | 'TRADE_EXECUTED' | 'REJECTED';
+
+export interface AutoTradingExecutionStatus {
+  stage: AutoTradingExecutionStage;
+  pair: string | null;
+  side: 'BUY' | 'SELL' | null;
+  signalId: string | null;
+  message: string;
+  updatedAt: number;
+}
 
 export interface AutoTradingStatus {
   state: AutoTradingState;
@@ -154,6 +164,8 @@ export interface AutoTradingStatus {
     orderId?: string;
   }>;
   marketGate: AutoLiveMarketGate;
+  currentExecution: AutoTradingExecutionStatus;
+  lastExecution: AutoTradingExecutionStatus | null;
   preOpenPreparation: {
     lastPreparedAt: number | null;
     trendPairsEvaluated: number;
@@ -176,12 +188,31 @@ class AutoTradingService {
   private preOpenNews: LiveNewsSnapshot | null = null;
   private preOpenStatus: 'IDLE' | 'RUNNING' | 'READY' | 'UNAVAILABLE' = 'IDLE';
   private cycleInFlight = false;
+  private currentExecution: AutoTradingExecutionStatus = {
+    stage: 'IDLE',
+    pair: null,
+    side: null,
+    signalId: null,
+    message: 'Waiting for the next Auto Live cycle.',
+    updatedAt: Date.now()
+  };
+  private lastExecution: AutoTradingExecutionStatus | null = null;
 
   private isRequested(): boolean {
     return (process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true'
       && process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true')
       || process.env.NODE_ENV !== 'production'
       || process.env.GOLDCREST_LOCAL_DEVELOPMENT === 'true';
+  }
+
+  private setExecutionStatus(update: Partial<AutoTradingExecutionStatus> & Pick<AutoTradingExecutionStatus, 'stage' | 'message'>): void {
+    this.currentExecution = { ...this.currentExecution, ...update, updatedAt: Date.now() };
+    liveRuntimeLog('INFO', 'AUTO_TRADING_EXECUTION_STAGE', this.currentExecution);
+  }
+
+  private finishExecution(stage: 'TRADE_EXECUTED' | 'REJECTED', message: string, extra: Partial<AutoTradingExecutionStatus> = {}): void {
+    this.setExecutionStatus({ stage, message, ...extra });
+    this.lastExecution = { ...this.currentExecution };
   }
 
   getStatus(): AutoTradingStatus {
@@ -197,6 +228,8 @@ class AutoTradingService {
       lastCycleResult: this.lastCycleResult,
       lastActions: [...this.lastActions],
       marketGate: getAutoLiveMarketGate(),
+      currentExecution: { ...this.currentExecution },
+      lastExecution: this.lastExecution ? { ...this.lastExecution } : null,
       preOpenPreparation: {
         lastPreparedAt: this.lastPreOpenPreparedAt,
         trendPairsEvaluated: this.preOpenTrendPairsEvaluated,
@@ -582,9 +615,23 @@ class AutoTradingService {
 
   private async evaluatePair(pair: string): Promise<void> {
     try {
+      this.setExecutionStatus({
+        stage: 'SCANNING_MARKET',
+        pair,
+        side: null,
+        signalId: null,
+        message: 'Scanning live market data for ' + pair + '.'
+      });
       await this.provider.refreshPair(pair);
       liveRuntimeLog('INFO', 'LIVE_DATA_REFRESHED', { pair });
       const signal = await this.signalEngine.generateSignal(pair);
+      this.setExecutionStatus({
+        stage: 'ANALYZING_SIGNAL',
+        pair,
+        side: signal.direction === 'BUY' || signal.direction === 'SELL' ? signal.direction : null,
+        signalId: signal.id,
+        message: 'Analyzing ' + pair + ' signal and execution conditions.'
+      });
       liveRuntimeLog('INFO', 'SIGNAL_EVALUATED', { pair, signalId: signal.id, direction: signal.direction, score: signal.score, status: signal.status, strategyId: signal.strategyVersion });
 
       if (!['BUY', 'SELL'].includes(signal.direction) || !signal.tradePlan) {
@@ -662,6 +709,14 @@ class AutoTradingService {
 
       const quantity = sizing.quantity;
 
+      this.setExecutionStatus({
+        stage: 'PREPARING_ORDER',
+        pair,
+        side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
+        signalId: signal.id,
+        message: 'Preparing live order for ' + pair + '.'
+      });
+
       const order: OrderRequest = {
         market: 'FOREX',
         symbol: pair,
@@ -698,6 +753,14 @@ class AutoTradingService {
         maxTradeValueUsd: sizing.maxTradeValueUsd,
         sizingAdjusted: sizing.adjusted,
         quoteToUsdRate: sizing.quoteToUsdRate
+      });
+
+      this.setExecutionStatus({
+        stage: 'SAFETY_GATE',
+        pair,
+        side: order.side,
+        signalId: signal.id,
+        message: 'Running live safety and readiness gates for ' + pair + '.'
       });
 
       const result = await autoExecutionEngine.processSignal(
@@ -739,6 +802,20 @@ class AutoTradingService {
         }
       );
 
+      if (result.executed) {
+        this.finishExecution('TRADE_EXECUTED', pair + ' ' + order.side + ' trade confirmed by the execution engine.', {
+          pair,
+          side: order.side,
+          signalId: signal.id
+        });
+      } else {
+        this.finishExecution('REJECTED', pair + ' ' + order.side + ' was blocked or rejected before confirmed execution.', {
+          pair,
+          side: order.side,
+          signalId: signal.id
+        });
+      }
+
       this.lastActions.push({
         pair,
         result: result.executed ? 'EXECUTED' : 'BLOCKED',
@@ -748,6 +825,7 @@ class AutoTradingService {
       });
       liveRuntimeLog(result.executed ? 'TRADE' : 'WARN', result.executed ? 'AUTO_ORDER_EXECUTION_RESULT' : 'AUTO_ORDER_BLOCKED', { pair, signalId: signal.id, result: result.executed ? 'EXECUTED' : 'BLOCKED', code: result.code, reason: result.reason, brokerOrderId: result.order?.brokerOrderId, brokerStatus: result.order?.status });
     } catch (error: any) {
+      this.finishExecution('REJECTED', pair + ' evaluation failed: ' + (error?.message || String(error)), { pair });
       this.lastActions.push({
         pair,
         result: 'ERROR',
