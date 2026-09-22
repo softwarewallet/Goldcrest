@@ -297,11 +297,55 @@ export async function fetchLiveCTraderAccountDetails(
             }
           }));
         } else if (msg.payloadType === MSG_RECONCILE_RES) {
+          if (!traderData) {
+            clearTimeout(timer);
+            try { ws.close(); } catch {}
+            return reject(new Error('Trader data missing from cTrader Open API response'));
+          }
+
+          const moneyDigits = traderData.moneyDigits !== undefined ? Number(traderData.moneyDigits) : 2;
+          const rawBalance = Number(traderData.balance);
+          if (!Number.isFinite(rawBalance)) {
+            clearTimeout(timer);
+            try { ws.close(); } catch {}
+            return reject(new Error('cTrader trader details did not include a valid account balance.'));
+          }
+          const realBalance = rawBalance / Math.pow(10, moneyDigits);
+
+          // ProtoOATrader exposes the authoritative balance, but not live equity or
+          // account margin fields. ProtoOAPosition exposes authoritative usedMargin
+          // per open position, while ProtoOAGetPositionUnrealizedPnLReq returns the
+          // broker-calculated unrealized P&L in deposit currency. Use those broker
+          // values instead of looking for non-existent margin/equity fields on
+          // ProtoOATrader or trying to infer P&L from reconcile position objects.
+          const reconcilePositions = Array.isArray(msg.payload?.position) ? msg.payload.position : [];
+          (msg as any).__reconcilePositions = reconcilePositions;
+          const usedMargin = reconcilePositions.reduce((sum: number, position: any) => {
+            const raw = Number(position?.usedMargin ?? 0);
+            if (!Number.isFinite(raw) || raw < 0) return sum;
+            const positionDigits = position?.moneyDigits !== undefined
+              ? Number(position.moneyDigits)
+              : moneyDigits;
+            const divisor = Math.pow(10, Number.isFinite(positionDigits) ? positionDigits : moneyDigits);
+            return sum + raw / divisor;
+          }, 0);
+
+          // Ask cTrader to calculate P&L in the account deposit currency. This is
+          // essential for FX positions because quote-to-deposit currency conversion
+          // cannot safely be reconstructed from the reconcile payload alone.
+          ws.send(JSON.stringify({
+            clientMsgId: 'position_pnl_req',
+            payloadType: MSG_GET_POSITION_UNREALIZED_PNL_REQ,
+            payload: {
+              ctidTraderAccountId: rawAccount.ctidTraderAccountId
+            }
+          }));
+        } else if (msg.payloadType === MSG_GET_POSITION_UNREALIZED_PNL_RES) {
           clearTimeout(timer);
           try { ws.close(); } catch {}
 
           if (!traderData) {
-            return reject(new Error('Trader data missing from cTrader Open API response'));
+            return reject(new Error('cTrader trader details missing while calculating account equity.'));
           }
 
           const moneyDigits = traderData.moneyDigits !== undefined ? Number(traderData.moneyDigits) : 2;
@@ -310,19 +354,33 @@ export async function fetchLiveCTraderAccountDetails(
             return reject(new Error('cTrader trader details did not include a valid account balance.'));
           }
           const realBalance = rawBalance / Math.pow(10, moneyDigits);
-
-          // cTrader trader details expose the authoritative used-margin value; the
-          // reconcile response provides the account's current unrealized P/L. Derive
-          // equity and free/available margin from those broker values rather than
-          // presenting balance as derived equity.
-          const reconcilePositions = Array.isArray(msg.payload?.position) ? msg.payload.position : [];
-          const unrealizedPnl = reconcilePositions.reduce((sum: number, position: any) => {
-            const value = Number(position?.unrealizedPnL ?? position?.tradeData?.unrealizedPnL ?? 0);
-            return sum + (Number.isFinite(value) ? value / Math.pow(10, moneyDigits) : 0);
+          const pnlMoneyDigits = msg.payload?.moneyDigits !== undefined
+            ? Number(msg.payload.moneyDigits)
+            : moneyDigits;
+          const pnlDivisor = Math.pow(10, Number.isFinite(pnlMoneyDigits) ? pnlMoneyDigits : moneyDigits);
+          const pnlRows = Array.isArray(msg.payload?.positionUnrealizedPnL)
+            ? msg.payload.positionUnrealizedPnL
+            : [];
+          const netUnrealizedPnl = pnlRows.reduce((sum: number, row: any) => {
+            const raw = Number(row?.netUnrealizedPnL ?? 0);
+            return Number.isFinite(raw) ? sum + raw / pnlDivisor : sum;
           }, 0);
-          const equity = realBalance + unrealizedPnl;
-          const rawUsedMargin = Number(traderData.totalMarginUsed ?? traderData.marginUsed ?? 0);
-          const usedMargin = Number.isFinite(rawUsedMargin) ? rawUsedMargin / Math.pow(10, moneyDigits) : 0;
+          const equity = realBalance + netUnrealizedPnl;
+
+          // Used margin was calculated from the authoritative ProtoOAPosition
+          // objects received immediately before this P&L response.
+          const reconcilePositions = Array.isArray((msg as any).__reconcilePositions)
+            ? (msg as any).__reconcilePositions
+            : [];
+          const usedMargin = reconcilePositions.reduce((sum: number, position: any) => {
+            const raw = Number(position?.usedMargin ?? 0);
+            if (!Number.isFinite(raw) || raw < 0) return sum;
+            const positionDigits = position?.moneyDigits !== undefined
+              ? Number(position.moneyDigits)
+              : moneyDigits;
+            const divisor = Math.pow(10, Number.isFinite(positionDigits) ? positionDigits : moneyDigits);
+            return sum + raw / divisor;
+          }, 0);
           const freeMargin = equity - usedMargin;
           const currency = assetMap[traderData.depositAssetId] || 'USD';
 
