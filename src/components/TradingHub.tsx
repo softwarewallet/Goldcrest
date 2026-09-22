@@ -63,7 +63,7 @@ interface RealSignal {
   timestamp: number;
   market: string;
   instrument: string;
-  direction: 'BUY' | 'SELL';
+  direction: 'BUY' | 'SELL' | 'NO_TRADE';
   strategy: string;
   score: number;
   mlProbability: number;
@@ -98,6 +98,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [plannedTrades, setPlannedTrades] = useState<RealSignal[]>([]);
   const [isLoadingPositions, setIsLoadingPositions] = useState<boolean>(true);
   const [isLoadingSignals, setIsLoadingSignals] = useState<boolean>(true);
+  const [signalsFetchedAt, setSignalsFetchedAt] = useState<number | null>(null);
+  const [signalsAgeNow, setSignalsAgeNow] = useState<number>(Date.now());
 
   const [logs, setLogs] = useState<TerminalLog[]>([
     {
@@ -185,7 +187,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       if (res.ok) {
         const data = await safeParseJson(res);
         if (Array.isArray(data)) {
-          setPlannedTrades(data);
+          setPlannedTrades(data.filter((signal: RealSignal) => String(signal.direction || '').toUpperCase() !== 'NO_TRADE'));
+          setSignalsFetchedAt(Date.now());
         }
       } else {
         throw new Error('Signals endpoint returned non-ok status');
@@ -225,6 +228,35 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
     return () => clearInterval(interval);
   }, [fetchRealPositions, fetchRealSignals]);
+
+  // Keep the displayed record-age counter moving once per second without refetching.
+  useEffect(() => {
+    const ageTimer = setInterval(() => setSignalsAgeNow(Date.now()), 1000);
+    return () => clearInterval(ageTimer);
+  }, []);
+
+  const formatAge = useCallback((timestamp: number | undefined | null): string => {
+    if (!timestamp || !Number.isFinite(Number(timestamp))) return 'N/A';
+    const ageSeconds = Math.max(0, Math.floor((signalsAgeNow - Number(timestamp)) / 1000));
+    if (ageSeconds < 60) return ageSeconds + 's';
+    const minutes = Math.floor(ageSeconds / 60);
+    const seconds = ageSeconds % 60;
+    if (minutes < 60) return minutes + 'm ' + seconds + 's';
+    const hours = Math.floor(minutes / 60);
+    return hours + 'h ' + (minutes % 60) + 'm';
+  }, [signalsAgeNow]);
+
+  const visiblePlannedTrades = useMemo(
+    () => plannedTrades.filter(signal => String(signal.direction || '').toUpperCase() !== 'NO_TRADE'),
+    [plannedTrades]
+  );
+
+  const oldestVisibleSignalTimestamp = useMemo(() => {
+    const timestamps = visiblePlannedTrades
+      .map(signal => Number(signal.timestamp))
+      .filter(timestamp => Number.isFinite(timestamp) && timestamp > 0);
+    return timestamps.length ? Math.min(...timestamps) : null;
+  }, [visiblePlannedTrades]);
 
   // Handle market change configuration
   const handleMarketChange = (newMarket: string) => {
@@ -864,9 +896,24 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 Planned Auto Trades (Continuous Pattern & Trigger Scanners)
               </h3>
             </div>
-            <div className="text-[11px] font-mono text-slate-400 bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg flex items-center gap-2">
-              {isLoadingSignals && <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />}
-              Active Scans: <strong className="text-white">{plannedTrades.length} Triggers</strong>
+            <div className="flex items-center gap-2">
+              <div className="text-[11px] font-mono text-slate-400 bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg flex items-center gap-2">
+                {isLoadingSignals && <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />}
+                Active Scans: <strong className="text-white">{visiblePlannedTrades.length} Triggers</strong>
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg">
+                Data Age: <strong className="text-cyan-300">{oldestVisibleSignalTimestamp ? formatAge(oldestVisibleSignalTimestamp) : 'N/A'}</strong>
+              </div>
+              <button
+                type="button"
+                onClick={() => fetchRealSignals(false)}
+                disabled={isLoadingSignals}
+                className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 hover:text-white hover:border-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-1.5 text-[11px] font-mono"
+                title="Manually refresh planned auto trades"
+              >
+                <RefreshCw className={'w-3.5 h-3.5 ' + (isLoadingSignals ? 'animate-spin' : '')} />
+                Refresh
+              </button>
             </div>
           </div>
 
@@ -892,7 +939,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
             </div>
           )}
 
-          {plannedTrades.length === 0 ? (
+          {visiblePlannedTrades.length === 0 ? (
             <div className="text-center py-8 bg-slate-950/40 rounded-lg border border-slate-800/60 font-mono text-xs text-slate-400">
               <Target className="w-8 h-8 text-slate-600 mx-auto mb-2" />
               No background triggers or target pattern monitors configured.
@@ -911,11 +958,12 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                     <th className="py-2.5 px-3 text-right">Target Price</th>
                     <th className="py-2.5 px-3 text-center">Score</th>
                     <th className="py-2.5 px-3 text-center">ML Confidence</th>
+                    <th className="py-2.5 px-3 text-center">Age</th>
                     <th className="py-2.5 px-3 text-center">Operator Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {plannedTrades.map(signal => {
+                  {visiblePlannedTrades.map(signal => {
                     const isTriggering = triggeringSignalId === signal.id;
                     const dirStr = String(signal.direction || 'WAIT').toUpperCase();
 
@@ -944,6 +992,9 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                         <td className="py-3 px-3 text-center text-slate-300">{signal.score}</td>
                         <td className="py-3 px-3 text-center">
                           <span className="text-emerald-400 font-bold">{(signal.mlProbability * 100).toFixed(0)}%</span>
+                        </td>
+                        <td className="py-3 px-3 text-center text-cyan-300 font-bold whitespace-nowrap">
+                          {formatAge(signal.timestamp)}
                         </td>
                         <td className="py-2 px-3 text-center">
                           <button
