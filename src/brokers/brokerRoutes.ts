@@ -14,6 +14,7 @@ import { getSystemConfig } from '../services/configService';
 import { executeQuery, executeRun } from '../database/db';
 import { normalizePriceToThreeDigits, sizeForexOrderToMaxTradeValue } from './safety/TradeSizing';
 import { liveRuntimeLog } from '../services/liveRuntimeLog';
+import { autoTradingService } from '../services/autoTradingService';
 
 export const brokerRouter = Router();
 
@@ -1166,6 +1167,14 @@ brokerRouter.post('/kill-switch', async (req: Request, res: Response) => {
     return res.json({ status: 'TRADING ACTIVE', isHalted: false });
   }
   return res.status(400).json({ error: 'Action must be HALT or RESUME' });
+});
+
+brokerRouter.get('/controls', (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    controls: autoExecutionEngine.getControls(),
+    autoTrading: autoTradingService.getStatus()
+  });
 });
 
 brokerRouter.post('/controls', (req: Request, res: Response) => {
