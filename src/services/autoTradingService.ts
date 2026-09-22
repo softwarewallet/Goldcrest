@@ -151,6 +151,8 @@ export interface AutoTradingStatus {
   enabledByEnvironment: boolean;
   autonomousPermission: boolean;
   intervalMs: number;
+  minSignalScore: number;
+  maxTradesPerPair: number;
   pairs: string[];
   indianUnderlyings: string[];
   lastCycleAt: number | null;
@@ -221,6 +223,8 @@ class AutoTradingService {
       enabledByEnvironment: this.isRequested(),
       autonomousPermission,
       intervalMs: AUTO_INTERVAL_MS,
+      minSignalScore: Number(getSystemConfig().autoLiveMinSignalScore),
+      maxTradesPerPair: Number(getSystemConfig().autoLiveMaxTradesPerPair),
       pairs: getConfiguredAutoForexPairs(),
       indianUnderlyings: [...getSystemConfig().autoLiveIndianUnderlyings],
       lastCycleAt: this.lastCycleAt,
@@ -665,9 +669,11 @@ class AutoTradingService {
         return;
       }
 
-      if (signal.score < 75) {
-        this.lastActions.push({ pair, result: 'FILTERED', signalId: signal.id, reason: `Signal score ${signal.score} is below the actionable threshold of 75.` });
-        liveRuntimeLog('INFO', 'SIGNAL_FILTERED', { pair, signalId: signal.id, score: signal.score, threshold: 75 });
+      const config = getSystemConfig();
+      const minSignalScore = Math.max(0, Math.min(100, Math.round(Number(config.autoLiveMinSignalScore))));
+      if (signal.score < minSignalScore) {
+        this.lastActions.push({ pair, result: 'FILTERED', signalId: signal.id, reason: `Signal score ${signal.score} is below the configured Auto Live threshold of ${minSignalScore}.` });
+        liveRuntimeLog('INFO', 'SIGNAL_FILTERED', { pair, signalId: signal.id, score: signal.score, threshold: minSignalScore });
         return;
       }
 
@@ -695,6 +701,28 @@ class AutoTradingService {
       const instrument = await adapter.getInstrument(pair);
       if (!instrument) {
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason: 'Live broker instrument metadata unavailable.' });
+        return;
+      }
+
+      const maxTradesPerPair = Math.max(1, Math.min(20, Math.floor(Number(config.autoLiveMaxTradesPerPair))));
+      const positions = await adapter.getPositions();
+      const activePairPositionsCount = positions.filter(position =>
+        String(position.symbol || '').toUpperCase() === pair.toUpperCase()
+      ).length;
+      if (activePairPositionsCount >= maxTradesPerPair) {
+        this.lastActions.push({
+          pair,
+          result: 'BLOCKED',
+          signalId: signal.id,
+          reason: `Maximum simultaneous Auto Live trades for ${pair} is ${maxTradesPerPair}; ${activePairPositionsCount} position(s) are already open.`
+        });
+        liveRuntimeLog('INFO', 'AUTO_TRADING_PAIR_POSITION_LIMIT', {
+          pair,
+          signalId: signal.id,
+          activePairPositionsCount,
+          maxTradesPerPair,
+          score: signal.score
+        });
         return;
       }
 
@@ -759,7 +787,6 @@ class AutoTradingService {
       const dailyRealizedPnL = typeof adapter.getDailyRealizedPnL === 'function'
         ? await adapter.getDailyRealizedPnL()
         : 0;
-      const positions = await adapter.getPositions();
       const totalExposure = positions
         .filter(position => position.currency === 'USD' && position.market === 'FOREX')
         .reduce((sum, position) => sum + Math.abs(Number(position.quantity || 0)) * Number(position.currentPrice || 0), 0)
@@ -823,7 +850,9 @@ class AutoTradingService {
           totalAccountExposure: totalExposure,
           maxAllowedExposure: Math.max(Number(account.equity || 0), 1),
           activePositionsCount: positions.length,
-          maxOpenPositions: Number(getSystemConfig().maxOpenPositions)
+          maxOpenPositions: Number(config.maxOpenPositions),
+          activePairPositionsCount,
+          maxPairPositions: maxTradesPerPair
         },
         () => {
           this.setExecutionStatus({
