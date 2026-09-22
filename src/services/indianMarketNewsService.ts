@@ -119,6 +119,7 @@ function parseProviderPage(html: string, provider: Exclude<IndianNewsProviderId,
 }
 function parseFmpArticles(payload: any, now: number): IndianNewsArticle[] {
   const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
+  const indiaTerms = /india|indian|nifty|sensex|bank nifty|banknifty|nse|bse|rbi|sebi|rupee|inr|mumbai|delhi|fii|dii|gift nifty/i;
   return rows.map((r:any) => ({
     title: String(r?.title || r?.headline || '').trim(),
     url: String(r?.url || r?.link || '').trim(),
@@ -127,7 +128,7 @@ function parseFmpArticles(payload: any, now: number): IndianNewsArticle[] {
     publishedAt: publishedAt(String(r?.publishedDate || r?.publishedAt || r?.date || '') || null, now),
     summary: String(r?.text || r?.summary || '').trim() || undefined,
     sentimentScore: headlineScore(String(r?.title || r?.headline || ''))
-  })).filter((a: IndianNewsArticle) => Boolean(a.title && a.url));
+  })).filter((a: IndianNewsArticle) => Boolean(a.title && a.url) && indiaTerms.test(`${a.title} ${a.summary || ''}`));
 }
 async function fetchText(url: URL): Promise<string> {
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
