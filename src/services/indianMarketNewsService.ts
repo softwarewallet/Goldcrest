@@ -134,7 +134,7 @@ async function fetchText(url: URL): Promise<string> {
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent':'Goldcrest/2.0 Indian-market-news', Accept:'text/html,application/json,application/rss+xml,application/xml,text/plain,*/*', 'Cache-Control':'no-cache' }});
-    if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
   } finally { clearTimeout(timer); }
 }
@@ -200,8 +200,8 @@ function prediction(rows: IndianNewsArticle[], marketData:any[]=[]): IndianMarke
   const rationale:string[]=[];
   rationale.push(newsScore>.12?'Cross-provider headline tone is positive.':newsScore<-.12?'Cross-provider headline tone is negative.':'Cross-provider headline tone is mixed/neutral.');
   if(means.length>=3&&agreement>=.65) rationale.push('At least three providers show aligned direction.'); else if(means.length) rationale.push('Provider direction is not fully aligned.');
-  if(nifty!==undefined) rationale.push(\`NIFTY live context: \${nifty.toFixed(2)}.\`);
-  if(bank!==undefined) rationale.push(\`BANKNIFTY live context: \${bank.toFixed(2)}.\`);
+  if(nifty!==undefined) rationale.push(`NIFTY live context: ${nifty.toFixed(2)}.`);
+  if(bank!==undefined) rationale.push(`BANKNIFTY live context: ${bank.toFixed(2)}.`);
   return { bias, confidence, newsSentimentScore:Number(newsScore.toFixed(3)), sourceAgreement:Number(agreement.toFixed(3)), articlesUsed:usable.length, marketContext:{niftyScore:nifty,bankNiftyScore:bank}, rationale, disclaimer:'Probabilistic research signal from live headlines and live market context; not a guaranteed prediction or investment recommendation.' };
 }
 function closedSnapshot(now:Date):IndianNewsSnapshot {
