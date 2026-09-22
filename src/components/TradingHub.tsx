@@ -98,7 +98,6 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [plannedTrades, setPlannedTrades] = useState<RealSignal[]>([]);
   const [isLoadingPositions, setIsLoadingPositions] = useState<boolean>(true);
   const [isLoadingSignals, setIsLoadingSignals] = useState<boolean>(true);
-  const [signalsFetchedAt, setSignalsFetchedAt] = useState<number | null>(null);
   const [signalsAgeNow, setSignalsAgeNow] = useState<number>(Date.now());
 
   const [logs, setLogs] = useState<TerminalLog[]>([
@@ -188,7 +187,6 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         const data = await safeParseJson(res);
         if (Array.isArray(data)) {
           setPlannedTrades(data.filter((signal: RealSignal) => String(signal.direction || '').toUpperCase() !== 'NO_TRADE'));
-          setSignalsFetchedAt(Date.now());
         }
       } else {
         throw new Error('Signals endpoint returned non-ok status');
