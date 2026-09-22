@@ -14,6 +14,7 @@ import { logBrokerAction } from '../auditLog';
 import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../../services/executionIntentService';
 import { getSystemConfig, updateSystemConfig } from '../../services/configService';
 import { liveRuntimeLog } from '../../services/liveRuntimeLog';
+import { normalizePriceToInstrumentDigits } from './TradeSizing';
 
 /**
  * Autonomous live execution is an explicit, server-side opt-in.
@@ -244,6 +245,33 @@ class AutoExecutionEngine {
     const adapter = brokerRegistry.getAdapterForMarket(order.market);
     const broker = adapter.broker;
 
+    // Resolve broker instrument precision before any validation or dispatch.
+    // cTrader can use different decimal precision per symbol (for example,
+    // XAU/USD may allow 2 decimals while FX pairs commonly allow 3-5).
+    // Normalize every broker-facing price using the authoritative instrument
+    // metadata so an otherwise valid order cannot be rejected for extra digits.
+    const instrument = await adapter.getInstrument(order.symbol);
+    if (!instrument) {
+      return { executed: false, reason: 'Live broker instrument metadata unavailable for ' + order.symbol + '.', code: 'INVALID_SYMBOL' };
+    }
+    if (order.price !== undefined && Number(order.price) > 0) {
+      order.price = normalizePriceToInstrumentDigits(Number(order.price), instrument.digits);
+    }
+    if (order.stopLoss !== undefined && Number(order.stopLoss) > 0) {
+      order.stopLoss = normalizePriceToInstrumentDigits(Number(order.stopLoss), instrument.digits);
+    }
+    if (order.takeProfit !== undefined && Number(order.takeProfit) > 0) {
+      order.takeProfit = normalizePriceToInstrumentDigits(Number(order.takeProfit), instrument.digits);
+    }
+    liveRuntimeLog('INFO', 'ORDER_PRICE_PRECISION_NORMALIZED', {
+      broker,
+      symbol: order.symbol,
+      instrumentDigits: instrument.digits,
+      price: order.price,
+      stopLoss: order.stopLoss,
+      takeProfit: order.takeProfit
+    });
+
     // Stage 1: Kill Switch Check
     if (killSwitch.isHalted()) {
       logBrokerAction({
@@ -260,7 +288,6 @@ class AutoExecutionEngine {
     }
 
     // Stage 2: Trade Validator
-    const instrument = await adapter.getInstrument(order.symbol);
     const valResult = tradeValidator.validateSignalAndOrder(signalInput, order, instrument);
     if (!valResult.valid) {
       logBrokerAction({
