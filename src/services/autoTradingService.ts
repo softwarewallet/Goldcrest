@@ -26,10 +26,9 @@ const DEFAULT_AUTO_FOREX_PAIRS = FOREX_PAIRS
 function getConfiguredAutoForexPairs(): string[] {
   const configured = getSystemConfig().autoLiveForexPairs;
   if (!Array.isArray(configured) || configured.length === 0) return [...DEFAULT_AUTO_FOREX_PAIRS];
-  const supported = new Set(FOREX_PAIRS.map(pair => pair.symbol.toUpperCase()));
   return [...new Set(configured
     .map(symbol => String(symbol).toUpperCase().trim())
-    .filter(symbol => supported.has(symbol)))];
+    .filter(symbol => /^[A-Z]{3}\\/[A-Z]{3}$/.test(symbol)))];
 }
 
 // Pre-open preparation is background work. Keep the operator-facing arm fast,
