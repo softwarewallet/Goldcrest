@@ -656,13 +656,20 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     // cTrader returns the authoritative current SL/TP on ProtoOAPosition.
     // Its dedicated unrealized-P&L endpoint is used below because reconcile
     // state does not guarantee a live P&L field on every position payload.
-    const pnlRows = await fetchCTraderPositionUnrealizedPnL(
-      raw.ctidTraderAccountId,
-      this.config.clientId!,
-      this.config.clientSecret!,
-      this.config.accessToken!,
-      raw.isLive
-    );
+    let pnlRows: Awaited<ReturnType<typeof fetchCTraderPositionUnrealizedPnL>> = [];
+    try {
+      pnlRows = await fetchCTraderPositionUnrealizedPnL(
+        raw.ctidTraderAccountId,
+        this.config.clientId!,
+        this.config.clientSecret!,
+        this.config.accessToken!,
+        raw.isLive
+      );
+    } catch {
+      // Keep positions visible if the dedicated P&L request is temporarily
+      // unavailable. The position payload remains authoritative for SL/TP,
+      // and any broker-provided P&L fields are used as a fallback below.
+    }
     const pnlByPositionId = new Map(
       pnlRows.map(row => [Number(row.positionId), row])
     );
