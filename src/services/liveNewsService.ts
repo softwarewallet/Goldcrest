@@ -481,7 +481,7 @@ async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProvider
   url.searchParams.set('query', query);
   url.searchParams.set('mode', 'artlist');
   url.searchParams.set('format', 'json');
-  url.searchParams.set('timespan', process.env.GOLDCREST_NEWS_TIMESPAN || '6h');
+  url.searchParams.set('timespan', process.env.GOLDCREST_NEWS_TIMESPAN || '24h');
   url.searchParams.set('maxrecords', process.env.GOLDCREST_NEWS_MAX_RECORDS || '50');
   url.searchParams.set('sort', 'datedesc');
 
@@ -511,7 +511,7 @@ async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProvider
 
 async function fetchFromGoogleNewsRss(query: string): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string }> {
   const url = new URL(GOOGLE_NEWS_RSS_ENDPOINT);
-  url.searchParams.set('q', `${query} when:12h`);
+  url.searchParams.set('q', `${query} when:24h`);
   url.searchParams.set('hl', process.env.GOLDCREST_NEWS_LANGUAGE || 'en-US');
   url.searchParams.set('gl', process.env.GOLDCREST_NEWS_COUNTRY || 'US');
   url.searchParams.set('ceid', `${process.env.GOLDCREST_NEWS_COUNTRY || 'US'}:${(process.env.GOLDCREST_NEWS_LANGUAGE || 'en').split('-')[0]}`);
