@@ -28,7 +28,7 @@ function getConfiguredAutoForexPairs(): string[] {
   if (!Array.isArray(configured) || configured.length === 0) return [...DEFAULT_AUTO_FOREX_PAIRS];
   return [...new Set(configured
     .map(symbol => String(symbol).toUpperCase().trim())
-    .filter(symbol => /^[A-Z]{3}\\/[A-Z]{3}$/.test(symbol)))];
+    .filter(symbol => /^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)))];
 }
 
 // Pre-open preparation is background work. Keep the operator-facing arm fast,
