@@ -721,11 +721,6 @@ class AutoTradingService {
         const reason = 'Signal engine did not produce an actionable directional setup.';
         this.lastActions.push({ pair, result: 'NO_TRADE', signalId: signal.id, reason });
         liveRuntimeLog('INFO', 'NO_TRADE', { pair, signalId: signal.id, reason });
-        this.finishExecution('REJECTED', pair + ' was not actionable: ' + reason, {
-          pair,
-          side: signal.direction === 'BUY' || signal.direction === 'SELL' ? signal.direction : null,
-          signalId: signal.id
-        });
                 tradeAuditLog('NO_TRADE', { pair, signalId: signal.id, direction: signal.direction, score: signal.score, reason });
 return;
       }
@@ -737,11 +732,6 @@ return;
         const reason = `Signal score ${signal.score} is below the configured Auto Live threshold of ${minSignalScore}.`;
         this.lastActions.push({ pair, result: 'FILTERED', signalId: signal.id, reason });
         liveRuntimeLog('INFO', 'SIGNAL_FILTERED', { pair, signalId: signal.id, score: signal.score, threshold: minSignalScore });
-        this.finishExecution('REJECTED', pair + ' filtered before order preparation: ' + reason, {
-          pair,
-          side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
-          signalId: signal.id
-        });
                 tradeAuditLog('SIGNAL_FILTERED', { pair, signalId: signal.id, score: signal.score, reason });
 return;
       }
@@ -751,11 +741,6 @@ return;
       if (quote.status !== 'FRESH' || Date.now() - quote.timestamp >= LIVE_QUOTE_MAX_AGE_MS) {
         const reason = 'Fresh broker quote unavailable at dispatch boundary.';
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
-        this.finishExecution('REJECTED', pair + ' blocked before order preparation: ' + reason, {
-          pair,
-          side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
-          signalId: signal.id
-        });
                 tradeAuditLog('QUOTE_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
 return;
       }
@@ -766,11 +751,6 @@ return;
         const reason = `Live quote ${entryPrice} is outside entry zone ${plan.entryMin} - ${plan.entryMax}.`;
         this.lastActions.push({ pair, result: 'WAITING_ENTRY', signalId: signal.id, reason });
         liveRuntimeLog('INFO', 'WAITING_ENTRY', { pair, signalId: signal.id, entryPrice, entryMin: plan.entryMin, entryMax: plan.entryMax });
-        this.finishExecution('REJECTED', pair + ' is waiting for a valid entry: ' + reason, {
-          pair,
-          side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
-          signalId: signal.id
-        });
                 tradeAuditLog('ENTRY_WAITING', { pair, signalId: signal.id, score: signal.score, reason });
 return;
       }
@@ -779,11 +759,6 @@ return;
       if (String(account.currency || '').toUpperCase() !== 'USD') {
         const reason = 'Auto Forex sizing currently requires a USD-denominated cTrader account.';
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
-        this.finishExecution('REJECTED', pair + ' blocked before order preparation: ' + reason, {
-          pair,
-          side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
-          signalId: signal.id
-        });
                 tradeAuditLog('ACCOUNT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
 return;
       }
@@ -792,11 +767,6 @@ return;
       if (!instrument) {
         const reason = 'Live broker instrument metadata unavailable.';
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
-        this.finishExecution('REJECTED', pair + ' blocked before order preparation: ' + reason, {
-          pair,
-          side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
-          signalId: signal.id
-        });
                 tradeAuditLog('INSTRUMENT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
 return;
       }
@@ -816,11 +786,6 @@ return;
           maxTradesPerPair,
           score: signal.score
         });
-        this.finishExecution('REJECTED', pair + ' blocked before order preparation: ' + reason, {
-          pair,
-          side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
-          signalId: signal.id
-        });
                 tradeAuditLog('PAIR_LIMIT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
 return;
       }
@@ -830,11 +795,6 @@ return;
       if (!(riskBudget > 0 && stopDistance > 0)) {
         const reason = 'Unable to calculate positive risk budget and stop distance.';
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
-        this.finishExecution('REJECTED', pair + ' blocked before order preparation: ' + reason, {
-          pair,
-          side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
-          signalId: signal.id
-        });
                 tradeAuditLog('RISK_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
 return;
       }
@@ -863,11 +823,6 @@ return;
           requestedQuantity: riskQuantity,
           maxTradeValueUsd: getSystemConfig().maxTradeValueForexUsd,
           error: reason
-        });
-        this.finishExecution('REJECTED', pair + ' order sizing blocked: ' + reason, {
-          pair,
-          side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
-          signalId: signal.id
         });
         return;
       }
