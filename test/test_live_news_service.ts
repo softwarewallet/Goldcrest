@@ -260,7 +260,7 @@ try {
   assert.equal(forexFactory.providerDiagnostics?.FOREX_FACTORY?.rawArticleCount, 2);
   assert.equal(forexFactory.providerDiagnostics?.FOREX_FACTORY?.freshArticleCount, 2);
   assert.match(forexFactory.articles[0].url, /^https:\/\/www\.forexfactory\.com\/news\//);
-  assert.match(forexFactory.articles[0].publishedAt || '', /^20\\d\\d-/);
+  assert.match(forexFactory.articles[0].publishedAt || '', /^20\d\d-/);
 
   resetLiveForexNewsCacheForTest();
   console.log('LIVE NEWS SERVICE TEST PASSED');
