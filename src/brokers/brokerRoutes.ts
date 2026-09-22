@@ -997,7 +997,11 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       totalAccountExposure: totalExposureIncludingOrder,
       maxAllowedExposure,
       activePositionsCount: positions.length,
-      maxOpenPositions: 5
+      maxOpenPositions: Number(getSystemConfig().maxOpenPositions),
+      activePairPositionsCount: positions.filter(position =>
+        String(position.symbol || '').toUpperCase() === String(orderReq.symbol || '').toUpperCase()
+      ).length,
+      maxPairPositions: Math.max(1, Math.min(20, Math.floor(Number(getSystemConfig().autoLiveMaxTradesPerPair))))
     });
 
     if (!gateResult.passed) {
