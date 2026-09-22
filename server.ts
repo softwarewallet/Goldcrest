@@ -34,6 +34,7 @@ import { initializeLiveRuntimeLog, getLiveRuntimeLogStatus, startLiveRuntimeLog,
 import { fetchLiveForexNews } from './src/services/liveNewsService';
 import { alphaVantageNewsService } from './src/services/alphaVantageNewsService';
 import { marketauxNewsService } from './src/services/marketauxNewsService';
+import { fetchIndianMarketNews } from './src/services/indianMarketNewsService';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
 // the public research/training API is retired while the research program is closed.
@@ -1262,6 +1263,27 @@ app.get(['/api/signals', '/api/signals/all'], async (req: Request, res: Response
   }
 });
 
+// 7b. Indian Market News & Prediction — hard-gated to the authoritative Indian session state.
+app.get('/api/india/news', async (req: Request, res: Response) => {
+  try {
+    const session = getIndianSessionState();
+    if (!session.isOpen) {
+      const snapshot = await fetchIndianMarketNews({ forceRefresh: false });
+      return res.json(snapshot);
+    }
+
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    const marketData = await scannerService.getIndianMarketScanner();
+    const snapshot = await fetchIndianMarketNews({ forceRefresh, marketData });
+    res.status(snapshot.status === 'UNAVAILABLE' ? 503 : 200).json(snapshot);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'INDIAN_MARKET_NEWS_UNAVAILABLE',
+      message: err?.message || 'Indian market news is unavailable.'
+    });
+  }
+});
+
 // 8. Live Forex News
 app.get('/api/forex/news', async (req: Request, res: Response) => {
   try {
@@ -1363,10 +1385,16 @@ app.get('/api/news/marketaux', async (req: Request, res: Response) => {
 
 // 8d. News Service Provider Status
 app.get('/api/news/status', async (_req: Request, res: Response) => {
+  const indianSession = getIndianSessionState();
   res.json({
     alphaVantageConfigured: alphaVantageNewsService.isConfigured(),
     marketauxConfigured: marketauxNewsService.isConfigured(),
-    providers: ['ALPHA_VANTAGE', 'MARKETAUX', 'GDELT_DOC_2', 'GOOGLE_NEWS_RSS']
+    providers: ['FOREX_FACTORY', 'ALPHA_VANTAGE', 'MARKETAUX', 'GDELT_DOC_2', 'GOOGLE_NEWS_RSS'],
+    indianMarket: {
+      marketOpen: indianSession.isOpen,
+      phase: indianSession.currentPhase,
+      providers: ['PULSE_ZERODHA', 'CNBC_TV18', 'ET_MARKETS', 'MINT', 'FMP']
+    }
   });
 });
 
