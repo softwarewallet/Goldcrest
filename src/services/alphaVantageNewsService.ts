@@ -589,10 +589,12 @@ export class AlphaVantageNewsService {
     // that can collapse the feed to zero articles. Use one broad market topic and
     // apply pair/currency relevance in the Goldcrest aggregation layer.
     const topics = 'financial_markets';
+    const timeFrom = options.timeFrom || this.formatTime(Date.now() - 24 * 60 * 60_000);
 
     return this.fetchNewsSentiment({
       ...options,
-      topics
+      topics,
+      timeFrom
     });
   }
 
