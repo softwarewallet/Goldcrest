@@ -1219,6 +1219,10 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                       <div><div className="text-slate-600">STALE</div><div className="text-amber-300">{d?.staleArticleCount ?? 0}</div></div>
                     </div>
                     {d?.error && <div className="mt-2 text-[9px] text-rose-400 truncate" title={d.error}>{d.error}</div>}
+                    <div className="mt-2 flex items-center justify-between text-[9px] text-slate-600">
+                      <span>STALE {d?.staleArticleCount ?? 0}</span>
+                      <span>{Number.isFinite(Number(d?.latencyMs)) ? `${Number(d?.latencyMs)}ms` : '—'}</span>
+                    </div>
                     {(d?.latestRawArticleAt || d?.latencyMs !== undefined) && (
                       <div className="mt-2 text-[8px] text-slate-600">
                         {d?.latestRawArticleAt ? `Latest raw: ${new Date(d.latestRawArticleAt).toLocaleTimeString()}` : 'No timestamp'}
