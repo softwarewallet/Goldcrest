@@ -676,14 +676,15 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
 
     const validForexPairs = new Set(FOREX_PAIRS.map(pair => pair.symbol.toUpperCase()));
     const validIndianUnderlyings = new Set(INDIAN_UNDERLYINGS.map(item => item.symbol.toUpperCase()));
+    const isValidForexSymbol = (symbol: string) => /^[A-Z]{3}\\/[A-Z]{3}$/.test(symbol);
 
     if (requestedForexPairs !== undefined) {
       if (!Array.isArray(requestedForexPairs) || requestedForexPairs.length === 0) {
         return res.status(400).json({ error: 'Select at least one Forex instrument for the Auto Live working universe.' });
       }
       const normalized = [...new Set(requestedForexPairs.map((value: unknown) => String(value).toUpperCase().trim()))];
-      if (normalized.some(symbol => !validForexPairs.has(symbol))) {
-        return res.status(400).json({ error: 'One or more selected Forex instruments are not supported.' });
+      if (normalized.some(symbol => !isValidForexSymbol(symbol))) {
+        return res.status(400).json({ error: 'Forex instruments must use the BASE/QUOTE format, for example EUR/USD.' });
       }
       updates.autoLiveForexPairs = normalized;
     }
