@@ -472,21 +472,21 @@ function parseGoogleNewsRss(xml: string): LiveNewsArticle[] {
 function stripHtml(value: string): string {
   return decodeXmlEntities(
     value
-      .replace(/<script\\b[\\s\\S]*?<\\/script>/gi, ' ')
-      .replace(/<style\\b[\\s\\S]*?<\\/style>/gi, ' ')
+      .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
       .replace(/<[^>]+>/g, ' ')
-      .replace(/\\s+/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim()
   );
 }
 
 function parseRelativeAge(value: string, now: number): string | null {
   const text = value.toLowerCase();
-  if (/\\bjust now\\b|\\ba few seconds? ago\\b/.test(text)) {
+  if (/\bjust now\b|\ba few seconds? ago\b/.test(text)) {
     return new Date(now).toISOString();
   }
 
-  const match = text.match(/\\b(\\d+)\\s*(second|sec|minute|min|hour|hr|day|d)s?\\s+ago\\b/);
+  const match = text.match(/\b(\d+)\s*(second|sec|minute|min|hour|hr|day|d)s?\s+ago\b/);
   if (!match) return null;
 
   const amount = Number(match[1]);
@@ -507,12 +507,12 @@ function parseRelativeAge(value: string, now: number): string | null {
 function parseForexFactoryNews(html: string, now: number): LiveNewsArticle[] {
   const articles: LiveNewsArticle[] = [];
   const seenUrls = new Set<string>();
-  const anchorPattern = /<a\\b[^>]*href=["'](https?:\\/\\/www\\.forexfactory\\.com)?(\\/news\\/\\d+[^"']*)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+  const anchorPattern = /<a\b[^>]*href=["'](https?:\/\/www\.forexfactory\.com)?(\/news\/\d+[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
 
   let match: RegExpExecArray | null;
   while ((match = anchorPattern.exec(html)) !== null) {
     const path = match[2];
-    const url = `https://www.forexfactory.com${path}`;
+    const url = 'https://www.forexfactory.com' + path;
     if (seenUrls.has(url)) continue;
 
     const title = stripHtml(match[3]);
@@ -523,15 +523,17 @@ function parseForexFactoryNews(html: string, now: number): LiveNewsArticle[] {
     const contextText = stripHtml(context);
 
     const publishedAt = parseRelativeAge(contextText, now)
-      || normalizePublishedAt(contextText.match(/\\b(20\\d{2}[-/]\\d{1,2}[-/]\\d{1,2}[ T]\\d{1,2}:\\d{2}(?::\\d{2})?(?:Z|[+-]\\d{2}:?\\d{2})?)\\b/)?.[1] || '');
+      || normalizePublishedAt(
+        contextText.match(/\b(20\d{2}[-/]\d{1,2}[-/]\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)\b/)?.[1] || ''
+      );
 
-    const sourceMatch = contextText.match(/\\b(?:From|from)\\s+([^|]+?)\\s*\\|/);
-    const handleMatch = contextText.match(/\\b(?:From|from)\\s+(@[A-Za-z0-9_.-]+)/);
+    const sourceMatch = contextText.match(/\b(?:From|from)\s+([^|]+?)\s*\|/);
+    const handleMatch = contextText.match(/\b(?:From|from)\s+(@[A-Za-z0-9_.-]+)/);
     const source = (sourceMatch?.[1] || handleMatch?.[1] || 'Forex Factory').trim();
 
     const titleIndex = contextText.toLowerCase().indexOf(title.toLowerCase());
     const summary = titleIndex >= 0
-      ? contextText.slice(titleIndex + title.length).split(/\\b(?:Top Comments|Comments)\\b/i)[0].trim().slice(0, 1200)
+      ? contextText.slice(titleIndex + title.length).split(/\b(?:Top Comments|Comments)\b/i)[0].trim().slice(0, 1200)
       : undefined;
 
     seenUrls.add(url);
