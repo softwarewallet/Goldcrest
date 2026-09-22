@@ -676,7 +676,7 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
 
     const validForexPairs = new Set(FOREX_PAIRS.map(pair => pair.symbol.toUpperCase()));
     const validIndianUnderlyings = new Set(INDIAN_UNDERLYINGS.map(item => item.symbol.toUpperCase()));
-    const isValidForexSymbol = (symbol: string) => /^[A-Z]{3}\\/[A-Z]{3}$/.test(symbol);
+    const isValidForexSymbol = (symbol: string) => /^[A-Z]{3}\/[A-Z]{3}$/.test(symbol);
 
     if (requestedForexPairs !== undefined) {
       if (!Array.isArray(requestedForexPairs) || requestedForexPairs.length === 0) {
