@@ -14,6 +14,8 @@ import { BrokerAdapter, NormalizedQuote, OrderRequest } from '../brokers/types';
 import { liveRuntimeLog } from './liveRuntimeLog';
 import { sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
 
+const LIVE_QUOTE_MAX_AGE_MS = 30_000;
+
 const AUTO_INTERVAL_MS = Math.max(
   15_000,
   Number(process.env.GOLDCREST_AUTO_TRADING_INTERVAL_MS || 60_000)
@@ -619,6 +621,16 @@ class AutoTradingService {
         });
       }
 
+      const pairsToEvaluate = configuredPairs.filter(pair => !blockedNewsPairs.includes(pair));
+      liveRuntimeLog('INFO', 'AUTO_TRADING_SCAN_UNIVERSE', {
+        configuredPairs,
+        configuredPairCount: configuredPairs.length,
+        blockedByNews: blockedNewsPairs,
+        blockedByNewsCount: blockedNewsPairs.length,
+        pairsToEvaluate,
+        pairsToEvaluateCount: pairsToEvaluate.length
+      });
+
       const session = getForexSessionState();
       if (session.activeSessions.includes('CLOSED (WEEKEND)')) {
         this.state = 'PREPARING';
@@ -627,34 +639,27 @@ class AutoTradingService {
         return;
       }
 
-      for (const pair of configuredPairs) {
+      for (const pair of blockedNewsPairs) {
         const pairRisk = cycleNews.pairRisk?.[pair];
-        const highImpactBlocked = pairRisk
-          ? pairRisk.riskLevel === 'HIGH'
-          : cycleNews.riskLevel === 'HIGH';
+        const reason = 'Active pair-relevant high-impact news is inside the configured blackout window for ' + pair + '.';
+        this.lastActions.push({
+          pair,
+          result: 'BLOCKED',
+          reason
+        });
+        liveRuntimeLog('WARN', 'AUTO_TRADING_PAIR_BLOCKED_NEWS', {
+          pair,
+          signalId: undefined,
+          reason,
+          pairRisk: pairRisk || null
+        });
+      }
 
-        if (highImpactBlocked) {
-          const reason = 'Active pair-relevant high-impact news is inside the configured blackout window for ' + pair + '.';
-          this.lastActions.push({
-            pair,
-            result: 'BLOCKED',
-            reason
-          });
-          liveRuntimeLog('WARN', 'AUTO_TRADING_PAIR_BLOCKED_NEWS', {
-            pair,
-            signalId: undefined,
-            reason,
-            pairRisk: pairRisk || null
-          });
-          continue;
-        }
-
-      // Scan/analyze every configured pair in parallel. Each pair remains
+      // Scan/analyze every eligible configured pair in parallel. Each pair is
       // independently isolated, while the execution portion of evaluatePair
       // is serialized by withExecutionLock(). This removes the old sequential
       // scan bottleneck without weakening account-level safety gates.
-      await Promise.all(configuredPairs.map(pair => this.evaluatePair(pair)));
-      }
+      await Promise.all(pairsToEvaluate.map(pair => this.evaluatePair(pair)));
 
       this.lastCycleResult = 'Cycle completed.';
       liveRuntimeLog('INFO', 'AUTO_TRADING_CYCLE_COMPLETED', { actions: this.lastActions });
@@ -704,7 +709,7 @@ class AutoTradingService {
 
       const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
       const quote = await adapter.getQuote(pair);
-      if (quote.status !== 'FRESH' || Date.now() - quote.timestamp >= 10_000) {
+      if (quote.status !== 'FRESH' || Date.now() - quote.timestamp >= LIVE_QUOTE_MAX_AGE_MS) {
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason: 'Fresh broker quote unavailable at dispatch boundary.' });
         return;
       }
