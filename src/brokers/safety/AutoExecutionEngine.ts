@@ -13,7 +13,7 @@ import { autoTradeReadinessService } from './AutoTradeReadiness';
 import { logBrokerAction } from '../auditLog';
 import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../../services/executionIntentService';
 import { getSystemConfig, updateSystemConfig } from '../../services/configService';
-import { liveRuntimeLog } from '../../services/liveRuntimeLog';
+import { liveRuntimeLog, tradeAuditLog } from '../../services/liveRuntimeLog';
 import { normalizePriceToInstrumentDigits } from './TradeSizing';
 
 /**
@@ -245,6 +245,18 @@ class AutoExecutionEngine {
     const adapter = brokerRegistry.getAdapterForMarket(order.market);
     const broker = adapter.broker;
 
+    const auditExecution = (event: string, details: Record<string, unknown>) => {
+      tradeAuditLog(event, {
+        broker,
+        environment: env,
+        symbol: order.symbol,
+        signalId: order.signalId,
+        side: order.side,
+        quantity: order.quantity,
+        ...details
+      });
+    };
+
     // Resolve broker instrument precision before any validation or dispatch.
     // cTrader can use different decimal precision per symbol (for example,
     // XAU/USD may allow 2 decimals while FX pairs commonly allow 3-5).
@@ -284,6 +296,7 @@ class AutoExecutionEngine {
         result: 'BLOCKED',
         error: 'Emergency Kill Switch is ACTIVE'
       });
+      auditExecution('EXECUTION_REJECTED', { code: 'EMERGENCY_STOP_ACTIVE', reason: 'Emergency Kill Switch is ACTIVE' });
       return { executed: false, reason: 'Emergency Kill Switch is ACTIVE', code: 'EMERGENCY_STOP_ACTIVE' };
     }
 
@@ -305,6 +318,7 @@ class AutoExecutionEngine {
           reason: valResult.rejectionReason
         }
       });
+      auditExecution('TRADE_VALIDATOR_REJECTED', { code: 'RISK_REJECTED', reason: valResult.rejectionReason, checks: valResult.checks });
       return { executed: false, reason: valResult.rejectionReason, code: 'RISK_REJECTED' };
     }
 
@@ -325,6 +339,7 @@ class AutoExecutionEngine {
         error: gateResult.failedReasons.join(', '),
         riskValidation: { passed: false, checks: gateResult.checks, reason: gateResult.failedReasons.join(', ') }
       });
+      auditExecution('SAFETY_GATE_REJECTED', { code: 'SAFETY_GATE_REJECTED', reason: gateResult.failedReasons.join(', '), checks: gateResult.checks });
       return {
         executed: false,
         code: 'SAFETY_GATE_REJECTED',
@@ -358,6 +373,7 @@ class AutoExecutionEngine {
           reason: readiness.failedReasons.join(', ')
         }
       });
+      auditExecution('READINESS_REJECTED', { code: 'AUTO_TRADE_NOT_READY', reason: readiness.failedReasons.join(', '), checks: readiness.checks });
       return {
         executed: false,
         code: 'AUTO_TRADE_NOT_READY',
@@ -380,6 +396,7 @@ class AutoExecutionEngine {
         result: 'BLOCKED',
         error: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED: Signal validated for operator review only.'
       });
+      auditExecution('AUTONOMOUS_PERMISSION_REJECTED', { code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED', reason: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED: Autonomous live-money order execution is disabled by the current server control.' });
       return {
         executed: false,
         code: 'AUTONOMOUS_LIVE_EXECUTION_DISABLED',
@@ -391,6 +408,7 @@ class AutoExecutionEngine {
     try {
       const idempotencyKey = String(order.signalId || '').trim();
       if (!idempotencyKey) {
+        auditExecution('EXECUTION_REJECTED', { code: 'IDEMPOTENCY_KEY_REQUIRED', reason: 'Autonomous signal execution requires a stable signalId for duplicate-order protection.' });
         return {
           executed: false,
           code: 'IDEMPOTENCY_KEY_REQUIRED',
@@ -407,6 +425,7 @@ class AutoExecutionEngine {
       });
 
       if (!intent.claimed) {
+        auditExecution('EXECUTION_INTENT_DUPLICATE', { code: 'EXECUTION_INTENT_ALREADY_EXISTS', reason: 'This autonomous signal has already been submitted or is pending reconciliation.', existingState: intent.existing?.state });
         return {
           executed: intent.existing?.state === 'COMPLETED',
           order: intent.existing?.result as NormalizedOrder | undefined,
@@ -424,6 +443,7 @@ class AutoExecutionEngine {
           status: 'REJECTED',
           rejectionReason: 'Broker adapter does not expose the guarded autonomous-order capability.'
         } as NormalizedOrder);
+        auditExecution('EXECUTION_REJECTED', { code: 'AUTONOMOUS_ORDER_PATH_UNAVAILABLE', reason: 'Broker adapter does not expose the guarded autonomous-order capability.' });
         return {
           executed: false,
           code: 'AUTONOMOUS_ORDER_PATH_UNAVAILABLE',
@@ -432,6 +452,7 @@ class AutoExecutionEngine {
       }
 
       // This is the last guarded application-level point before the live broker API call.
+      auditExecution('FINAL_ORDER_PACKET', { request: order });
       onReadyToSubmit?.();
       const placedOrder = await autonomousPlacer.call(adapter, order);
 
@@ -453,6 +474,10 @@ class AutoExecutionEngine {
         result: 'SUCCESS',
         quantity: order.quantity
       });
+      auditExecution(placedOrder.status === 'FILLED' ? 'TRADE_EXECUTED' : 'BROKER_ORDER_RESULT', {
+        brokerStatus: placedOrder.status,
+        orderId: placedOrder.brokerOrderId || placedOrder.id
+      });
       return {
         executed: placedOrder.status === 'FILLED',
         order: placedOrder
@@ -468,6 +493,7 @@ class AutoExecutionEngine {
         result: 'FAILURE',
         error: err.message
       });
+      auditExecution('BROKER_SUBMISSION_FAILED', { code: 'BROKER_SUBMISSION_FAILED', reason: `Broker Order Submission Failed: ${err.message}` });
       return {
         executed: false,
         code: 'BROKER_SUBMISSION_FAILED',
