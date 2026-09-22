@@ -652,35 +652,89 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     );
     const symbols = await this.getCachedCTraderSymbols(raw);
     const byId = new Map(symbols.map(s => [s.symbolId, s]));
-    return state.positions.map((p: any) => {
-      const trade = p.tradeData || {};
-      const symbolInfo = byId.get(Number(trade.symbolId));
-      if (!symbolInfo) return null;
-      const side = String(trade.tradeSide || '').toUpperCase().includes('SELL') ? 'SELL' : 'BUY';
-      const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0));
-      const entryPrice = Number(trade.openPrice || p.price || 0);
-      if (quantity <= 0 || entryPrice <= 0) return null;
+
+    // cTrader returns the authoritative current SL/TP on ProtoOAPosition.
+    // Its dedicated unrealized-P&L endpoint is used below because reconcile
+    // state does not guarantee a live P&L field on every position payload.
+    const pnlRows = await fetchCTraderPositionUnrealizedPnL(
+      raw.ctidTraderAccountId,
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      raw.isLive
+    );
+    const pnlByPositionId = new Map(
+      pnlRows.map(row => [Number(row.positionId), row])
+    );
+
+    const positions = state.positions
+      .map((p: any) => {
+        const trade = p.tradeData || {};
+        const symbolInfo = byId.get(Number(trade.symbolId));
+        if (!symbolInfo) return null;
+
+        const side = String(trade.tradeSide || '').toUpperCase().includes('SELL') ? 'SELL' : 'BUY';
+        const quantity = Math.abs(Number(trade.volume || trade.volumeInUnits || 0)) / 100;
+        const entryPrice = Number(p.price ?? trade.openPrice ?? 0);
+        if (quantity <= 0 || entryPrice <= 0) return null;
+
+        return { raw: p, symbolInfo, side, quantity, entryPrice };
+      })
+      .filter(Boolean) as Array<{
+        raw: any;
+        symbolInfo: typeof symbols[number];
+        side: 'BUY' | 'SELL';
+        quantity: number;
+        entryPrice: number;
+      }>;
+
+    // Current price is the executable side of a fresh broker quote:
+    // BUY positions close at bid, SELL positions close at ask.
+    const enriched = await Promise.all(positions.map(async position => {
+      try {
+        const quote = await fetchLiveCTraderQuote(
+          raw.ctidTraderAccountId,
+          Number(position.symbolInfo.symbolId),
+          position.symbolInfo.symbolName,
+          this.config.clientId!,
+          this.config.clientSecret!,
+          this.config.accessToken!,
+          raw.isLive,
+          Number(position.symbolInfo.digits || 5)
+        );
+        return {
+          position,
+          currentPrice: position.side === 'BUY' ? Number(quote.bid || 0) : Number(quote.ask || 0)
+        };
+      } catch {
+        return { position, currentPrice: position.entryPrice };
+      }
+    }));
+
+    return enriched.map(({ position, currentPrice }) => {
+      const p = position.raw;
+      const pnl = pnlByPositionId.get(Number(p.positionId));
+
       return {
         id: String(p.positionId),
         broker: 'CTRADER',
         environment: this.environment,
         market: 'FOREX',
-        symbol: symbolInfo.symbolName,
-        side,
-        quantity,
-        entryPrice,
-        currentPrice: entryPrice,
-        stopLoss: trade.stopLoss,
-        takeProfit: trade.takeProfit,
-        unrealizedPnL: Number(p.unrealizedPnL || 0),
-        realizedPnL: Number(p.realizedPnL || 0),
+        symbol: position.symbolInfo.symbolName,
+        side: position.side,
+        quantity: position.quantity,
+        entryPrice: position.entryPrice,
+        currentPrice: currentPrice > 0 ? currentPrice : position.entryPrice,
+        stopLoss: Number(p.stopLoss || 0) > 0 ? Number(p.stopLoss) : undefined,
+        takeProfit: Number(p.takeProfit || 0) > 0 ? Number(p.takeProfit) : undefined,
+        unrealizedPnL: Number(pnl?.netUnrealizedPnL ?? p.netUnrealizedPnL ?? p.unrealizedPnL ?? 0),
+        realizedPnL: Number(p.realizedPnL ?? p.realizedPnl ?? 0),
         currency: this.accountData?.currency || 'USD',
-        timestamp: Date.now(),
+        timestamp: Number(p.utcLastUpdateTimestamp || Date.now()),
         brokerPositionId: String(p.positionId)
       } as NormalizedPosition;
-    }).filter(Boolean) as NormalizedPosition[];
+    });
   }
-
   async getOpenOrders(): Promise<NormalizedOrder[]> {
     const raw = await this.resolveRawAccount();
     const state = await fetchCTraderReconcileState(
