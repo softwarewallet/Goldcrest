@@ -64,7 +64,8 @@ const MSG_ORDER_DETAILS_REQ = 2181;
 const MSG_ORDER_DETAILS_RES = 2182;
 const MSG_SYMBOLS_FOR_CONVERSION_REQ = 2118;
 const MSG_SYMBOLS_FOR_CONVERSION_RES = 2119;
-const MSG_ERROR_RES = 2142;
+const MSG_ERROR_RES = 2142;\nconst MSG_GET_POSITION_UNREALIZED_PNL_REQ = 2187;
+const MSG_GET_POSITION_UNREALIZED_PNL_RES = 2188;
 
 /**
  * Goldcrest always presents cTrader as its LIVE broker adapter. The actual
@@ -965,6 +966,51 @@ export async function fetchCTraderDeals(
     }, MSG_DEAL_LIST_RES, 15000);
     return Array.isArray(payload.deal) ? payload.deal : [];
   });
+}
+
+export interface CTraderPositionUnrealizedPnL {
+  positionId: number;
+  grossUnrealizedPnL: number;
+  netUnrealizedPnL: number;
+  moneyDigits: number;
+}
+
+export async function fetchCTraderPositionUnrealizedPnL(
+  ctidTraderAccountId: number,
+  clientId: string,
+  clientSecret: string,
+  accessToken: string,
+  isLive: boolean
+): Promise<CTraderPositionUnrealizedPnL[]> {
+  return withAuthenticatedAccount(
+    ctidTraderAccountId,
+    clientId,
+    clientSecret,
+    accessToken,
+    isLive,
+    async ws => {
+      const payload = await sendAndAwait(
+        ws,
+        MSG_GET_POSITION_UNREALIZED_PNL_REQ,
+        { ctidTraderAccountId },
+        MSG_GET_POSITION_UNREALIZED_PNL_RES,
+        10000
+      );
+      const moneyDigits = Number(payload.moneyDigits ?? 0);
+      const divisor = Math.pow(10, Number.isFinite(moneyDigits) ? moneyDigits : 0);
+      const rows = Array.isArray(payload.positionUnrealizedPnL)
+        ? payload.positionUnrealizedPnL
+        : [];
+      return rows
+        .filter((row: any) => row?.positionId !== undefined)
+        .map((row: any) => ({
+          positionId: Number(row.positionId),
+          grossUnrealizedPnL: Number(row.grossUnrealizedPnL || 0) / divisor,
+          netUnrealizedPnL: Number(row.netUnrealizedPnL || 0) / divisor,
+          moneyDigits
+        }));
+    }
+  );
 }
 
 export async function fetchCTraderReconcileState(
