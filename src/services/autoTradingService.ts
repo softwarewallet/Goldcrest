@@ -768,7 +768,13 @@ return;
       }
 
       const plan = signal.tradePlan;
-      const entryPrice = signal.direction === 'BUY' ? quote.ask : quote.bid;
+      if (!signalSide) {
+        const reason = `Directional side could not be resolved from signal direction ${signal.direction}.`;
+        this.lastActions.push({ pair, result: 'NO_TRADE', signalId: signal.id, reason });
+        tradeAuditLog('NO_TRADE', { pair, signalId: signal.id, direction: signal.direction, score: signal.score, reason });
+        return;
+      }
+      const entryPrice = signalSide === 'BUY' ? quote.ask : quote.bid;
       if (entryPrice < plan.entryMin || entryPrice > plan.entryMax) {
         const reason = `Live quote ${entryPrice} is outside entry zone ${plan.entryMin} - ${plan.entryMax}.`;
         this.lastActions.push({ pair, result: 'WAITING_ENTRY', signalId: signal.id, reason });
@@ -862,7 +868,7 @@ return;
       const order: OrderRequest = {
         market: 'FOREX',
         symbol: pair,
-        side: signal.direction === 'BUY' ? 'BUY' : 'SELL',
+        side: signalSide,
         orderType: 'MARKET',
         quantity,
         price: entryPrice,
