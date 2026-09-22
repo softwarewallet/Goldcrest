@@ -64,6 +64,10 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   const [maxIndianInr, setMaxIndianInr] = useState(1000000);
   const [savingLimits, setSavingLimits] = useState(false);
   const [limitMessage, setLimitMessage] = useState('');
+  const [autoLiveMinSignalScore, setAutoLiveMinSignalScore] = useState(75);
+  const [autoLiveMaxTradesPerPair, setAutoLiveMaxTradesPerPair] = useState(4);
+  const [savingAutoLiveControls, setSavingAutoLiveControls] = useState(false);
+  const [autoLiveControlsMessage, setAutoLiveControlsMessage] = useState('');
   const [autoLiveForexPairs, setAutoLiveForexPairs] = useState<string[]>([
     'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD'
   ]);
@@ -101,6 +105,12 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         }
         if (Number.isFinite(Number(config.maxTradeValueIndianInr))) {
           setMaxIndianInr(Number(config.maxTradeValueIndianInr));
+        }
+        if (Number.isFinite(Number(config.autoLiveMinSignalScore))) {
+          setAutoLiveMinSignalScore(Number(config.autoLiveMinSignalScore));
+        }
+        if (Number.isFinite(Number(config.autoLiveMaxTradesPerPair))) {
+          setAutoLiveMaxTradesPerPair(Number(config.autoLiveMaxTradesPerPair));
         }
         if (Array.isArray(config.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0) {
           setAutoLiveForexPairs(config.autoLiveForexPairs);
@@ -246,6 +256,96 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                 {savingLimits ? 'SAVING…' : 'SAVE TRADE LIMITS'}
               </button>
               {limitMessage && <span className="text-[10px] text-slate-400 font-mono">{limitMessage}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-slate-900 border border-emerald-900/60 rounded-xl p-5">
+        <div className="flex items-start gap-3">
+          <Sliders className="w-5 h-5 text-emerald-400 mt-0.5" />
+          <div className="flex-1">
+            <div className="text-sm font-bold text-white">Auto Live Execution Rules</div>
+            <p className="text-xs text-slate-400 mt-1">
+              These values are the server-side controls used by the autonomous Forex execution loop. They are persisted in SQLite and applied on the next Auto Live evaluation cycle.
+            </p>
+            <div className="grid md:grid-cols-2 gap-4 mt-4">
+              <label className="block space-y-1">
+                <span className="text-[10px] uppercase text-slate-500 font-mono">Minimum Signal Score</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={autoLiveMinSignalScore}
+                    onChange={e => setAutoLiveMinSignalScore(Number(e.target.value))}
+                    className={inputClass}
+                  />
+                  <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap">0–100</span>
+                </div>
+                <span className="text-[10px] text-slate-600 font-mono">A signal must meet or exceed this score before Auto Live can attempt execution.</span>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[10px] uppercase text-slate-500 font-mono">Maximum Simultaneous Trades / Pair</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    step="1"
+                    value={autoLiveMaxTradesPerPair}
+                    onChange={e => setAutoLiveMaxTradesPerPair(Number(e.target.value))}
+                    className={inputClass}
+                  />
+                  <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap">1–20</span>
+                </div>
+                <span className="text-[10px] text-slate-600 font-mono">Multiple positions on the same pair are allowed until this limit is reached.</span>
+              </label>
+            </div>
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                type="button"
+                onClick={async () => {
+                  const score = Number(autoLiveMinSignalScore);
+                  const pairLimit = Number(autoLiveMaxTradesPerPair);
+                  if (!Number.isInteger(score) || score < 0 || score > 100) {
+                    setAutoLiveControlsMessage('Minimum Signal Score must be an integer from 0 to 100.');
+                    return;
+                  }
+                  if (!Number.isInteger(pairLimit) || pairLimit < 1 || pairLimit > 20) {
+                    setAutoLiveControlsMessage('Maximum Simultaneous Trades / Pair must be an integer from 1 to 20.');
+                    return;
+                  }
+                  setSavingAutoLiveControls(true);
+                  setAutoLiveControlsMessage('');
+                  try {
+                    const res = await fetch('/api/config', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        autoLiveMinSignalScore: score,
+                        autoLiveMaxTradesPerPair: pairLimit
+                      })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Failed to save Auto Live execution rules.');
+                    setAutoLiveControlsMessage(
+                      `Auto Live rules saved: minimum score ${score}, maximum ${pairLimit} simultaneous trades per pair.`
+                    );
+                    onRefreshGlobal?.();
+                  } catch (err: any) {
+                    setAutoLiveControlsMessage(err.message || 'Failed to save Auto Live execution rules.');
+                  } finally {
+                    setSavingAutoLiveControls(false);
+                  }
+                }}
+                disabled={savingAutoLiveControls}
+                className="px-4 py-2 rounded bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold"
+              >
+                {savingAutoLiveControls ? 'SAVING…' : 'SAVE AUTO LIVE RULES'}
+              </button>
+              {autoLiveControlsMessage && <span className="text-[10px] text-slate-400 font-mono">{autoLiveControlsMessage}</span>}
             </div>
           </div>
         </div>
