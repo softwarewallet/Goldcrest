@@ -158,7 +158,7 @@ export function operatorAuthRequired(req: Request, res: Response, next: NextFunc
 
   const configuredKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
   if (!configuredKey) {
-    res.status(503).type('application/json').json({
+    res.status(503).json({
       error: 'OPERATOR_AUTH_NOT_CONFIGURED',
       message: 'Operator authentication is not configured.'
     });
@@ -177,7 +177,7 @@ export function operatorAuthRequired(req: Request, res: Response, next: NextFunc
     || bearer;
 
   if (!sameOrigin(req) || !credentialsValid(configuredKey, suppliedKey)) {
-    res.status(401).type('application/json').json({
+    res.status(401).json({
       error: 'OPERATOR_AUTH_REQUIRED',
       message: 'Valid operator authentication is required.'
     });
