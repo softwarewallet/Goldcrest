@@ -537,6 +537,14 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       }
       setNewsSnapshot(payload);
       if (payload?.error) setNewsError(payload.error);
+      // Refresh the Auto Live telemetry as well so the header NEWS pill
+      // immediately reflects the same provider fetch that the operator just triggered.
+      const autoRes = await fetch('/api/auto-trading/status', { cache: 'no-store' }).catch(() => null);
+      if (autoRes?.ok) {
+        const autoStatus = await autoRes.json();
+        setAutoTradingStatus(autoStatus);
+        onAutoTradingStatusChange?.(autoStatus);
+      }
     } catch (err: any) {
       setNewsError(err?.message || 'Manual news refresh failed.');
     } finally {
