@@ -27,6 +27,7 @@ import {
   submitLiveCTraderOrder,
   fetchCTraderTrendbars,
   fetchCTraderReconcileState,
+  fetchCTraderPositionUnrealizedPnL,
   fetchCTraderDeals,
   fetchCTraderOrderDetails,
   fetchCTraderAssets,
