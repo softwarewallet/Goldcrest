@@ -1,6 +1,5 @@
 import WebSocket from 'ws';
 import { BrokerAccountInfo, TradingEnvironment } from '../../types';
-import { getCTraderApiMode } from '../../../services/configService';
 import { recordTradeRequest, recordTradeResult } from '../../../services/tradeAuditLog';
 
 export interface CTraderRawAccount {
@@ -70,9 +69,8 @@ const MSG_GET_POSITION_UNREALIZED_PNL_RES = 2188;
 
 /**
  * Goldcrest always presents cTrader as its LIVE broker adapter. The actual
- * cTrader Open API endpoint is configurable so a broker test account can be
- * exercised with the same application flows before the account is promoted
- * to the broker's real-money environment.
+ * The cTrader Open API endpoint is configurable, while Goldcrest itself
+ * operates only against the broker's live environment.
  */
 function getConfiguredCTraderWsHost(): string | null {
   const configured = String(process.env.CTRADER_LIVE_API_HOST || '').trim();
@@ -82,13 +80,7 @@ function getConfiguredCTraderWsHost(): string | null {
 
 function getCTraderWsHost(_accountIsLive?: boolean): string {
   const configured = getConfiguredCTraderWsHost();
-  if (configured) return configured;
-  const apiMode = getCTraderApiMode();
-  if (apiMode === 'LIVE') {
-    return 'wss://live.ctraderapi.com:5036';
-  }
-  const demoEnv = ['d', 'e', 'm', 'o'].join('');
-  return `wss://${demoEnv}.ctraderapi.com:5036`;
+  return configured || 'wss://live.ctraderapi.com:5036';
 }
 
 function isAuthoritativeLiveHost(host: string): boolean {
@@ -100,17 +92,11 @@ function isAuthoritativeLiveHost(host: string): boolean {
 }
 
 /**
- * Resolve the cTrader WebSocket endpoint according to the selected cTrader API mode (DEMO or LIVE).
+ * Resolve the cTrader WebSocket endpoint for the LIVE-only runtime.
  */
 export function getCTraderRequestHosts(_accountIsLive: boolean): string[] {
   const configuredHost = getConfiguredCTraderWsHost();
-  if (configuredHost) return [configuredHost];
-  const apiMode = getCTraderApiMode();
-  const demoEnv = ['d', 'e', 'm', 'o'].join('');
-  if (apiMode === 'LIVE') {
-    return ['wss://live.ctraderapi.com:5036'];
-  }
-  return [`wss://${demoEnv}.ctraderapi.com:5036`];
+  return [configuredHost || 'wss://live.ctraderapi.com:5036'];
 }
 
 /**
