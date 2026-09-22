@@ -486,22 +486,31 @@ function parseRelativeAge(value: string, now: number): string | null {
     return new Date(now).toISOString();
   }
 
-  const match = text.match(/\b(\d+)\s*(second|sec|minute|min|hour|hr|day|d)s?\s+ago\b/);
-  if (!match) return null;
+  const phrase = text.match(/\b((?:\d+\s*(?:second|sec|minute|min|hour|hr|day|d)s?\s*)+)ago\b/)?.[1];
+  if (!phrase) return null;
 
-  const amount = Number(match[1]);
-  if (!Number.isFinite(amount)) return null;
+  let ageMs = 0;
+  const parts = phrase.match(/\d+\s*(?:second|sec|minute|min|hour|hr|day|d)s?/g) || [];
+  for (const part of parts) {
+    const partMatch = part.match(/(\d+)\s*(second|sec|minute|min|hour|hr|day|d)s?/);
+    if (!partMatch) continue;
 
-  const unit = match[2];
-  const multiplier = unit.startsWith('second') || unit === 'sec'
-    ? 1_000
-    : unit.startsWith('minute') || unit === 'min'
-      ? 60_000
-      : unit.startsWith('hour') || unit === 'hr'
-        ? 60 * 60_000
-        : 24 * 60 * 60_000;
+    const amount = Number(partMatch[1]);
+    if (!Number.isFinite(amount)) continue;
 
-  return new Date(now - amount * multiplier).toISOString();
+    const unit = partMatch[2];
+    ageMs += amount * (
+      unit.startsWith('second') || unit === 'sec'
+        ? 1_000
+        : unit.startsWith('minute') || unit === 'min'
+          ? 60_000
+          : unit.startsWith('hour') || unit === 'hr'
+            ? 60 * 60_000
+            : 24 * 60 * 60_000
+    );
+  }
+
+  return new Date(now - ageMs).toISOString();
 }
 
 function parseForexFactoryNews(html: string, now: number): LiveNewsArticle[] {
