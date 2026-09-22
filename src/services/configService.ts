@@ -8,7 +8,7 @@ export interface SystemConfig {
   dataStatus: 'LIVE' | 'DELAYED' | 'STALE' | 'UNAVAILABLE';
   modelStatus: string;
   researchStatus: 'CLOSED';
-  cTraderApiMode: 'DEMO' | 'LIVE';
+  cTraderApiMode: 'LIVE';
   selectedCtraderAccountId?: string;
   selectedCtraderAccountCurrency?: string;
   selectedCtraderAccountLabel?: string;
@@ -72,7 +72,7 @@ let activeConfig: SystemConfig = {
   dataStatus: 'UNAVAILABLE',
   modelStatus: 'ML BASELINE / UNCALIBRATED (PHASE 1)',
   researchStatus: 'CLOSED',
-  cTraderApiMode: 'DEMO',
+  cTraderApiMode: 'LIVE',
   defaultRiskPct: 1.0,
   maxDailyLossPct: 3.0,
   maxOpenPositions: 5,
@@ -222,7 +222,6 @@ export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig
   return { ...activeConfig };
 }
 
-export function getCTraderApiMode(): 'DEMO' | 'LIVE' {
-  const config = getSystemConfig();
-  return config.cTraderApiMode === 'LIVE' ? 'LIVE' : 'DEMO';
+export function getCTraderApiMode(): 'LIVE' {
+  return 'LIVE';
 }
