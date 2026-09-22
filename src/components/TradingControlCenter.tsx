@@ -422,7 +422,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       if (newsRes?.ok) {
         const snapshot = await newsRes.json();
         setNewsSnapshot(snapshot);
-        setNewsError(snapshot?.error || null);
+        setNewsError(snapshot?.status === 'LIVE' ? null : (snapshot?.error || null));
       } else if (newsRes) {
         const payload = await newsRes.json().catch(() => ({}));
         setNewsError(payload?.message || payload?.error || 'Live news endpoint unavailable.');
