@@ -153,12 +153,6 @@ export class AlphaVantageNewsService {
         const match = content.match(/^ALPHA_VANTAGE_API_KEY\s*=\s*["']?([^"'\r\n]+)["']?/m);
         if (match && match[1]?.trim()) return match[1].trim();
       }
-      const envExPath = path.join(process.cwd(), '.env.example');
-      if (fs.existsSync(envExPath)) {
-        const content = fs.readFileSync(envExPath, 'utf8');
-        const match = content.match(/^ALPHA_VANTAGE_API_KEY\s*=\s*["']?([^"'\r\n]+)["']?/m);
-        if (match && match[1]?.trim()) return match[1].trim();
-      }
     } catch {
       // ignore
     }
@@ -308,7 +302,7 @@ export class AlphaVantageNewsService {
     }
 
     // Rate-limit backoff guard
-    if (!options.forceRefresh && now < this.rateLimitedUntil) {
+    if (now < this.rateLimitedUntil) {
       const cached = this.cache.get(cacheKey);
       if (cached) {
         return cached.snapshot;
