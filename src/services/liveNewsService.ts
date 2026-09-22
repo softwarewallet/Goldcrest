@@ -85,6 +85,8 @@ const GDELT_ENDPOINT = process.env.GOLDCREST_GDELT_DOC_URL
 const GOOGLE_NEWS_RSS_ENDPOINT = 'https://news.google.com/rss/search';
 const FOREX_FACTORY_NEWS_ENDPOINT = process.env.GOLDCREST_FOREX_FACTORY_NEWS_URL
   || 'https://www.forexfactory.com/news';
+const FOREX_FACTORY_RSS_ENDPOINT = process.env.GOLDCREST_FOREX_FACTORY_RSS_URL
+  || 'https://cdn.rss.forexfactory.net/news/all.xml';
 
 const MACRO_NEWS_QUERY = [
   '"Federal Reserve"', 'FOMC', 'ECB', '"Bank of Japan"', 'BOJ',
@@ -150,7 +152,11 @@ const REQUEST_TIMEOUT_MS = Math.max(
 );
 const GDELT_TIMEOUT_MS = Math.max(
   5_000,
-  Number(process.env.GOLDCREST_NEWS_GDELT_TIMEOUT_MS || 12_000)
+  Number(process.env.GOLDCREST_NEWS_GDELT_TIMEOUT_MS || 8_000)
+);
+const GDELT_FAILURE_BACKOFF_MS = Math.max(
+  30_000,
+  Number(process.env.GOLDCREST_NEWS_GDELT_FAILURE_BACKOFF_MS || 60_000)
 );
 const GDELT_MIN_INTERVAL_MS = Math.max(
   5_000,
@@ -266,14 +272,19 @@ function buildNewsQuery(pairs: string[]): string {
     .join(' OR ')})`;
 }
 
-function buildGdeltQuery(): string {
-  // GDELT is the slowest and most rate-limited provider. Keep its query
-  // deliberately small and stable; pair relevance is enforced after
-  // retrieval by the Goldcrest classifier. This avoids expensive broad
-  // currency-alias searches that can time out.
-  return `(${MACRO_NEWS_QUERY
-    .map(term => term.includes(' ') ? term : term)
-    .join(' OR ')})`;
+function buildGdeltQuery(pairs: string[]): string {
+  // Keep GDELT deliberately narrow. A large macro OR query can become an
+  // expensive full-text search and routinely hit the provider timeout.
+  const eventTerms = [
+    '"Federal Reserve"', 'FOMC', 'ECB', 'BOJ', '"Bank of England"',
+    'RBA', 'RBNZ', '"Bank of Canada"', 'SNB', 'CPI',
+    '"rate decision"', '"nonfarm payrolls"'
+  ];
+  const currencies = [...getRelevantCurrencies(pairs)]
+    .flatMap(currency => CURRENCY_NEWS_ALIASES[currency] || [currency.toLowerCase()])
+    .slice(0, 12);
+  const terms = [...new Set([...eventTerms, ...currencies])];
+  return `(${terms.map(term => term.includes(' ') ? term : term).join(' OR ')})`;
 }
 
 function articleText(article: LiveNewsArticle): string {
@@ -560,21 +571,50 @@ function parseForexFactoryNews(html: string, now: number): LiveNewsArticle[] {
 
 async function fetchFromForexFactory(): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string; latencyMs?: number }> {
   const startedAt = Date.now();
+  let pageError: string | undefined;
+
+  // The public News page can return HTTP 403 to server-side requests even
+  // though it is available in a normal browser. Use the dedicated RSS feed
+  // as a transport fallback instead of marking the entire provider DOWN.
   try {
     const url = new URL(FOREX_FACTORY_NEWS_ENDPOINT);
     const html = await fetchText(url, FOREX_FACTORY_TIMEOUT_MS);
     const articles = parseForexFactoryNews(html, Date.now());
+    if (articles.length > 0) {
+      return {
+        status: 'LIVE',
+        articles,
+        latencyMs: Date.now() - startedAt
+      };
+    }
+  } catch (error) {
+    pageError = asErrorMessage(error);
+  }
 
+  try {
+    const rss = await fetchText(new URL(FOREX_FACTORY_RSS_ENDPOINT), FOREX_FACTORY_TIMEOUT_MS);
+    const articles = parseGoogleNewsRss(rss).map(article => ({
+      ...article,
+      source: article.source || 'Forex Factory',
+    }));
+    if (articles.length > 0) {
+      return {
+        status: 'LIVE',
+        articles,
+        latencyMs: Date.now() - startedAt
+      };
+    }
     return {
-      status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
-      articles,
+      status: 'NO_RESULTS',
+      articles: [],
+      error: pageError,
       latencyMs: Date.now() - startedAt
     };
   } catch (error) {
     return {
       status: 'ERROR',
       articles: [],
-      error: asErrorMessage(error),
+      error: [pageError, asErrorMessage(error)].filter(Boolean).join(' | ') || 'Forex Factory page and RSS feed unavailable.',
       latencyMs: Date.now() - startedAt
     };
   }
@@ -698,10 +738,23 @@ async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProvider
       latencyMs: Date.now() - startedAt
     };
   } catch (error) {
+    const message = asErrorMessage(error);
+    if (/HTTP 429/i.test(message)) {
+      gdeltNextAllowedAt = Date.now() + GDELT_MIN_INTERVAL_MS;
+      return {
+        status: 'RATE_LIMITED',
+        articles: [],
+        error: `GDELT rate limited the request: ${message}`,
+        latencyMs: Date.now() - startedAt
+      };
+    }
+    if (/timed out/i.test(message)) {
+      gdeltNextAllowedAt = Date.now() + GDELT_FAILURE_BACKOFF_MS;
+    }
     return {
       status: 'ERROR',
       articles: [],
-      error: asErrorMessage(error),
+      error: message,
       latencyMs: Date.now() - startedAt
     };
   }
@@ -893,7 +946,7 @@ async function fetchLiveForexNewsInternal(
   const queryKey = queryPairs.join(',');
 
   const newsQuery = buildNewsQuery(queryPairs);
-  const gdeltQuery = buildGdeltQuery();
+  const gdeltQuery = buildGdeltQuery(queryPairs);
 
   const [forexFactoryRes, gdeltRes, googleRes, avRes, marketauxRes] = await Promise.all([
     fetchFromForexFactory(),
