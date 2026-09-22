@@ -58,9 +58,10 @@ try {
   assert.deepEqual(live.queryPairs, ['EUR/USD', 'GBP/USD']);
   assert.equal(live.providerStatus?.GDELT_DOC_2, 'LIVE');
   assert.equal(live.providerDiagnostics?.GDELT_DOC_2?.staleArticleCount, 0);
-  assert.match(requestedUrls.find(url => url.includes('api.gdeltproject.org')) || '', /EUR/);
   const gdeltQueryUrl = requestedUrls.find(url => url.includes('api.gdeltproject.org')) || '';
-  assert.equal(decodeURIComponent(gdeltQueryUrl).includes('((('), false);
+  const gdeltQuery = new URL(gdeltQueryUrl).searchParams.get('query') || '';
+  assert.match(gdeltQuery, /Federal Reserve/);
+  assert.equal(gdeltQuery.includes('(('), false);
   assert.match(requestedUrls.find(url => url.includes('news.google.com')) || '', /when%3A24h|when:24h/);
 
   resetLiveForexNewsCacheForTest();
