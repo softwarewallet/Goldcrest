@@ -15,7 +15,7 @@ export interface LiveNewsArticle {
   topics?: string[];
 }
 
-export type LiveNewsSource = 'ALPHA_VANTAGE' | 'MARKETAUX' | 'GDELT_DOC_2' | 'GOOGLE_NEWS_RSS' | 'NONE';
+export type LiveNewsSource = 'FOREX_FACTORY' | 'ALPHA_VANTAGE' | 'MARKETAUX' | 'GDELT_DOC_2' | 'GOOGLE_NEWS_RSS' | 'NONE';
 export type LiveNewsProviderStatus = 'LIVE' | 'NO_RESULTS' | 'STALE' | 'RATE_LIMITED' | 'UNCONFIGURED' | 'ERROR';
 
 export interface LiveNewsProviderDiagnostic {
@@ -55,12 +55,14 @@ export interface LiveNewsSnapshot {
     MARKETAUX?: LiveNewsProviderStatus;
     GDELT_DOC_2: LiveNewsProviderStatus;
     GOOGLE_NEWS_RSS: LiveNewsProviderStatus;
+    FOREX_FACTORY: LiveNewsProviderStatus;
   };
   providerDiagnostics?: {
     ALPHA_VANTAGE: LiveNewsProviderDiagnostic;
     MARKETAUX: LiveNewsProviderDiagnostic;
     GDELT_DOC_2: LiveNewsProviderDiagnostic;
     GOOGLE_NEWS_RSS: LiveNewsProviderDiagnostic;
+    FOREX_FACTORY: LiveNewsProviderDiagnostic;
   };
   pairRisk?: Record<string, {
     highImpactCount: number;
@@ -81,6 +83,8 @@ const GDELT_ENDPOINT = process.env.GOLDCREST_GDELT_DOC_URL
   || 'https://api.gdeltproject.org/api/v2/doc/doc';
 
 const GOOGLE_NEWS_RSS_ENDPOINT = 'https://news.google.com/rss/search';
+const FOREX_FACTORY_NEWS_ENDPOINT = process.env.GOLDCREST_FOREX_FACTORY_NEWS_URL
+  || 'https://www.forexfactory.com/news';
 
 const MACRO_NEWS_QUERY = [
   '"Federal Reserve"', 'FOMC', 'ECB', '"Bank of Japan"', 'BOJ',
@@ -155,6 +159,10 @@ const GDELT_MIN_INTERVAL_MS = Math.max(
 const GOOGLE_NEWS_TIMEOUT_MS = Math.max(
   5_000,
   Number(process.env.GOLDCREST_NEWS_GOOGLE_TIMEOUT_MS || 8_000)
+);
+const FOREX_FACTORY_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.GOLDCREST_NEWS_FOREX_FACTORY_TIMEOUT_MS || 8_000)
 );
 const MAX_ARTICLE_AGE_MS = Math.max(
   15 * 60_000,
@@ -459,6 +467,106 @@ function parseGoogleNewsRss(xml: string): LiveNewsArticle[] {
       publishedAt: normalizePublishedAt(readXmlTag(item, 'pubDate'))
     }))
     .filter(article => Boolean(article.title && article.url));
+}
+
+function stripHtml(value: string): string {
+  return decodeXmlEntities(
+    value
+      .replace(/<script\\b[\\s\\S]*?<\\/script>/gi, ' ')
+      .replace(/<style\\b[\\s\\S]*?<\\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\\s+/g, ' ')
+      .trim()
+  );
+}
+
+function parseRelativeAge(value: string, now: number): string | null {
+  const text = value.toLowerCase();
+  if (/\\bjust now\\b|\\ba few seconds? ago\\b/.test(text)) {
+    return new Date(now).toISOString();
+  }
+
+  const match = text.match(/\\b(\\d+)\\s*(second|sec|minute|min|hour|hr|day|d)s?\\s+ago\\b/);
+  if (!match) return null;
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return null;
+
+  const unit = match[2];
+  const multiplier = unit.startsWith('second') || unit === 'sec'
+    ? 1_000
+    : unit.startsWith('minute') || unit === 'min'
+      ? 60_000
+      : unit.startsWith('hour') || unit === 'hr'
+        ? 60 * 60_000
+        : 24 * 60 * 60_000;
+
+  return new Date(now - amount * multiplier).toISOString();
+}
+
+function parseForexFactoryNews(html: string, now: number): LiveNewsArticle[] {
+  const articles: LiveNewsArticle[] = [];
+  const seenUrls = new Set<string>();
+  const anchorPattern = /<a\\b[^>]*href=["'](https?:\\/\\/www\\.forexfactory\\.com)?(\\/news\\/\\d+[^"']*)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+
+  let match: RegExpExecArray | null;
+  while ((match = anchorPattern.exec(html)) !== null) {
+    const path = match[2];
+    const url = `https://www.forexfactory.com${path}`;
+    if (seenUrls.has(url)) continue;
+
+    const title = stripHtml(match[3]);
+    if (!title || title.length < 8) continue;
+
+    const start = match.index;
+    const context = html.slice(start, Math.min(html.length, start + 2200));
+    const contextText = stripHtml(context);
+
+    const publishedAt = parseRelativeAge(contextText, now)
+      || normalizePublishedAt(contextText.match(/\\b(20\\d{2}[-/]\\d{1,2}[-/]\\d{1,2}[ T]\\d{1,2}:\\d{2}(?::\\d{2})?(?:Z|[+-]\\d{2}:?\\d{2})?)\\b/)?.[1] || '');
+
+    const sourceMatch = contextText.match(/\\b(?:From|from)\\s+([^|]+?)\\s*\\|/);
+    const handleMatch = contextText.match(/\\b(?:From|from)\\s+(@[A-Za-z0-9_.-]+)/);
+    const source = (sourceMatch?.[1] || handleMatch?.[1] || 'Forex Factory').trim();
+
+    const titleIndex = contextText.toLowerCase().indexOf(title.toLowerCase());
+    const summary = titleIndex >= 0
+      ? contextText.slice(titleIndex + title.length).split(/\\b(?:Top Comments|Comments)\\b/i)[0].trim().slice(0, 1200)
+      : undefined;
+
+    seenUrls.add(url);
+    articles.push({
+      title,
+      url,
+      source,
+      publishedAt,
+      summary
+    });
+  }
+
+  return articles;
+}
+
+async function fetchFromForexFactory(): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string; latencyMs?: number }> {
+  const startedAt = Date.now();
+  try {
+    const url = new URL(FOREX_FACTORY_NEWS_ENDPOINT);
+    const html = await fetchText(url, FOREX_FACTORY_TIMEOUT_MS);
+    const articles = parseForexFactoryNews(html, Date.now());
+
+    return {
+      status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
+      articles,
+      latencyMs: Date.now() - startedAt
+    };
+  } catch (error) {
+    return {
+      status: 'ERROR',
+      articles: [],
+      error: asErrorMessage(error),
+      latencyMs: Date.now() - startedAt
+    };
+  }
 }
 
 function filterFreshArticles(articles: LiveNewsArticle[], now: number): LiveNewsArticle[] {
@@ -768,29 +876,43 @@ async function fetchLiveForexNewsInternal(
   const newsQuery = buildNewsQuery(queryPairs);
   const gdeltQuery = buildGdeltQuery();
 
-  const [gdeltRes, googleRes, avRes, marketauxRes] = await Promise.all([
+  const [forexFactoryRes, gdeltRes, googleRes, avRes, marketauxRes] = await Promise.all([
+    fetchFromForexFactory(),
     fetchFromGdelt(gdeltQuery),
     fetchFromGoogleNewsRss(newsQuery),
     fetchFromAlphaVantage(queryPairs),
     fetchFromMarketaux(queryPairs)
   ]);
 
+  const freshForexFactory = filterFreshArticles(forexFactoryRes.articles, now);
   const freshGdelt = filterFreshArticles(gdeltRes.articles, now);
   const freshGoogle = filterFreshArticles(googleRes.articles, now);
   const freshAv = filterFreshArticles(avRes.articles, now);
   const freshMarketaux = filterFreshArticles(marketauxRes.articles, now);
 
   const providerStatus: LiveNewsSnapshot['providerStatus'] = {
+    FOREX_FACTORY: providerEffectiveStatus(forexFactoryRes.status, forexFactoryRes.articles.length, freshForexFactory.length),
     ALPHA_VANTAGE: providerEffectiveStatus(avRes.status, avRes.articles.length, freshAv.length),
     MARKETAUX: providerEffectiveStatus(marketauxRes.status, marketauxRes.articles.length, freshMarketaux.length),
     GDELT_DOC_2: providerEffectiveStatus(gdeltRes.status, gdeltRes.articles.length, freshGdelt.length),
     GOOGLE_NEWS_RSS: providerEffectiveStatus(googleRes.status, googleRes.articles.length, freshGoogle.length)
   };
 
-  const errors = [gdeltRes.error, googleRes.error, avRes.error, marketauxRes.error]
+  const errors = [forexFactoryRes.error, gdeltRes.error, googleRes.error, avRes.error, marketauxRes.error]
     .filter(Boolean) as string[];
 
   const providerDiagnostics: LiveNewsSnapshot['providerDiagnostics'] = {
+    FOREX_FACTORY: {
+      status: providerStatus.FOREX_FACTORY || 'ERROR',
+      rawArticleCount: forexFactoryRes.articles.length,
+      freshArticleCount: freshForexFactory.length,
+      staleArticleCount: Math.max(0, forexFactoryRes.articles.length - freshForexFactory.length),
+      configured: true,
+      latencyMs: forexFactoryRes.latencyMs,
+      latestRawArticleAt: latestArticleAt(forexFactoryRes.articles),
+      latestFreshArticleAt: latestArticleAt(freshForexFactory),
+      error: forexFactoryRes.error
+    },
     ALPHA_VANTAGE: {
       status: providerStatus.ALPHA_VANTAGE || 'UNCONFIGURED',
       rawArticleCount: avRes.articles.length,
@@ -838,11 +960,11 @@ async function fetchLiveForexNewsInternal(
   };
 
   // Prioritize sentiment providers (Alpha Vantage, Marketaux), then broad aggregators
-  const fetchedArticles = [...freshAv, ...freshMarketaux, ...freshGdelt, ...freshGoogle];
+  const fetchedArticles = [...freshForexFactory, ...freshAv, ...freshMarketaux, ...freshGdelt, ...freshGoogle];
   const articles = deduplicateArticles(fetchedArticles).slice(0, 35);
 
   if (articles.length === 0) {
-    const activeProviders = [gdeltRes, googleRes];
+    const activeProviders = [forexFactoryRes, gdeltRes, googleRes];
     if (avRes.status !== 'UNCONFIGURED') activeProviders.push(avRes);
     if (marketauxRes.status !== 'UNCONFIGURED') activeProviders.push(marketauxRes);
     const allUnavailable = activeProviders.length > 0
@@ -895,7 +1017,9 @@ async function fetchLiveForexNewsInternal(
   const latestArticleAt = articles[0]?.publishedAt || null;
   const sentimentSummary = computeAggregatedSentiment(articles);
 
-  const source: LiveNewsSource = freshAv.length > 0
+  const source: LiveNewsSource = freshForexFactory.length > 0
+    ? 'FOREX_FACTORY'
+    : freshAv.length > 0
     ? 'ALPHA_VANTAGE'
     : freshMarketaux.length > 0
       ? 'MARKETAUX'
