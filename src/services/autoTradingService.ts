@@ -957,8 +957,7 @@ return;
       });
     } catch (error: any) {
       const reason = error?.message || String(error);
-      this.finishExecution('REJECTED', pair + ' evaluation failed: ' + reason, { pair });
-      this.lastActions.push({
+            this.lastActions.push({
         pair,
         result: 'ERROR',
         reason
