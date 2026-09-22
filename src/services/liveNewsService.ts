@@ -78,12 +78,12 @@ const CURRENCY_NAMES: Record<string, string> = {
 };
 
 const HIGH_IMPACT_EVENT_PATTERNS: RegExp[] = [
-  /\bfomc\b/i,
+  /\bfomc\b.*\b(rate decision|statement|minutes|rate|raises?|cuts?|hikes?|holds?)\b/i,
   /\bfederal reserve\b.*\b(rate|decision|meeting|cut|hike|hold)\b/i,
   /\b(rate decision|rate hike|rate cut|rate hold|interest rate decision)\b/i,
-  /\b(cpi|consumer price index)\b/i,
+  /\b(cpi|consumer price index)\b.*\b(data|report|release|reading|print|rises?|falls?|beats?|misses?)\b/i,
   /\binflation (data|report|release|reading)\b/i,
-  /\b(non[- ]?farm payrolls?|nfp|jobs report|employment report)\b/i,
+  /\b(non[- ]?farm payrolls?|nfp|jobs report|employment report)\b.*\b(data|report|release|print|beats?|misses?|rises?|falls?)\b/i,
   /\b(ecb|european central bank|boe|bank of england|boj|bank of japan|rba|reserve bank of australia|rbnz|reserve bank of new zealand|bank of canada|boc|snb|swiss national bank)\b.*\b(rate|decision|meeting|cut|hike|hold|policy)\b/i,
   /\b(new|unexpected|surprise) tariffs?\b/i,
   /\bsanctions? (announced|imposed|expanded|eased)\b/i,
