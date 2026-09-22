@@ -1169,7 +1169,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2 font-mono text-[10px]">
-                <span className={`px-2 py-1 rounded border ${newsSnapshot?.status === 'LIVE' ? 'border-emerald-700 bg-emerald-950/50 text-emerald-300' : newsSnapshot?.status === 'NO_RESULTS' ? 'border-amber-700 bg-amber-950/50 text-amber-300' : 'border-rose-700 bg-rose-950/50 text-rose-300'}`}>
+                <span className={`px-2 py-1 rounded border ${newsSnapshot?.status === 'LIVE' ? 'border-emerald-700 bg-emerald-950/50 text-emerald-300' : newsSnapshot?.status === 'NO_RESULTS' || newsSnapshot?.status === 'STALE' ? 'border-amber-700 bg-amber-950/50 text-amber-300' : 'border-rose-700 bg-rose-950/50 text-rose-300'}`}>
                   NEWS ENGINE: {newsSnapshot?.status || 'NOT FETCHED'}
                 </span>
                 <span className="text-slate-500">
@@ -1195,13 +1195,14 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 const status = d?.status || newsSnapshot?.providerStatus?.[key] || 'NO_RESULTS';
                 const strength = status === 'LIVE'
                   ? (Number(d?.freshArticleCount || 0) >= 10 ? 'STRONG' : 'ACTIVE')
-                  : status === 'RATE_LIMITED' ? 'LIMITED'
-                    : status === 'ERROR' ? 'DOWN'
-                      : status === 'UNCONFIGURED' ? 'NOT CONFIGURED'
-                        : 'EMPTY';
+                  : status === 'STALE' ? 'STALE DATA'
+                    : status === 'RATE_LIMITED' ? 'LIMITED'
+                      : status === 'ERROR' ? 'DOWN'
+                        : status === 'UNCONFIGURED' ? 'NOT CONFIGURED'
+                          : 'EMPTY';
                 const badge = status === 'LIVE'
                   ? 'text-emerald-300 border-emerald-800 bg-emerald-950/40'
-                  : status === 'RATE_LIMITED'
+                  : status === 'STALE' || status === 'RATE_LIMITED'
                     ? 'text-amber-300 border-amber-800 bg-amber-950/40'
                     : status === 'ERROR'
                       ? 'text-rose-300 border-rose-800 bg-rose-950/40'
@@ -1215,9 +1216,15 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                     <div className="grid grid-cols-3 gap-2 mt-2 text-[9px]">
                       <div><div className="text-slate-600">RAW</div><div className="text-slate-300">{d?.rawArticleCount ?? 0}</div></div>
                       <div><div className="text-slate-600">FRESH</div><div className="text-cyan-300">{d?.freshArticleCount ?? 0}</div></div>
-                      <div><div className="text-slate-600">STRENGTH</div><div className={status === 'LIVE' ? 'text-emerald-300' : 'text-amber-300'}>{strength}</div></div>
+                      <div><div className="text-slate-600">STALE</div><div className="text-amber-300">{d?.staleArticleCount ?? 0}</div></div>
                     </div>
                     {d?.error && <div className="mt-2 text-[9px] text-rose-400 truncate" title={d.error}>{d.error}</div>}
+                    {(d?.latestRawArticleAt || d?.latencyMs !== undefined) && (
+                      <div className="mt-2 text-[8px] text-slate-600">
+                        {d?.latestRawArticleAt ? `Latest raw: ${new Date(d.latestRawArticleAt).toLocaleTimeString()}` : 'No timestamp'}
+                        {d?.latencyMs !== undefined ? ` · ${d.latencyMs}ms` : ''}
+                      </div>
+                    )}
                   </div>
                 );
               })}
