@@ -235,6 +235,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [newsSnapshot, setNewsSnapshot] = useState<any | null>(null);
   const [newsBusy, setNewsBusy] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
+  const [indianNewsSnapshot, setIndianNewsSnapshot] = useState<any | null>(null);
+  const [indianNewsBusy, setIndianNewsBusy] = useState(false);
 
   // Fetch live operational data from authoritative broker and runtime APIs.
   const fetchAllOperationalData = useCallback(async () => {
@@ -552,6 +554,29 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
     }
   }, []);
 
+  const fetchIndianNewsNow = useCallback(async () => {
+    setIndianNewsBusy(true);
+    try {
+      const response = await fetch('/api/india/news?refresh=true', {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' }
+      });
+      const payload = await response.json().catch(() => ({}));
+      setIndianNewsSnapshot(payload);
+    } catch (err: any) {
+      setIndianNewsSnapshot({
+        status: 'UNAVAILABLE',
+        marketOpen: false,
+        marketPhase: 'UNKNOWN',
+        articleCount: 0,
+        articles: [],
+        error: err?.message || 'Indian market news refresh failed.'
+      });
+    } finally {
+      setIndianNewsBusy(false);
+    }
+  }, []);
+
   const toggleAutoTrading = useCallback(async () => {
     setAutoTradingBusy(true);
     try {
@@ -708,6 +733,14 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
 
     return () => clearInterval(interval);
   }, [fetchAllOperationalData, fetchOptionsChain, optionsUnderlying, optionsExpiry, optionsStrikeRange]);
+
+  useEffect(() => {
+    fetchIndianNewsNow();
+    const interval = setInterval(() => {
+      fetchIndianNewsNow();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [fetchIndianNewsNow]);
 
   // Filtered Positions
   const filteredPositions = useMemo(() => {
@@ -1241,6 +1274,136 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               {newsSnapshot?.queryPairs?.length ? ` · Universe: ${newsSnapshot.queryPairs.join(', ')}` : ''}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* INDIAN MARKET NEWS INTELLIGENCE — provider fetches and prediction are server-gated to market OPEN */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'MARKET_INTELLIGENCE') && (
+        <div className="mt-4 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-bold text-slate-200 uppercase tracking-wider">Indian Market News & Prediction</div>
+              <div className="text-[10px] text-slate-500 font-mono mt-1">
+                Pulse · CNBC-TV18 · ET Markets · Mint · FMP · server-gated to NSE/BSE market OPEN
+              </div>
+            </div>
+            <div className="flex items-center gap-2 font-mono text-[10px]">
+              <span className={`px-2 py-1 rounded border ${
+                indianNewsSnapshot?.marketOpen
+                  ? 'border-emerald-700 bg-emerald-950/50 text-emerald-300'
+                  : 'border-slate-700 bg-slate-950 text-slate-400'
+              }`}>
+                INDIA: {indianNewsSnapshot?.marketOpen ? 'OPEN' : indianNewsSnapshot?.status === 'MARKET_CLOSED' ? 'CLOSED' : 'NOT FETCHED'}
+              </span>
+              <span className="text-slate-500">{indianNewsSnapshot?.marketPhase || '—'}</span>
+              <button
+                type="button"
+                onClick={fetchIndianNewsNow}
+                disabled={indianNewsBusy || indianNewsSnapshot?.marketOpen === false}
+                className="px-2.5 py-1 rounded border border-cyan-800 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 disabled:opacity-50"
+                title="Fetch Indian news only while the Indian market is open"
+              >
+                <RefreshCw className={`w-3 h-3 inline mr-1 ${indianNewsBusy ? 'animate-spin' : ''}`} />
+                {indianNewsBusy ? 'FETCHING...' : 'FETCH INDIA NEWS'}
+              </button>
+            </div>
+          </div>
+
+          {indianNewsSnapshot?.status === 'MARKET_CLOSED' ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 text-center font-mono text-xs text-slate-400">
+              INDIAN MARKET CLOSED — news ingestion and prediction are disabled.
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
+                {[
+                  ['PULSE_ZERODHA', 'Pulse by Zerodha'],
+                  ['CNBC_TV18', 'CNBC-TV18'],
+                  ['ET_MARKETS', 'ET Markets'],
+                  ['MINT', 'Mint'],
+                  ['FMP', 'FMP']
+                ].map(([key, label]) => {
+                  const d = indianNewsSnapshot?.providerDiagnostics?.[key];
+                  const status = d?.status || indianNewsSnapshot?.providerStatus?.[key] || 'NO_RESULTS';
+                  const badge = status === 'LIVE'
+                    ? 'text-emerald-300 border-emerald-800 bg-emerald-950/40'
+                    : status === 'STALE'
+                      ? 'text-amber-300 border-amber-800 bg-amber-950/40'
+                      : status === 'ERROR'
+                        ? 'text-rose-300 border-rose-800 bg-rose-950/40'
+                        : 'text-slate-400 border-slate-800 bg-slate-950';
+                  return (
+                    <div key={key} className="p-3 rounded-lg border border-slate-800 bg-slate-950/70 font-mono">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-white">{label}</span>
+                        <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${badge}`}>{status}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mt-2 text-[9px]">
+                        <div><div className="text-slate-600">RAW</div><div className="text-slate-300">{d?.rawArticleCount ?? 0}</div></div>
+                        <div><div className="text-slate-600">FRESH</div><div className="text-cyan-300">{d?.freshArticleCount ?? 0}</div></div>
+                        <div><div className="text-slate-600">STALE</div><div className="text-amber-300">{d?.staleArticleCount ?? 0}</div></div>
+                      </div>
+                      {d?.error && <div className="mt-2 text-[9px] text-rose-400 truncate" title={d.error}>{d.error}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <div className="lg:col-span-2 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Latest Indian Market Headlines</div>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {(indianNewsSnapshot?.articles || []).slice(0, 10).map((article: any, index: number) => (
+                      <div key={`${article.url || article.title}-${index}`} className="border-b border-slate-800/70 pb-2">
+                        <div className="text-[11px] text-slate-200">{article.title}</div>
+                        <div className="text-[9px] text-slate-600 mt-1">
+                          {article.source} · {article.publishedAt ? new Date(article.publishedAt).toLocaleTimeString() : 'time unavailable'}
+                        </div>
+                      </div>
+                    ))}
+                    {(!indianNewsSnapshot?.articles || indianNewsSnapshot.articles.length === 0) && (
+                      <div className="text-[10px] text-slate-500">No fresh Indian-market headlines returned.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">News Prediction</span>
+                    <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
+                      indianNewsSnapshot?.prediction?.bias === 'BULLISH'
+                        ? 'text-emerald-300 border-emerald-800 bg-emerald-950/40'
+                        : indianNewsSnapshot?.prediction?.bias === 'BEARISH'
+                          ? 'text-rose-300 border-rose-800 bg-rose-950/40'
+                          : 'text-amber-300 border-amber-800 bg-amber-950/40'
+                    }`}>
+                      {indianNewsSnapshot?.prediction?.bias || 'PENDING'}
+                    </span>
+                  </div>
+                  <div className="mt-3 text-2xl font-bold text-white">
+                    {indianNewsSnapshot?.prediction?.confidence ?? '—'}{indianNewsSnapshot?.prediction ? '%' : ''}
+                  </div>
+                  <div className="text-[9px] text-slate-500">confidence · news + live market context</div>
+                  <div className="mt-3 space-y-1 text-[10px] text-slate-400">
+                    {(indianNewsSnapshot?.prediction?.rationale || []).map((reason: string, i: number) => (
+                      <div key={i}>• {reason}</div>
+                    ))}
+                  </div>
+                  {indianNewsSnapshot?.prediction?.disclaimer && (
+                    <div className="mt-3 pt-2 border-t border-slate-800 text-[8px] text-slate-600">
+                      {indianNewsSnapshot.prediction.disclaimer}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {indianNewsSnapshot?.error && indianNewsSnapshot.status !== 'MARKET_CLOSED' && (
+            <div className="px-3 py-2 rounded border border-rose-800 bg-rose-950/30 text-rose-300 text-[10px] font-mono">
+              {indianNewsSnapshot.error}
+            </div>
+          )}
         </div>
       )}
 
