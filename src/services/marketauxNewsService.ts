@@ -613,22 +613,21 @@ export class MarketauxNewsService {
     pairs: string[] = ['EUR/USD', 'GBP/USD', 'USD/JPY'],
     options: Omit<MarketauxNewsOptions, 'symbols' | 'search'> = {}
   ): Promise<MarketauxNewsSnapshot> {
-    // Extract currency codes and symbols
-    const symbols: string[] = [];
-    for (const pair of pairs) {
-      const clean = pair.toUpperCase().replace(/[^A-Z]/g, '');
-      if (clean.length === 6) {
-        symbols.push(clean); // e.g. EURUSD
-      }
-    }
+    // Do not combine pair symbols with a macro search here. Marketaux applies
+    // those filters together, which can become an unnecessarily narrow AND query.
+    // Fetch a fresh global macro/FX news stream and let Goldcrest perform the
+    // configured-pair relevance test locally.
+    const search = 'Federal Reserve OR ECB OR Bank of Japan OR Bank of England OR RBA OR Bank of Canada OR SNB OR interest rate OR inflation OR forex OR currency OR central bank OR FOMC OR CPI OR NFP';
 
-    const search = 'Federal Reserve OR ECB OR Bank of Japan OR interest rate OR inflation OR forex OR currency';
+    const publishedAfter = new Date(Date.now() - 24 * 60 * 60_000).toISOString().slice(0, 16);
 
     return this.fetchNewsSentiment({
       ...options,
-      symbols: symbols.length > 0 ? symbols : undefined,
       search,
-      countries: ['us', 'gb', 'eu', 'jp', 'ch', 'au', 'ca']
+      countries: ['global'],
+      publishedAfter,
+      sort: 'published_at',
+      limit: Math.min(50, Math.max(20, Number(options.limit || 50)))
     });
   }
 }

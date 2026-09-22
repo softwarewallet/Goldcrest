@@ -57,8 +57,11 @@ try {
   assert.match(live.articles[0].publishedAt || '', /^20\d\d-\d\d-\d\dT/);
   assert.deepEqual(live.queryPairs, ['EUR/USD', 'GBP/USD']);
   assert.equal(live.providerStatus?.GDELT_DOC_2, 'LIVE');
+  assert.equal(live.providerDiagnostics?.GDELT_DOC_2?.staleArticleCount, 0);
   assert.match(requestedUrls.find(url => url.includes('api.gdeltproject.org')) || '', /EUR/);
-  assert.match(requestedUrls.find(url => url.includes('news.google.com')) || '', /when%3A12h|when:12h/);
+  const gdeltQueryUrl = requestedUrls.find(url => url.includes('api.gdeltproject.org')) || '';
+  assert.equal(decodeURIComponent(gdeltQueryUrl).includes('((('), false);
+  assert.match(requestedUrls.find(url => url.includes('news.google.com')) || '', /when%3A24h|when:24h/);
 
   resetLiveForexNewsCacheForTest();
 
@@ -150,6 +153,59 @@ try {
   assert.equal(activeHighCheck.highImpactCount, 1);
   assert.equal(activeHighCheck.activeHighImpactCount, 1);
   assert.equal(activeHighCheck.riskLevel, 'HIGH');
+
+  resetLiveForexNewsCacheForTest();
+
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('api.gdeltproject.org')) {
+      return response(JSON.stringify({
+        articles: [{
+          title: 'Old FOMC rate decision remains in search results',
+          url: 'https://example.com/stale-fomc',
+          domain: 'example.com',
+          seendate: gdeltDate(Date.now() - 26 * 60 * 60_000),
+          language: 'English',
+          sourcecountry: 'US'
+        }]
+      }));
+    }
+    return response('<rss><channel></channel></rss>');
+  };
+
+  const stale = await fetchLiveForexNews({ pairs: ['EUR/USD'], forceRefresh: true });
+  assert.equal(stale.status, 'STALE');
+  assert.equal(stale.articleCount, 0);
+  assert.equal(stale.providerStatus?.GDELT_DOC_2, 'STALE');
+  assert.equal(stale.providerDiagnostics?.GDELT_DOC_2?.rawArticleCount, 1);
+  assert.equal(stale.providerDiagnostics?.GDELT_DOC_2?.freshArticleCount, 0);
+  assert.equal(stale.providerDiagnostics?.GDELT_DOC_2?.staleArticleCount, 1);
+
+  resetLiveForexNewsCacheForTest();
+
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('api.gdeltproject.org')) {
+      return response(JSON.stringify({
+        articles: [{
+          title: 'RBA rate decision released; Australian dollar volatility jumps',
+          url: 'https://example.com/rba-fresh',
+          domain: 'example.com',
+          seendate: gdeltDate(),
+          language: 'English',
+          sourcecountry: 'AU'
+        }]
+      }));
+    }
+    return response('<rss><channel></channel></rss>');
+  };
+
+  const pairSpecificRisk = await fetchLiveForexNews({
+    pairs: ['EUR/USD', 'AUD/USD'],
+    forceRefresh: true
+  });
+  assert.equal(pairSpecificRisk.pairRisk?.['EUR/USD']?.riskLevel, 'LOW');
+  assert.equal(pairSpecificRisk.pairRisk?.['AUD/USD']?.riskLevel, 'HIGH');
 
   resetLiveForexNewsCacheForTest();
 
