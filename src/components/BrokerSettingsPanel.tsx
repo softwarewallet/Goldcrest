@@ -276,7 +276,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                     type="button"
                     onClick={() => {
                       const pair = newForexPair.trim().toUpperCase();
-                      if (!/^[A-Z]{3}\\/[A-Z]{3}$/.test(pair)) {
+                      if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(pair)) {
                         setPairMessage('Use BASE/QUOTE format, e.g. CAD/JPY.');
                         return;
                       }
