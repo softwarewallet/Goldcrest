@@ -3,6 +3,7 @@ import { brokerRegistry } from '../registry';
 import { killSwitch } from './KillSwitch';
 import { tradeValidator } from './TradeValidator';
 import { getSystemConfig } from '../../services/configService';
+import { liveRuntimeLog } from '../../services/liveRuntimeLog';
 
 export interface LiveGateEvaluationParams {
   order: OrderRequest;
@@ -15,7 +16,7 @@ export interface LiveGateEvaluationParams {
   maxAllowedExposure: number;
   activePositionsCount: number;
   maxOpenPositions: number;
-  /** Maximum acceptable age of the authoritative broker quote. Goldcrest live policy is fixed at 20 seconds. */
+  /** Maximum acceptable age of the authoritative broker quote. Goldcrest live policy is fixed at 30 seconds. */
 }
 
 export class LiveTradingGate {
@@ -75,7 +76,7 @@ export class LiveTradingGate {
     // There is intentionally no caller override or shorter fallback. This
     // prevents any future execution path from silently reintroducing a 10s
     // freshness requirement without an explicit code change here.
-    const quoteMaxAgeMs = 20_000;
+    const quoteMaxAgeMs = 30_000;
     const marketDataFresh = params.currentQuote.status === 'FRESH'
       && (Date.now() - params.currentQuote.timestamp < quoteMaxAgeMs);
     if (!marketDataFresh) {
@@ -151,6 +152,28 @@ export class LiveTradingGate {
       && exposureForLimit <= params.maxAllowedExposure + exposureTolerance;
     if (!maxExposureNotExceeded) {
       failedReasons.push('Condition 12 Failed: Maximum account exposure threshold exceeded.');
+
+      // Keep detailed exposure diagnostics in the server-side daily audit log.
+      // Do not surface account-risk values in the trading UI.
+      liveRuntimeLog('WARN', 'SAFETY_GATE_CONDITION_12', {
+        symbol: params.order.symbol,
+        side: params.order.side,
+        quantity: params.order.quantity,
+        referencePrice: params.order.price > 0
+          ? params.order.price
+          : (params.order.side === 'BUY' ? params.currentQuote.ask : params.currentQuote.bid),
+        totalAccountExposure: params.totalAccountExposure,
+        proposedOrderExposure: Number.isFinite(params.totalAccountExposure) && Number.isFinite(exposureForLimit)
+          ? Math.max(0, params.totalAccountExposure - exposureForLimit)
+          : null,
+        exposureForLimit,
+        maxAllowedExposure: params.maxAllowedExposure,
+        remainingExposureCapacity: Number.isFinite(params.maxAllowedExposure) && Number.isFinite(exposureForLimit)
+          ? params.maxAllowedExposure - exposureForLimit
+          : null,
+        activePositionsCount: params.activePositionsCount,
+        maxOpenPositions: params.maxOpenPositions
+      });
     }
 
     // Check 13: Duplicate-position check passed
