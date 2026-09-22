@@ -19,9 +19,9 @@ export interface ForexSizingResult {
 /**
  * Goldcrest-wide broker price precision policy.
  *
- * Every executable/order price is normalized to the maximum of three
- * decimal places unless an execution path supplies broker-authoritative
- * instrument precision explicitly.
+ * Every executable/order price is normalized to exactly three
+ * decimal places. Broker-reported precision must not override this
+ * Goldcrest-wide execution policy.
  */
 export const GOLD_CREST_PRICE_DIGITS = 3;
 
@@ -39,10 +39,10 @@ export function normalizePriceToInstrumentDigits(price: number, digits?: number)
   if (!Number.isFinite(price) || price <= 0) {
     throw new Error('INVALID_PRICE: Price must be a positive finite number.');
   }
-  const resolvedDigits = Number.isInteger(digits) && Number(digits) >= 0
-    ? Math.min(10, Number(digits))
-    : GOLD_CREST_PRICE_DIGITS;
-  return Number(price.toFixed(resolvedDigits));
+  // The optional digits argument is retained for API compatibility, but
+  // executable Goldcrest prices are always normalized to three decimals.
+  void digits;
+  return Number(price.toFixed(GOLD_CREST_PRICE_DIGITS));
 }
 
 /**
