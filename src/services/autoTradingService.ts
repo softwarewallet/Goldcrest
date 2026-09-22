@@ -21,9 +21,7 @@ const AUTO_INTERVAL_MS = Math.max(
   Number(process.env.GOLDCREST_AUTO_TRADING_INTERVAL_MS || 60_000)
 );
 
-const DEFAULT_AUTO_FOREX_PAIRS = FOREX_PAIRS
-  .filter(pair => pair.quoteCurrency === 'USD')
-  .map(pair => pair.symbol);
+const DEFAULT_AUTO_FOREX_PAIRS = FOREX_PAIRS.map(pair => pair.symbol);
 
 function getConfiguredAutoForexPairs(): string[] {
   const configured = getSystemConfig().autoLiveForexPairs;
