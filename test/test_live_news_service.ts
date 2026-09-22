@@ -100,6 +100,14 @@ try {
             sourcecountry: 'US'
           },
           {
+            title: 'RBA rate decision released; Australian dollar volatility jumps',
+            url: 'https://example.com/rba-fresh-irrelevant',
+            domain: 'example.com',
+            seendate: gdeltDate(),
+            language: 'English',
+            sourcecountry: 'AU'
+          },
+          {
             title: 'FOMC rate decision released; dollar volatility jumps',
             url: 'https://example.com/fomc-old',
             domain: 'example.com',
