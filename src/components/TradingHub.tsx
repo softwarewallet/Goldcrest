@@ -134,6 +134,13 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     maxTradesPerPair: number;
     lastCycleAt: number | null;
     lastCycleResult: string | null;
+    lastActions: Array<{
+      pair: string;
+      result: string;
+      signalId?: string;
+      reason?: string;
+      orderId?: string;
+    }>;
     currentExecution: {
       stage: AutoExecutionStage;
       pair: string | null;
@@ -197,8 +204,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           setRunningTrades(data);
         }
       } else {
-        throw new Error('Positions endpoint returned non-ok status');
-      }
+        throw new Error('Positions endpoint returned non-ok status');      }
     } catch (err: any) {
       console.warn('Failed to load real broker positions:', err);
     } finally {
@@ -397,8 +403,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       // Instantly trigger re-fetch to show new position/orders
       fetchRealPositions();
     } catch (err: any) {
-      addLog('error', `Execution Failed: ${err.message}`);
-    } finally {
+      addLog('error', `Execution Failed: ${err.message}`);    } finally {
       setIsPlacingOrder(false);
     }
   };
@@ -597,8 +602,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                autoStatus?.state === 'BLOCKED' ? "text-rose-300 bg-rose-950/60 border-rose-800" :
                "text-amber-300 bg-amber-950/60 border-amber-800")}>
               AUTO LIVE: {autoStatus?.state || 'LOADING'}
-            </span>
-            <span className="px-3 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300">{selectedBroker} · LIVE</span>
+            </span>            <span className="px-3 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300">{selectedBroker} · LIVE</span>
           </div>
         </div>
       </div>
