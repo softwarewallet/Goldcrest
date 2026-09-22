@@ -123,7 +123,8 @@ const CURRENCY_NEWS_ALIASES: Record<string, string[]> = {
   CHF: ['chf', 'franc', 'swiss national bank', 'snb', 'switzerland'],
   AUD: ['aud', 'australian dollar', 'reserve bank of australia', 'rba', 'australia'],
   NZD: ['nzd', 'new zealand dollar', 'reserve bank of new zealand', 'rbnz', 'new zealand'],
-  CAD: ['cad', 'canadian dollar', 'bank of canada', 'boc', 'canada']
+  CAD: ['cad', 'canadian dollar', 'bank of canada', 'boc', 'canada'],
+  XAU: ['xau', 'gold', 'gold prices', 'precious metals']
 };
 
 const ELEVATED_TERMS = [
