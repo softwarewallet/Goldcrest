@@ -2,7 +2,9 @@ import { TradingSignal } from '../markets/common/types';
 import { brokerRegistry } from '../brokers/registry';
 import { calculateStrategyPayoff, OptionStrategyType } from '../markets/india_options/strategySkeleton';
 import { LiveForexProvider } from '../markets/forex/provider';
+import { getForexPairConfig } from '../markets/forex/instruments';
 import { ForexSignalEngine } from '../markets/forex/signalEngine';
+import { getSystemConfig } from './configService';
 
 export interface OptionsOpportunityCandidate {
   id: string;
@@ -84,9 +86,16 @@ export class ScannerService {
     return adapter;
   }
 
-  async getForexScanner() {
+  async getForexScanner(pairs?: string[]) {
     const results: any[] = [];
-    for (const pair of this.forexProvider.getAvailablePairs()) {
+    const configuredPairs = pairs?.length
+      ? pairs
+      : getSystemConfig().autoLiveForexPairs;
+    const selected = configuredPairs.length
+      ? configuredPairs.map(symbol => getForexPairConfig(symbol))
+      : this.forexProvider.getAvailablePairs();
+
+    for (const pair of selected) {
       try {
         await this.forexProvider.refreshPair(pair.symbol);
         const signal = await this.forexSignalEngine.generateSignal(pair.symbol);
@@ -314,7 +323,7 @@ export class ScannerService {
 
   async getAllSignals(): Promise<TradingSignal[]> {
     const [forex, india] = await Promise.all([
-      this.getForexScanner(),
+      this.getForexScanner(getSystemConfig().autoLiveForexPairs),
       this.getIndianMarketScanner()
     ]);
     return [
