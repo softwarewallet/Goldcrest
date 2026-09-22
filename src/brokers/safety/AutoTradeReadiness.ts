@@ -6,6 +6,8 @@ import { getSystemConfig } from '../../services/configService';
 import { executeQuery } from '../../database/db';
 import { reconciliationService } from '../../services/reconciliationService';
 
+const LIVE_QUOTE_MAX_AGE_MS = 30_000;
+
 export type AutoTradeState = 'OFF' | 'ARMED' | 'BLOCKED';
 
 export interface AutoTradeReadinessReport {
@@ -115,7 +117,7 @@ class AutoTradeReadinessService {
       checks.quoteFresh = Boolean(
         quote &&
         quote.status === 'FRESH' &&
-        Date.now() - Number(quote.timestamp) < 10000 &&
+        Date.now() - Number(quote.timestamp) < LIVE_QUOTE_MAX_AGE_MS &&
         Number(quote.bid) > 0 &&
         Number(quote.ask) > 0
       );
