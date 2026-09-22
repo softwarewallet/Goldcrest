@@ -70,6 +70,8 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   const [autoLiveIndianUnderlyings, setAutoLiveIndianUnderlyings] = useState<string[]>([
     'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'
   ]);
+  const [newForexPair, setNewForexPair] = useState('');
+  const [pairMessage, setPairMessage] = useState('');
   const [savingUniverse, setSavingUniverse] = useState(false);
   const [universeMessage, setUniverseMessage] = useState('');
   const [cTraderApiMode, setCTraderApiMode] = useState<'DEMO' | 'LIVE'>('DEMO');
@@ -262,6 +264,35 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
             <div className="grid xl:grid-cols-2 gap-5 mt-4">
               <div>
                 <div className="text-[10px] uppercase text-slate-500 font-mono mb-2">Forex / cTrader</div>
+                <div className="text-[10px] text-slate-500 font-mono mb-2">Select supported pairs or add another broker-supported FX pair.</div>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    value={newForexPair}
+                    onChange={e => setNewForexPair(e.target.value.toUpperCase())}
+                    placeholder="e.g. CAD/JPY"
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const pair = newForexPair.trim().toUpperCase();
+                      if (!/^[A-Z]{3}\\/[A-Z]{3}$/.test(pair)) {
+                        setPairMessage('Use BASE/QUOTE format, e.g. CAD/JPY.');
+                        return;
+                      }
+                      if (autoLiveForexPairs.includes(pair)) {
+                        setPairMessage(pair + ' is already selected.');
+                        return;
+                      }
+                      setAutoLiveForexPairs(prev => [...prev, pair]);
+                      setNewForexPair('');
+                      setPairMessage(pair + ' added. Save Working Universe to activate it.');
+                    }}
+                    className="shrink-0 px-3 py-2 rounded bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold"
+                  >ADD PAIR</button>
+                </div>
+                {pairMessage && <div className="text-[10px] text-cyan-300 font-mono mb-2">{pairMessage}</div>}
+
                 <div className="grid sm:grid-cols-2 gap-2">
                   {['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','AUD/JPY','EUR/AUD','GBP/AUD','XAU/USD'].map(pair => {
                     const checked = autoLiveForexPairs.includes(pair);
