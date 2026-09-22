@@ -86,7 +86,7 @@ const MACRO_NEWS_QUERY = [
   '"Federal Reserve"', 'FOMC', 'ECB', '"Bank of Japan"', 'BOJ',
   '"interest rate"', '"rate decision"', 'CPI', 'inflation', 'NFP',
   '"nonfarm payroll"', 'jobs report', 'tariff', 'sanctions', 'intervention',
-  'war', 'conflict', 'emergency', '"central bank"'
+  'war', 'conflict', 'emergency', '"central bank"', 'gold', '"precious metals"'
 ];
 
 const HIGH_IMPACT_EVENT_PATTERNS: RegExp[] = [
@@ -326,6 +326,12 @@ function classifyArticle(
     && isArticleInsideHighImpactWindow(article, now)) {
     return 'HIGH';
   }
+
+  // FX risk must never be raised by an unrelated article. Sentiment or a
+  // generic word such as "dollar" is only meaningful after the article has
+  // been tied to at least one configured currency, or is an explicitly global
+  // market shock.
+  if (!currencyRelevant && !globalEvent) return 'LOW';
 
   if (typeof article.sentimentScore === 'number' && Math.abs(article.sentimentScore) >= 0.25) {
     return 'ELEVATED';
