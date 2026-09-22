@@ -98,16 +98,11 @@ function headlineScore(title: string): number {
   const text = title.toLowerCase();
   let score = 0;
 
-  // Match complete terms rather than raw substrings. This prevents overlapping
-  // entries such as "rise" + "rises" from double-counting the same word.
+  // Match complete terms so overlapping entries such as "rise" and "rises"
+  // cannot double-count the same headline word.
   const matchesTerm = (term: string): boolean => {
-    const escaped = term.replace(/[.*+?^()|[\]\\]/g, '\\function headlineScore(title: string): number {
-  const text = title.toLowerCase(); let score = 0;
-  for (const term of POSITIVE) if (text.includes(term)) score++;
-  for (const term of NEGATIVE) if (text.includes(term)) score--;
-  return score === 0 ? 0 : Math.max(-1, Math.min(1, score / 3));
-}');
-    return new RegExp('\\\\b' + escaped + '\\\\b', 'i').test(text);
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
   };
 
   for (const term of POSITIVE) if (matchesTerm(term)) score++;
