@@ -86,6 +86,65 @@ try {
 
   resetLiveForexNewsCacheForTest();
 
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('api.gdeltproject.org')) {
+      return response(JSON.stringify({
+        articles: [
+          {
+            title: 'USD outlook remains volatile as investors debate interest rates',
+            url: 'https://example.com/routine-rate-commentary',
+            domain: 'example.com',
+            seendate: gdeltDate(),
+            language: 'English',
+            sourcecountry: 'US'
+          },
+          {
+            title: 'FOMC rate decision released; dollar volatility jumps',
+            url: 'https://example.com/fomc-old',
+            domain: 'example.com',
+            seendate: gdeltDate(Date.now() - 2 * 60 * 60_000),
+            language: 'English',
+            sourcecountry: 'US'
+          }
+        ]
+      }));
+    }
+    return response('<rss><channel></channel></rss>');
+  };
+
+  const falsePositiveCheck = await fetchLiveForexNews({ pairs: ['EUR/USD'], forceRefresh: true });
+  assert.equal(falsePositiveCheck.status, 'LIVE');
+  assert.equal(falsePositiveCheck.highImpactCount, 0);
+  assert.equal(falsePositiveCheck.activeHighImpactCount, 0);
+  assert.notEqual(falsePositiveCheck.riskLevel, 'HIGH');
+
+  resetLiveForexNewsCacheForTest();
+
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('api.gdeltproject.org')) {
+      return response(JSON.stringify({
+        articles: [{
+          title: 'FOMC rate decision surprises markets as the Federal Reserve cuts rates',
+          url: 'https://example.com/fomc-fresh',
+          domain: 'example.com',
+          seendate: gdeltDate(),
+          language: 'English',
+          sourcecountry: 'US'
+        }]
+      }));
+    }
+    return response('<rss><channel></channel></rss>');
+  };
+
+  const activeHighCheck = await fetchLiveForexNews({ pairs: ['EUR/USD'], forceRefresh: true });
+  assert.equal(activeHighCheck.highImpactCount, 1);
+  assert.equal(activeHighCheck.activeHighImpactCount, 1);
+  assert.equal(activeHighCheck.riskLevel, 'HIGH');
+
+  resetLiveForexNewsCacheForTest();
+
   globalThis.fetch = async () => response('', 503);
   const unavailable = await fetchLiveForexNews({ pairs: ['USD/JPY'], forceRefresh: true });
   assert.equal(unavailable.status, 'UNAVAILABLE');
