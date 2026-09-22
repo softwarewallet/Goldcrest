@@ -158,10 +158,11 @@ export function getForexPairConfig(symbol: string): ForexPairConfig {
 
   // Fallback default
   const isJpy = symbol.toUpperCase().includes('JPY');
+  const compact = symbol.toUpperCase().replace(/[^A-Z]/g, '');
   return {
     symbol,
-    baseCurrency: symbol.slice(0, 3),
-    quoteCurrency: symbol.slice(3, 6) || 'USD',
+    baseCurrency: compact.slice(0, 3),
+    quoteCurrency: compact.slice(3, 6) || 'USD',
     pipSize: isJpy ? 0.01 : 0.0001,
     digits: isJpy ? 3 : 5,
     standardLotSize: 100000,
