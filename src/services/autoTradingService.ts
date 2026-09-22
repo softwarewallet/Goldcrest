@@ -799,6 +799,15 @@ class AutoTradingService {
           maxAllowedExposure: Math.max(Number(account.equity || 0), 1),
           activePositionsCount: positions.length,
           maxOpenPositions: Number(getSystemConfig().maxOpenPositions)
+        },
+        () => {
+          this.setExecutionStatus({
+            stage: 'SUBMITTING_ORDER',
+            pair,
+            side: order.side,
+            signalId: signal.id,
+            message: 'Submitting ' + pair + ' ' + order.side + ' to the live broker API.'
+          });
         }
       );
 
