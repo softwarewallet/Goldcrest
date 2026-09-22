@@ -108,7 +108,9 @@ function headlineScore(title: string): number {
   for (const term of POSITIVE) if (matchesTerm(term)) score++;
   for (const term of NEGATIVE) if (matchesTerm(term)) score--;
 
-  return score === 0 ? 0 : Math.max(-1, Math.min(1, score / 3));
+  // A headline contributes one normalized sentiment step regardless of
+  // how many synonymous positive/negative terms it contains.
+  return score === 0 ? 0 : score > 0 ? 1 / 3 : -1 / 3;
 }
 function usefulTitle(title: string): boolean {
   const t = title.toLowerCase().replace(/\s+/g,' ').trim();
