@@ -236,12 +236,23 @@ export class LiveTradingGate {
     if (maximumTradeValueCheckPassed && isForex && adapter.environment === 'LIVE') {
       // For cTrader LIVE Forex, maxTradeValueForexUsd is the broker protocol
       // volume itself. Do not multiply order quantity by price or perform
-      // quote-currency conversion here; the cTrader adapter applies the exact
-      // same configured value at the final execution boundary.
+      // quote-currency conversion here. The configured value is also the
+      // authoritative per-order ceiling, so any execution path that supplies
+      // a larger quantity is rejected before broker submission.
       if (!Number.isSafeInteger(maxTradeValue)) {
         maximumTradeValueCheckPassed = false;
         failedReasons.push(
           'Condition 16 Failed: Configured maximum Forex trade value must be a positive integer because cTrader volume is an integer protocol field.'
+        );
+      } else if (!Number.isSafeInteger(params.order.quantity) || params.order.quantity <= 0) {
+        maximumTradeValueCheckPassed = false;
+        failedReasons.push(
+          'Condition 16 Failed: Live cTrader Forex order quantity must be a positive integer.'
+        );
+      } else if (params.order.quantity > maxTradeValue) {
+        maximumTradeValueCheckPassed = false;
+        failedReasons.push(
+          `Condition 16 Failed: Forex order quantity ${params.order.quantity} exceeds configured maximum direct quantity ${maxTradeValue} for cTrader.`
         );
       }
     } else {
