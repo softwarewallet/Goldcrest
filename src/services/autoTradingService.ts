@@ -708,17 +708,39 @@ class AutoTradingService {
       await this.provider.refreshPair(pair);
       liveRuntimeLog('INFO', 'LIVE_DATA_REFRESHED', { pair });
       const signal = await this.signalEngine.generateSignal(pair);
+      const isDirectionalSignal = signal.direction.includes('BUY') || signal.direction.includes('SELL');
+      const signalSide: 'BUY' | 'SELL' | null = signal.direction.includes('BUY')
+        ? 'BUY'
+        : signal.direction.includes('SELL')
+          ? 'SELL'
+          : null;
+
       this.setExecutionStatus({
         stage: 'ANALYZING_SIGNAL',
         pair,
-        side: signal.direction === 'BUY' || signal.direction === 'SELL' ? signal.direction : null,
+        side: signalSide,
         signalId: signal.id,
         message: 'Analyzing ' + pair + ' signal and execution conditions.'
       });
-      liveRuntimeLog('INFO', 'SIGNAL_EVALUATED', { pair, signalId: signal.id, direction: signal.direction, score: signal.score, status: signal.status, strategyId: signal.strategyVersion });
+      liveRuntimeLog('INFO', 'SIGNAL_EVALUATED', {
+        pair,
+        signalId: signal.id,
+        direction: signal.direction,
+        score: signal.score,
+        status: signal.status,
+        hasTradePlan: Boolean(signal.tradePlan),
+        strategyId: signal.strategyVersion
+      });
 
-      if (!['BUY', 'SELL'].includes(signal.direction) || !signal.tradePlan) {
-        const reason = 'Signal engine did not produce an actionable directional setup.';
+      // The signal engine has multiple directional categories (BUY, STRONG_BUY,
+      // WATCH_BUY and their SELL equivalents). The scanner already normalizes
+      // these to BUY/SELL for the UI. Auto Live must use the same directional
+      // classification, otherwise valid WATCH/STRONG setups are incorrectly
+      // rejected before the configurable minimum-score gate is reached.
+      if (!isDirectionalSignal || !signal.tradePlan) {
+        const reason = !isDirectionalSignal
+          ? `Signal engine returned non-directional setup: ${signal.direction}.`
+          : 'Signal engine produced a directional signal without a valid trade plan.';
         this.lastActions.push({ pair, result: 'NO_TRADE', signalId: signal.id, reason });
         liveRuntimeLog('INFO', 'NO_TRADE', { pair, signalId: signal.id, reason });
                 tradeAuditLog('NO_TRADE', { pair, signalId: signal.id, direction: signal.direction, score: signal.score, reason });
