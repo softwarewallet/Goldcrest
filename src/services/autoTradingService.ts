@@ -520,6 +520,7 @@ class AutoTradingService {
           status: cycleNews.status,
           articleCount: cycleNews.articleCount,
           highImpactCount: cycleNews.highImpactCount,
+          activeHighImpactCount: cycleNews.activeHighImpactCount,
           elevatedCount: cycleNews.elevatedCount,
           riskLevel: cycleNews.riskLevel,
           providerStatus: cycleNews.providerStatus,
@@ -547,9 +548,9 @@ class AutoTradingService {
         this.lastActions = getConfiguredAutoForexPairs().map(pair => ({
           pair,
           result: 'BLOCKED',
-          reason: 'High-impact live news risk detected; new autonomous entries are paused for this cycle.'
+          reason: 'An active, pair-relevant high-impact news event is inside the configured blackout window; new autonomous entries are paused for this cycle.'
         }));
-        this.lastCycleResult = 'Auto Live cycle blocked: high-impact live news risk detected. No new trade is submitted.';
+        this.lastCycleResult = 'Auto Live cycle blocked: an active pair-relevant high-impact news event is inside the blackout window. No new trade is submitted.';
         liveRuntimeLog('WARN', 'AUTO_TRADING_BLOCKED_HIGH_IMPACT_NEWS', {
           articleCount: cycleNews.articleCount,
           highImpactCount: cycleNews.highImpactCount
