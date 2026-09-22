@@ -163,6 +163,28 @@ export function liveRuntimeLog(level: LiveLogLevel, event: string, details?: unk
   writeLine(level, event, details);
 }
 
+export function tradeAuditLog(event: string, details?: unknown): void {
+  const date = getLogDate();
+  const file = path.join(LOG_DIR, `TradeLog-${date}.log`);
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    const timestamp = new Date().toISOString();
+    const detailText = details === undefined ? '' : ` | ${sanitize(details)}`;
+    fs.appendFileSync(
+      file,
+      `[${timestamp}] [TRADE] [${event}]${detailText}\n`,
+      'utf8'
+    );
+  } catch (error) {
+    process.stderr.write(`[TRADE-LOG] Failed to append trade log: ${String(error)}\n`);
+  }
+}
+
+export function getTradeLogFile(date = getLogDate()): string {
+  return path.join(LOG_DIR, `TradeLog-${date}.log`);
+}
+
+
 export function logApplicationAction(event: string, details?: unknown): void {
   liveRuntimeLog('SYSTEM', event, details);
 }
