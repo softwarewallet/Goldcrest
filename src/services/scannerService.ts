@@ -317,7 +317,7 @@ export class ScannerService {
         bias: 'BULLISH',
         score: favorable ? liveScore : Math.min(liveScore, 55),
         mlProbability: liveProbability,
-        entryPremium: atmRow.call.ltp,
+        entryPremium: atmRow.call.ask > 0 ? atmRow.call.ask : atmRow.call.ltp,
         maxLoss: payoff.maxLoss,
         maxProfit: payoff.maxProfit,
         breakeven: payoff.breakeven,
@@ -384,39 +384,50 @@ export class ScannerService {
       });
     }
 
-    if (otmPutRow) {
+    if (atmRow) {
       const payoff = calculateStrategyPayoff({
         strategyType: 'LONG_PUT',
         underlying: clean,
         spotPrice: spot,
-        strike1: otmPutRow.strike,
-        premium1: otmPutRow.put.ltp
+        strike1: atm,
+        premium1: atmRow.put.ltp
       });
+      const hasHighIV = atmRow.put.iv > 20;
+      const expiryAvailable = daysLeft !== null;
+      const favorable = isBearish && !hasHighIV && (!expiryAvailable || daysLeft > 2);
       opportunities.push({
-        id: `opt_lp_otm_${clean}`,
+        id: `opt_lp_${clean}`,
         underlying: clean,
         spot,
         strategyType: 'LONG_PUT',
-        title: `${clean} ${otmPutRow.strike} PE Deep OTM Put`,
+        title: `${clean} ${atm} PE Long Put`,
         bias: 'BEARISH',
-        score: 0,
+        score: favorable ? liveScore : Math.min(liveScore, 55),
         mlProbability: liveProbability,
-        entryPremium: otmPutRow.put.ltp,
+        entryPremium: atmRow.put.ask > 0 ? atmRow.put.ask : atmRow.put.ltp,
         maxLoss: payoff.maxLoss,
         maxProfit: payoff.maxProfit,
         breakeven: payoff.breakeven,
         riskReward: payoff.riskRewardRatio,
-        status: 'NO_TRADE',
-        reasons: ['Live option-chain structure does not justify the deep-OTM long put.'],
-        invalidation: ['Do not enter without a new live qualifying setup.'],
+        status: favorable ? 'LONG_PUT' : 'WAIT',
+        reasons: favorable
+          ? [
+              `Live underlying is below VWAP; expiry remaining: ${daysLeft ?? 'unknown'} days`,
+              `Call OI resistance: ${chain.callResistanceStrike}`
+            ]
+          : ['Live options inputs do not satisfy the long-put filters.'],
+        invalidation: [
+          `Spot rises above live VWAP ${underlyingData.vwap.toFixed(1)}`,
+          'Live IV expands or market structure invalidates the setup'
+        ],
         expiry: chain.expiry,
         optionType: 'PUT',
-        strike: otmPutRow.strike,
-        contractSymbol: otmPutRow.put.symbol,
-        lotSize: otmPutRow.put.lotSize,
-        liveBid: otmPutRow.put.bid,
-        liveAsk: otmPutRow.put.ask,
-        liveLtp: otmPutRow.put.ltp
+        strike: atmRow.strike,
+        contractSymbol: atmRow.put.symbol,
+        lotSize: atmRow.put.lotSize,
+        liveBid: atmRow.put.bid,
+        liveAsk: atmRow.put.ask,
+        liveLtp: atmRow.put.ltp
       });
     }
 
