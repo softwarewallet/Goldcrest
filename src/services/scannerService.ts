@@ -32,6 +32,7 @@ export interface OptionsOpportunityCandidate {
   liveBid: number;
   liveAsk: number;
   liveLtp: number;
+  brokerInstrumentId?: string;
 }
 
 
@@ -293,7 +294,8 @@ export class ScannerService {
         lotSize: atmRow.call.lotSize,
         liveBid: atmRow.call.bid,
         liveAsk: atmRow.call.ask,
-        liveLtp: atmRow.call.ltp
+        liveLtp: atmRow.call.ltp,
+        brokerInstrumentId: atmRow.call.brokerInstrumentId
       });
     }
 
@@ -337,7 +339,8 @@ export class ScannerService {
         lotSize: atmRow.call.lotSize,
         liveBid: atmRow.call.bid,
         liveAsk: atmRow.call.ask,
-        liveLtp: atmRow.call.ltp
+        liveLtp: atmRow.call.ltp,
+        brokerInstrumentId: atmRow.call.brokerInstrumentId
       });
     }
 
@@ -380,7 +383,8 @@ export class ScannerService {
         lotSize: atmRow.put.lotSize,
         liveBid: atmRow.put.bid,
         liveAsk: atmRow.put.ask,
-        liveLtp: atmRow.put.ltp
+        liveLtp: atmRow.put.ltp,
+        brokerInstrumentId: atmRow.put.brokerInstrumentId
       });
     }
 
@@ -427,7 +431,8 @@ export class ScannerService {
         lotSize: atmRow.put.lotSize,
         liveBid: atmRow.put.bid,
         liveAsk: atmRow.put.ask,
-        liveLtp: atmRow.put.ltp
+        liveLtp: atmRow.put.ltp,
+        brokerInstrumentId: atmRow.put.brokerInstrumentId
       });
     }
 
