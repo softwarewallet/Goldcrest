@@ -168,6 +168,7 @@ export interface AutoTradingStatus {
   marketGate: AutoLiveMarketGate;
   currentExecution: AutoTradingExecutionStatus;
   lastExecution: AutoTradingExecutionStatus | null;
+  executionPausedByPositionLimit: boolean;
   preOpenPreparation: {
     lastPreparedAt: number | null;
     trendPairsEvaluated: number;
@@ -190,6 +191,12 @@ class AutoTradingService {
   private preOpenNews: LiveNewsSnapshot | null = null;
   private preOpenStatus: 'IDLE' | 'RUNNING' | 'READY' | 'UNAVAILABLE' = 'IDLE';
   private cycleInFlight = false;
+  // When the authoritative system-wide live-position limit is full, Auto Live
+  // pauses expensive market/news analysis and polls only the broker position
+  // count until a slot becomes available.
+  private executionPausedByPositionLimit = false;
+  private positionCapacityTimer: NodeJS.Timeout | null = null;
+  private readonly POSITION_CAPACITY_POLL_MS = 10_000;
   // Market analysis can run concurrently across the configured universe, but
   // broker-side execution is serialized so two pairs cannot race the same
   // account-position/exposure snapshot and bypass the global safety limits.
@@ -238,6 +245,54 @@ class AutoTradingService {
     this.lastExecution = { ...this.currentExecution };
   }
 
+  private getConfiguredMaxOpenPositions(): number {
+    return Math.max(1, Math.floor(Number(getSystemConfig().maxOpenPositions)));
+  }
+
+  private async getAuthoritativePositionCapacity(): Promise<{ current: number; max: number; available: number }> {
+    const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+    const positions = await adapter.getPositions();
+    const current = Array.isArray(positions) ? positions.length : 0;
+    const max = this.getConfiguredMaxOpenPositions();
+    return { current, max, available: Math.max(0, max - current) };
+  }
+
+  private pauseForPositionLimit(current: number, max: number, reason: string): void {
+    this.executionPausedByPositionLimit = true;
+    this.lastCycleResult = `Auto Live paused: ${reason} (${current}/${max}). Waiting for a free position slot.`;
+    liveRuntimeLog('INFO', 'AUTO_TRADING_POSITION_CAPACITY_PAUSED', { currentOpenPositions: current, maxOpenPositions: max, reason, pollIntervalMs: this.POSITION_CAPACITY_POLL_MS });
+    if (!this.positionCapacityTimer) {
+      this.positionCapacityTimer = setInterval(() => { void this.checkPositionCapacityAndResume(); }, this.POSITION_CAPACITY_POLL_MS);
+      this.positionCapacityTimer.unref?.();
+    }
+  }
+
+  private async checkPositionCapacityAndResume(): Promise<void> {
+    if (!this.executionPausedByPositionLimit || this.state !== 'RUNNING' || this.cycleInFlight) return;
+    try {
+      const capacity = await this.getAuthoritativePositionCapacity();
+      if (capacity.available <= 0) return;
+      this.executionPausedByPositionLimit = false;
+      if (this.positionCapacityTimer) {
+        clearInterval(this.positionCapacityTimer);
+        this.positionCapacityTimer = null;
+      }
+      this.lastCycleResult = `Auto Live resumed: ${capacity.available} live position slot(s) are available.`;
+      liveRuntimeLog('INFO', 'AUTO_TRADING_POSITION_CAPACITY_RESUMED', { currentOpenPositions: capacity.current, maxOpenPositions: capacity.max, availableSlots: capacity.available });
+      void this.runCycle();
+    } catch (error: any) {
+      liveRuntimeLog('WARN', 'AUTO_TRADING_POSITION_CAPACITY_CHECK_ERROR', { error: error?.message || String(error) });
+    }
+  }
+
+  private clearPositionCapacityPause(): void {
+    this.executionPausedByPositionLimit = false;
+    if (this.positionCapacityTimer) {
+      clearInterval(this.positionCapacityTimer);
+      this.positionCapacityTimer = null;
+    }
+  }
+
   getStatus(): AutoTradingStatus {
     const autonomousPermission = refreshAutonomousExecutionPermission();
     return {
@@ -256,6 +311,7 @@ class AutoTradingService {
       marketGate: getAutoLiveMarketGate(),
       currentExecution: { ...this.currentExecution },
       lastExecution: this.lastExecution ? { ...this.lastExecution } : null,
+      executionPausedByPositionLimit: this.executionPausedByPositionLimit,
       preOpenPreparation: {
         lastPreparedAt: this.lastPreOpenPreparedAt,
         trendPairsEvaluated: this.preOpenTrendPairsEvaluated,
@@ -378,6 +434,7 @@ class AutoTradingService {
       clearInterval(this.timer);
       this.timer = null;
     }
+    this.clearPositionCapacityPause();
     this.state = 'STOPPED';
     this.lastCycleResult = reason;
     liveRuntimeLog('SYSTEM', 'AUTO_TRADING_STOPPED', { reason });
@@ -652,6 +709,14 @@ class AutoTradingService {
         return;
       }
 
+      const positionCapacity = await this.getAuthoritativePositionCapacity();
+      if (positionCapacity.available <= 0) {
+        this.pauseForPositionLimit(positionCapacity.current, positionCapacity.max, 'Maximum configured live positions are already open.');
+        this.setExecutionStatus({ stage: 'IDLE', pair: null, side: null, signalId: null, message: `Auto Live paused: system position limit reached (${positionCapacity.current}/${positionCapacity.max}).` });
+        return;
+      }
+      this.clearPositionCapacityPause();
+
       // Live news is an execution input, not just a display metric. The
       // deterministic technical strategy can only enter a new trade when a
       // current authoritative news snapshot is available.
@@ -833,6 +898,12 @@ return;
 
       return this.withExecutionLock(async () => {
       const config = getSystemConfig();
+      const systemPositionCapacity = await this.getAuthoritativePositionCapacity();
+      if (systemPositionCapacity.available <= 0) {
+        this.pauseForPositionLimit(systemPositionCapacity.current, systemPositionCapacity.max, 'Maximum configured live positions were reached during this cycle.');
+        this.setExecutionStatus({ stage: 'IDLE', pair, side: signalSide, signalId: signal.id, message: `Auto Live paused: system position limit reached (${systemPositionCapacity.current}/${systemPositionCapacity.max}).` });
+        return;
+      }
 
       // Another pair may have filled the final system-wide slot while this
       // signal was waiting in the serialized execution queue. Do not make
