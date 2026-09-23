@@ -488,9 +488,12 @@ async function fetchFromNewsApi(pairs: string[]): Promise<{
       url.searchParams.set('language', 'en');
       url.searchParams.set('sortBy', 'publishedAt');
       url.searchParams.set('pageSize', '100');
+      // NewsAPI's free Developer plan can deliver articles with a delay.
+      // Pull a wider window for diagnostics, then the normal freshness gate
+      // decides whether the article is eligible for live Forex analysis.
       url.searchParams.set(
         'from',
-        new Date(Date.now() - MAX_ARTICLE_AGE_MS).toISOString()
+        new Date(Date.now() - 48 * 60 * 60_000).toISOString()
       );
 
       const payload = await fetchJson(url, { 'X-Api-Key': apiKey });
