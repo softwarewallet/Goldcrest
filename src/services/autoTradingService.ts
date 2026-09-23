@@ -134,7 +134,7 @@ class LiveForexSignalProvider implements ForexDataProvider {
   }
 }
 
-export type AutoTradingState = 'STOPPED' | 'PREPARING' | 'RUNNING' | 'BLOCKED';
+export type AutoTradingState = 'STOPPED' | 'PREPARING' | 'RUNNING' | 'PAUSED_LIMIT' | 'BLOCKED';
 export type AutoTradingExecutionStage = 'IDLE' | 'SCANNING_MARKET' | 'ANALYZING_SIGNAL' | 'PREPARING_ORDER' | 'SAFETY_GATE' | 'SUBMITTING_ORDER' | 'TRADE_EXECUTED' | 'REJECTED';
 
 export interface AutoTradingExecutionStatus {
@@ -385,10 +385,85 @@ class AutoTradingService {
     return this.getStatus();
   }
 
+  /**
+   * Check the authoritative live cTrader position count before starting or
+   * continuing an Auto Live execution cycle.
+   *
+   * When the configured system-wide position limit is full, Auto Live enters
+   * PAUSED_LIMIT rather than repeatedly scanning signals and reaching
+   * Condition 13B one order at a time. The timer remains armed, so the service
+   * re-checks the broker when the next cycle arrives and automatically resumes
+   * as soon as a live-position slot is available.
+   */
+  private async checkSystemPositionCapacity(): Promise<boolean> {
+    const maxOpenPositions = Math.max(
+      1,
+      Math.min(100, Math.floor(Number(getSystemConfig().maxOpenPositions)))
+    );
+
+    try {
+      const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+      const positions = await adapter.getPositions();
+      const activePositionsCount = Array.isArray(positions) ? positions.length : 0;
+
+      if (activePositionsCount >= maxOpenPositions) {
+        const wasAlreadyPaused = this.state === 'PAUSED_LIMIT';
+        this.state = 'PAUSED_LIMIT';
+        this.lastCycleResult =
+          `Auto Live paused: maximum system-wide live positions reached (${activePositionsCount}/${maxOpenPositions}). Waiting for a position slot to become available.`;
+
+        if (!wasAlreadyPaused) {
+          liveRuntimeLog('INFO', 'AUTO_TRADING_POSITION_LIMIT_PAUSED', {
+            activePositionsCount,
+            maxOpenPositions
+          });
+          tradeAuditLog('AUTO_TRADING_POSITION_LIMIT_PAUSED', {
+            activePositionsCount,
+            maxOpenPositions
+          });
+        }
+
+        return false;
+      }
+
+      if (this.state === 'PAUSED_LIMIT') {
+        this.state = 'RUNNING';
+        this.lastCycleResult =
+          `Auto Live resumed: a live-position slot is available (${activePositionsCount}/${maxOpenPositions}).`;
+        liveRuntimeLog('INFO', 'AUTO_TRADING_POSITION_LIMIT_RESUMED', {
+          activePositionsCount,
+          maxOpenPositions
+        });
+        tradeAuditLog('AUTO_TRADING_POSITION_LIMIT_RESUMED', {
+          activePositionsCount,
+          maxOpenPositions
+        });
+      }
+
+      return true;
+    } catch (error: any) {
+      // Do not hammer the broker when the authoritative position snapshot is
+      // unavailable. Stay paused and retry on the next scheduled cycle.
+      this.state = 'PAUSED_LIMIT';
+      this.lastCycleResult =
+        'Auto Live paused: unable to verify current live-position capacity. Retrying on the next cycle.';
+      liveRuntimeLog('WARN', 'AUTO_TRADING_POSITION_LIMIT_CHECK_UNAVAILABLE', {
+        maxOpenPositions,
+        error: error?.message || String(error)
+      });
+      return false;
+    }
+  }
+
   private async runScheduledCycle(): Promise<void> {
-    if (!['PREPARING', 'RUNNING'].includes(this.state) || this.cycleInFlight) return;
+    if (!['PREPARING', 'RUNNING', 'PAUSED_LIMIT'].includes(this.state) || this.cycleInFlight) return;
 
     const marketGate = getAutoLiveMarketGate();
+
+    if (this.state === 'PAUSED_LIMIT') {
+      const capacityAvailable = await this.checkSystemPositionCapacity();
+      if (!capacityAvailable) return;
+    }
 
     if (marketGate.bothMarketsClosed) {
       if (this.state === 'RUNNING') {
@@ -567,6 +642,13 @@ class AutoTradingService {
       if (!refreshAutonomousExecutionPermission()) {
         this.state = 'BLOCKED';
         this.lastCycleResult = 'Autonomous permission was withdrawn before cycle execution.';
+        return;
+      }
+
+      // Stop the scan before news/market analysis when the authoritative
+      // system-wide live-position capacity is already full. The timer remains
+      // active so a later cycle can detect a freed slot and resume.
+      if (!(await this.checkSystemPositionCapacity())) {
         return;
       }
 
@@ -761,6 +843,35 @@ return;
       }
 
       const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+
+      // Re-check the authoritative account position count inside the serialized
+      // execution lock. Another pair may have filled the final available slot
+      // earlier in this same cycle.
+      const positionsBeforeExecution = await adapter.getPositions();
+      const maxOpenPositions = Math.max(
+        1,
+        Math.min(100, Math.floor(Number(config.maxOpenPositions)))
+      );
+      if (positionsBeforeExecution.length >= maxOpenPositions) {
+        this.state = 'PAUSED_LIMIT';
+        const reason =
+          `Auto Live paused: maximum system-wide live positions reached (${positionsBeforeExecution.length}/${maxOpenPositions}). Waiting for a position slot to become available.`;
+        this.lastActions.push({ pair, result: 'PAUSED', signalId: signal.id, reason });
+        liveRuntimeLog('INFO', 'AUTO_TRADING_POSITION_LIMIT_PAUSED', {
+          pair,
+          signalId: signal.id,
+          activePositionsCount: positionsBeforeExecution.length,
+          maxOpenPositions
+        });
+        tradeAuditLog('AUTO_TRADING_POSITION_LIMIT_PAUSED', {
+          pair,
+          signalId: signal.id,
+          activePositionsCount: positionsBeforeExecution.length,
+          maxOpenPositions
+        });
+        return;
+      }
+
       const quote = await adapter.getQuote(pair);
       if (quote.status !== 'FRESH' || Date.now() - quote.timestamp >= LIVE_QUOTE_MAX_AGE_MS) {
         const reason = 'Fresh broker quote unavailable at dispatch boundary.';
@@ -835,7 +946,7 @@ return;
         score >= 65 ? '1_TRADE' :
         'BELOW_65';
 
-      const positions = await adapter.getPositions();
+      const positions = positionsBeforeExecution;
       const activePairPositionsCount = positions.filter(position =>
         String(position.symbol || '').toUpperCase() === pair.toUpperCase()
       ).length;
