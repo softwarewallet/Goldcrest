@@ -125,7 +125,7 @@ export function calculateForexPipTargets(
  *   maxTradeValueForexUsd = 100
  *   => normal Forex order quantity = 100
  *
- * Gold (any Forex symbol containing XAU) uses a dedicated 1/100 volume rule:
+ * Gold (any Forex symbol containing XAU) uses a dedicated 1/1000 volume rule:
  *   maxTradeValueForexUsd = 1000
  *   => XAU order quantity = 10
  *
@@ -154,14 +154,14 @@ export async function sizeForexOrderToMaxTradeValue(
     );
   }
 
-  // XAU/USD and any other Forex symbol containing XAU use one-hundredth
+  // XAU/USD and any other Forex symbol containing XAU use one-thousandth
   // of the operator-configured Forex volume. This is a volume rule, not a
   // price/notional conversion.
   const normalizedSymbol = String(_symbol || '').toUpperCase().trim();
   const isXauPair = normalizedSymbol
     .split('/')
     .some(part => part === 'XAU');
-  const xauVolumeDivisor = 100;
+  const xauVolumeDivisor = 1000;
   const configuredExecutionQuantity = isXauPair
     ? Math.floor(configuredQuantity / xauVolumeDivisor)
     : Math.floor(configuredQuantity);
@@ -169,7 +169,7 @@ export async function sizeForexOrderToMaxTradeValue(
   if (!(configuredExecutionQuantity > 0) || !Number.isFinite(configuredExecutionQuantity)) {
     throw new Error(
       isXauPair
-        ? 'MAX_TRADE_VALUE_INVALID: Configured Forex volume must be at least 10 for an XAU pair because XAU volume is configured volume / 100.'
+        ? 'MAX_TRADE_VALUE_INVALID: Configured Forex volume must be at least 1000 for an XAU pair because XAU volume is configured volume / 100.'
         : 'MAX_TRADE_VALUE_INVALID: Configured maximum Forex trade quantity must be at least 1.'
     );
   }
