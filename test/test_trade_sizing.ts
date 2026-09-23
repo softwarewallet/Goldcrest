@@ -112,7 +112,7 @@ assert.ok(Number.isFinite(fractionalQuantity.quantity));
 assert.equal(Number.isInteger(fractionalQuantity.quantity), true);
 assert.equal(fractionalQuantity.estimatedTradeValueUsd, undefined);
 
-// XAU volume rule: the configured Forex volume is divided by 100 for any
+// XAU volume rule: the configured Forex volume is divided by 1000 for any
 // Forex symbol containing XAU. This must be enforced by the common sizing
 // function so Auto Live and Trigger Now produce the same broker quantity.
 updateSystemConfig({
@@ -127,9 +127,9 @@ const xauSizing = await sizeForexOrderToMaxTradeValue(
   1
 );
 
-assert.equal(xauSizing.quantity, 10);
-assert.equal(xauSizing.directQuantity, 10);
-assert.equal(xauSizing.rawMaxQuantity, 10);
+assert.equal(xauSizing.quantity, 1);
+assert.equal(xauSizing.directQuantity, 1);
+assert.equal(xauSizing.rawMaxQuantity, 1);
 assert.equal(xauSizing.maxTradeValueUsd, 1000);
 
 const xauReverseSizing = await sizeForexOrderToMaxTradeValue(
@@ -140,8 +140,8 @@ const xauReverseSizing = await sizeForexOrderToMaxTradeValue(
   1
 );
 
-assert.equal(xauReverseSizing.quantity, 10);
-assert.equal(xauReverseSizing.directQuantity, 10);
+assert.equal(xauReverseSizing.quantity, 1);
+assert.equal(xauReverseSizing.directQuantity, 1);
 
 // Goldcrest-wide price precision policy: every symbol is normalized to three
 // decimal places, regardless of broker-reported symbol precision.
