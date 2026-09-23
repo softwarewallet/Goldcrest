@@ -567,7 +567,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
               </div>
               <div className="flex flex-wrap gap-2 mt-4">
                 <button onClick={() => save(broker)} disabled={saving === broker} className="px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold">
-                  {saving === broker ? 'SAVING…' : 'SAVE LIVE CREDENTIALS'}
+                  {saving === broker ? 'SAVING…' : 'SAVE CREDENTIALS'}
                 </button>
                 <button onClick={() => test(broker)} disabled={testing === broker || loading} className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-bold border border-slate-700">
                   <RefreshCw className={`inline w-3 h-3 mr-1 ${testing === broker ? 'animate-spin' : ''}`} /> TEST CONNECTION
@@ -591,7 +591,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
         <div className="flex items-center gap-2 mb-2"><ShieldCheck className="w-4 h-4 text-cyan-400" /><span className="text-sm font-bold text-white">Routing & Safety</span></div>
         <div className="grid md:grid-cols-2 gap-2 text-xs font-mono">
-          <div className="p-2 bg-slate-950 border border-slate-800 rounded">FOREX → <strong className="text-emerald-400">cTrader LIVE</strong></div>
+          <div className="p-2 bg-slate-950 border border-slate-800 rounded">FOREX → <strong className="text-emerald-400">cTrader ({cTraderApiMode})</strong></div>
           <div className="p-2 bg-slate-950 border border-slate-800 rounded">INDIAN_EQUITY → <strong className="text-emerald-400">5paisa LIVE</strong></div>
           <div className="p-2 bg-slate-950 border border-slate-800 rounded">INDIAN_FUTURES → <strong className="text-emerald-400">5paisa LIVE</strong></div>
           <div className="p-2 bg-slate-950 border border-slate-800 rounded">INDIAN_OPTIONS → <strong className="text-emerald-400">5paisa LIVE</strong></div>
@@ -600,7 +600,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         </div>
       </div>
 
-      <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2"><Database className="w-3 h-3" /> Environment enforced by server: LIVE_ONLY. Only LIVE credentials are supported.</div>
+      <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2"><Database className="w-3 h-3" /> Execution environment: LIVE_ONLY. cTrader API transport may use LIVE or DEMO; the selected API mode is used for the cTrader connection.</div>
     </div>
   );
 };
