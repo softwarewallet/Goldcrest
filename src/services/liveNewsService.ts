@@ -144,6 +144,12 @@ function decodeXmlEntities(value: string): string {
 }
 
 function normalizePublishedAt(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const milliseconds = value > 1_000_000_000_000 ? value : value * 1000;
+    const date = new Date(milliseconds);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  }
+
   const raw = decodeXmlEntities(String(value ?? '').trim());
   if (!raw) return null;
 
