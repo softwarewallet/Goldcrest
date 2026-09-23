@@ -116,11 +116,21 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
     }
 
     // cTrader volume is an integer protocol field represented in 0.01 units.
-    // Use the configured limit directly as broker protocol volume.
-    if (!Number.isSafeInteger(maxTradeValueForexUsd)) {
+    // Normal FX uses the configured protocol volume directly. XAU uses 1/100
+    // of the configured volume, matching the shared Goldcrest sizing contract.
+    const normalizedSymbol = String(order.symbol || '').toUpperCase().trim();
+    const isXauPair = normalizedSymbol.split('/').some(part => part === 'XAU');
+    const xauVolumeDivisor = 100;
+    const configuredProtocolVolume = isXauPair
+      ? Math.floor(maxTradeValueForexUsd / xauVolumeDivisor)
+      : Math.floor(maxTradeValueForexUsd);
+
+    if (!Number.isSafeInteger(configuredProtocolVolume) || configuredProtocolVolume <= 0) {
       throw new BrokerError(
         'INVALID_QUANTITY',
-        'Configured maximum Forex trade value must be a positive integer because cTrader volume is an integer protocol field.',
+        isXauPair
+          ? 'Configured maximum Forex trade value must produce a positive integer cTrader volume for an XAU pair after the 1/100 rule.'
+          : 'Configured maximum Forex trade value must be a positive integer because cTrader volume is an integer protocol field.',
         'CTRADER',
         this.environment
       );
@@ -145,9 +155,10 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
       instrument.digits
     );
 
-    // The API converts Goldcrest quantity back to protocol volume by multiplying
-    // by 100, so quantity = configured protocol volume / 100.
-    order.quantity = maxTradeValueForexUsd / 100;
+    // The cTrader API multiplies Goldcrest normalized quantity by 100 when
+    // constructing the integer protocol volume. Keep the normalized quantity
+    // consistent with the effective configured protocol volume.
+    order.quantity = configuredProtocolVolume / 100;
     order.price = normalizedExecutionPrice;
 
     if (order.stopLoss !== undefined && order.stopLoss > 0) {
