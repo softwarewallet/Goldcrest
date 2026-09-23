@@ -154,7 +154,7 @@ export async function sizeForexOrderToMaxTradeValue(
     );
   }
 
-  // XAU/USD and any other Forex symbol containing XAU use one-tenth
+  // XAU/USD and any other Forex symbol containing XAU use one-hundredth
   // of the operator-configured Forex volume. This is a volume rule, not a
   // price/notional conversion.
   const normalizedSymbol = String(_symbol || '').toUpperCase().trim();
