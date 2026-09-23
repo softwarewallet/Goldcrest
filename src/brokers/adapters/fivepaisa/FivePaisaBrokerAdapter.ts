@@ -1452,14 +1452,14 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
    * Fetches real-time Indian underlying quotes directly from 5paisa MarketFeed / MarketSnapshot API.
    * If 5paisa connection is not available, returns an empty array (blank data).
    */
-  async fetchIndianUnderlyingsFrom5Paisa(): Promise<IndianUnderlyingAnalysis[]> {
+  async fetchIndianUnderlyingsFrom5Paisa(respectConfiguredUniverse: boolean = true): Promise<IndianUnderlyingAnalysis[]> {
     const hasSession = await this.ensureActiveSession();
     if (!hasSession) {
       return [];
     }
 
     const configuredUniverse = getSystemConfig().autoLiveIndianUnderlyings;
-    const activeSymbols = Array.isArray(configuredUniverse)
+    const activeSymbols = respectConfiguredUniverse && Array.isArray(configuredUniverse)
       ? new Set(configuredUniverse.map(symbol => String(symbol).toUpperCase().trim()))
       : new Set<string>();
 
