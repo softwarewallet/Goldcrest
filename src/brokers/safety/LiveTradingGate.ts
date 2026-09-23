@@ -121,41 +121,64 @@ export class LiveTradingGate {
     // dispatch callers, but Condition 12 must not reject a live order.
     const maxExposureNotExceeded = true;
 
+    // Checks 13 and 13B both depend on the broker's CURRENT position set.
+    // Never use the caller's earlier position count for 13B because Auto Live
+    // analyzes pairs concurrently and the account can change between analysis
+    // and this final dispatch boundary.
+    let authoritativePositions: Awaited<ReturnType<BrokerAdapter['getPositions']>> = [];
+    let positionsVerified = false;
+    try {
+      authoritativePositions = await adapter.getPositions();
+      positionsVerified = Array.isArray(authoritativePositions);
+    } catch {
+      positionsVerified = false;
+    }
+
     // Check 13: Per-pair simultaneous-position limit.
     // Multiple positions on the same Forex pair are intentionally allowed up
     // to the operator-configured Auto Live per-pair limit. A single existing
     // position must NOT automatically reject a second/third/fourth trade.
-    let duplicatePositionCheckPassed = true;
-    try {
-      const positions = await adapter.getPositions();
-      const authoritativePairPositionsCount = positions.filter(
+    let duplicatePositionCheckPassed = false;
+    let authoritativePairPositionsCount = 0;
+    if (positionsVerified) {
+      authoritativePairPositionsCount = authoritativePositions.filter(
         position => String(position.symbol || '').toUpperCase() === String(params.order.symbol || '').toUpperCase()
       ).length;
       const pairPositionLimit = Number(params.maxPairPositions);
-      const pairLimitCount = Number.isFinite(authoritativePairPositionsCount)
-        ? authoritativePairPositionsCount
-        : params.activePairPositionsCount;
 
       duplicatePositionCheckPassed = Number.isInteger(pairPositionLimit)
         && pairPositionLimit > 0
-        && pairLimitCount < pairPositionLimit;
+        && authoritativePairPositionsCount < pairPositionLimit;
 
       if (!duplicatePositionCheckPassed) {
         failedReasons.push(
-          `Condition 13 Failed: Maximum simultaneous live trades for ${params.order.symbol} (${pairPositionLimit}) reached. Current positions: ${pairLimitCount}.`
+          `Condition 13 Failed: Maximum simultaneous live trades for ${params.order.symbol} (${pairPositionLimit}) reached. Current positions: ${authoritativePairPositionsCount}.`
         );
       }
-    } catch {
-      duplicatePositionCheckPassed = false;
+    } else {
       failedReasons.push('Condition 13 Failed: Unable to verify existing positions.');
     }
 
-    // Check 13B: Maximum number of simultaneous live positions across the account.
-    const maxOpenPositionsCheckPassed = params.activePositionsCount < params.maxOpenPositions;
-    if (!maxOpenPositionsCheckPassed) {
-      failedReasons.push(`Condition 13B Failed: Maximum open live positions (${params.maxOpenPositions}) reached.`);
-    }
+    // Check 13B: Maximum number of simultaneous live positions ACROSS THE
+    // ENTIRE LIVE ACCOUNT. This is intentionally independent of the requested
+    // pair. A USD/CAD order can therefore fail 13B even when USD/CAD itself
+    // has zero open positions if five positions exist on other pairs.
+    const authoritativeActivePositionsCount = positionsVerified
+      ? authoritativePositions.length
+      : Number.NaN;
+    const maxOpenPositionsCheckPassed = positionsVerified
+      && Number.isFinite(authoritativeActivePositionsCount)
+      && authoritativeActivePositionsCount < params.maxOpenPositions;
 
+    if (!maxOpenPositionsCheckPassed) {
+      if (positionsVerified) {
+        failedReasons.push(
+          `Condition 13B Failed: Maximum open live positions (${params.maxOpenPositions}) reached. Current account positions: ${authoritativeActivePositionsCount}.`
+        );
+      } else {
+        failedReasons.push('Condition 13B Failed: Unable to verify current account position count.');
+      }
+    }
     // Check 14: Order parameters validated
     const orderParametersValidated = Boolean(params.order.market && params.order.symbol && params.order.side && params.order.orderType);
     if (!orderParametersValidated) {
