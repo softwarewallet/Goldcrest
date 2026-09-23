@@ -816,47 +816,48 @@ return;
 return;
       }
 
-      const configuredMaxTradesPerPair = Math.max(
-        1,
-        Math.min(20, Math.floor(Number(config.autoLiveMaxTradesPerPair)))
-      );
-      // A high-confidence signal (strictly above 80) may use the operator-configured
-      // multiple-trade limit. Signals at 80 or below are restricted to one open
-      // Auto Live position for that pair. The system-wide Condition 13B limit
-      // remains authoritative and is never bypassed by this rule.
-      const HIGH_SCORE_MULTIPLE_TRADE_THRESHOLD = 80;
-      const highScoreMultipleTradeMode = Number(signal.score) > HIGH_SCORE_MULTIPLE_TRADE_THRESHOLD;
-      const maxTradesPerPair = highScoreMultipleTradeMode
-        ? configuredMaxTradesPerPair
-        : 1;
+      // Score-based parallel-trade ladder:
+      //   score >= 65 and <= 70 -> 1 trade
+      //   score > 70 and <= 78   -> 2 trades
+      //   score > 78              -> 5 trades
+      // Scores below 65 do not receive a parallel-trade allowance here.
+      // Condition 13B remains authoritative and can still block the order when
+      // the system-wide live-position limit has been reached.
+      const score = Number(signal.score);
+      const maxTradesPerPair =
+        score > 78 ? 5 :
+        score > 70 ? 2 :
+        score >= 65 ? 1 :
+        0;
+      const scoreParallelTradeTier =
+        score > 78 ? '5_TRADES' :
+        score > 70 ? '2_TRADES' :
+        score >= 65 ? '1_TRADE' :
+        'BELOW_65';
 
       const positions = await adapter.getPositions();
       const activePairPositionsCount = positions.filter(position =>
         String(position.symbol || '').toUpperCase() === pair.toUpperCase()
       ).length;
-      if (activePairPositionsCount >= maxTradesPerPair) {
-        const reason = highScoreMultipleTradeMode
-          ? `Maximum simultaneous Auto Live trades for ${pair} is ${maxTradesPerPair}; ${activePairPositionsCount} position(s) are already open.`
-          : `Auto Live score rule limits ${pair} to 1 simultaneous trade at score ${Number(signal.score).toFixed(2)} (multiple trades require score > 80).`;
+      if (maxTradesPerPair <= 0 || activePairPositionsCount >= maxTradesPerPair) {
+        const reason = maxTradesPerPair <= 0
+          ? `Auto Live score ${score.toFixed(2)} is below the minimum parallel-trade threshold of 65.`
+          : `Maximum simultaneous Auto Live trades for ${pair} is ${maxTradesPerPair}; ${activePairPositionsCount} position(s) are already open.`;
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
         liveRuntimeLog('INFO', 'AUTO_TRADING_PAIR_POSITION_LIMIT', {
           pair,
           signalId: signal.id,
           activePairPositionsCount,
-          configuredMaxTradesPerPair,
           effectiveMaxTradesPerPair: maxTradesPerPair,
-          highScoreMultipleTradeMode,
-          highScoreThreshold: HIGH_SCORE_MULTIPLE_TRADE_THRESHOLD,
+          scoreParallelTradeTier,
           score: signal.score
         });
         tradeAuditLog('PAIR_LIMIT_BLOCKED', {
           pair,
           signalId: signal.id,
           score: signal.score,
-          configuredMaxTradesPerPair,
           effectiveMaxTradesPerPair: maxTradesPerPair,
-          highScoreMultipleTradeMode,
-          highScoreThreshold: HIGH_SCORE_MULTIPLE_TRADE_THRESHOLD,
+          scoreParallelTradeTier,
           reason
         });
         return;
