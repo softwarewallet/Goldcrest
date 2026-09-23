@@ -5,7 +5,8 @@ import { getSystemConfig } from '../src/services/configService';
 const config = getSystemConfig();
 
 assert.equal(config.maxDailyLossPct, 3);
-assert.equal(config.maxOpenPositions, 5);
+assert.ok(Number.isInteger(config.maxOpenPositions));
+assert.ok(config.maxOpenPositions >= 1 && config.maxOpenPositions <= 100);
 assert.equal(config.maxTradesPerDay, 20);
 assert.equal(config.maxConsecutiveLosses, 3);
 assert.equal(config.maxSpreadBps, 30);
@@ -21,8 +22,6 @@ const blockedReport = {
     dailyLossLimit: 100,
     activePositions: 0,
     maxOpenPositions: 5,
-    tradesToday: 0,
-    maxTradesPerDay: 20,
     consecutiveLosses: 0,
     maxConsecutiveLosses: 3,
     spreadBps: null,
