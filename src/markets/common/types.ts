@@ -132,6 +132,11 @@ export interface OptionContract {
   spread: number;
   iv: number;
   greeks: GreeksData;
+  /** Authoritative 5paisa scrip code for live option execution. */
+  brokerInstrumentId?: string;
+  /** Broker exchange/segment metadata for exact derivative routing. */
+  exchange?: string;
+  exchangeType?: string;
   isATM?: boolean;
   isITM?: boolean;
 }
