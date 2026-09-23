@@ -153,6 +153,7 @@ export interface AutoTradingStatus {
   intervalMs: number;
   minSignalScore: number;
   maxTradesPerPair: number;
+  maxOpenPositions: number;
   pairs: string[];
   indianUnderlyings: string[];
   lastCycleAt: number | null;
@@ -246,6 +247,7 @@ class AutoTradingService {
       intervalMs: AUTO_INTERVAL_MS,
       minSignalScore: Number(getSystemConfig().autoLiveMinSignalScore),
       maxTradesPerPair: Number(getSystemConfig().autoLiveMaxTradesPerPair),
+      maxOpenPositions: Number(getSystemConfig().maxOpenPositions),
       pairs: getConfiguredAutoForexPairs(),
       indianUnderlyings: [...getSystemConfig().autoLiveIndianUnderlyings],
       lastCycleAt: this.lastCycleAt,
