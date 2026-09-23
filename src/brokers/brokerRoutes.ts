@@ -143,7 +143,7 @@ async function calculateAccountCurrencyExposure(
     const price = Number(position.currentPrice || position.entryPrice || 0);
     if (!(quantity > 0 && price > 0)) continue;
 
-    if (order.market !== 'FOREX') {
+    if (position.market !== 'FOREX') {
       exposure += quantity * price;
       continue;
     }
