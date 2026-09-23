@@ -133,6 +133,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     autonomousPermission: boolean;
     minSignalScore: number;
     maxTradesPerPair: number;
+    maxOpenPositions: number;
     lastCycleAt: number | null;
     lastCycleResult: string | null;
     lastActions: Array<{
@@ -736,6 +737,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
             <div className="flex justify-between"><span className="text-slate-500">Autonomous Permission</span><span className={autoStatus?.autonomousPermission ? "text-emerald-400" : "text-rose-400"}>{autoStatus?.autonomousPermission ? 'ALLOWED' : 'BLOCKED'}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Minimum Signal Score</span><span className="text-cyan-300">{autoStatus?.minSignalScore ?? '—'}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Max Trades / Pair</span><span className="text-cyan-300">{autoStatus?.maxTradesPerPair ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Max Trades / System</span><span className="text-cyan-300">{autoStatus?.maxOpenPositions ?? '—'}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Emergency Halt</span><span className={isEmergencyHalted ? "text-rose-400" : "text-emerald-400"}>{isEmergencyHalted ? 'ACTIVE' : 'READY'}</span></div>
             {autoStatusError && <div className="text-rose-300 border border-rose-900 bg-rose-950/30 rounded p-2">{autoStatusError}</div>}
           </div></div>
