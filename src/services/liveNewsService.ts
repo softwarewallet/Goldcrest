@@ -317,7 +317,7 @@ function classifyArticle(
   // calendar event. HIGH is reserved for a specific event-type headline that
   // is both relevant to the FX universe and inside the short active window.
   if (highImpactEvent
-    && (currencyRelevant || globalEvent)
+    && currencyRelevant
     && isArticleInsideHighImpactWindow(article, now)) {
     return 'HIGH';
   }
