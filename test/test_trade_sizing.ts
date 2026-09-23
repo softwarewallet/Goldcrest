@@ -8,7 +8,7 @@ process.env.GOLDCREST_CONFIG_DIR = configDir;
 process.env.GOLDCREST_CONFIG_FILE = path.join(configDir, 'system-config.json');
 
 const { updateSystemConfig } = await import('../src/services/configService');
-const { normalizePriceToInstrumentDigits, sizeForexOrderToMaxTradeValue } = await import('../src/brokers/safety/TradeSizing');
+const { calculateForexPipTargets, normalizePriceToInstrumentDigits, sizeForexOrderToMaxTradeValue } = await import('../src/brokers/safety/TradeSizing');
 process.env.LIVE_TRADING_ENABLED = 'true';
 const { liveTradingGate } = await import('../src/brokers/safety/LiveTradingGate');
 
@@ -119,6 +119,23 @@ assert.equal(normalizePriceToInstrumentDigits(157.7104, 3), 157.71);
 assert.equal(normalizePriceToInstrumentDigits(1.123456, 5), 1.123);
 assert.equal(normalizePriceToInstrumentDigits(1.1239, 5), 1.124);
 assert.equal(normalizePriceToInstrumentDigits(210.70722, 3), 210.707);
+
+// Configurable Forex pip-margin regression tests.
+const gbpUsdBuyTargets = calculateForexPipTargets('BUY', 1.234, 0.0001, 20, 40);
+assert.equal(gbpUsdBuyTargets.stopLoss, 1.232);
+assert.equal(gbpUsdBuyTargets.takeProfit, 1.238);
+
+const gbpUsdSellTargets = calculateForexPipTargets('SELL', 1.234, 0.0001, 20, 40);
+assert.equal(gbpUsdSellTargets.stopLoss, 1.236);
+assert.equal(gbpUsdSellTargets.takeProfit, 1.23);
+
+const usdJpyBuyTargets = calculateForexPipTargets('BUY', 157.650, 0.01, 20, 40);
+assert.equal(usdJpyBuyTargets.stopLoss, 157.45);
+assert.equal(usdJpyBuyTargets.takeProfit, 158.05);
+
+const usdJpySellTargets = calculateForexPipTargets('SELL', 157.650, 0.01, 20, 40);
+assert.equal(usdJpySellTargets.stopLoss, 157.85);
+assert.equal(usdJpySellTargets.takeProfit, 157.25);
 
 console.log('Trade sizing tests passed.');
 
