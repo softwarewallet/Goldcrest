@@ -737,8 +737,14 @@ export async function submitLiveCTraderOrder(
   const mappedSide = tradeSideMap[side];
   if (!mappedType || !mappedSide) throw new Error(`Unsupported cTrader order parameters: ${orderType}/${side}`);
 
-  // cTrader volume is represented in 0.01 of a unit.
-  const volume = Math.round(quantity * 100);
+  // Goldcrest order quantity is an integer execution quantity. cTrader's
+  // protocol volume is represented in 0.01 of a unit, so convert the integer
+  // quantity to an integer protocol volume without introducing decimal values.
+  const normalizedQuantity = Math.floor(quantity);
+  if (!Number.isSafeInteger(normalizedQuantity) || normalizedQuantity <= 0) {
+    throw new Error('cTrader order quantity must resolve to a positive integer.');
+  }
+  const volume = normalizedQuantity * 100;
   if (!Number.isSafeInteger(volume) || volume <= 0) {
     throw new Error('cTrader order volume is outside the supported integer range.');
   }
@@ -840,7 +846,12 @@ export async function submitLiveCTraderOrder(
               const p = msg.payload || {};
               const related = !p.orderId || !accepted || Number(p.orderId) === accepted.orderId;
               if (related) {
-                const description = String(p.description || p.errorCode || 'cTrader rejected the live order.');
+                const rawDescription = String(p.description || p.errorCode || 'cTrader rejected the live order.');
+                // cTrader sometimes formats integer protocol volumes as
+                // decimals in its human-readable rejection text (e.g. 20000.00).
+                // Keep the broker's wording but normalize whole-number volumes
+                // in Goldcrest audit/operator logs to the exact integer packet value.
+                const description = rawDescription.replace(/(volume\s*=\s*)(\d+)\.00\b/gi, '$1$2').replace(/(maximum allowed volume\s*=\s*)(\d+)\.00\b/gi, '$1$2');
                 if (/TRADE permission required/i.test(description)) {
                   fail('BROKER_REJECTED [cTrader LIVE]: TRADE permission is not granted to the current access token/account. Re-authorize Goldcrest with the cTrader "trading" scope and ensure the account has FULL_ACCESS trading rights.');
                 } else {
