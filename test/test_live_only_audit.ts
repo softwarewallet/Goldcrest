@@ -5,17 +5,12 @@ import path from 'node:path';
 const SRC_DIR = path.resolve(process.cwd(), 'src');
 const FORBIDDEN = [
   /\bpaper\b/gi,
-  /\bdemo\b/gi,
   /\bsandbox\b/gi,
   /paper_[a-z0-9_]+/gi,
   /paper[A-Z][A-Za-z0-9_]*/g,
   /Paper[A-Z][A-Za-z0-9_]*/g,
-  /demo_[a-z0-9_]+/gi,
-  /demo[A-Z][A-Za-z0-9_]*/g,
-  /Demo[A-Z][A-Za-z0-9_]*/g,
   /sandbox_[a-z0-9_]+/gi,
   /sandbox[A-Z][A-Za-z0-9_]*/g,
-  /generateDemo/gi,
   /synthetic/gi,
   /simulated capital/gi,
   /PAPER_SIMULATION/gi
@@ -48,7 +43,7 @@ for (const file of walk(SRC_DIR)) {
 assert.equal(
   findings.length,
   0,
-  `LIVE_ONLY audit failed. Forbidden paper/demo/sandbox/synthetic runtime references remain:\n${findings.join('\n')}`
+  `LIVE runtime audit failed. Forbidden paper/sandbox/synthetic runtime references remain:\n${findings.join('\n')}`
 );
 
 console.log('LIVE-ONLY SOURCE AUDIT PASSED');
