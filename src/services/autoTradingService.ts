@@ -833,6 +833,22 @@ return;
 
       return this.withExecutionLock(async () => {
       const config = getSystemConfig();
+
+      // Another pair may have filled the final system-wide slot while this
+      // signal was waiting in the serialized execution queue. Do not make
+      // another broker position request or run the remaining execution work
+      // once the service has already entered PAUSED_LIMIT.
+      if (this.state === 'PAUSED_LIMIT') {
+        const reason = 'Auto Live execution paused because the maximum system-wide live-position limit has been reached. Waiting for a slot to become available.';
+        this.lastActions.push({ pair, result: 'PAUSED', signalId: signal.id, reason });
+        liveRuntimeLog('INFO', 'AUTO_TRADING_POSITION_LIMIT_QUEUE_PAUSED', {
+          pair,
+          signalId: signal.id,
+          maxOpenPositions: Number(config.maxOpenPositions)
+        });
+        return;
+      }
+
       const minSignalScore = Math.max(0, Math.min(100, Math.round(Number(config.autoLiveMinSignalScore))));
       if (signal.score < minSignalScore) {
         const reason = `Signal score ${signal.score} is below the configured Auto Live threshold of ${minSignalScore}.`;
