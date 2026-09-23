@@ -73,6 +73,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   const [forexPipTargetsMessage, setForexPipTargetsMessage] = useState('');
   const [autoLiveMinSignalScore, setAutoLiveMinSignalScore] = useState(75);
   const [autoLiveMaxTradesPerPair, setAutoLiveMaxTradesPerPair] = useState(4);
+  const [maxOpenPositions, setMaxOpenPositions] = useState(5);
   const [savingAutoLiveControls, setSavingAutoLiveControls] = useState(false);
   const [autoLiveControlsMessage, setAutoLiveControlsMessage] = useState('');
   const [autoLiveForexPairs, setAutoLiveForexPairs] = useState<string[]>([
@@ -118,6 +119,9 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         }
         if (Number.isFinite(Number(config.autoLiveMaxTradesPerPair))) {
           setAutoLiveMaxTradesPerPair(Number(config.autoLiveMaxTradesPerPair));
+        }
+        if (Number.isFinite(Number(config.maxOpenPositions))) {
+          setMaxOpenPositions(Number(config.maxOpenPositions));
         }
         if (Number.isFinite(Number(config.forexStopLossPips))) {
           setForexStopLossPips(Number(config.forexStopLossPips));
@@ -397,7 +401,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
             <p className="text-xs text-slate-400 mt-1">
               These values are the server-side controls used by the autonomous Forex execution loop. They are persisted in SQLite and applied on the next Auto Live evaluation cycle.
             </p>
-            <div className="grid md:grid-cols-2 gap-4 mt-4">
+            <div className="grid md:grid-cols-3 gap-4 mt-4">
               <label className="block space-y-1">
                 <span className="text-[10px] uppercase text-slate-500 font-mono">Minimum Signal Score</span>
                 <div className="flex items-center gap-2">
@@ -430,6 +434,23 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                 </div>
                 <span className="text-[10px] text-slate-600 font-mono">Multiple positions on the same pair are allowed until this limit is reached.</span>
               </label>
+              <label className="block space-y-1">
+                <span className="text-[10px] uppercase text-slate-500 font-mono">Maximum Simultaneous Trades / System</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={maxOpenPositions}
+                    onChange={e => setMaxOpenPositions(Number(e.target.value))}
+                    className={inputClass}
+                  />
+                  <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap">1–100</span>
+                </div>
+                <span className="text-[10px] text-slate-600 font-mono">Condition 13B uses this account-wide limit. It counts all current live positions across all pairs/markets routed through the same broker.</span>
+              </label>
+
             </div>
             <div className="flex items-center gap-3 mt-4">
               <button
@@ -445,6 +466,11 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                     setAutoLiveControlsMessage('Maximum Simultaneous Trades / Pair must be an integer from 1 to 20.');
                     return;
                   }
+                  const systemLimit = Number(maxOpenPositions);
+                  if (!Number.isInteger(systemLimit) || systemLimit < 1 || systemLimit > 100) {
+                    setAutoLiveControlsMessage('Maximum Simultaneous Trades / System must be an integer from 1 to 100.');
+                    return;
+                  }
                   setSavingAutoLiveControls(true);
                   setAutoLiveControlsMessage('');
                   try {
@@ -453,13 +479,14 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         autoLiveMinSignalScore: score,
-                        autoLiveMaxTradesPerPair: pairLimit
+                        autoLiveMaxTradesPerPair: pairLimit,
+                        maxOpenPositions: systemLimit
                       })
                     });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error || 'Failed to save Auto Live execution rules.');
                     setAutoLiveControlsMessage(
-                      `Auto Live rules saved: minimum score ${score}, maximum ${pairLimit} simultaneous trades per pair.`
+                      `Auto Live rules saved: minimum score ${score}, maximum ${pairLimit} simultaneous trades per pair, maximum ${systemLimit} simultaneous trades system-wide.`
                     );
                     onRefreshGlobal?.();
                   } catch (err: any) {
