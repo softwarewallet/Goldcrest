@@ -166,6 +166,10 @@ const GOOGLE_NEWS_TIMEOUT_MS = Math.max(
   5_000,
   Number(process.env.GOLDCREST_NEWS_GOOGLE_TIMEOUT_MS || 8_000)
 );
+const GOOGLE_NEWS_MAX_QUERIES = Math.max(
+  1,
+  Math.min(10, Number(process.env.GOLDCREST_NEWS_GOOGLE_MAX_QUERIES || 8))
+);
 const FOREX_FACTORY_TIMEOUT_MS = Math.max(
   5_000,
   Number(process.env.GOLDCREST_NEWS_FOREX_FACTORY_TIMEOUT_MS || 8_000)
@@ -760,30 +764,99 @@ async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProvider
   }
 }
 
-async function fetchFromGoogleNewsRss(query: string): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string; latencyMs?: number }> {
-  const url = new URL(GOOGLE_NEWS_RSS_ENDPOINT);
-  url.searchParams.set('q', `${query} when:24h`);
-  url.searchParams.set('hl', process.env.GOLDCREST_NEWS_LANGUAGE || 'en-US');
-  url.searchParams.set('gl', process.env.GOLDCREST_NEWS_COUNTRY || 'US');
-  url.searchParams.set('ceid', `${process.env.GOLDCREST_NEWS_COUNTRY || 'US'}:${(process.env.GOLDCREST_NEWS_LANGUAGE || 'en').split('-')[0]}`);
+function buildGoogleNewsQueries(pairs: string[]): string[] {
+  const queries: string[] = [];
 
+  // The old implementation used one very large OR query for the whole FX
+  // universe. Google News could satisfy that query with a single recent story
+  // while returning many unrelated/stale rows. Query each configured pair
+  // independently so every pair gets a chance to contribute fresh evidence.
+  for (const pair of pairs) {
+    const [base, quote] = pair.split('/');
+    const baseAliases = CURRENCY_NEWS_ALIASES[base] || [base.toLowerCase()];
+    const quoteAliases = CURRENCY_NEWS_ALIASES[quote] || [quote.toLowerCase()];
+    const terms = [
+      `"${pair}"`,
+      `"${base} ${quote}"`,
+      ...baseAliases.slice(0, 4).map(alias => `"${alias}"`),
+      ...quoteAliases.slice(0, 4).map(alias => `"${alias}"`)
+    ];
+
+    queries.push(
+      `(${[...new Set(terms)].join(' OR ')}) AND (forex OR "exchange rate" OR "interest rate" OR inflation OR "central bank")`
+    );
+  }
+
+  // Always retain one macro query so major central-bank/geopolitical stories
+  // can still enter the evidence set even when a pair-specific query is quiet.
+  if (queries.length < GOOGLE_NEWS_MAX_QUERIES) {
+    const macroTerms = [
+      '"Federal Reserve"', 'FOMC', 'ECB', 'BOJ', '"Bank of England"',
+      'RBA', 'RBNZ', '"Bank of Canada"', 'SNB',
+      '"rate decision"', 'CPI', 'inflation', 'NFP', 'tariff', 'sanctions', 'intervention'
+    ];
+    queries.push(`(${macroTerms.map(term => term.includes(' ') ? term : `"${term}"`).join(' OR ')})`);
+  }
+
+  return [...new Set(queries)].slice(0, GOOGLE_NEWS_MAX_QUERIES);
+}
+
+async function fetchFromGoogleNewsRss(queries: string[]): Promise<{ status: LiveNewsProviderStatus; articles: LiveNewsArticle[]; error?: string; latencyMs?: number }> {
+  const normalizedQueries = [...new Set(queries.filter(Boolean))].slice(0, GOOGLE_NEWS_MAX_QUERIES);
   const startedAt = Date.now();
-  try {
-    const xml = await fetchText(url, GOOGLE_NEWS_TIMEOUT_MS);
-    const articles = parseGoogleNewsRss(xml);
+  const results = await Promise.all(
+    normalizedQueries.map(async query => {
+      const url = new URL(GOOGLE_NEWS_RSS_ENDPOINT);
+      url.searchParams.set('q', `${query} when:24h`);
+      url.searchParams.set('hl', process.env.GOLDCREST_NEWS_LANGUAGE || 'en-US');
+      url.searchParams.set('gl', process.env.GOLDCREST_NEWS_COUNTRY || 'US');
+      url.searchParams.set('ceid', `${process.env.GOLDCREST_NEWS_COUNTRY || 'US'}:${(process.env.GOLDCREST_NEWS_LANGUAGE || 'en').split('-')[0]}`);
+
+      try {
+        const xml = await fetchText(url, GOOGLE_NEWS_TIMEOUT_MS);
+        return {
+          status: 'LIVE' as const,
+          articles: parseGoogleNewsRss(xml),
+          error: undefined
+        };
+      } catch (error) {
+        return {
+          status: 'ERROR' as const,
+          articles: [] as LiveNewsArticle[],
+          error: asErrorMessage(error)
+        };
+      }
+    })
+  );
+
+  const articles = deduplicateArticles(results.flatMap(result => result.articles));
+  const errors = results.map(result => result.error).filter(Boolean) as string[];
+  const successfulQueries = results.filter(result => result.status === 'LIVE').length;
+
+  if (articles.length > 0) {
     return {
-      status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
+      status: 'LIVE',
       articles,
-      latencyMs: Date.now() - startedAt
-    };
-  } catch (error) {
-    return {
-      status: 'ERROR',
-      articles: [],
-      error: asErrorMessage(error),
-      latencyMs: Date.now() - startedAt
+      latencyMs: Date.now() - startedAt,
+      error: errors.length === results.length ? errors.join(' | ') : undefined
     };
   }
+
+  if (successfulQueries > 0) {
+    return {
+      status: 'NO_RESULTS',
+      articles: [],
+      latencyMs: Date.now() - startedAt,
+      error: errors.length ? errors.join(' | ') : undefined
+    };
+  }
+
+  return {
+    status: 'ERROR',
+    articles: [],
+    error: errors.join(' | ') || 'Google News RSS requests failed.',
+    latencyMs: Date.now() - startedAt
+  };
 }
 
 async function fetchFromMarketaux(pairs: string[]): Promise<{
@@ -946,12 +1019,13 @@ async function fetchLiveForexNewsInternal(
   const queryKey = queryPairs.join(',');
 
   const newsQuery = buildNewsQuery(queryPairs);
+  const googleNewsQueries = buildGoogleNewsQueries(queryPairs);
   const gdeltQuery = buildGdeltQuery(queryPairs);
 
   const [forexFactoryRes, gdeltRes, googleRes, avRes, marketauxRes] = await Promise.all([
     fetchFromForexFactory(),
     fetchFromGdelt(gdeltQuery),
-    fetchFromGoogleNewsRss(newsQuery),
+    fetchFromGoogleNewsRss(googleNewsQueries),
     fetchFromAlphaVantage(queryPairs),
     fetchFromMarketaux(queryPairs)
   ]);
