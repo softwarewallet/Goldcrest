@@ -775,13 +775,32 @@ return;
         return;
       }
       const entryPrice = signalSide === 'BUY' ? quote.ask : quote.bid;
-      if (entryPrice < plan.entryMin || entryPrice > plan.entryMax) {
-        const reason = `Live quote ${entryPrice} is outside entry zone ${plan.entryMin} - ${plan.entryMax}.`;
-        this.lastActions.push({ pair, result: 'WAITING_ENTRY', signalId: signal.id, reason });
-        liveRuntimeLog('INFO', 'WAITING_ENTRY', { pair, signalId: signal.id, entryPrice, entryMin: plan.entryMin, entryMax: plan.entryMax });
-                tradeAuditLog('ENTRY_WAITING', { pair, signalId: signal.id, score: signal.score, reason });
-return;
-      }
+
+      // Auto Live submits a MARKET order using the authoritative broker quote
+      // available at the dispatch boundary. The signal entry zone is an
+      // analytical/preferred-entry reference, not a second execution gate.
+      // Trigger Now already follows this market-order path, and Auto Live must
+      // use the same execution semantics; otherwise a valid live signal can be
+      // generated and then discarded simply because the quote moved a few
+      // points outside the model's original entry zone.
+      liveRuntimeLog('INFO', 'MARKET_ENTRY_EXECUTION', {
+        pair,
+        signalId: signal.id,
+        side: signalSide,
+        entryPrice,
+        entryMin: plan.entryMin,
+        entryMax: plan.entryMax,
+        entryZoneStatus: entryPrice >= plan.entryMin && entryPrice <= plan.entryMax ? 'INSIDE' : 'OUTSIDE_USING_MARKET_QUOTE'
+      });
+      tradeAuditLog('MARKET_ENTRY_EXECUTION', {
+        pair,
+        signalId: signal.id,
+        score: signal.score,
+        side: signalSide,
+        entryPrice,
+        entryMin: plan.entryMin,
+        entryMax: plan.entryMax
+      });
 
       const account = await adapter.getAccount();
 
