@@ -12,7 +12,7 @@ import { getSystemConfig } from './configService';
 import { killSwitch } from '../brokers/safety/KillSwitch';
 import { BrokerAdapter, NormalizedQuote, OrderRequest } from '../brokers/types';
 import { liveRuntimeLog, tradeAuditLog } from './liveRuntimeLog';
-import { sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
+import { calculateForexPipTargets, sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
 
 const LIVE_QUOTE_MAX_AGE_MS = 30_000;
 
@@ -833,8 +833,43 @@ return;
 return;
       }
 
+      // Operator-configured Forex pip margins are authoritative for every
+      // new Auto Live order. Calculate SL/TP from the live execution price
+      // rather than using the signal engine's analytical trade-plan levels.
+      let configuredTargets;
+      try {
+        configuredTargets = calculateForexPipTargets(
+          signalSide,
+          entryPrice,
+          instrument.pipSize,
+          config.forexStopLossPips,
+          config.forexTakeProfitPips
+        );
+      } catch (targetError: any) {
+        const reason = targetError?.message || String(targetError);
+        this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
+        liveRuntimeLog('WARN', 'AUTO_PIP_TARGETS_BLOCKED', {
+          pair,
+          signalId: signal.id,
+          entryPrice,
+          pipSize: instrument.pipSize,
+          stopLossPips: config.forexStopLossPips,
+          takeProfitPips: config.forexTakeProfitPips,
+          error: reason
+        });
+        tradeAuditLog('AUTO_PIP_TARGETS_BLOCKED', {
+          pair,
+          signalId: signal.id,
+          entryPrice,
+          stopLossPips: config.forexStopLossPips,
+          takeProfitPips: config.forexTakeProfitPips,
+          reason
+        });
+        return;
+      }
+
       const riskBudget = Math.max(0, Number(account.balance || 0) * (Number(getSystemConfig().defaultRiskPct) / 100));
-      const stopDistance = Math.abs(entryPrice - plan.stopLoss);
+      const stopDistance = Math.abs(entryPrice - configuredTargets.stopLoss);
       if (!(riskBudget > 0 && stopDistance > 0)) {
         const reason = 'Unable to calculate positive risk budget and stop distance.';
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
@@ -887,8 +922,8 @@ return;
         orderType: 'MARKET',
         quantity,
         price: entryPrice,
-        stopLoss: plan.stopLoss,
-        takeProfit: plan.takeProfit1.targetPrice,
+        stopLoss: configuredTargets.stopLoss,
+        takeProfit: configuredTargets.takeProfit,
         strategyId: signal.strategyVersion,
         signalId: signal.id,
         comment: 'Goldcrest autonomous FX strategy'
@@ -911,6 +946,9 @@ return;
         entryPrice,
         stopLoss: order.stopLoss,
         takeProfit: order.takeProfit,
+        stopLossPips: configuredTargets.stopLossPips,
+        takeProfitPips: configuredTargets.takeProfitPips,
+        pipSize: configuredTargets.pipSize,
         directQuantity: sizing.directQuantity,
         configuredQuantity: sizing.maxTradeValueUsd,
         sizingAdjusted: sizing.adjusted,
@@ -935,8 +973,8 @@ return;
           signalTimestamp: signal.timestamp,
           entryPrice,
           currentPrice: entryPrice,
-          stopLoss: plan.stopLoss,
-          takeProfit: plan.takeProfit1.targetPrice,
+          stopLoss: configuredTargets.stopLoss,
+          takeProfit: configuredTargets.takeProfit,
           spread: quote.spread,
           broker: 'CTRADER',
           environment: 'LIVE'
