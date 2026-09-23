@@ -258,23 +258,6 @@ function normalizePairs(pairs: string[] | undefined): string[] {
   )].sort();
 }
 
-function buildNewsQuery(pairs: string[]): string {
-  const terms = new Set<string>(MACRO_NEWS_QUERY);
-
-  for (const pair of pairs) {
-    const [base, quote] = pair.split('/');
-    for (const currency of [base, quote]) {
-      if (!currency) continue;
-      terms.add(currency);
-      const aliases = CURRENCY_NEWS_ALIASES[currency] || [];
-      aliases.forEach(alias => terms.add(alias));
-    }
-  }
-
-  return `(${[...terms]
-    .map(term => term.includes(' ') ? `"${term}"` : term)
-    .join(' OR ')})`;
-}
 
 function buildGdeltQuery(pairs: string[]): string {
   // Keep GDELT deliberately narrow. A large macro OR query can become an
@@ -1018,7 +1001,6 @@ async function fetchLiveForexNewsInternal(
   const queryPairs = normalizePairs(options.pairs);
   const queryKey = queryPairs.join(',');
 
-  const newsQuery = buildNewsQuery(queryPairs);
   const googleNewsQueries = buildGoogleNewsQueries(queryPairs);
   const gdeltQuery = buildGdeltQuery(queryPairs);
 
