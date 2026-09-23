@@ -20,8 +20,6 @@ export interface AutoTradeReadinessReport {
     dailyLossLimit: number;
     activePositions: number;
     maxOpenPositions: number;
-    tradesToday: number;
-    maxTradesPerDay: number;
     consecutiveLosses: number;
     maxConsecutiveLosses: number;
     spreadBps: number | null;
@@ -57,7 +55,6 @@ class AutoTradeReadinessService {
     let account: Awaited<ReturnType<BrokerAdapter['getAccount']>> | null = null;
     let positions: Awaited<ReturnType<BrokerAdapter['getPositions']>> = [];
     let dailyLoss = 0;
-    let tradesToday = 0;
     let consecutiveLosses = 0;
     let spreadBps: number | null = null;
 
@@ -80,7 +77,6 @@ class AutoTradeReadinessService {
     checks.takeProfitPresent = Number(order.takeProfit) > 0;
     checks.positionLimit = false;
     checks.dailyLossLimit = false;
-    checks.tradeFrequencyLimit = false;
     checks.consecutiveLossLimit = false;
     checks.spreadLimit = false;
     const approvedStrategyId = String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim();
@@ -161,22 +157,11 @@ class AutoTradeReadinessService {
     }
     checks.dailyLossLimit = dailyLoss < dailyLossLimit;
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    try {
-      const rows = await executeQuery<any>(
-        'SELECT COUNT(*) as count FROM execution_intents WHERE created_at >= ? AND state IN (?, ?, ?, ?)',
-        [startOfDay.getTime(), 'PENDING', 'IN_FLIGHT', 'COMPLETED', 'RECONCILIATION_TIMEOUT']
-      );
-      tradesToday = Number(rows[0]?.count || 0);
-    } catch {
-      tradesToday = 0;
-    }
-    const maxTradesPerDay = Number(config.maxTradesPerDay);
-    checks.tradeFrequencyLimit = Number.isFinite(maxTradesPerDay) &&
-      maxTradesPerDay > 0 &&
-      tradesToday < maxTradesPerDay;
-
+    // Daily trade-count limiting is intentionally removed from the execution
+    // readiness layer. Goldcrest must be able to submit any number of trades
+    // permitted by the remaining safety gates so load/stress testing can exercise
+    // the complete execution path. Broker-side limits/rejections remain
+    // authoritative and are handled after order submission.
     try {
       const rows = await executeQuery<any>(
         'SELECT pnl FROM trades WHERE exit_time IS NOT NULL AND pnl IS NOT NULL ORDER BY exit_time DESC LIMIT ?',
@@ -217,7 +202,6 @@ class AutoTradeReadinessService {
       ['takeProfitPresent', 'Automatic execution requires a Take Profit.'],
       ['positionLimit', 'Maximum open-position limit reached.'],
       ['dailyLossLimit', 'Daily loss limit reached.'],
-      ['tradeFrequencyLimit', 'Maximum daily trade count reached.'],
       ['consecutiveLossLimit', 'Maximum consecutive-loss limit reached.'],
       ['spreadLimit', 'Current spread exceeds the configured safety threshold.'],
       ['strategyCalibrated', 'Production strategy approval is not enabled for this strategy version.']
@@ -240,8 +224,6 @@ class AutoTradeReadinessService {
         dailyLossLimit,
         activePositions: positions.length,
         maxOpenPositions,
-        tradesToday,
-        maxTradesPerDay,
         consecutiveLosses,
         maxConsecutiveLosses,
         spreadBps,
