@@ -88,12 +88,7 @@ const FOREX_FACTORY_NEWS_ENDPOINT = process.env.GOLDCREST_FOREX_FACTORY_NEWS_URL
 const FOREX_FACTORY_RSS_ENDPOINT = process.env.GOLDCREST_FOREX_FACTORY_RSS_URL
   || 'https://cdn.rss.forexfactory.net/news/all.xml';
 
-const MACRO_NEWS_QUERY = [
-  '"Federal Reserve"', 'FOMC', 'ECB', '"Bank of Japan"', 'BOJ',
-  '"interest rate"', '"rate decision"', 'CPI', 'inflation', 'NFP',
-  '"nonfarm payroll"', 'jobs report', 'tariff', 'sanctions', 'intervention',
-  'war', 'conflict', 'emergency', '"central bank"', 'gold', '"precious metals"'
-];
+
 
 const HIGH_IMPACT_EVENT_PATTERNS: RegExp[] = [
   /\bfomc\b.*\b(rate decision|statement|minutes|rate|raises?|cuts?|hikes?|holds?)\b/i,
