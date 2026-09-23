@@ -25,6 +25,13 @@ export interface OptionsOpportunityCandidate {
   reasons: string[];
   invalidation: string[];
   expiry: string;
+  optionType: 'CALL' | 'PUT';
+  strike: number;
+  contractSymbol: string;
+  lotSize: number;
+  liveBid: number;
+  liveAsk: number;
+  liveLtp: number;
 }
 
 
@@ -192,7 +199,11 @@ export class ScannerService {
     return adapter.fetchIndianUnderlyingsFrom5Paisa();
   }
 
-  async getOptionsScanner(symbol: string = 'NIFTY'): Promise<{
+  async getOptionsScanner(
+    symbol: string = 'NIFTY',
+    selectedExpiryDate?: string,
+    strikeDepth: number = getSystemConfig().strikeDepth
+  ): Promise<{
     underlying: string;
     spot: number;
     bias: 'Bullish' | 'Bearish' | 'Range-bound';
@@ -204,8 +215,10 @@ export class ScannerService {
     const clean = symbol.toUpperCase().replace(/\s+/g, '');
     const adapter = this.getFivePaisaAdapter();
     const [chain, underlyings] = await Promise.all([
-      adapter.fetchOptionChainFrom5Paisa(clean),
-      adapter.fetchIndianUnderlyingsFrom5Paisa()
+      adapter.fetchOptionChainFrom5Paisa(clean, selectedExpiryDate, strikeDepth),
+      // Option analysis is independent of the Auto Live working-universe
+      // selection so every supported Indian index can be inspected here.
+      adapter.fetchIndianUnderlyingsFrom5Paisa(false)
     ]);
     const underlyingData = underlyings.find(u => u.symbol === clean);
 
@@ -273,7 +286,14 @@ export class ScannerService {
           `Spot breaks below live VWAP ${underlyingData.vwap.toFixed(1)}`,
           `Call OI resistance at live strike ${atm}`
         ],
-        expiry: chain.expiry
+        expiry: chain.expiry,
+        optionType: 'CALL',
+        strike: atmRow.strike,
+        contractSymbol: atmRow.call.symbol,
+        lotSize: atmRow.call.lotSize,
+        liveBid: atmRow.call.bid,
+        liveAsk: atmRow.call.ask,
+        liveLtp: atmRow.call.ltp
       });
     }
 
@@ -310,7 +330,14 @@ export class ScannerService {
           `Spot falls below live VWAP ${underlyingData.vwap.toFixed(1)}`,
           'Live IV expands or market structure invalidates the setup'
         ],
-        expiry: chain.expiry
+        expiry: chain.expiry,
+        optionType: 'CALL',
+        strike: atmRow.strike,
+        contractSymbol: atmRow.call.symbol,
+        lotSize: atmRow.call.lotSize,
+        liveBid: atmRow.call.bid,
+        liveAsk: atmRow.call.ask,
+        liveLtp: atmRow.call.ltp
       });
     }
 
@@ -346,7 +373,14 @@ export class ScannerService {
             ]
           : ['Live underlying bias is not bearish.'],
         invalidation: ['Spot crosses above live VWAP equilibrium'],
-        expiry: chain.expiry
+        expiry: chain.expiry,
+        optionType: 'PUT',
+        strike: atmRow.strike,
+        contractSymbol: atmRow.put.symbol,
+        lotSize: atmRow.put.lotSize,
+        liveBid: atmRow.put.bid,
+        liveAsk: atmRow.put.ask,
+        liveLtp: atmRow.put.ltp
       });
     }
 
