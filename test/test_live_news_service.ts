@@ -62,7 +62,13 @@ try {
   const gdeltQuery = new URL(gdeltQueryUrl).searchParams.get('query') || '';
   assert.match(gdeltQuery, /Federal Reserve/);
   assert.equal(gdeltQuery.includes('(('), false);
-  assert.match(requestedUrls.find(url => url.includes('news.google.com')) || '', /when%3A24h|when:24h/);
+
+  const googleUrls = requestedUrls.filter(url => url.includes('news.google.com'));
+  assert.ok(googleUrls.length >= 2, 'Google News should query the configured FX pairs independently.');
+  const googleQueries = googleUrls.map(url => new URL(url).searchParams.get('q') || '');
+  assert.ok(googleQueries.some(query => query.includes('EUR/USD')), 'EUR/USD must have a targeted Google News query.');
+  assert.ok(googleQueries.some(query => query.includes('GBP/USD')), 'GBP/USD must have a targeted Google News query.');
+  assert.match(googleQueries[0], /when%3A24h|when:24h/);
 
   resetLiveForexNewsCacheForTest();
 
