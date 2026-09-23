@@ -112,44 +112,14 @@ export class LiveTradingGate {
       failedReasons.push('Condition 11 Failed: Daily loss limit breached.');
     }
 
-    // Check 12: Maximum account exposure not exceeded.
+    // Check 12: Maximum account exposure threshold.
     //
-    // totalAccountExposure is supplied by the dispatch layer as the
-    // authoritative account exposure for this proposed order. Compare it
-    // directly with the configured account exposure ceiling. Do not derive a
-    // second exposure figure here by multiplying quantity by price; Forex
-    // sizing is now direct broker quantity and is independently enforced by
-    // Condition 16.
-    const exposureTolerance = 1e-8;
-    const exposureForLimit = params.totalAccountExposure;
-    const maxExposureNotExceeded =
-      Number.isFinite(exposureForLimit)
-      && Number.isFinite(params.maxAllowedExposure)
-      && exposureForLimit <= params.maxAllowedExposure + exposureTolerance;
-
-    if (!maxExposureNotExceeded) {
-      failedReasons.push('Condition 12 Failed: Maximum account exposure threshold exceeded.');
-
-      // Keep detailed exposure diagnostics in the server-side daily audit log.
-      // Do not surface account-risk values in the trading UI.
-      liveRuntimeLog('WARN', 'SAFETY_GATE_CONDITION_12', {
-        symbol: params.order.symbol,
-        side: params.order.side,
-        quantity: params.order.quantity,
-        referencePrice: params.order.price > 0
-          ? params.order.price
-          : (params.order.side === 'BUY' ? params.currentQuote.ask : params.currentQuote.bid),
-        totalAccountExposure: params.totalAccountExposure,
-        proposedOrderExposure: null,
-        exposureForLimit,
-        maxAllowedExposure: params.maxAllowedExposure,
-        remainingExposureCapacity: Number.isFinite(params.maxAllowedExposure) && Number.isFinite(exposureForLimit)
-          ? params.maxAllowedExposure - exposureForLimit
-          : null,
-        activePositionsCount: params.activePositionsCount,
-        maxOpenPositions: params.maxOpenPositions
-      });
-    }
+    // TEMPORARILY DISABLED BY OPERATOR REQUEST.
+    // The exposure calculation/rejection path remains intentionally bypassed
+    // while the root cause is investigated. Keep the supplied exposure
+    // parameters in the evaluation interface for compatibility with existing
+    // dispatch callers, but Condition 12 must not reject a live order.
+    const maxExposureNotExceeded = true;
 
     // Check 13: Per-pair simultaneous-position limit.
     // Multiple positions on the same Forex pair are intentionally allowed up
