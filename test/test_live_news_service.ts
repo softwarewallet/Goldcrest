@@ -105,6 +105,57 @@ try {
     const url = String(input);
 
     if (url.includes('finnhub.io')) {
+      return response(JSON.stringify([]));
+    }
+
+    if (url.includes('newsapi.org')) {
+      return response(JSON.stringify({ status: 'ok', articles: [] }));
+    }
+
+    if (url.includes('jblanked.com')) {
+      return response(JSON.stringify([]));
+    }
+
+    if (url.includes('news.google.com')) {
+      const publishedAt = new Date(Date.now() - 2 * 60_000).toUTCString();
+      return response(`<?xml version="1.0" encoding="UTF-8"?>
+        <rss><channel>
+          <item>
+            <title>EUR/USD moves after ECB update</title>
+            <link>https://news.google.com/rss/articles/test-eurusd</link>
+            <pubDate>${publishedAt}</pubDate>
+            <source>Google News Test</source>
+            <description>Fresh backup headline.</description>
+          </item>
+          <item>
+            <title>Dollar outlook changes ahead of Fed remarks</title>
+            <link>https://news.google.com/rss/articles/test-usd</link>
+            <pubDate>${publishedAt}</pubDate>
+            <source>Google News Test</source>
+            <description>Fresh second backup headline.</description>
+          </item>
+        </channel></rss>`);
+    }
+
+    return response('', 404);
+  };
+
+  const googleBackup = await fetchLiveForexNews({
+    pairs: ['EUR/USD'],
+    forceRefresh: true
+  });
+
+  assert.equal(googleBackup.status, 'LIVE');
+  assert.equal(googleBackup.source, 'GOOGLE_NEWS_RSS');
+  assert.equal(googleBackup.providerStatus?.GOOGLE_NEWS_RSS, 'LIVE');
+  assert.equal(googleBackup.providerDiagnostics?.GOOGLE_NEWS_RSS?.freshArticleCount, 2);
+  assert.equal(googleBackup.articleCount, 2);
+
+  resetLiveForexNewsCacheForTest();
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+
+    if (url.includes('finnhub.io')) {
       return response(JSON.stringify([{
         headline: 'Old EUR/USD commentary',
         url: 'https://finnhub.example/old',
