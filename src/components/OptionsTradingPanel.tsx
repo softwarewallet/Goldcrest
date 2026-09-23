@@ -464,6 +464,12 @@ export const OptionsTradingPanel: React.FC<OptionsTradingPanelProps> = ({
                       {executableOpportunity.optionType}
                     </div>
 
+                    <div className="grid grid-cols-3 gap-3 mt-4">
+                      <div><div className="text-[10px] text-slate-500 font-mono">SYSTEM SCORE</div><div className="text-lg font-bold text-cyan-300">{num(executableOpportunity.score, 0)}</div></div>
+                      <div><div className="text-[10px] text-slate-500 font-mono">ML PROBABILITY</div><div className="text-lg font-bold text-emerald-300">{executableOpportunity.mlProbability == null ? '—' : (executableOpportunity.mlProbability * 100).toFixed(0) + '%'}</div></div>
+                      <div><div className="text-[10px] text-slate-500 font-mono">EXPIRY</div><div className="text-sm font-bold text-white mt-1">{executableOpportunity.expiry || '—'}</div></div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3 mt-4">
                       <div><div className="text-[10px] text-slate-500 font-mono">STRIKE</div><div className="text-lg font-bold text-white">{num(executableOpportunity.strike, 0)} {executableOpportunity.optionType === 'CALL' ? 'CE' : 'PE'}</div></div>
                       <div><div className="text-[10px] text-slate-500 font-mono">LOT SIZE</div><div className="text-lg font-bold text-white">{oi(executableOpportunity.lotSize)}</div></div>
