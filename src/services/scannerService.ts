@@ -409,7 +409,14 @@ export class ScannerService {
         status: 'NO_TRADE',
         reasons: ['Live option-chain structure does not justify the deep-OTM long put.'],
         invalidation: ['Do not enter without a new live qualifying setup.'],
-        expiry: chain.expiry
+        expiry: chain.expiry,
+        optionType: 'PUT',
+        strike: otmPutRow.strike,
+        contractSymbol: otmPutRow.put.symbol,
+        lotSize: otmPutRow.put.lotSize,
+        liveBid: otmPutRow.put.bid,
+        liveAsk: otmPutRow.put.ask,
+        liveLtp: otmPutRow.put.ltp
       });
     }
 
