@@ -12,7 +12,7 @@ import { getSystemConfig } from './configService';
 import { killSwitch } from '../brokers/safety/KillSwitch';
 import { BrokerAdapter, NormalizedQuote, OrderRequest } from '../brokers/types';
 import { liveRuntimeLog, tradeAuditLog } from './liveRuntimeLog';
-import { calculateForexPipTargets, sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
+import { calculateForexPipTargets, normalizePriceToThreeDigits, sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
 
 const LIVE_QUOTE_MAX_AGE_MS = 30_000;
 
@@ -834,13 +834,15 @@ return;
       }
 
       // Operator-configured Forex pip margins are authoritative for every
-      // new Auto Live order. Calculate SL/TP from the live execution price
-      // rather than using the signal engine's analytical trade-plan levels.
+      // new Auto Live order. Calculate SL/TP from the exact three-decimal
+      // execution price that will be placed in the broker packet, rather than
+      // from the signal engine's analytical trade-plan levels.
+      const executionEntryPrice = normalizePriceToThreeDigits(entryPrice);
       let configuredTargets;
       try {
         configuredTargets = calculateForexPipTargets(
           signalSide,
-          entryPrice,
+          executionEntryPrice,
           instrument.pipSize,
           config.forexStopLossPips,
           config.forexTakeProfitPips
@@ -851,7 +853,8 @@ return;
         liveRuntimeLog('WARN', 'AUTO_PIP_TARGETS_BLOCKED', {
           pair,
           signalId: signal.id,
-          entryPrice,
+          entryPrice: executionEntryPrice,
+          brokerQuotePrice: entryPrice,
           pipSize: instrument.pipSize,
           stopLossPips: config.forexStopLossPips,
           takeProfitPips: config.forexTakeProfitPips,
@@ -860,7 +863,8 @@ return;
         tradeAuditLog('AUTO_PIP_TARGETS_BLOCKED', {
           pair,
           signalId: signal.id,
-          entryPrice,
+          entryPrice: executionEntryPrice,
+          brokerQuotePrice: entryPrice,
           stopLossPips: config.forexStopLossPips,
           takeProfitPips: config.forexTakeProfitPips,
           reason
@@ -869,7 +873,7 @@ return;
       }
 
       const riskBudget = Math.max(0, Number(account.balance || 0) * (Number(getSystemConfig().defaultRiskPct) / 100));
-      const stopDistance = Math.abs(entryPrice - configuredTargets.stopLoss);
+      const stopDistance = Math.abs(executionEntryPrice - configuredTargets.stopLoss);
       if (!(riskBudget > 0 && stopDistance > 0)) {
         const reason = 'Unable to calculate positive risk budget and stop distance.';
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
@@ -921,7 +925,7 @@ return;
         side: signalSide,
         orderType: 'MARKET',
         quantity,
-        price: entryPrice,
+        price: executionEntryPrice,
         stopLoss: configuredTargets.stopLoss,
         takeProfit: configuredTargets.takeProfit,
         strategyId: signal.strategyVersion,
@@ -943,7 +947,8 @@ return;
         side: order.side,
         quantity,
         requestedRiskQuantity: riskQuantity,
-        entryPrice,
+        entryPrice: executionEntryPrice,
+        brokerQuotePrice: entryPrice,
         stopLoss: order.stopLoss,
         takeProfit: order.takeProfit,
         stopLossPips: configuredTargets.stopLossPips,
