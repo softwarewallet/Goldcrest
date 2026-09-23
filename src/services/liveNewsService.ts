@@ -290,9 +290,11 @@ function articleMentionsRelevantCurrency(article: LiveNewsArticle, relevantCurre
 }
 
 function hasHighImpactEvent(article: LiveNewsArticle): boolean {
+  // A central-bank name alone is contextual information, not an economic
+  // event. Require an explicit event term (rate decision, CPI, NFP, etc.)
+  // before an article can be classified as HIGH.
   const text = articleText(article);
-  return HIGH_IMPACT_EVENT_PATTERNS.some(pattern => pattern.test(text))
-    || GLOBAL_HIGH_IMPACT_PATTERNS.some(pattern => pattern.test(text));
+  return HIGH_IMPACT_EVENT_PATTERNS.some(pattern => pattern.test(text));
 }
 
 function isArticleInsideHighImpactWindow(article: LiveNewsArticle, now: number): boolean {
