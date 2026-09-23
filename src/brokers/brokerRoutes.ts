@@ -106,9 +106,7 @@ async function convertForexNotionalToAccountCurrency(
 async function calculateAccountCurrencyExposure(
   adapter: BrokerAdapter,
   positions: NormalizedPosition[],
-  order: OrderRequest,
-  accountCurrency: string,
-  quote: NormalizedQuote
+  accountCurrency: string
 ): Promise<number> {
   let exposure = 0;
   const conversionCache = new Map<string, number>();
@@ -165,28 +163,6 @@ async function calculateAccountCurrencyExposure(
     }
   }
 
-  const proposedQuantity = Math.abs(Number(order.quantity || 0));
-  if (proposedQuantity > 0) {
-    if (order.market !== 'FOREX') {
-      exposure += proposedQuantity * Number(order.price || (order.side === 'BUY' ? quote.ask : quote.bid) || 0);
-    } else {
-      const currencies = forexQuoteCurrencies(order.symbol);
-      if (!currencies) throw new Error(`Unable to determine Forex currencies for ${order.symbol}.`);
-
-      const target = String(accountCurrency).toUpperCase();
-      if (currencies.base === target) {
-        exposure += proposedQuantity;
-      } else if (currencies.quote === target) {
-        // The order quote is already fetched and freshness-gated before this
-        // calculation. Reuse it instead of making a second broker connection.
-        const conversionPrice = order.side === 'BUY' ? quote.ask : quote.bid;
-        if (!(conversionPrice > 0)) throw new Error(`Current quote unavailable for ${order.symbol} exposure conversion.`);
-        exposure += proposedQuantity * conversionPrice;
-      } else {
-        exposure += await convertNotional(order.symbol, proposedQuantity, currencies.base);
-      }
-    }
-  }
 
   return exposure;
 }
@@ -964,14 +940,12 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
     const isMarketOpen = orderReq.market === 'FOREX'
       ? !getForexSessionState().activeSessions.includes('CLOSED (WEEKEND)')
       : getIndianSessionState().isOpen;
-    let totalExposureIncludingOrder: number;
+    let totalAccountExposure: number;
     try {
-      totalExposureIncludingOrder = await calculateAccountCurrencyExposure(
+      totalAccountExposure = await calculateAccountCurrencyExposure(
         adapter,
         positions,
-        orderReq,
-        account.currency,
-        quote
+        account.currency
       );
     } catch (exposureErr: any) {
       return res.status(403).json({
@@ -993,7 +967,7 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       isMarketOpen,
       dailyRealizedLoss: await reconciliationService.getDailyLoss(adapter.broker as 'CTRADER' | 'FIVE_PAISA', Number(account.balance || 0)),
       dailyLossLimit,
-      totalAccountExposure: totalExposureIncludingOrder,
+      totalAccountExposure,
       maxAllowedExposure,
       activePositionsCount: positions.length,
       maxOpenPositions: Number(getSystemConfig().maxOpenPositions),
