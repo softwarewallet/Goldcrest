@@ -1,19 +1,18 @@
 import assert from 'node:assert/strict';
 
+process.env.FINNHUB_API_KEY = 'test-finnhub';
+process.env.NEWSAPI_API_KEY = 'test-newsapi';
+process.env.JBLANKED_API_KEY = 'test-jblanked';
 process.env.GOLDCREST_NEWS_TIMEOUT_MS = '5000';
 process.env.GOLDCREST_NEWS_CACHE_TTL_MS = '30000';
 process.env.GOLDCREST_NEWS_FAILURE_BACKOFF_MS = '60000';
 process.env.GOLDCREST_NEWS_MAX_ARTICLE_AGE_MS = String(2 * 60 * 60_000);
+process.env.JBLANKED_MIN_INTERVAL_MS = '1000';
 
-const { fetchLiveForexNews, resetLiveForexNewsCacheForTest } = await import('../src/services/liveNewsService');
+const { fetchLiveForexNews, resetLiveForexNewsCacheForTest } =
+  await import('../src/services/liveNewsService');
 
 const originalFetch = globalThis.fetch;
-
-function gdeltDate(timestamp = Date.now() - 60_000): string {
-  const value = new Date(timestamp);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${value.getUTCFullYear()}${pad(value.getUTCMonth() + 1)}${pad(value.getUTCDate())}T${pad(value.getUTCHours())}${pad(value.getUTCMinutes())}${pad(value.getUTCSeconds())}Z`;
-}
 
 function response(body: string, status = 200): Response {
   return {
@@ -23,281 +22,148 @@ function response(body: string, status = 200): Response {
   } as Response;
 }
 
+function finnhubArticle(title: string, minutesAgo = 1) {
+  return JSON.stringify([{
+    id: 1,
+    headline: title,
+    url: 'https://finnhub.example/article',
+    source: 'Finnhub Test',
+    datetime: Math.floor((Date.now() - minutesAgo * 60_000) / 1000),
+    summary: 'Fresh Forex market headline.'
+  }]);
+}
+
 try {
   resetLiveForexNewsCacheForTest();
 
   const requestedUrls: string[] = [];
-  globalThis.fetch = async (input: RequestInfo | URL) => {
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     requestedUrls.push(url);
 
-    if (url.includes('api.gdeltproject.org')) {
+    if (url.includes('finnhub.io')) {
+      assert.equal(init?.headers && (init.headers as Record<string, string>)['X-Finnhub-Token'], 'test-finnhub');
+      return response(finnhubArticle('EUR/USD rises after ECB rate decision'));
+    }
+
+    if (url.includes('newsapi.org')) {
+      assert.equal(init?.headers && (init.headers as Record<string, string>)['X-Api-Key'], 'test-newsapi');
       return response(JSON.stringify({
+        status: 'ok',
         articles: [{
-          title: 'EUR/USD moves after ECB rate decision &amp; inflation update',
-          url: 'https://example.com/ecb-news',
-          domain: 'example.com',
-          seendate: gdeltDate(),
-          language: 'English',
-          sourcecountry: 'US'
+          title: 'GBP/USD reacts to Bank of England update',
+          url: 'https://newsapi.example/gbp',
+          source: { name: 'NewsAPI Test' },
+          publishedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+          description: 'Fresh supplementary article.'
         }]
       }));
     }
 
-    return response('<rss><channel></channel></rss>');
-  };
-
-  const live = await fetchLiveForexNews({ pairs: ['EUR/USD', 'GBP/USD'] });
-  assert.equal(live.status, 'LIVE');
-  assert.equal(live.source, 'GDELT_DOC_2');
-  assert.equal(live.articleCount, 1);
-  assert.equal(live.highImpactCount, 1);
-  assert.equal(live.riskLevel, 'HIGH');
-  assert.equal(live.articles[0].title.includes('&amp;'), false);
-  assert.match(live.articles[0].publishedAt || '', /^20\d\d-\d\d-\d\dT/);
-  assert.deepEqual(live.queryPairs, ['EUR/USD', 'GBP/USD']);
-  assert.equal(live.providerStatus?.GDELT_DOC_2, 'LIVE');
-  assert.equal(live.providerDiagnostics?.GDELT_DOC_2?.staleArticleCount, 0);
-  const gdeltQueryUrl = requestedUrls.find(url => url.includes('api.gdeltproject.org')) || '';
-  const gdeltQuery = new URL(gdeltQueryUrl).searchParams.get('query') || '';
-  assert.match(gdeltQuery, /Federal Reserve/);
-  assert.equal(gdeltQuery.includes('(('), false);
-
-  const googleUrls = requestedUrls.filter(url => url.includes('news.google.com'));
-  assert.ok(googleUrls.length >= 2, 'Google News should query the configured FX pairs independently.');
-  const googleQueries = googleUrls.map(url => new URL(url).searchParams.get('q') || '');
-  assert.ok(googleQueries.some(query => query.includes('EUR/USD')), 'EUR/USD must have a targeted Google News query.');
-  assert.ok(googleQueries.some(query => query.includes('GBP/USD')), 'GBP/USD must have a targeted Google News query.');
-  assert.match(googleQueries[0], /when%3A24h|when:24h/);
-
-  resetLiveForexNewsCacheForTest();
-
-  globalThis.fetch = async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('api.gdeltproject.org')) return response('rate limited', 429);
-
-    // Simulate Forex Factory being unavailable/empty so Google News RSS is
-    // the actual fallback provider selected by the aggregation engine.
-    if (url.includes('forexfactory.com') || url.includes('rss.forexfactory.net')) {
-      return response('<rss><channel></channel></rss>');
+    if (url.includes('jblanked.com')) {
+      return response(JSON.stringify([{
+        Name: 'Core CPI m/m',
+        Currency: 'USD',
+        Category: 'Consumer Inflation Report',
+        Impact: 'High',
+        Date: new Date(Date.now() - 3 * 60_000).toISOString(),
+        Actual: 0.4,
+        Forecast: 0.4,
+        Previous: 0.2,
+        Outcome: 'Actual = Forecast > Previous',
+        Strength: 'Strong Data',
+        Quality: 'Bad Data'
+      }]));
     }
 
-    return response(`<rss><channel>
-      <item>
-        <title><![CDATA[GBP/USD rises on central bank update]]></title>
-        <link>https://news.google.com/rss/articles/example</link>
-        <source url="https://example.com">Example News</source>
-        <pubDate>${new Date(Date.now() - 2 * 60_000).toUTCString()}</pubDate>
-      </item>
-    </channel></rss>`);
+    return response('', 404);
   };
 
-  const fallback = await fetchLiveForexNews({ pairs: ['GBP/USD'], forceRefresh: true });
-  assert.equal(fallback.status, 'LIVE');
-  assert.equal(fallback.source, 'GOOGLE_NEWS_RSS');
-  assert.equal(fallback.articleCount, 1);
-  assert.equal(fallback.providerStatus?.GDELT_DOC_2, 'RATE_LIMITED');
-  assert.equal(fallback.providerStatus?.GOOGLE_NEWS_RSS, 'LIVE');
-  assert.equal(fallback.articles[0].source, 'Example News');
-
-  resetLiveForexNewsCacheForTest();
-
-  globalThis.fetch = async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('api.gdeltproject.org')) {
-      return response('Please limit requests to one every 5 seconds.');
-    }
-    return response('<rss><channel></channel></rss>');
-  };
-
-  const rateLimited = await fetchLiveForexNews({ pairs: ['EUR/USD'], forceRefresh: true });
-  assert.equal(rateLimited.providerStatus?.GDELT_DOC_2, 'RATE_LIMITED');
-  assert.match(rateLimited.providerDiagnostics?.GDELT_DOC_2.error || '', /rate limited/i);
-
-  resetLiveForexNewsCacheForTest();
-
-  globalThis.fetch = async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('api.gdeltproject.org')) {
-      return response(JSON.stringify({
-        articles: [
-          {
-            title: 'USD outlook remains volatile as investors debate interest rates',
-            url: 'https://example.com/routine-rate-commentary',
-            domain: 'example.com',
-            seendate: gdeltDate(),
-            language: 'English',
-            sourcecountry: 'US'
-          },
-          {
-            title: 'RBA rate decision released; Australian dollar volatility jumps',
-            url: 'https://example.com/rba-fresh-irrelevant',
-            domain: 'example.com',
-            seendate: gdeltDate(),
-            language: 'English',
-            sourcecountry: 'AU'
-          },
-          {
-            title: 'FOMC rate decision released; dollar volatility jumps',
-            url: 'https://example.com/fomc-old',
-            domain: 'example.com',
-            seendate: gdeltDate(Date.now() - 2 * 60 * 60_000),
-            language: 'English',
-            sourcecountry: 'US'
-          }
-        ]
-      }));
-    }
-    return response('<rss><channel></channel></rss>');
-  };
-
-  const falsePositiveCheck = await fetchLiveForexNews({ pairs: ['EUR/USD'], forceRefresh: true });
-  assert.equal(falsePositiveCheck.status, 'LIVE');
-  assert.equal(falsePositiveCheck.highImpactCount, 0);
-  assert.equal(falsePositiveCheck.activeHighImpactCount, 0);
-  assert.notEqual(falsePositiveCheck.riskLevel, 'HIGH');
-
-  resetLiveForexNewsCacheForTest();
-
-  globalThis.fetch = async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('api.gdeltproject.org')) {
-      return response(JSON.stringify({
-        articles: [{
-          title: 'FOMC rate decision surprises markets as the Federal Reserve cuts rates',
-          url: 'https://example.com/fomc-fresh',
-          domain: 'example.com',
-          seendate: gdeltDate(),
-          language: 'English',
-          sourcecountry: 'US'
-        }]
-      }));
-    }
-    return response('<rss><channel></channel></rss>');
-  };
-
-  const activeHighCheck = await fetchLiveForexNews({ pairs: ['EUR/USD'], forceRefresh: true });
-  assert.equal(activeHighCheck.highImpactCount, 1);
-  assert.equal(activeHighCheck.activeHighImpactCount, 1);
-  assert.equal(activeHighCheck.riskLevel, 'HIGH');
-
-  resetLiveForexNewsCacheForTest();
-
-  globalThis.fetch = async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('api.gdeltproject.org')) {
-      return response(JSON.stringify({
-        articles: [{
-          title: 'Old FOMC rate decision remains in search results',
-          url: 'https://example.com/stale-fomc',
-          domain: 'example.com',
-          seendate: gdeltDate(Date.now() - 26 * 60 * 60_000),
-          language: 'English',
-          sourcecountry: 'US'
-        }]
-      }));
-    }
-    return response('<rss><channel></channel></rss>');
-  };
-
-  const stale = await fetchLiveForexNews({ pairs: ['EUR/USD'], forceRefresh: true });
-  assert.equal(stale.status, 'STALE');
-  assert.equal(stale.articleCount, 0);
-  assert.equal(stale.providerStatus?.GDELT_DOC_2, 'STALE');
-  assert.equal(stale.providerDiagnostics?.GDELT_DOC_2?.rawArticleCount, 1);
-  assert.equal(stale.providerDiagnostics?.GDELT_DOC_2?.freshArticleCount, 0);
-  assert.equal(stale.providerDiagnostics?.GDELT_DOC_2?.staleArticleCount, 1);
-
-  resetLiveForexNewsCacheForTest();
-
-  globalThis.fetch = async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('api.gdeltproject.org')) {
-      return response(JSON.stringify({
-        articles: [{
-          title: 'RBA rate decision released; Australian dollar volatility jumps',
-          url: 'https://example.com/rba-fresh',
-          domain: 'example.com',
-          seendate: gdeltDate(),
-          language: 'English',
-          sourcecountry: 'AU'
-        }]
-      }));
-    }
-    return response('<rss><channel></channel></rss>');
-  };
-
-  const pairSpecificRisk = await fetchLiveForexNews({
-    pairs: ['EUR/USD', 'AUD/USD'],
+  const live = await fetchLiveForexNews({
+    pairs: ['EUR/USD', 'GBP/USD'],
     forceRefresh: true
   });
-  assert.equal(pairSpecificRisk.pairRisk?.['EUR/USD']?.riskLevel, 'LOW');
-  assert.equal(pairSpecificRisk.pairRisk?.['AUD/USD']?.riskLevel, 'HIGH');
+
+  assert.equal(live.status, 'LIVE');
+  assert.equal(live.source, 'FINNHUB');
+  assert.ok(live.articleCount >= 3);
+  assert.equal(live.providerStatus?.FINNHUB, 'LIVE');
+  assert.equal(live.providerStatus?.NEWSAPI, 'LIVE');
+  assert.equal(live.providerStatus?.JBLANKED, 'LIVE');
+  assert.equal(live.providerDiagnostics?.FINNHUB?.freshArticleCount, 1);
+  assert.equal(live.providerDiagnostics?.NEWSAPI?.freshArticleCount, 1);
+  assert.equal(live.providerDiagnostics?.JBLANKED?.freshArticleCount, 1);
+  assert.equal(live.highImpactCount, 2);
+  assert.equal(live.pairRisk?.['EUR/USD']?.riskLevel, 'HIGH');
+  assert.deepEqual(live.queryPairs, ['EUR/USD', 'GBP/USD']);
+
+  const finnhubUrls = requestedUrls.filter(url => url.includes('finnhub.io'));
+  assert.equal(finnhubUrls.length, 1);
 
   resetLiveForexNewsCacheForTest();
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
 
+    if (url.includes('finnhub.io')) {
+      return response(JSON.stringify([{
+        headline: 'Old EUR/USD commentary',
+        url: 'https://finnhub.example/old',
+        source: 'Finnhub',
+        datetime: Math.floor((Date.now() - 26 * 60 * 60_000) / 1000),
+        summary: 'Stale article'
+      }]));
+    }
+
+    if (url.includes('newsapi.org')) {
+      return response(JSON.stringify({
+        status: 'ok',
+        articles: [{
+          title: 'Delayed article',
+          url: 'https://newsapi.example/old',
+          source: { name: 'NewsAPI' },
+          publishedAt: new Date(Date.now() - 26 * 60 * 60_000).toISOString()
+        }]
+      }));
+    }
+
+    if (url.includes('jblanked.com')) {
+      return response(JSON.stringify([{
+        Name: 'FOMC Rate Decision',
+        Currency: 'USD',
+        Impact: 'High',
+        Date: new Date(Date.now() - 30 * 60_000).toISOString(),
+        Quality: 'Good Data'
+      }]));
+    }
+
+    return response('', 404);
+  };
+
+  const staleCheck = await fetchLiveForexNews({
+    pairs: ['EUR/USD'],
+    forceRefresh: true
+  });
+
+  assert.equal(staleCheck.status, 'LIVE');
+  assert.equal(staleCheck.providerStatus?.FINNHUB, 'STALE');
+  assert.equal(staleCheck.providerStatus?.NEWSAPI, 'STALE');
+  assert.equal(staleCheck.providerStatus?.JBLANKED, 'LIVE');
+  assert.equal(staleCheck.articleCount, 1);
+
+  resetLiveForexNewsCacheForTest();
   globalThis.fetch = async () => response('', 503);
-  const unavailable = await fetchLiveForexNews({ pairs: ['USD/JPY'], forceRefresh: true });
+
+  const unavailable = await fetchLiveForexNews({
+    pairs: ['USD/JPY'],
+    forceRefresh: true
+  });
+
   assert.equal(unavailable.status, 'UNAVAILABLE');
   assert.equal(unavailable.riskLevel, 'UNAVAILABLE');
   assert.equal(unavailable.articleCount, 0);
-  assert.equal(unavailable.providerStatus?.GDELT_DOC_2, 'ERROR');
-  assert.equal(unavailable.providerStatus?.GOOGLE_NEWS_RSS, 'ERROR');
-
-  resetLiveForexNewsCacheForTest();
-
-  globalThis.fetch = async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('www.forexfactory.com/news')) {
-      return response(`
-        <html><body>
-          <a href="/news/1234567-rba-governor-speaks">RBA Governor Bullock: Supply shocks pose challenges for monetary policy</a>
-          <span>From @FirstSquawk | 5 min ago | 4 comments</span>
-          <p>RBA Governor Bullock discusses inflation and monetary policy.</p>
-          <a href="/news/1234566-us-dollar-holds-firm">US Dollar Holds Firm as Oil Eases</a>
-          <span>From forex.com | 12 min ago | 2 comments</span>
-          <p>US dollar and oil markets react to the latest Federal Reserve outlook.</p>
-        </body></html>
-      `);
-    }
-    if (url.includes('api.gdeltproject.org')) return response('<rss></rss>');
-    return response('<rss><channel></channel></rss>');
-  };
-
-  const forexFactory = await fetchLiveForexNews({ pairs: ['AUD/USD'], forceRefresh: true });
-  assert.equal(forexFactory.status, 'LIVE');
-  assert.equal(forexFactory.source, 'FOREX_FACTORY');
-  assert.equal(forexFactory.articleCount, 2);
-  assert.equal(forexFactory.providerStatus?.FOREX_FACTORY, 'LIVE');
-  assert.equal(forexFactory.providerDiagnostics?.FOREX_FACTORY?.rawArticleCount, 2);
-  assert.equal(forexFactory.providerDiagnostics?.FOREX_FACTORY?.freshArticleCount, 2);
-  assert.match(forexFactory.articles[0].url, /^https:\/\/www\.forexfactory\.com\/news\//);
-  assert.match(forexFactory.articles[0].publishedAt || '', /^20\d\d-/);
-
-  resetLiveForexNewsCacheForTest();
-
-  globalThis.fetch = async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('www.forexfactory.com/news')) return response('<html>403</html>', 403);
-    if (url.includes('cdn.rss.forexfactory.net/news/all.xml')) {
-      return response(`<rss><channel>
-        <item>
-          <title>US Dollar reacts to fresh Fed rate decision</title>
-          <link>https://www.forexfactory.com/news/1234568-fed-rate-decision</link>
-          <source>Forex Factory RSS</source>
-          <pubDate>${new Date(Date.now() - 2 * 60_000).toUTCString()}</pubDate>
-        </item>
-      </channel></rss>`);
-    }
-    return response('<rss><channel></channel></rss>');
-  };
-
-  const forexFactoryRssFallback = await fetchLiveForexNews({ pairs: ['EUR/USD'], forceRefresh: true });
-  assert.equal(forexFactoryRssFallback.status, 'LIVE');
-  assert.equal(forexFactoryRssFallback.source, 'FOREX_FACTORY');
-  assert.equal(forexFactoryRssFallback.providerStatus?.FOREX_FACTORY, 'LIVE');
-  assert.equal(forexFactoryRssFallback.providerDiagnostics?.FOREX_FACTORY?.rawArticleCount, 1);
-  assert.equal(forexFactoryRssFallback.providerDiagnostics?.FOREX_FACTORY?.freshArticleCount, 1);
+  assert.equal(unavailable.providerStatus?.FINNHUB, 'ERROR');
+  assert.equal(unavailable.providerStatus?.NEWSAPI, 'ERROR');
+  assert.equal(unavailable.providerStatus?.JBLANKED, 'ERROR');
 
   resetLiveForexNewsCacheForTest();
   console.log('LIVE NEWS SERVICE TEST PASSED');
