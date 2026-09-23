@@ -7,7 +7,7 @@ import {
 import { BrokerError } from '../errors';
 import { brokerRegistry } from '../registry';
 import { killSwitch } from './KillSwitch';
-import { tradeValidator, SignalValidationInput } from './TradeValidator';
+import type { SignalValidationInput } from './TradeValidator';
 import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
 import { autoTradeReadinessService } from './AutoTradeReadiness';
 import { logBrokerAction } from '../auditLog';
@@ -232,8 +232,16 @@ class AutoExecutionEngine {
 
   /**
    * Signal-driven execution pipeline:
-   * SignalEngine -> TradeValidator -> LiveTradingGate -> AutoTradeReadiness
+   * SignalEngine -> LiveTradingGate -> AutoTradeReadiness
    * -> immutable autonomous-live permission boundary -> idempotent execution.
+   *
+   * The legacy TradeValidator is intentionally not part of the autonomous
+   * execution path. Trigger Now reaches the shared LiveTradingGate path,
+   * while the legacy validator introduced additional rules that contradict
+   * the current live execution contract (notional USD conversion and a
+   * separate R:R rejection). Keeping it here made Auto Live behave
+   * differently from Trigger Now and blocked valid broker orders before the
+   * common live gate was reached.
    */
   async processSignal(
     signalInput: SignalValidationInput,
@@ -300,29 +308,16 @@ class AutoExecutionEngine {
       return { executed: false, reason: 'Emergency Kill Switch is ACTIVE', code: 'EMERGENCY_STOP_ACTIVE' };
     }
 
-    // Stage 2: Trade Validator
-    const valResult = tradeValidator.validateSignalAndOrder(signalInput, order, instrument);
-    if (!valResult.valid) {
-      logBrokerAction({
-        source: 'EXECUTION_ENGINE',
-        broker,
-        environment: env,
-        account: 'ACTIVE',
-        action: 'EXECUTE_SIGNAL',
-        symbol: order.symbol,
-        result: 'BLOCKED',
-        error: valResult.rejectionReason,
-        riskValidation: {
-          passed: false,
-          checks: valResult.checks,
-          reason: valResult.rejectionReason
-        }
-      });
-      auditExecution('TRADE_VALIDATOR_REJECTED', { code: 'RISK_REJECTED', reason: valResult.rejectionReason, checks: valResult.checks });
-      return { executed: false, reason: valResult.rejectionReason, code: 'RISK_REJECTED' };
-    }
-
-    // Stage 3: Full live safety gate. This must execute immediately before dispatch.
+    // Stage 2: Shared live safety gate.
+    //
+    // Do not run the legacy TradeValidator here. Its historical notional-value
+    // and R:R rules are not part of the Trigger Now execution path and are
+    // incompatible with the current direct cTrader-volume contract. Auto Live
+    // must reach the same authoritative live gate before dispatch.
+    const gateResult = await liveTradingGate.evaluate(adapter, {
+      ...gateParams,
+      order
+    });
     const gateResult = await liveTradingGate.evaluate(adapter, {
       ...gateParams,
       order
@@ -353,7 +348,8 @@ class AutoExecutionEngine {
     const readiness = await autoTradeReadinessService.evaluate(
       adapter,
       order,
-      signalInput.signalTimestamp
+      signalInput.signalTimestamp,
+      gateParams.currentQuote
     );
     if (!readiness.ready) {
       logBrokerAction({
