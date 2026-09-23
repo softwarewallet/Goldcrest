@@ -116,11 +116,11 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
     }
 
     // cTrader volume is an integer protocol field represented in 0.01 units.
-    // Normal FX uses the configured protocol volume directly. XAU uses 1/100
+    // Normal FX uses the configured protocol volume directly. XAU uses 1/1000
     // of the configured volume, matching the shared Goldcrest sizing contract.
     const normalizedSymbol = String(order.symbol || '').toUpperCase().trim();
     const isXauPair = normalizedSymbol.split('/').some(part => part === 'XAU');
-    const xauVolumeDivisor = 100;
+    const xauVolumeDivisor = 1000;
     const configuredProtocolVolume = isXauPair
       ? Math.floor(maxTradeValueForexUsd / xauVolumeDivisor)
       : Math.floor(maxTradeValueForexUsd);
@@ -129,7 +129,7 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
       throw new BrokerError(
         'INVALID_QUANTITY',
         isXauPair
-          ? 'Configured maximum Forex trade value must produce a positive integer cTrader volume for an XAU pair after the 1/100 rule.'
+          ? 'Configured maximum Forex trade value must produce a positive integer cTrader volume for an XAU pair after the 1/1000 rule.'
           : 'Configured maximum Forex trade value must be a positive integer because cTrader volume is an integer protocol field.',
         'CTRADER',
         this.environment
