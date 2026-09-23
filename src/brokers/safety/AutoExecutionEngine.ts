@@ -12,7 +12,7 @@ import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
 import { autoTradeReadinessService } from './AutoTradeReadiness';
 import { logBrokerAction } from '../auditLog';
 import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../../services/executionIntentService';
-import { getSystemConfig, getCTraderApiMode, updateSystemConfig } from '../../services/configService';
+import { getSystemConfig, updateSystemConfig } from '../../services/configService';
 import { liveRuntimeLog, tradeAuditLog } from '../../services/liveRuntimeLog';
 import { normalizePriceToInstrumentDigits } from './TradeSizing';
 
@@ -112,7 +112,6 @@ function syncAutonomousPermission(): boolean {
   }
   const allowed = requested
     && config.liveTradingEnabled
-    && getCTraderApiMode() === 'LIVE'
     && approved
     && ctraderConfigured
     && !killSwitch.isHalted();
@@ -200,12 +199,11 @@ class AutoExecutionEngine {
 
       if (!this.permissions.autoExecutionEnabled) blockers.push('AUTO_TRADING_FLAGS');
       if (!config.liveTradingEnabled) blockers.push('LIVE_TRADING_ENABLED');
-      if (getCTraderApiMode() !== 'LIVE') blockers.push('CTRADER_API_MODE_NOT_LIVE');
       const approvedStrategyId = String(process.env.GOLDCREST_PRODUCTION_STRATEGY_ID || 'fx_structure_v2a').trim();
       const strategyApproved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true'
         && approvedStrategyId === 'fx_structure_v2a';
       if (!strategyApproved) blockers.push('PRODUCTION_STRATEGY_APPROVAL');
-      if (!ctraderConfigured) blockers.push('CTRADER_LIVE_CREDENTIALS');
+      if (!ctraderConfigured) blockers.push('CTRADER_CREDENTIALS');
       if (killSwitch.isHalted()) blockers.push('KILL_SWITCH');
 
       const message = blockers.length
