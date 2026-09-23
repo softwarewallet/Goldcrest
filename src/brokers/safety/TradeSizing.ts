@@ -123,11 +123,17 @@ export function calculateForexPipTargets(
  *
  * Example:
  *   maxTradeValueForexUsd = 100
- *   => order quantity = 100
+ *   => normal Forex order quantity = 100
  *
- * The broker remains authoritative for minimum quantity, maximum quantity and
- * volume-step validation. Goldcrest intentionally does not pre-reject an
- * order based on those broker constraints here.
+ * Gold (any Forex symbol containing XAU) uses a dedicated 1/10 volume rule:
+ *   maxTradeValueForexUsd = 1000
+ *   => XAU order quantity = 100
+ *
+ * The XAU adjustment is applied centrally here so Auto Live and Trigger Now
+ * use exactly the same sizing contract. The broker remains authoritative for
+ * minimum quantity, maximum quantity and volume-step validation. Goldcrest
+ * intentionally does not pre-reject an order based on those broker constraints
+ * here.
  */
 export async function sizeForexOrderToMaxTradeValue(
   _adapter: unknown,
@@ -148,24 +154,34 @@ export async function sizeForexOrderToMaxTradeValue(
     );
   }
 
-  // Keep the quantity integral so the direct volume value cannot be increased
-  // by rounding and the final broker packet remains deterministic.
-  const quantity = Math.floor(configuredQuantity);
+  // XAU/USD and any other Forex symbol containing XAU use one-tenth
+  // of the operator-configured Forex volume. This is a volume rule, not a
+  // price/notional conversion.
+  const normalizedSymbol = String(_symbol || '').toUpperCase().trim();
+  const isXauPair = normalizedSymbol
+    .split('/')
+    .some(part => part === 'XAU');
+  const xauVolumeDivisor = 10;
+  const configuredExecutionQuantity = isXauPair
+    ? Math.floor(configuredQuantity / xauVolumeDivisor)
+    : Math.floor(configuredQuantity);
 
-  if (!(quantity > 0) || !Number.isFinite(quantity)) {
+  if (!(configuredExecutionQuantity > 0) || !Number.isFinite(configuredExecutionQuantity)) {
     throw new Error(
-      'MAX_TRADE_VALUE_INVALID: Configured maximum Forex trade quantity must be at least 1.'
+      isXauPair
+        ? 'MAX_TRADE_VALUE_INVALID: Configured Forex volume must be at least 10 for an XAU pair because XAU volume is configured volume / 10.'
+        : 'MAX_TRADE_VALUE_INVALID: Configured maximum Forex trade quantity must be at least 1.'
     );
   }
 
   return {
     requestedQuantity: requested,
-    quantity,
-    directQuantity: quantity,
-    rawMaxQuantity: quantity,
+    quantity: configuredExecutionQuantity,
+    directQuantity: configuredExecutionQuantity,
+    rawMaxQuantity: configuredExecutionQuantity,
     // Retain the legacy property name because it is persisted/configured under
     // maxTradeValueForexUsd. It is NOT a USD notional calculation anymore.
     maxTradeValueUsd: configuredQuantity,
-    adjusted: Math.abs(quantity - requested) > 1e-9
+    adjusted: Math.abs(configuredExecutionQuantity - requested) > 1e-9
   };
 }
