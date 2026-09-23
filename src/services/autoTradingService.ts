@@ -816,23 +816,50 @@ return;
 return;
       }
 
-      const maxTradesPerPair = Math.max(1, Math.min(20, Math.floor(Number(config.autoLiveMaxTradesPerPair))));
+      const configuredMaxTradesPerPair = Math.max(
+        1,
+        Math.min(20, Math.floor(Number(config.autoLiveMaxTradesPerPair)))
+      );
+      // A high-confidence signal (strictly above 80) may use the operator-configured
+      // multiple-trade limit. Signals at 80 or below are restricted to one open
+      // Auto Live position for that pair. The system-wide Condition 13B limit
+      // remains authoritative and is never bypassed by this rule.
+      const HIGH_SCORE_MULTIPLE_TRADE_THRESHOLD = 80;
+      const highScoreMultipleTradeMode = Number(signal.score) > HIGH_SCORE_MULTIPLE_TRADE_THRESHOLD;
+      const maxTradesPerPair = highScoreMultipleTradeMode
+        ? configuredMaxTradesPerPair
+        : 1;
+
       const positions = await adapter.getPositions();
       const activePairPositionsCount = positions.filter(position =>
         String(position.symbol || '').toUpperCase() === pair.toUpperCase()
       ).length;
       if (activePairPositionsCount >= maxTradesPerPair) {
-        const reason = `Maximum simultaneous Auto Live trades for ${pair} is ${maxTradesPerPair}; ${activePairPositionsCount} position(s) are already open.`;
+        const reason = highScoreMultipleTradeMode
+          ? `Maximum simultaneous Auto Live trades for ${pair} is ${maxTradesPerPair}; ${activePairPositionsCount} position(s) are already open.`
+          : `Auto Live score rule limits ${pair} to 1 simultaneous trade at score ${Number(signal.score).toFixed(2)} (multiple trades require score > 80).`;
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
         liveRuntimeLog('INFO', 'AUTO_TRADING_PAIR_POSITION_LIMIT', {
           pair,
           signalId: signal.id,
           activePairPositionsCount,
-          maxTradesPerPair,
+          configuredMaxTradesPerPair,
+          effectiveMaxTradesPerPair: maxTradesPerPair,
+          highScoreMultipleTradeMode,
+          highScoreThreshold: HIGH_SCORE_MULTIPLE_TRADE_THRESHOLD,
           score: signal.score
         });
-                tradeAuditLog('PAIR_LIMIT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
-return;
+        tradeAuditLog('PAIR_LIMIT_BLOCKED', {
+          pair,
+          signalId: signal.id,
+          score: signal.score,
+          configuredMaxTradesPerPair,
+          effectiveMaxTradesPerPair: maxTradesPerPair,
+          highScoreMultipleTradeMode,
+          highScoreThreshold: HIGH_SCORE_MULTIPLE_TRADE_THRESHOLD,
+          reason
+        });
+        return;
       }
 
       // Operator-configured Forex pip margins are authoritative for every
