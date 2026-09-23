@@ -12,7 +12,7 @@ export interface LiveNewsArticle {
   topics?: string[];
 }
 
-export type LiveNewsSource = 'FINNHUB' | 'NEWSAPI' | 'JBLANKED' | 'NONE';
+export type LiveNewsSource = 'FINNHUB' | 'NEWSAPI' | 'JBLANKED' | 'GOOGLE_NEWS_RSS' | 'NONE';
 export type LiveNewsProviderStatus = 'LIVE' | 'NO_RESULTS' | 'STALE' | 'RATE_LIMITED' | 'UNCONFIGURED' | 'ERROR';
 
 export interface LiveNewsProviderDiagnostic {
@@ -51,11 +51,13 @@ export interface LiveNewsSnapshot {
     FINNHUB: LiveNewsProviderStatus;
     NEWSAPI: LiveNewsProviderStatus;
     JBLANKED: LiveNewsProviderStatus;
+    GOOGLE_NEWS_RSS: LiveNewsProviderStatus;
   };
   providerDiagnostics?: {
     FINNHUB: LiveNewsProviderDiagnostic;
     NEWSAPI: LiveNewsProviderDiagnostic;
     JBLANKED: LiveNewsProviderDiagnostic;
+    GOOGLE_NEWS_RSS: LiveNewsProviderDiagnostic;
   };
   pairRisk?: Record<string, {
     highImpactCount: number;
@@ -75,6 +77,7 @@ export interface LiveNewsFetchOptions {
 const FINNHUB_ENDPOINT = process.env.FINNHUB_BASE_URL || 'https://finnhub.io/api/v1/news';
 const NEWSAPI_ENDPOINT = process.env.NEWSAPI_BASE_URL || 'https://newsapi.org/v2/everything';
 const JBLANKED_BASE_URL = process.env.JBLANKED_BASE_URL || 'https://www.jblanked.com/news/api';
+const GOOGLE_NEWS_RSS_ENDPOINT = process.env.GOOGLE_NEWS_RSS_BASE_URL || 'https://news.google.com/rss/search';
 
 const REQUEST_TIMEOUT_MS = Math.max(
   5_000,
@@ -99,6 +102,14 @@ const NEWSAPI_MAX_QUERIES = Math.max(
 const JBLANKED_MIN_INTERVAL_MS = Math.max(
   1_000,
   Number(process.env.JBLANKED_MIN_INTERVAL_MS || 1_100)
+);
+const GOOGLE_NEWS_RSS_MAX_QUERIES = Math.max(
+  1,
+  Math.min(4, Number(process.env.GOOGLE_NEWS_RSS_MAX_QUERIES || 2))
+);
+const GOOGLE_NEWS_RSS_MIN_PRIMARY_ARTICLES = Math.max(
+  0,
+  Number(process.env.GOOGLE_NEWS_RSS_MIN_PRIMARY_ARTICLES || 3)
 );
 
 let newsCache: {
@@ -362,6 +373,33 @@ function computeAggregatedSentiment(
 }
 
 
+async function fetchText(
+  url: URL,
+  headers: Record<string, string> = {}
+): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/rss+xml, application/xml, text/xml, text/plain',
+        'User-Agent': 'Goldcrest/2.0 live-forex-news',
+        ...headers
+      }
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      const error = new Error('HTTP ' + response.status + ': ' + (text.slice(0, 250) || response.statusText));
+      (error as any).status = response.status;
+      throw error;
+    }
+    return text;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchJson(
   url: URL,
   headers: Record<string, string> = {}
@@ -528,6 +566,80 @@ async function fetchFromNewsApi(pairs: string[]): Promise<{
   };
 }
 
+function buildGoogleNewsRssQueries(pairs: string[]): string[] {
+  const queries: string[] = [];
+  for (const pair of pairs) {
+    const [base, quote] = pair.split('/');
+    const baseAliases = (CURRENCY_NEWS_ALIASES[base] || [base.toLowerCase()]).slice(0, 2);
+    const quoteAliases = (CURRENCY_NEWS_ALIASES[quote] || [quote.toLowerCase()]).slice(0, 2);
+    queries.push(
+      '(' + [
+        '"' + pair + '"',
+        '"' + base + '"',
+        '"' + quote + '"',
+        ...baseAliases.map(alias => '"' + alias + '"'),
+        ...quoteAliases.map(alias => '"' + alias + '"')
+      ].join(' OR ') + ') AND (forex OR "foreign exchange" OR "central bank" OR inflation OR "interest rate")'
+    );
+  }
+  if (queries.length === 0) {
+    queries.push('forex OR "foreign exchange" OR "central bank" OR FOMC OR ECB OR BOJ');
+  }
+  return [...new Set(queries)].slice(0, GOOGLE_NEWS_RSS_MAX_QUERIES);
+}
+
+function xmlTagValue(item: string, tag: string): string {
+  const match = item.match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + tag + '>', 'i'));
+  return match ? decodeXmlEntities(match[1].replace(/<[^>]+>/g, ' ')) : '';
+}
+
+async function fetchFromGoogleNewsRss(pairs: string[]): Promise<{
+  status: LiveNewsProviderStatus;
+  articles: LiveNewsArticle[];
+  error?: string;
+  latencyMs?: number;
+}> {
+  const startedAt = Date.now();
+  const results: LiveNewsArticle[] = [];
+  const errors: string[] = [];
+
+  for (const query of buildGoogleNewsRssQueries(pairs)) {
+    try {
+      const url = new URL(GOOGLE_NEWS_RSS_ENDPOINT);
+      url.searchParams.set('q', query);
+      url.searchParams.set('hl', 'en-US');
+      url.searchParams.set('gl', 'US');
+      url.searchParams.set('ceid', 'US:en');
+
+      const xml = await fetchText(url);
+      const items = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
+      for (const item of items) {
+        const title = xmlTagValue(item, 'title');
+        const link = xmlTagValue(item, 'link');
+        const publishedAt = normalizePublishedAt(xmlTagValue(item, 'pubDate'));
+        const source = xmlTagValue(item, 'source') || 'Google News RSS';
+        const summary = xmlTagValue(item, 'description');
+        if (!title || !link || !publishedAt) continue;
+        results.push({ title, url: link, source, publishedAt, summary });
+      }
+    } catch (error: any) {
+      errors.push(error?.name === 'AbortError'
+        ? 'Google News RSS request timed out.'
+        : error?.message || String(error));
+    }
+  }
+
+  const articles = deduplicateArticles(results);
+  return {
+    status: articles.length > 0
+      ? 'LIVE'
+      : errors.length === buildGoogleNewsRssQueries(pairs).length ? 'ERROR' : 'NO_RESULTS',
+    articles,
+    error: errors.length ? errors.join(' | ') : undefined,
+    latencyMs: Date.now() - startedAt
+  };
+}
+
 function normalizeJBlankedEvent(row: any, endpoint: string): LiveNewsArticle | null {
   const name = decodeXmlEntities(String(row?.Name || row?.name || row?.event || row?.title || ''));
   const currency = decodeXmlEntities(String(row?.Currency || row?.currency || ''));
@@ -679,15 +791,17 @@ async function fetchLiveForexNewsInternal(
   const queryPairs = normalizePairs(options.pairs);
   const queryKey = queryPairs.join(',');
 
-  const [finnhubRes, newsApiRes, jblankedRes] = await Promise.all([
+  const [finnhubRes, newsApiRes, jblankedRes, googleNewsRssRes] = await Promise.all([
     fetchFromFinnhub(),
     fetchFromNewsApi(queryPairs),
-    fetchFromJBlanked()
+    fetchFromJBlanked(),
+    fetchFromGoogleNewsRss(queryPairs)
   ]);
 
   const freshFinnhub = filterFreshArticles(finnhubRes.articles, now);
   const freshNewsApi = filterFreshArticles(newsApiRes.articles, now);
   const freshJBlanked = filterFreshArticles(jblankedRes.articles, now);
+  const freshGoogleNewsRss = filterFreshArticles(googleNewsRssRes.articles, now);
 
   const providerStatus: LiveNewsSnapshot['providerStatus'] = {
     FINNHUB: providerEffectiveStatus(
@@ -704,13 +818,19 @@ async function fetchLiveForexNewsInternal(
       jblankedRes.status,
       jblankedRes.articles.length,
       freshJBlanked.length
+    ),
+    GOOGLE_NEWS_RSS: providerEffectiveStatus(
+      googleNewsRssRes.status,
+      googleNewsRssRes.articles.length,
+      freshGoogleNewsRss.length
     )
   };
 
   const errors = [
     finnhubRes.error,
     newsApiRes.error,
-    jblankedRes.error
+    jblankedRes.error,
+    googleNewsRssRes.error
   ].filter(Boolean) as string[];
 
   const providerDiagnostics: LiveNewsSnapshot['providerDiagnostics'] = {
@@ -747,19 +867,35 @@ async function fetchLiveForexNewsInternal(
       latestFreshArticleAt: latestArticleAt(freshJBlanked),
       error: jblankedRes.error
     }
-  };
+,
+    GOOGLE_NEWS_RSS: {
+      status: providerStatus.GOOGLE_NEWS_RSS,
+      rawArticleCount: googleNewsRssRes.articles.length,
+      freshArticleCount: freshGoogleNewsRss.length,
+      staleArticleCount: Math.max(0, googleNewsRssRes.articles.length - freshGoogleNewsRss.length),
+      configured: true,
+      latencyMs: googleNewsRssRes.latencyMs,
+      latestRawArticleAt: latestArticleAt(googleNewsRssRes.articles),
+      latestFreshArticleAt: latestArticleAt(freshGoogleNewsRss),
+      error: googleNewsRssRes.error
+    }  };
 
   // Finnhub provides live market headlines, JBlanked provides structured
-  // macro/Forex calendar events, and NewsAPI is supplementary.
-  const fetchedArticles = [
+  // macro/Forex calendar events, and NewsAPI is supplementary. Google News RSS
+  // is retained as a no-key backup when primary fresh coverage is thin.
+  const primaryFreshArticles = deduplicateArticles([
     ...freshFinnhub,
     ...freshJBlanked,
     ...freshNewsApi
-  ];
+  ]);
+  const useGoogleNewsBackup = primaryFreshArticles.length < GOOGLE_NEWS_RSS_MIN_PRIMARY_ARTICLES;
+  const fetchedArticles = useGoogleNewsBackup
+    ? [...primaryFreshArticles, ...freshGoogleNewsRss]
+    : primaryFreshArticles;
   const articles = deduplicateArticles(fetchedArticles).slice(0, 100);
 
   if (articles.length === 0) {
-    const configuredProviders = [finnhubRes, newsApiRes, jblankedRes]
+    const configuredProviders = [finnhubRes, newsApiRes, jblankedRes, googleNewsRssRes]
       .filter(result => result.status !== 'UNCONFIGURED');
     const allUnavailable = configuredProviders.length > 0
       && configuredProviders.every(result => ['ERROR', 'RATE_LIMITED'].includes(result.status));
@@ -811,7 +947,9 @@ async function fetchLiveForexNewsInternal(
     ? 'FINNHUB'
     : freshJBlanked.length > 0
       ? 'JBLANKED'
-      : 'NEWSAPI';
+      : freshNewsApi.length > 0
+        ? 'NEWSAPI'
+        : 'GOOGLE_NEWS_RSS';
 
   const snapshot: LiveNewsSnapshot = {
     source,
