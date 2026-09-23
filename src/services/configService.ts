@@ -25,6 +25,8 @@ export interface SystemConfig {
   maxTradeValueIndianInr: number;
   autoLiveMinSignalScore: number;
   autoLiveMaxTradesPerPair: number;
+  forexStopLossPips: number;
+  forexTakeProfitPips: number;
   autoLiveForexPairs: string[];
   autoLiveIndianUnderlyings: string[];
   financialDisclaimer: string;
@@ -61,6 +63,8 @@ const PERSISTED_KEYS: readonly (keyof SystemConfig)[] = [
   'maxTradeValueIndianInr',
   'autoLiveMinSignalScore',
   'autoLiveMaxTradesPerPair',
+  'forexStopLossPips',
+  'forexTakeProfitPips',
   'autoLiveForexPairs',
   'autoLiveIndianUnderlyings',
   'financialDisclaimer'
@@ -86,6 +90,8 @@ let activeConfig: SystemConfig = {
   maxTradeValueIndianInr: 1000000,
   autoLiveMinSignalScore: 75,
   autoLiveMaxTradesPerPair: 4,
+  forexStopLossPips: 20,
+  forexTakeProfitPips: 40,
   // If the operator has not persisted a working-universe selection yet,
   // Auto Live evaluates the complete supported Forex universe rather than
   // silently falling back to the old five-pair subset.
