@@ -1281,8 +1281,23 @@ app.get('/api/options/chain/:symbol', async (req: Request, res: Response) => {
 
 app.get('/api/options/scanner/:symbol', async (req: Request, res: Response) => {
   const symbol = req.params.symbol ? req.params.symbol.toUpperCase() : 'NIFTY';
-  const result = await scannerService.getOptionsScanner(symbol);
-  res.json(result);
+  const expiry = typeof req.query.expiry === 'string' ? req.query.expiry : undefined;
+  const rawDepth = Number(req.query.depth);
+  const depth = Number.isInteger(rawDepth) ? Math.min(Math.max(rawDepth, 1), 20) : getSystemConfig().strikeDepth;
+  try {
+    const result = await scannerService.getOptionsScanner(symbol, expiry, depth);
+    res.json(result);
+  } catch (err: any) {
+    res.status(503).json({
+      underlying: symbol,
+      spot: 0,
+      bias: 'Range-bound',
+      pcr: 0,
+      opportunities: [],
+      isBlank: true,
+      error: err?.message || 'Option scanner data unavailable.'
+    });
+  }
 });
 
 app.post('/api/options/payoff', (req: Request, res: Response) => {
