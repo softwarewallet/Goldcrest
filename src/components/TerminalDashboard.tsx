@@ -201,7 +201,7 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
   const risk = {
     dailyLimit: -Number(config?.maxDailyLossPct ?? 3),
     riskPerTrade: Number(config?.defaultRiskPct ?? 1),
-    maxPositions: Number(config?.maxOpenPositions ?? 5)
+    maxPositions: Number.isFinite(Number(config?.maxOpenPositions)) ? Number(config.maxOpenPositions) : null
   };
 
   return (
@@ -284,7 +284,7 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
           <div className="space-y-4 text-xs">
             <RiskRow label="Daily Loss Limit" value={`-${risk.dailyLimit.toFixed(2)}%`} />
             <RiskRow label="Risk Per Trade" value={`${risk.riskPerTrade.toFixed(2)}%`} />
-            <RiskRow label="Open Positions" value={`${nsePositions.length} / ${risk.maxPositions}`} />
+            <RiskRow label="Open Positions" value={risk.maxPositions == null ? `${nsePositions.length} / —` : `${nsePositions.length} / ${risk.maxPositions}`} />
             <RiskRow label="Account Exposure" value={exposure == null ? '—' : `${exposure.toFixed(1)}%`} />
             <RiskRow label="Free Margin" value={nseAccount ? money(freeMargin, nseAccount.currency) : '—'} />
           </div>
