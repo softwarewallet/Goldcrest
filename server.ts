@@ -401,7 +401,9 @@ async function hydratePersistedTradeLimits(): Promise<void> {
     ['MAX_TRADE_VALUE_FOREX_USD', 'maxTradeValueForexUsd'],
     ['MAX_TRADE_VALUE_INDIAN_INR', 'maxTradeValueIndianInr'],
     ['AUTO_LIVE_MIN_SIGNAL_SCORE', 'autoLiveMinSignalScore'],
-    ['AUTO_LIVE_MAX_TRADES_PER_PAIR', 'autoLiveMaxTradesPerPair']
+    ['AUTO_LIVE_MAX_TRADES_PER_PAIR', 'autoLiveMaxTradesPerPair'],
+    ['FOREX_STOP_LOSS_PIPS', 'forexStopLossPips'],
+    ['FOREX_TAKE_PROFIT_PIPS', 'forexTakeProfitPips']
   ];
 
   for (const [dbKey, configKey] of numericKeys) {
@@ -663,6 +665,8 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
     const requestedIndian = req.body?.maxTradeValueIndianInr;
     const requestedAutoLiveMinSignalScore = req.body?.autoLiveMinSignalScore;
     const requestedAutoLiveMaxTradesPerPair = req.body?.autoLiveMaxTradesPerPair;
+    const requestedForexStopLossPips = req.body?.forexStopLossPips;
+    const requestedForexTakeProfitPips = req.body?.forexTakeProfitPips;
     const requestedForexPairs = req.body?.autoLiveForexPairs;
     const requestedIndianUnderlyings = req.body?.autoLiveIndianUnderlyings;
     const updates: any = { ...req.body };
@@ -693,6 +697,22 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
         return res.status(400).json({ error: 'autoLiveMaxTradesPerPair must be an integer from 1 to 20.' });
       }
       updates.autoLiveMaxTradesPerPair = value;
+    }
+
+    if (requestedForexStopLossPips !== undefined) {
+      const value = Number(requestedForexStopLossPips);
+      if (!Number.isFinite(value) || value <= 0 || value > 10000) {
+        return res.status(400).json({ error: 'forexStopLossPips must be a positive number no greater than 10000.' });
+      }
+      updates.forexStopLossPips = value;
+    }
+
+    if (requestedForexTakeProfitPips !== undefined) {
+      const value = Number(requestedForexTakeProfitPips);
+      if (!Number.isFinite(value) || value <= 0 || value > 10000) {
+        return res.status(400).json({ error: 'forexTakeProfitPips must be a positive number no greater than 10000.' });
+      }
+      updates.forexTakeProfitPips = value;
     }
 
     const validForexPairs = new Set(FOREX_PAIRS.map(pair => pair.symbol.toUpperCase()));
@@ -728,7 +748,7 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
     // cannot reset a different setting. configService has already written the
     // same merged configuration to an atomic JSON file.
     await executeRun(
-      'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)',
+      'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)',
       [
         'SELECTED_CTRADER_ACCOUNT_ID', String(updated.selectedCtraderAccountId || ''), now,
         'SELECTED_CTRADER_ACCOUNT_CURRENCY', String(updated.selectedCtraderAccountCurrency || ''), now,
@@ -746,6 +766,8 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
         'MAX_TRADE_VALUE_INDIAN_INR', String(updated.maxTradeValueIndianInr), now,
         'AUTO_LIVE_MIN_SIGNAL_SCORE', String(updated.autoLiveMinSignalScore), now,
         'AUTO_LIVE_MAX_TRADES_PER_PAIR', String(updated.autoLiveMaxTradesPerPair), now,
+        'FOREX_STOP_LOSS_PIPS', String(updated.forexStopLossPips), now,
+        'FOREX_TAKE_PROFIT_PIPS', String(updated.forexTakeProfitPips), now,
         'AUTO_LIVE_FOREX_PAIRS', JSON.stringify(updated.autoLiveForexPairs || []), now,
         'AUTO_LIVE_INDIAN_UNDERLYINGS', JSON.stringify(updated.autoLiveIndianUnderlyings || []), now,
         'FINANCIAL_DISCLAIMER', String(updated.financialDisclaimer || ''), now
