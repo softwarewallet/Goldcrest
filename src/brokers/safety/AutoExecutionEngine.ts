@@ -318,10 +318,6 @@ class AutoExecutionEngine {
       ...gateParams,
       order
     });
-    const gateResult = await liveTradingGate.evaluate(adapter, {
-      ...gateParams,
-      order
-    });
     if (!gateResult.passed) {
       logBrokerAction({
         source: 'SAFETY_GATE',
