@@ -74,6 +74,73 @@ export interface LiveNewsFetchOptions {
   forceRefresh?: boolean;
 }
 
+const CURRENCY_NEWS_ALIASES: Record<string, string[]> = {
+  USD: ['usd', 'us dollar', 'u.s. dollar', 'dollar', 'fed', 'federal reserve'],
+  EUR: ['eur', 'euro', 'ecb', 'european central bank'],
+  GBP: ['gbp', 'pound', 'british pound', 'sterling', 'boe', 'bank of england'],
+  JPY: ['jpy', 'yen', 'japanese yen', 'boj', 'bank of japan'],
+  CHF: ['chf', 'franc', 'swiss franc', 'snb', 'swiss national bank'],
+  AUD: ['aud', 'australian dollar', 'aussie', 'rba', 'reserve bank of australia'],
+  NZD: ['nzd', 'new zealand dollar', 'kiwi', 'rbnz', 'reserve bank of new zealand'],
+  CAD: ['cad', 'canadian dollar', 'loonie', 'boc', 'bank of canada'],
+  SEK: ['sek', 'swedish krona', 'riksbank'],
+  NOK: ['nok', 'norwegian krone', 'norges bank'],
+  XAU: ['xau', 'gold'],
+  XAG: ['xag', 'silver']
+};
+
+const HIGH_IMPACT_EVENT_PATTERNS: RegExp[] = [
+  /interest rate/i,
+  /rate decision/i,
+  /central bank/i,
+  /monetary policy/i,
+  /cpi/i,
+  /inflation/i,
+  /nonfarm payroll/i,
+  /nfp\b/i,
+  /employment report/i,
+  /jobs report/i,
+  /unemployment rate/i,
+  /retail sales/i,
+  /gdp/i,
+  /pmi/i,
+  /fomc/i,
+  /press conference/i
+];
+
+const GLOBAL_HIGH_IMPACT_PATTERNS: RegExp[] = [
+  /federal reserve/i,
+  /fomc/i,
+  /ecb\b/i,
+  /bank of england/i,
+  /bank of japan/i,
+  /bank of canada/i,
+  /reserve bank of australia/i,
+  /reserve bank of new zealand/i,
+  /swiss national bank/i
+];
+
+const ELEVATED_TERMS = [
+  'tariff',
+  'sanction',
+  'geopolitical',
+  'war',
+  'crisis',
+  'intervention',
+  'yield',
+  'bond',
+  'recession',
+  'downgrade',
+  'upgrade',
+  'trade deficit',
+  'trade surplus'
+];
+
+const NEWS_HIGH_IMPACT_ACTIVE_WINDOW_MS = Math.max(
+  5 * 60_000,
+  Number(process.env.GOLDCREST_NEWS_HIGH_IMPACT_ACTIVE_WINDOW_MS || 30 * 60_000)
+);
+
 const FINNHUB_ENDPOINT = process.env.FINNHUB_BASE_URL || 'https://finnhub.io/api/v1/news';
 const NEWSAPI_ENDPOINT = process.env.NEWSAPI_BASE_URL || 'https://newsapi.org/v2/everything';
 const JBLANKED_BASE_URL = process.env.JBLANKED_BASE_URL || 'https://www.jblanked.com/news/api';
@@ -195,26 +262,6 @@ function normalizePairs(pairs: string[] | undefined): string[] {
   )].sort();
 }
 
-
-function buildGdeltQuery(pairs: string[]): string {
-  // Keep GDELT narrow enough to answer quickly. The previous universe-wide OR
-  // query was prone to provider timeouts and mixed unrelated currencies.
-  const eventTerms = [
-    '"Federal Reserve"', 'FOMC', 'ECB', 'BOJ', '"Bank of England"',
-    'RBA', 'RBNZ', '"Bank of Canada"', 'SNB', 'CPI',
-    '"rate decision"', '"nonfarm payrolls"'
-  ];
-  const currencies = [...getRelevantCurrencies(pairs)]
-    .flatMap(currency => CURRENCY_NEWS_ALIASES[currency] || [currency.toLowerCase()])
-    .slice(0, 8);
-
-  const eventQuery = `(${eventTerms.join(' OR ')})`;
-  const currencyQuery = currencies.length > 0
-    ? `(${[...new Set(currencies)].map(term => term.includes(' ') ? `"${term}"` : term).join(' OR ')})`
-    : '';
-
-  return currencyQuery ? `${eventQuery} AND ${currencyQuery}` : eventQuery;
-}
 
 function articleText(article: LiveNewsArticle): string {
   return [article.title, article.summary].filter(Boolean).join(' ').toLowerCase();
@@ -740,6 +787,34 @@ async function fetchFromJBlanked(): Promise<{
     error: errors.length ? errors.join(' | ') : undefined,
     latencyMs: Date.now() - startedAt
   };
+}
+
+function deduplicateArticles(articles: LiveNewsArticle[]): LiveNewsArticle[] {
+  const seen = new Set<string>();
+  const output: LiveNewsArticle[] = [];
+  for (const article of articles) {
+    const key = String(article.url || article.title)
+      .trim()
+      .toLowerCase()
+      .replace(/\/$/, '');
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    output.push(article);
+  }
+  return output;
+}
+
+function filterFreshArticles(
+  articles: LiveNewsArticle[],
+  now: number
+): LiveNewsArticle[] {
+  return articles.filter(article => {
+    if (!article.publishedAt) return false;
+    const timestamp = Date.parse(article.publishedAt);
+    if (!Number.isFinite(timestamp)) return false;
+    const age = now - timestamp;
+    return age >= -5 * 60_000 && age <= MAX_ARTICLE_AGE_MS;
+  });
 }
 
 function latestArticleAt(articles: LiveNewsArticle[]): string | null {
