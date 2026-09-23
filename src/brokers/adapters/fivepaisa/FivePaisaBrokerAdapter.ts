@@ -806,17 +806,127 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     return this.scripMasterFetchInFlight;
   }
 
-  async getQuote(symbol: string): Promise<NormalizedQuote> {
-    this.validateCredentials();
+  private normalizeScripLookupKey(value: unknown): string {
+    return String(value || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+  }
 
-    if (this.environment !== 'LIVE') {
-      throw new BrokerError('UNAVAILABLE', 'Only LIVE broker market data is supported.', 'FIVE_PAISA', this.environment);
+  private async findExactScripMasterRow(symbol: string, exchangeType?: string): Promise<any | null> {
+    const normalized = this.normalizeScripLookupKey(symbol);
+    if (!normalized) return null;
+
+    const rows = await this.getScripMasterRows();
+    return rows.find((row: any) => {
+      if (exchangeType && String(row.ExchType || '').toUpperCase() !== exchangeType) return false;
+
+      return [
+        row.ScripData,
+        row.Name,
+        row.TradingSymbol,
+        row.Symbol,
+        row.FullName
+      ].some(value => this.normalizeScripLookupKey(value) === normalized);
+    }) || null;
+  }
+
+  async getQuote(symbol: string): Promise<NormalizedQuote> {
+    await this.ensureActiveSession();
+
+    if (!this.config.accessToken) {
+      throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
     }
 
+    const cleanSymbol = String(symbol || '').replace(/^NSE:|^BSE:/, '').trim();
+    const looksLikeOption = /(?:^|[_\s-])(CE|PE)$|(?:CE|PE)$/i.test(cleanSymbol);
+
     try {
-      await this.authenticate();
-      if (!this.config.accessToken) {
-        throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
+      // Option contracts must be queried with their authoritative derivative
+      // ScripCode / ScripData and ExchType=D. The old quote path treated every
+      // symbol as a cash-equity _EQ instrument, so an option Trigger Now could
+      // never obtain the broker quote required by the live safety gate.
+      if (looksLikeOption) {
+        const optionRow = await this.findExactScripMasterRow(cleanSymbol, 'D');
+        if (!optionRow) {
+          throw new BrokerError(
+            'INVALID_SYMBOL',
+            `5paisa ScripMaster has no authoritative option instrument for ${symbol}.`,
+            'FIVE_PAISA',
+            this.environment
+          );
+        }
+
+        const feedRes = await fetch(`${this.getApiHost()}/VendorsAPI/Service1.svc/V1/MarketFeed`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.config.accessToken}`,
+            'Content-Type': 'application/json',
+            '5Paisa-API-Uid': 'ka7SFqAU6SC'
+          },
+          body: JSON.stringify({
+            head: { Key: this.config.userKey },
+            body: {
+              Count: '1',
+              MarketFeedData: [{
+                Exch: String(optionRow.Exch || 'N').toUpperCase(),
+                ExchType: 'D',
+                ScripCode: Number(optionRow.ScripCode || 0),
+                ScripData: String(optionRow.ScripData || optionRow.Name || cleanSymbol)
+              }]
+            }
+          })
+        });
+
+        if (!feedRes.ok) {
+          throw new BrokerError(
+            'BROKER_UNAVAILABLE',
+            `5paisa option market feed HTTP ${feedRes.status}: ${feedRes.statusText}`,
+            'FIVE_PAISA',
+            this.environment
+          );
+        }
+
+        const feedData = await feedRes.json();
+        const candidates = [
+          feedData?.body?.Data,
+          feedData?.body?.MarketFeedData,
+          feedData?.body?.MarketFeed,
+          feedData?.Data,
+          feedData?.MarketFeedData
+        ];
+        const item: any = candidates.flatMap(v => Array.isArray(v) ? v : v ? [v] : [])
+          .find((candidate: any) =>
+            String(candidate?.ScripCode || '') === String(optionRow.ScripCode || '')
+            || this.normalizeScripLookupKey(candidate?.ScripData) === this.normalizeScripLookupKey(optionRow.ScripData)
+            || this.normalizeScripLookupKey(candidate?.Symbol) === this.normalizeScripLookupKey(cleanSymbol)
+          );
+
+        const ltp = Number(item?.LastRate ?? item?.LTP ?? item?.Rate ?? 0);
+        const bid = Number(item?.BidPrice ?? item?.BidRate ?? 0);
+        const ask = Number(item?.AskPrice ?? item?.OfferRate ?? item?.OffRate ?? 0);
+        const effectiveBid = bid > 0 ? bid : ltp;
+        const effectiveAsk = ask > 0 ? ask : ltp;
+
+        if (!(ltp > 0 || (effectiveBid > 0 && effectiveAsk > 0))) {
+          throw new BrokerError(
+            'UNAVAILABLE',
+            `5paisa returned no authoritative live option quote for ${symbol}.`,
+            'FIVE_PAISA',
+            this.environment
+          );
+        }
+
+        const anchor = ltp > 0 ? ltp : (effectiveBid + effectiveAsk) / 2;
+        return {
+          symbol,
+          bid: effectiveBid > 0 ? effectiveBid : anchor,
+          ask: effectiveAsk > 0 ? effectiveAsk : anchor,
+          spread: Math.max(0, (effectiveAsk > 0 ? effectiveAsk : anchor) - (effectiveBid > 0 ? effectiveBid : anchor)),
+          timestamp: Date.now(),
+          source: '5PAISA_LIVE_OPTION_FEED',
+          environment: 'LIVE',
+          status: 'FRESH'
+        };
       }
 
       const feedRes = await fetch('https://OpenAPI.5paisa.com/VendorsAPI/Service1.svc/V1/MarketFeed', {
@@ -831,11 +941,11 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
           body: {
             Count: '1',
             MarketFeedData: [{
-              Exch: symbol.startsWith('BSE:') ? 'B' : 'N',
+              Exch: cleanSymbol.startsWith('BSE:') ? 'B' : 'N',
               ExchType: 'C',
-              ScripData: symbol.replace(/^NSE:|^BSE:/, '').endsWith('_EQ')
-                ? symbol.replace(/^NSE:|^BSE:/, '')
-                : `${symbol.replace(/^NSE:|^BSE:/, '')}_EQ`
+              ScripData: cleanSymbol.endsWith('_EQ')
+                ? cleanSymbol
+                : `${cleanSymbol}_EQ`
             }]
           }
         })
@@ -876,6 +986,7 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
     }
   }
 
+
   async getInstruments(): Promise<BrokerInstrument[]> {
     await this.ensureActiveSession();
     if (!this.config.accessToken) throw new BrokerError('AUTHENTICATION_FAILED', '5paisa access token is unavailable.', 'FIVE_PAISA', this.environment);
@@ -911,8 +1022,36 @@ export abstract class FivePaisaBrokerAdapter extends BaseBrokerAdapter {
   }
 
   async getInstrument(symbol: string): Promise<BrokerInstrument | null> {
+    const normalized = symbol.replace(/^NSE:|^BSE:/, '').trim().toUpperCase();
+
+    // Resolve exact derivative contracts directly from the authoritative
+    // ScripMaster. getInstruments() intentionally returns only the small
+    // terminal universe, not every option contract.
+    if (/(?:CE|PE)$/i.test(normalized)) {
+      const row = await this.findExactScripMasterRow(normalized, 'D');
+      if (!row) return null;
+
+      const optionTypeText = String(
+        row.OptionType ?? row.ScripType ?? row.CPType ?? row.Option ?? row.Type ?? ''
+      ).toUpperCase();
+      const rawSymbol = String(row.ScripData || row.Name || row.TradingSymbol || row.Symbol || normalized);
+
+      return {
+        symbol: rawSymbol,
+        market: 'INDIAN_OPTIONS',
+        pipSize: Number(row.TickSize || row.Tick || 0.05),
+        minQuantity: Math.max(1, Number(row.LotSize || row.Lot || row.Quantity || 1)),
+        maxQuantity: Math.max(1, Number(row.LotSize || row.Lot || row.Quantity || 1)) * 100,
+        stepQuantity: Math.max(1, Number(row.LotSize || row.Lot || row.Quantity || 1)),
+        digits: 2,
+        supportedOrderTypes: ['MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT'],
+        baseCurrency: 'INR',
+        quoteCurrency: 'INR',
+        brokerInstrumentId: String(row.ScripCode || '')
+      };
+    }
+
     const instruments = await this.getInstruments();
-    const normalized = symbol.replace(/^NSE:|^BSE:/, '').toUpperCase();
     return instruments.find(i => i.symbol.replace(/^NSE:|^BSE:/, '').toUpperCase() === normalized) || null;
   }
 
