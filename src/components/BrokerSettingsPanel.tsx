@@ -67,6 +67,10 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   const [maxIndianInr, setMaxIndianInr] = useState(1000000);
   const [savingLimits, setSavingLimits] = useState(false);
   const [limitMessage, setLimitMessage] = useState('');
+  const [forexStopLossPips, setForexStopLossPips] = useState(20);
+  const [forexTakeProfitPips, setForexTakeProfitPips] = useState(40);
+  const [savingForexPipTargets, setSavingForexPipTargets] = useState(false);
+  const [forexPipTargetsMessage, setForexPipTargetsMessage] = useState('');
   const [autoLiveMinSignalScore, setAutoLiveMinSignalScore] = useState(75);
   const [autoLiveMaxTradesPerPair, setAutoLiveMaxTradesPerPair] = useState(4);
   const [savingAutoLiveControls, setSavingAutoLiveControls] = useState(false);
@@ -114,6 +118,12 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         }
         if (Number.isFinite(Number(config.autoLiveMaxTradesPerPair))) {
           setAutoLiveMaxTradesPerPair(Number(config.autoLiveMaxTradesPerPair));
+        }
+        if (Number.isFinite(Number(config.forexStopLossPips))) {
+          setForexStopLossPips(Number(config.forexStopLossPips));
+        }
+        if (Number.isFinite(Number(config.forexTakeProfitPips))) {
+          setForexTakeProfitPips(Number(config.forexTakeProfitPips));
         }
         if (Array.isArray(config.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0) {
           setAutoLiveForexPairs(config.autoLiveForexPairs);
@@ -310,6 +320,75 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         </div>
       </div>
 
+      <div id="forex_pip_targets_settings" className="bg-slate-900 border border-cyan-900/60 rounded-xl p-5">
+        <div className="flex items-start gap-3">
+          <Sliders className="w-5 h-5 text-cyan-400 mt-0.5" />
+          <div className="flex-1">
+            <div className="text-sm font-bold text-white">Forex Stop Loss / Take Profit Margins</div>
+            <p className="text-xs text-slate-400 mt-1">
+              Set the execution distance from the actual market entry in pips. At order placement, Goldcrest reads these values and calculates Stop Loss and Take Profit from the authoritative broker entry price.
+            </p>
+            <div className="grid md:grid-cols-2 gap-4 mt-4">
+              <label className="block space-y-1">
+                <span className="text-[10px] uppercase text-slate-500 font-mono">Stop Loss</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" min="0.1" max="10000" step="0.1" value={forexStopLossPips} onChange={e => setForexStopLossPips(Number(e.target.value))} className={inputClass} />
+                  <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap">PIPS</span>
+                </div>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[10px] uppercase text-slate-500 font-mono">Take Profit</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" min="0.1" max="10000" step="0.1" value={forexTakeProfitPips} onChange={e => setForexTakeProfitPips(Number(e.target.value))} className={inputClass} />
+                  <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap">PIPS</span>
+                </div>
+              </label>
+            </div>
+            <div className="mt-3 text-[10px] text-slate-600 font-mono">
+              BUY: SL below entry / TP above entry · SELL: SL above entry / TP below entry.
+            </div>
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                type="button"
+                disabled={savingForexPipTargets}
+                onClick={async () => {
+                  const stopLoss = Number(forexStopLossPips);
+                  const takeProfit = Number(forexTakeProfitPips);
+                  if (!Number.isFinite(stopLoss) || stopLoss <= 0 || stopLoss > 10000) {
+                    setForexPipTargetsMessage('Stop Loss must be greater than 0 and no greater than 10000 pips.');
+                    return;
+                  }
+                  if (!Number.isFinite(takeProfit) || takeProfit <= 0 || takeProfit > 10000) {
+                    setForexPipTargetsMessage('Take Profit must be greater than 0 and no greater than 10000 pips.');
+                    return;
+                  }
+                  setSavingForexPipTargets(true);
+                  setForexPipTargetsMessage('');
+                  try {
+                    const res = await fetch('/api/config', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ forexStopLossPips: stopLoss, forexTakeProfitPips: takeProfit })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Failed to save Forex pip settings.');
+                    setForexPipTargetsMessage(`Forex margins saved: SL ${stopLoss} pips / TP ${takeProfit} pips. New orders will use these values.`);
+                    onRefreshGlobal?.();
+                  } catch (err: any) {
+                    setForexPipTargetsMessage(err.message || 'Failed to save Forex pip settings.');
+                  } finally {
+                    setSavingForexPipTargets(false);
+                  }
+                }}
+                className="px-4 py-2 rounded bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold"
+              >
+                {savingForexPipTargets ? 'SAVING…' : 'SAVE FOREX MARGINS'}
+              </button>
+              {forexPipTargetsMessage && <span className="text-[10px] text-slate-400 font-mono">{forexPipTargetsMessage}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
       <div className="bg-slate-900 border border-emerald-900/60 rounded-xl p-5">
         <div className="flex items-start gap-3">
           <Sliders className="w-5 h-5 text-emerald-400 mt-0.5" />
