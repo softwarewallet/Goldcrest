@@ -665,6 +665,7 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
     const requestedIndian = req.body?.maxTradeValueIndianInr;
     const requestedAutoLiveMinSignalScore = req.body?.autoLiveMinSignalScore;
     const requestedAutoLiveMaxTradesPerPair = req.body?.autoLiveMaxTradesPerPair;
+    const requestedMaxOpenPositions = req.body?.maxOpenPositions;
     const requestedForexStopLossPips = req.body?.forexStopLossPips;
     const requestedForexTakeProfitPips = req.body?.forexTakeProfitPips;
     const requestedForexPairs = req.body?.autoLiveForexPairs;
@@ -697,6 +698,14 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
         return res.status(400).json({ error: 'autoLiveMaxTradesPerPair must be an integer from 1 to 20.' });
       }
       updates.autoLiveMaxTradesPerPair = value;
+    }
+
+    if (requestedMaxOpenPositions !== undefined) {
+      const value = Number(requestedMaxOpenPositions);
+      if (!Number.isInteger(value) || value < 1 || value > 100) {
+        return res.status(400).json({ error: 'maxOpenPositions must be an integer from 1 to 100.' });
+      }
+      updates.maxOpenPositions = value;
     }
 
     if (requestedForexStopLossPips !== undefined) {
