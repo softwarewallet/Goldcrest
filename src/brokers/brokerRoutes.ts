@@ -12,7 +12,7 @@ import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, mar
 import { reconcileExecutionIntent } from '../services/executionReconciliationService';
 import { getSystemConfig } from '../services/configService';
 import { executeQuery, executeRun } from '../database/db';
-import { normalizePriceToThreeDigits, normalizePriceToInstrumentDigits, sizeForexOrderToMaxTradeValue } from './safety/TradeSizing';
+import { calculateForexPipTargets, normalizePriceToThreeDigits, normalizePriceToInstrumentDigits, sizeForexOrderToMaxTradeValue } from './safety/TradeSizing';
 import { liveRuntimeLog } from '../services/liveRuntimeLog';
 import { autoTradingService } from '../services/autoTradingService';
 
@@ -870,6 +870,42 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
     }
     orderReq.price = normalizePriceToInstrumentDigits(Number(orderReq.price), precisionInstrument.digits);
 
+    // Operator-configured Forex pip margins are authoritative for every new
+    // Forex order, including Trigger Now. This keeps manual and Auto Live
+    // execution on the same Stop Loss / Take Profit contract.
+    if (orderReq.market === 'FOREX') {
+      const config = getSystemConfig();
+      try {
+        const pipTargets = calculateForexPipTargets(
+          orderReq.side,
+          Number(orderReq.price),
+          precisionInstrument.pipSize,
+          config.forexStopLossPips,
+          config.forexTakeProfitPips
+        );
+        orderReq.stopLoss = pipTargets.stopLoss;
+        orderReq.takeProfit = pipTargets.takeProfit;
+
+        liveRuntimeLog('INFO', 'FOREX_PIP_TARGETS_APPLIED', {
+          broker,
+          symbol: orderReq.symbol,
+          side: orderReq.side,
+          entryPrice: orderReq.price,
+          pipSize: pipTargets.pipSize,
+          stopLossPips: pipTargets.stopLossPips,
+          takeProfitPips: pipTargets.takeProfitPips,
+          stopLoss: pipTargets.stopLoss,
+          takeProfit: pipTargets.takeProfit
+        });
+      } catch (targetError: any) {
+        return res.status(400).json({
+          error: 'Invalid Forex Stop Loss / Take Profit pip configuration.',
+          code: 'INVALID_FOREX_PIP_TARGETS',
+          details: [targetError?.message || String(targetError)]
+        });
+      }
+    }
+
     // Hard position-sizing boundary: calculate the Forex quantity directly from
     // the operator-configured maximum trade value immediately before execution.
     // The requested quantity is audit metadata only; it cannot cap the result.
@@ -908,11 +944,11 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       }
     }
 
-    // Auto-populate Stop Loss (Check 9 Compliance) and Take Profit if missing or invalid
-    if (!orderReq.stopLoss || orderReq.stopLoss <= 0) {
-      const isForex = orderReq.market === 'FOREX';
+    // Forex SL/TP were already calculated from the operator pip settings
+    // above. Preserve the existing fallback behavior for non-Forex orders.
+    if (orderReq.market !== 'FOREX' && (!orderReq.stopLoss || orderReq.stopLoss <= 0)) {
       const referencePrice = orderReq.price;
-      const pct = isForex ? 0.005 : 0.01; // 50 pips (0.5%) for Forex, 1.0% for others
+      const pct = 0.01;
       if (orderReq.side === 'BUY') {
         orderReq.stopLoss = normalizePriceToInstrumentDigits(referencePrice * (1 - pct), precisionInstrument.digits);
         if (!orderReq.takeProfit || orderReq.takeProfit <= 0) {
@@ -926,8 +962,8 @@ brokerRouter.post('/order', async (req: Request, res: Response) => {
       }
     }
 
-    // Normalize caller-provided SL/TP as well. This covers orders that arrive
-    // with explicit risk prices instead of auto-populated values.
+    // Normalize final broker-facing SL/TP after the pip settings or fallback
+    // calculation has been applied.
     if (orderReq.stopLoss !== undefined && Number(orderReq.stopLoss) > 0) {
       orderReq.stopLoss = normalizePriceToInstrumentDigits(Number(orderReq.stopLoss), precisionInstrument.digits);
     }
