@@ -45,6 +45,73 @@ export function normalizePriceToInstrumentDigits(price: number, digits?: number)
   return Number(price.toFixed(GOLD_CREST_PRICE_DIGITS));
 }
 
+export interface ForexPipTargets {
+  stopLoss: number;
+  takeProfit: number;
+  stopLossPips: number;
+  takeProfitPips: number;
+  pipSize: number;
+}
+
+/**
+ * Build Forex Stop Loss / Take Profit from the operator-configured pip
+ * distances and the authoritative execution entry price.
+ *
+ * BUY:
+ *   SL = entry - stopLossPips * pipSize
+ *   TP = entry + takeProfitPips * pipSize
+ *
+ * SELL:
+ *   SL = entry + stopLossPips * pipSize
+ *   TP = entry - takeProfitPips * pipSize
+ *
+ * The resulting prices use Goldcrest's global three-decimal execution policy.
+ */
+export function calculateForexPipTargets(
+  side: 'BUY' | 'SELL',
+  entryPrice: number,
+  pipSize: number,
+  stopLossPips: number,
+  takeProfitPips: number
+): ForexPipTargets {
+  if (side !== 'BUY' && side !== 'SELL') {
+    throw new Error('INVALID_SIDE: Forex side must be BUY or SELL.');
+  }
+  if (!Number.isFinite(entryPrice) || entryPrice <= 0) {
+    throw new Error('INVALID_PRICE: Forex entry price must be a positive finite number.');
+  }
+  if (!Number.isFinite(pipSize) || pipSize <= 0) {
+    throw new Error('INVALID_PIP_SIZE: Broker instrument pip size is unavailable or invalid.');
+  }
+  if (!Number.isFinite(stopLossPips) || stopLossPips <= 0) {
+    throw new Error('INVALID_STOP_LOSS_PIPS: Stop Loss in pips must be greater than zero.');
+  }
+  if (!Number.isFinite(takeProfitPips) || takeProfitPips <= 0) {
+    throw new Error('INVALID_TAKE_PROFIT_PIPS: Take Profit in pips must be greater than zero.');
+  }
+
+  const stopDistance = stopLossPips * pipSize;
+  const takeProfitDistance = takeProfitPips * pipSize;
+  const stopLoss = side === 'BUY'
+    ? entryPrice - stopDistance
+    : entryPrice + stopDistance;
+  const takeProfit = side === 'BUY'
+    ? entryPrice + takeProfitDistance
+    : entryPrice - takeProfitDistance;
+
+  if (!(stopLoss > 0) || !(takeProfit > 0)) {
+    throw new Error('INVALID_PIP_TARGETS: Calculated Stop Loss or Take Profit is not positive.');
+  }
+
+  return {
+    stopLoss: normalizePriceToThreeDigits(stopLoss),
+    takeProfit: normalizePriceToThreeDigits(takeProfit),
+    stopLossPips,
+    takeProfitPips,
+    pipSize
+  };
+}
+
 /**
  * Direct Forex order sizing.
  *
