@@ -208,10 +208,8 @@ const realExposureOverage = await liveTradingGate.evaluate(gateAdapter, {
   maxOpenPositions: 5
 });
 
-// Condition 12 is intentionally disabled while the exposure root cause is investigated.
-// Exposure overage must therefore not reject the order or mark the gate check failed.
-assert.equal(realExposureOverage.checks.maxExposureNotExceeded, true);
-assert.equal(realExposureOverage.failedReasons.some(reason => reason.includes('Condition 12 Failed')), false);
+assert.equal(realExposureOverage.checks.maxExposureNotExceeded, false);
+assert.ok(realExposureOverage.failedReasons.some(reason => reason.includes('Condition 12 Failed')));
 
 const realTradeOverage = await liveTradingGate.evaluate(gateAdapter, {
   order: {
