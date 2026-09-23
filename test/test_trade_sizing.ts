@@ -187,6 +187,53 @@ const exactBoundary = await liveTradingGate.evaluate(gateAdapter, {
 assert.equal(exactBoundary.checks.maxExposureNotExceeded, true);
 assert.equal(exactBoundary.checks.maximumTradeValueCheckPassed, true);
 
+// Condition 13B regression: it must use the broker's authoritative CURRENT
+// position count, not the stale caller snapshot. A USD/CAD order can be
+// blocked by the account-wide limit even when USD/CAD itself has zero positions.
+const fivePositionAdapter: any = {
+  ...gateAdapter,
+  getPositions: async () => [
+    { symbol: 'EUR/GBP' },
+    { symbol: 'NZD/USD' },
+    { symbol: 'USD/CHF' },
+    { symbol: 'AUD/JPY' },
+    { symbol: 'EUR/AUD' }
+  ]
+};
+
+const staleCallerCount = await liveTradingGate.evaluate(fivePositionAdapter, {
+  order: {
+    market: 'FOREX',
+    symbol: 'USD/CAD',
+    side: 'BUY',
+    orderType: 'MARKET',
+    quantity: 200,
+    price: 1,
+    stopLoss: 0.99
+  },
+  signalAgeMs: 1000,
+  currentQuote: boundaryQuote,
+  isMarketOpen: true,
+  dailyRealizedLoss: 0,
+  dailyLossLimit: 100,
+  totalAccountExposure: 0,
+  maxAllowedExposure: 1000,
+  // Deliberately stale: broker actually has 5 current positions.
+  activePositionsCount: 0,
+  maxOpenPositions: 5,
+  activePairPositionsCount: 0,
+  maxPairPositions: 5
+});
+
+assert.equal(staleCallerCount.checks.maxExposureNotExceeded, true);
+assert.equal(staleCallerCount.checks.duplicatePositionCheckPassed, true);
+assert.equal(staleCallerCount.checks.maxOpenPositionsCheckPassed, false);
+assert.ok(
+  staleCallerCount.failedReasons.some(
+    reason => reason.includes('Condition 13B Failed') && reason.includes('Current account positions: 5')
+  )
+);
+
 const realExposureOverage = await liveTradingGate.evaluate(gateAdapter, {
   order: {
     market: 'FOREX',
