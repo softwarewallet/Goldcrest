@@ -778,7 +778,21 @@ async function fetchFromJBlanked(): Promise<{
     }
   }
 
-  const normalized = deduplicateArticles(articles);
+  // The MQL5 and Forex Factory calendar endpoints can expose the same
+  // economic event. Deduplicate by event identity before provider diagnostics
+  // are calculated so the provider cannot inflate its fresh-article count when
+  // both endpoints return the same event.
+  const uniqueEvents = new Map<string, LiveNewsArticle>();
+  for (const article of articles) {
+    const eventKey = [
+      article.title.trim().toLowerCase(),
+      article.publishedAt || ''
+    ].join('|');
+    if (!uniqueEvents.has(eventKey)) {
+      uniqueEvents.set(eventKey, article);
+    }
+  }
+  const normalized = deduplicateArticles([...uniqueEvents.values()]);
   return {
     status: normalized.length > 0
       ? 'LIVE'
