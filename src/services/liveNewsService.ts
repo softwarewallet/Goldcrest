@@ -147,7 +147,7 @@ const REQUEST_TIMEOUT_MS = Math.max(
 );
 const GDELT_TIMEOUT_MS = Math.max(
   5_000,
-  Number(process.env.GOLDCREST_NEWS_GDELT_TIMEOUT_MS || 8_000)
+  Number(process.env.GOLDCREST_NEWS_GDELT_TIMEOUT_MS || 12_000)
 );
 const GDELT_FAILURE_BACKOFF_MS = Math.max(
   30_000,
@@ -255,8 +255,8 @@ function normalizePairs(pairs: string[] | undefined): string[] {
 
 
 function buildGdeltQuery(pairs: string[]): string {
-  // Keep GDELT deliberately narrow. A large macro OR query can become an
-  // expensive full-text search and routinely hit the provider timeout.
+  // Keep GDELT narrow enough to answer quickly. The previous universe-wide OR
+  // query was prone to provider timeouts and mixed unrelated currencies.
   const eventTerms = [
     '"Federal Reserve"', 'FOMC', 'ECB', 'BOJ', '"Bank of England"',
     'RBA', 'RBNZ', '"Bank of Canada"', 'SNB', 'CPI',
@@ -264,9 +264,14 @@ function buildGdeltQuery(pairs: string[]): string {
   ];
   const currencies = [...getRelevantCurrencies(pairs)]
     .flatMap(currency => CURRENCY_NEWS_ALIASES[currency] || [currency.toLowerCase()])
-    .slice(0, 12);
-  const terms = [...new Set([...eventTerms, ...currencies])];
-  return `(${terms.map(term => term.includes(' ') ? term : term).join(' OR ')})`;
+    .slice(0, 8);
+
+  const eventQuery = `(${eventTerms.join(' OR ')})`;
+  const currencyQuery = currencies.length > 0
+    ? `(${[...new Set(currencies)].map(term => term.includes(' ') ? `"${term}"` : term).join(' OR ')})`
+    : '';
+
+  return currencyQuery ? `${eventQuery} AND ${currencyQuery}` : eventQuery;
 }
 
 function articleText(article: LiveNewsArticle): string {
@@ -677,8 +682,8 @@ async function fetchFromGdelt(query: string): Promise<{ status: LiveNewsProvider
   url.searchParams.set('query', query);
   url.searchParams.set('mode', 'artlist');
   url.searchParams.set('format', 'json');
-  url.searchParams.set('timespan', process.env.GOLDCREST_NEWS_TIMESPAN || '24h');
-  const configuredMaxRecords = Number(process.env.GOLDCREST_NEWS_MAX_RECORDS || 50);
+  url.searchParams.set('timespan', process.env.GOLDCREST_NEWS_TIMESPAN || '6h');
+  const configuredMaxRecords = Number(process.env.GOLDCREST_NEWS_MAX_RECORDS || 30);
   url.searchParams.set('maxrecords', String(Math.min(75, Math.max(1, Number.isFinite(configuredMaxRecords) ? configuredMaxRecords : 50))));
   url.searchParams.set('sort', 'datedesc');
 
