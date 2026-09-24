@@ -44,7 +44,7 @@ for (const row of rows) {
     [
       row.id, row.symbol, now, now, row.direction, row.score, row.regime, row.session,
       row.pnl, row.outcome, row.duration, row.mfe, row.mae,
-      row.news.status || null, row.news, now
+      JSON.parse(row.news).status || null, row.news, now
     ]
   );
 }
