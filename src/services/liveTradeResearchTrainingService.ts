@@ -10,11 +10,6 @@ export interface ResearchTrainingRow extends ResearchFeatureRow {
   label7dDirection: 'UP' | 'DOWN' | 'FLAT' | null;
 }
 
-function finite(value: unknown): number | null {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
 function direction(returnPct: number | null): 'UP' | 'DOWN' | 'FLAT' | null {
   if (returnPct === null) return null;
   if (returnPct > 0) return 'UP';
@@ -42,8 +37,11 @@ async function buildTrainingRows(features: ResearchFeatureRow[]): Promise<Resear
   return features.map(feature => {
     const bars = candles.get(feature.symbol) || [];
     const future = bars.filter(bar => bar.timestamp > feature.signalTimestamp);
+    // Use the first authoritative post-signal Daily close as the forward-return
+    // baseline. Each label horizon then compares that baseline with the close
+    // at the corresponding subsequent trading-day offset.
     const base = future[0]?.close ?? null;
-    const closeAt = (offset: number) => future[offset - 1]?.close ?? null;
+    const closeAt = (offset: number) => future[offset]?.close ?? null;
     const calc = (offset: number) => {
       const target = closeAt(offset);
       if (base === null || target === null || base <= 0) return null;
