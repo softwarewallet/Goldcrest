@@ -5,6 +5,7 @@ import {
   BrokerAccountInfo,
   BrokerInstrument,
   BrokerStatus,
+  NormalizedPositionClose,
   BrokerType,
   ConnectionTestResult,
   NormalizedOrder,
@@ -874,7 +875,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     });
   }
 
-  async getPositionHistory(positionId: string, fromTimestamp: number, toTimestamp: number) {
+  async getPositionHistory(positionId: string, fromTimestamp: number, toTimestamp: number): Promise<NormalizedPositionClose[]> {
     this.syncConfig();
     this.validateCredentials();
     const raw = await this.resolveRawAccount();
@@ -928,7 +929,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
           brokerOrderId: deal.orderId !== undefined ? String(deal.orderId) : undefined
         };
       })
-      .filter(Boolean);
+      .filter((value): value is NormalizedPositionClose => value !== null);
   }
 
   async getHistoricalCandles(symbol: string, timeframe: string, limit: number) {
