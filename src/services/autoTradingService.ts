@@ -921,6 +921,7 @@ class AutoTradingService {
 
       // Persist the complete model state at decision time. This is research
       // telemetry only and does not participate in the execution decision.
+      try {
       await recordLiveTradeResearchSignal({
         signalId: signal.id,
         symbol: pair,
@@ -954,6 +955,14 @@ class AutoTradingService {
           lifecycleCapture: 'SIGNAL_TIME'
         }
       });
+      } catch (researchError: any) {
+        liveRuntimeLog('WARN', 'LIVE_TRADE_RESEARCH_TELEMETRY_FAILED', {
+          signalId: signal.id,
+          pair,
+          operation: 'SIGNAL',
+          error: researchError?.message || String(researchError)
+        });
+      }
 
       // The signal engine has multiple directional categories (BUY, STRONG_BUY,
       // WATCH_BUY and their SELL equivalents). The scanner already normalizes
@@ -1050,6 +1059,7 @@ return;
       }
       const entryPrice = signalSide === 'BUY' ? quote.ask : quote.bid;
 
+      try {
       await updateLiveTradeResearchQuote({
         signalId: signal.id,
         quote: {
@@ -1065,6 +1075,14 @@ return;
           selectedEntryPrice: entryPrice
         }
       });
+      } catch (researchError: any) {
+        liveRuntimeLog('WARN', 'LIVE_TRADE_RESEARCH_TELEMETRY_FAILED', {
+          signalId: signal.id,
+          pair,
+          operation: 'QUOTE',
+          error: researchError?.message || String(researchError)
+        });
+      }
 
       // Auto Live submits a MARKET order using the authoritative broker quote
       // available at the dispatch boundary. The signal entry zone is an
@@ -1360,18 +1378,28 @@ return;
         }
       );
 
+      try {
       await updateLiveTradeResearchExecution({
         signalId: signal.id,
         status: result.executed ? 'FILLED' : 'BLOCKED',
         code: result.code,
         reason: result.reason,
         brokerOrderId: result.order?.brokerOrderId || result.order?.id,
+        brokerPositionId: result.order?.fillEvents?.find((fill: any) => fill?.brokerPositionId)?.brokerPositionId,
         executedEntryPrice: result.order?.averageFillPrice ?? result.order?.price,
         executedQuantity: result.order?.filledQuantity ?? result.order?.quantity,
         commission: result.order?.commission,
         brokerStatus: result.order?.status,
         executionTimestamp: result.order?.timestamp || Date.now()
       });
+      } catch (researchError: any) {
+        liveRuntimeLog('WARN', 'LIVE_TRADE_RESEARCH_TELEMETRY_FAILED', {
+          signalId: signal.id,
+          pair,
+          operation: 'EXECUTION',
+          error: researchError?.message || String(researchError)
+        });
+      }
 
       if (result.executed) {
         this.finishExecution('TRADE_EXECUTED', pair + ' ' + order.side + ' trade confirmed by the execution engine.', {
