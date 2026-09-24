@@ -163,6 +163,9 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [activeTab, setActiveTab] = useState<'cockpit' | 'positions' | 'signals' | 'options' | 'execution' | 'controls'>('cockpit');
   const [autoStatus, setAutoStatus] = useState<AutoTradingStatusSnapshot | null>(null);
   const [autoStatusError, setAutoStatusError] = useState<string | null>(null);
+  const [dailyLossLimitPct, setDailyLossLimitPct] = useState<number>(3);
+  const [dailyLossSaving, setDailyLossSaving] = useState<boolean>(false);
+  const [dailyLossSaveMessage, setDailyLossSaveMessage] = useState<string | null>(null);
 
   // Helper to append telemetry console logs
   const addLog = useCallback((type: 'info' | 'success' | 'error' | 'warning' | 'nlp', message: string) => {
@@ -262,7 +265,15 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     let mounted = true;
     const fetchAutoStatus = async () => {
       try {
-        const res = await fetch('/api/brokers/controls', { cache: 'no-store' });
+        const [res, configRes] = await Promise.all([
+          fetch('/api/brokers/controls', { cache: 'no-store' }),
+          fetch('/api/config', { cache: 'no-store' })
+        ]);
+        if (configRes.ok) {
+          const config = await safeParseJson(configRes);
+          const configuredLimit = Number(config?.maxDailyLossPct);
+          if (Number.isFinite(configuredLimit) && configuredLimit > 0) setDailyLossLimitPct(configuredLimit);
+        }
         if (!res.ok) throw new Error('Auto Live status endpoint returned HTTP ' + res.status);
         const data = await safeParseJson(res);
         if (mounted && data?.autoTrading) {
@@ -277,6 +288,33 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     const statusTimer = setInterval(fetchAutoStatus, 2000);
     return () => { mounted = false; clearInterval(statusTimer); };
   }, [safeParseJson]);
+
+  const saveDailyLossLimit = useCallback(async () => {
+    const value = Number(dailyLossLimitPct);
+    if (!Number.isFinite(value) || value <= 0 || value > 100) {
+      setDailyLossSaveMessage('Daily loss limit must be greater than 0% and no greater than 100%.');
+      return;
+    }
+    setDailyLossSaving(true);
+    setDailyLossSaveMessage(null);
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxDailyLossPct: value })
+      });
+      const data = await safeParseJson(res);
+      if (!res.ok) throw new Error(data?.error || data?.message || 'Failed to save daily loss limit.');
+      setDailyLossLimitPct(Number(data.maxDailyLossPct));
+      setDailyLossSaveMessage(`Saved: ${Number(data.maxDailyLossPct).toFixed(2)}% of account balance.`);
+      addLog('success', `Daily loss limit updated to ${Number(data.maxDailyLossPct).toFixed(2)}%.`);
+    } catch (err: any) {
+      setDailyLossSaveMessage(err?.message || 'Failed to save daily loss limit.');
+      addLog('error', `Daily loss limit update failed: ${err?.message || String(err)}`);
+    } finally {
+      setDailyLossSaving(false);
+    }
+  }, [dailyLossLimitPct, safeParseJson, addLog]);
 
   // Initial load and polling setup
   useEffect(() => {
@@ -732,6 +770,22 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
       {activeTab === 'controls' && (
         <div className="grid lg:grid-cols-2 gap-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
+            <div>
+              <div className="text-sm font-bold text-white font-mono">Risk Controls</div>
+              <div className="text-[10px] text-slate-500 mt-1">Daily loss protection is operator-configurable and persists across server restarts.</div>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-2">Daily Loss Limit (%)</label>
+              <div className="flex gap-2 items-center">
+                <input type="number" min="0.1" max="100" step="0.1" value={dailyLossLimitPct} onChange={(e) => setDailyLossLimitPct(Number(e.target.value))} className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-mono text-white outline-none focus:border-cyan-500" />
+                <span className="text-slate-400 font-mono">%</span>
+                <button type="button" onClick={saveDailyLossLimit} disabled={dailyLossSaving} className="shrink-0 rounded-lg border border-cyan-700 bg-cyan-950/40 px-3 py-2 text-xs font-mono text-cyan-300 disabled:opacity-50">{dailyLossSaving ? 'Saving...' : 'Save'}</button>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-2">The live safety gate calculates the actual daily loss threshold from the current account balance using this percentage.</div>
+              {dailyLossSaveMessage && <div className="text-[10px] text-emerald-300 mt-2">{dailyLossSaveMessage}</div>}
+            </div>
+          </div>
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4"><div className="text-sm font-bold text-white font-mono mb-3">Auto Live Status</div><div className="space-y-3 text-xs font-mono">
             <div className="flex justify-between"><span className="text-slate-500">Engine State</span><span className="text-white">{autoStatus?.state || 'LOADING'}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Autonomous Permission</span><span className={autoStatus?.autonomousPermission ? "text-emerald-400" : "text-rose-400"}>{autoStatus?.autonomousPermission ? 'ALLOWED' : 'BLOCKED'}</span></div>
