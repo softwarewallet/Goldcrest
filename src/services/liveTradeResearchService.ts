@@ -270,12 +270,14 @@ export async function getLiveTradeResearch(signalId?: string): Promise<any[]> {
 export async function updateLiveTradeResearchMark(params: {
   signalId: string;
   currentPnl: number;
-  currentPrice?: number;
+  favorablePrice?: number;
+  adversePrice?: number;
   observedAt?: number;
 }): Promise<void> {
   const observedAt = Number(params.observedAt || Date.now());
   const currentPnl = Number(params.currentPnl);
-  const currentPrice = Number(params.currentPrice);
+  const favorablePrice = Number(params.favorablePrice);
+  const adversePrice = Number(params.adversePrice);
 
   if (!Number.isFinite(currentPnl)) return;
 
@@ -294,7 +296,7 @@ export async function updateLiveTradeResearchMark(params: {
              ELSE max_favorable_price
            END,
            max_adverse_price = CASE
-             WHEN ? > 0 AND (max_adverse_price IS NULL OR ? < max_adverse_price) THEN ?
+             WHEN ? > 0 AND (max_adverse_price IS NULL OR ? > max_adverse_price) THEN ?
              ELSE max_adverse_price
            END,
            holding_duration_ms = CASE
@@ -306,8 +308,8 @@ export async function updateLiveTradeResearchMark(params: {
     [
       currentPnl, currentPnl,
       currentPnl, currentPnl,
-      currentPrice, currentPrice, currentPrice,
-      currentPrice, currentPrice, currentPrice,
+      favorablePrice, favorablePrice, favorablePrice,
+      adversePrice, adversePrice, adversePrice,
       observedAt,
       observedAt,
       params.signalId
