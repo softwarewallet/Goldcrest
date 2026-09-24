@@ -8,7 +8,7 @@ import {
 const prefix = 'training-test-';
 const signalId = prefix + '1';
 const now = Date.now();
-const base = now - 10 * 86_400_000;
+const base = now;
 
 await executeRun('DELETE FROM live_trade_research WHERE signal_id LIKE ?', [prefix + '%']);
 await executeRun('DELETE FROM live_trade_research_training WHERE signal_id LIKE ?', [prefix + '%']).catch(() => undefined);
