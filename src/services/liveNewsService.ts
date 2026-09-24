@@ -12,7 +12,7 @@ export interface LiveNewsArticle {
   topics?: string[];
 }
 
-export type LiveNewsSource = 'FINNHUB' | 'NEWSAPI' | 'JBLANKED' | 'GOOGLE_NEWS_RSS' | 'NONE';
+export type LiveNewsSource = 'FINNHUB' | 'MASSIVE' | 'CURRENTS' | 'GOOGLE_NEWS_RSS' | 'NONE';
 export type LiveNewsProviderStatus = 'LIVE' | 'NO_RESULTS' | 'STALE' | 'RATE_LIMITED' | 'UNCONFIGURED' | 'ERROR';
 
 export interface LiveNewsProviderDiagnostic {
@@ -49,14 +49,14 @@ export interface LiveNewsSnapshot {
   queryPairs?: string[];
   providerStatus?: {
     FINNHUB: LiveNewsProviderStatus;
-    NEWSAPI: LiveNewsProviderStatus;
-    JBLANKED: LiveNewsProviderStatus;
+    MASSIVE: LiveNewsProviderStatus;
+    CURRENTS: LiveNewsProviderStatus;
     GOOGLE_NEWS_RSS: LiveNewsProviderStatus;
   };
   providerDiagnostics?: {
     FINNHUB: LiveNewsProviderDiagnostic;
-    NEWSAPI: LiveNewsProviderDiagnostic;
-    JBLANKED: LiveNewsProviderDiagnostic;
+    MASSIVE: LiveNewsProviderDiagnostic;
+    CURRENTS: LiveNewsProviderDiagnostic;
     GOOGLE_NEWS_RSS: LiveNewsProviderDiagnostic;
   };
   pairRisk?: Record<string, {
@@ -142,8 +142,8 @@ const NEWS_HIGH_IMPACT_ACTIVE_WINDOW_MS = Math.max(
 );
 
 const FINNHUB_ENDPOINT = process.env.FINNHUB_BASE_URL || 'https://finnhub.io/api/v1/news';
-const NEWSAPI_ENDPOINT = process.env.NEWSAPI_BASE_URL || 'https://newsapi.org/v2/everything';
-const JBLANKED_BASE_URL = process.env.JBLANKED_BASE_URL || 'https://www.jblanked.com/news/api';
+const MASSIVE_ENDPOINT = process.env.MASSIVE_BASE_URL || 'https://api.massive.com/v2/reference/news';
+const CURRENTS_ENDPOINT = process.env.CURRENTS_BASE_URL || 'https://api.currentsapi.services/v2/search';
 const GOOGLE_NEWS_RSS_ENDPOINT = process.env.GOOGLE_NEWS_RSS_BASE_URL || 'https://news.google.com/rss/search';
 
 const REQUEST_TIMEOUT_MS = Math.max(
@@ -162,13 +162,13 @@ const MAX_ARTICLE_AGE_MS = Math.max(
   15 * 60_000,
   Number(process.env.GOLDCREST_NEWS_MAX_ARTICLE_AGE_MS || 6 * 60 * 60_000)
 );
-const NEWSAPI_MAX_QUERIES = Math.max(
-  1,
-  Math.min(4, Number(process.env.NEWSAPI_MAX_QUERIES || 2))
+const MASSIVE_MAX_ARTICLES = Math.max(
+  20,
+  Math.min(100, Number(process.env.MASSIVE_MAX_ARTICLES || 100))
 );
-const JBLANKED_MIN_INTERVAL_MS = Math.max(
-  1_000,
-  Number(process.env.JBLANKED_MIN_INTERVAL_MS || 1_100)
+const CURRENTS_PAGE_SIZE = Math.max(
+  1,
+  Math.min(20, Number(process.env.CURRENTS_PAGE_SIZE || 20))
 );
 const GOOGLE_NEWS_RSS_MAX_QUERIES = Math.max(
   1,
@@ -531,88 +531,145 @@ async function fetchFromFinnhub(): Promise<{
   }
 }
 
-function buildNewsApiQueries(pairs: string[]): string[] {
-  const queries: string[] = [];
-
-  for (const pair of pairs) {
-    const [base, quote] = pair.split('/');
-    const baseAliases = (CURRENCY_NEWS_ALIASES[base] || [base.toLowerCase()])
-      .slice(0, 3)
-      .map(alias => `"${alias}"`);
-    const quoteAliases = (CURRENCY_NEWS_ALIASES[quote] || [quote.toLowerCase()])
-      .slice(0, 3)
-      .map(alias => `"${alias}"`);
-
-    queries.push(
-      `("${pair}" OR ${baseAliases.join(' OR ')} OR ${quoteAliases.join(' OR ')}) AND (forex OR "exchange rate" OR "interest rate" OR inflation OR "central bank")`
-    );
-  }
-
-  if (queries.length === 0) {
-    queries.push('forex OR "foreign exchange" OR "central bank" OR FOMC OR ECB OR BOJ');
-  }
-
-  return [...new Set(queries)].slice(0, NEWSAPI_MAX_QUERIES);
+function isFxNewsRelevant(article: LiveNewsArticle, pairs: string[]): boolean {
+  const text = articleText(article);
+  const relevantCurrencies = getRelevantCurrencies(pairs);
+  const globalForexTerms = /forex|foreign exchange|exchange rate|currency market|fx market|central bank|interest rate|inflation|fomc|ecb|boj|boe|bank of england|bank of japan|federal reserve/i.test(text);
+  return globalForexTerms || articleMentionsRelevantCurrency(article, relevantCurrencies);
 }
 
-async function fetchFromNewsApi(pairs: string[]): Promise<{
+async function fetchFromMassive(pairs: string[]): Promise<{
   status: LiveNewsProviderStatus;
   articles: LiveNewsArticle[];
   error?: string;
   latencyMs?: number;
 }> {
-  const apiKey = process.env.NEWSAPI_API_KEY?.trim();
+  const apiKey = process.env.MASSIVE_API_KEY?.trim();
   if (!apiKey) return { status: 'UNCONFIGURED', articles: [] };
 
   const startedAt = Date.now();
-  const results: LiveNewsArticle[] = [];
-  const errors: string[] = [];
+  try {
+    const url = new URL(MASSIVE_ENDPOINT);
+    url.searchParams.set('limit', String(MASSIVE_MAX_ARTICLES));
+    url.searchParams.set('order', 'descending');
+    url.searchParams.set('sort', 'published_utc');
+    url.searchParams.set(
+      'published_utc.gte',
+      new Date(Date.now() - 48 * 60 * 60_000).toISOString()
+    );
 
-  for (const query of buildNewsApiQueries(pairs)) {
-    try {
-      const url = new URL(NEWSAPI_ENDPOINT);
-      url.searchParams.set('q', query);
-      url.searchParams.set('language', 'en');
-      url.searchParams.set('sortBy', 'publishedAt');
-      url.searchParams.set('pageSize', '100');
-      // NewsAPI's free Developer plan can deliver articles with a delay.
-      // Pull a wider window for diagnostics, then the normal freshness gate
-      // decides whether the article is eligible for live Forex analysis.
-      url.searchParams.set(
-        'from',
-        new Date(Date.now() - 48 * 60 * 60_000).toISOString()
-      );
+    const payload = await fetchJson(url, {
+      Authorization: `Bearer ${apiKey}`
+    });
+    const rows = Array.isArray(payload?.results) ? payload.results : [];
 
-      const payload = await fetchJson(url, { 'X-Api-Key': apiKey });
-      if (payload?.status === 'error') {
-        throw new Error(payload.message || 'NewsAPI returned an error.');
-      }
-
-      const rows = Array.isArray(payload?.articles) ? payload.articles : [];
-      results.push(...rows.map((row: any) => ({
+    const articles = rows
+      .map((row: any) => ({
         title: decodeXmlEntities(String(row?.title || '')),
-        url: decodeXmlEntities(String(row?.url || '')),
-        source: decodeXmlEntities(String(row?.source?.name || 'NewsAPI')),
-        publishedAt: normalizePublishedAt(row?.publishedAt),
-        summary: decodeXmlEntities(String(row?.description || row?.content || '')),
-        bannerImage: decodeXmlEntities(String(row?.urlToImage || '')) || null
-      })).filter((article: LiveNewsArticle) => Boolean(article.title && article.url)));
-    } catch (error: any) {
-      errors.push(error?.name === 'AbortError'
-        ? 'NewsAPI request timed out.'
-        : error?.message || String(error));
+        url: decodeXmlEntities(String(row?.article_url || row?.amp_url || '')),
+        source: decodeXmlEntities(String(row?.publisher?.name || 'Massive')),
+        publishedAt: normalizePublishedAt(row?.published_utc),
+        summary: decodeXmlEntities(String(row?.description || '')),
+        bannerImage: decodeXmlEntities(String(row?.image_url || '')) || null,
+        topics: Array.isArray(row?.keywords)
+          ? row.keywords.map((value: unknown) => String(value)).filter(Boolean)
+          : undefined
+      }))
+      .filter((article: LiveNewsArticle) => Boolean(article.title && article.url))
+      .filter((article: LiveNewsArticle) => isFxNewsRelevant(article, pairs));
+
+    return {
+      status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
+      articles: deduplicateArticles(articles),
+      latencyMs: Date.now() - startedAt
+    };
+  } catch (error: any) {
+    return {
+      status: Number(error?.status) === 429 ? 'RATE_LIMITED' : 'ERROR',
+      articles: [],
+      error: error?.name === 'AbortError'
+        ? 'Massive news request timed out.'
+        : error?.message || String(error),
+      latencyMs: Date.now() - startedAt
+    };
+  }
+}
+
+function buildCurrentsQuery(pairs: string[]): string {
+  const aliases = new Set<string>();
+  for (const pair of pairs) {
+    const [base, quote] = pair.split('/');
+    for (const currency of [base, quote]) {
+      for (const alias of (CURRENCY_NEWS_ALIASES[currency] || [currency.toLowerCase()]).slice(0, 4)) {
+        aliases.add(alias);
+      }
     }
   }
 
-  const articles = deduplicateArticles(results);
-  return {
-    status: articles.length > 0
-      ? 'LIVE'
-      : errors.length === buildNewsApiQueries(pairs).length ? 'ERROR' : 'NO_RESULTS',
-    articles,
-    error: errors.length ? errors.join(' | ') : undefined,
-    latencyMs: Date.now() - startedAt
-  };
+  if (aliases.size === 0) {
+    return '(forex OR "foreign exchange" OR "exchange rate" OR "central bank" OR FOMC OR ECB OR BOJ OR "Bank of England" OR "Bank of Japan")';
+  }
+
+  return `(${[...aliases].map(alias => `"${alias}"`).join(' OR ')}) AND (forex OR "foreign exchange" OR "exchange rate" OR "central bank" OR inflation OR "interest rate")`;
+}
+
+async function fetchFromCurrents(pairs: string[]): Promise<{
+  status: LiveNewsProviderStatus;
+  articles: LiveNewsArticle[];
+  error?: string;
+  latencyMs?: number;
+}> {
+  const apiKey = process.env.CURRENTS_API_KEY?.trim();
+  if (!apiKey) return { status: 'UNCONFIGURED', articles: [] };
+
+  const startedAt = Date.now();
+  try {
+    const url = new URL(CURRENTS_ENDPOINT);
+    url.searchParams.set('query', buildCurrentsQuery(pairs));
+    url.searchParams.set('language', 'en');
+    url.searchParams.set('page_number', '1');
+    url.searchParams.set('page_size', String(CURRENTS_PAGE_SIZE));
+
+    const payload = await fetchJson(url, {
+      Authorization: `Bearer ${apiKey}`
+    });
+
+    if (payload?.status === 'error') {
+      throw new Error(payload?.message || payload?.msg || 'Currents API returned an error.');
+    }
+
+    const rows = Array.isArray(payload?.news) ? payload.news : [];
+    const articles = rows
+      .map((row: any) => ({
+        title: decodeXmlEntities(String(row?.title || '')),
+        url: decodeXmlEntities(String(row?.url || '')),
+        source: decodeXmlEntities(String(row?.author || row?.source || 'Currents')),
+        publishedAt: normalizePublishedAt(row?.published),
+        language: decodeXmlEntities(String(row?.language || 'en')),
+        summary: decodeXmlEntities(String(row?.description || '')),
+        bannerImage: decodeXmlEntities(String(row?.image || '')) || null,
+        topics: Array.isArray(row?.category)
+          ? row.category.map((value: unknown) => String(value)).filter(Boolean)
+          : undefined
+      }))
+      .filter((article: LiveNewsArticle) => Boolean(article.title && article.url))
+      .filter((article: LiveNewsArticle) => isFxNewsRelevant(article, pairs));
+
+    return {
+      status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
+      articles: deduplicateArticles(articles),
+      latencyMs: Date.now() - startedAt
+    };
+  } catch (error: any) {
+    return {
+      status: Number(error?.status) === 429 ? 'RATE_LIMITED' : 'ERROR',
+      articles: [],
+      error: error?.name === 'AbortError'
+        ? 'Currents news request timed out.'
+        : error?.message || String(error),
+      latencyMs: Date.now() - startedAt
+    };
+  }
 }
 
 function buildGoogleNewsRssQueries(pairs: string[]): string[] {
@@ -684,118 +741,6 @@ async function fetchFromGoogleNewsRss(pairs: string[]): Promise<{
       ? 'LIVE'
       : errors.length === buildGoogleNewsRssQueries(pairs).length ? 'ERROR' : 'NO_RESULTS',
     articles,
-    error: errors.length ? errors.join(' | ') : undefined,
-    latencyMs: Date.now() - startedAt
-  };
-}
-
-function normalizeJBlankedEvent(row: any, endpoint: string): LiveNewsArticle | null {
-  const name = decodeXmlEntities(String(row?.Name || row?.name || row?.event || row?.title || ''));
-  const currency = decodeXmlEntities(String(row?.Currency || row?.currency || ''));
-  const impact = decodeXmlEntities(String(row?.Impact || row?.impact || ''));
-  const category = decodeXmlEntities(String(row?.Category || row?.category || ''));
-  const date = normalizePublishedAt(row?.Date || row?.date || row?.time);
-  const actual = row?.Actual ?? row?.actual;
-  const forecast = row?.Forecast ?? row?.forecast;
-  const previous = row?.Previous ?? row?.previous;
-  const outcome = decodeXmlEntities(String(row?.Outcome || row?.outcome || ''));
-  const strength = decodeXmlEntities(String(row?.Strength || row?.strength || ''));
-  const quality = decodeXmlEntities(String(row?.Quality || row?.quality || ''));
-
-  if (!name || !date) return null;
-
-  const summary = [
-    currency ? `Currency: ${currency}` : '',
-    category ? `Category: ${category}` : '',
-    impact ? `Impact: ${impact}` : '',
-    actual !== undefined && actual !== null ? `Actual: ${actual}` : '',
-    forecast !== undefined && forecast !== null ? `Forecast: ${forecast}` : '',
-    previous !== undefined && previous !== null ? `Previous: ${previous}` : '',
-    outcome ? `Outcome: ${outcome}` : '',
-    strength ? `Strength: ${strength}` : '',
-    quality ? `Quality: ${quality}` : ''
-  ].filter(Boolean).join(' | ');
-
-  const sentimentScore = /good|bullish|positive/i.test(quality)
-    ? 0.5
-    : /bad|bearish|negative/i.test(quality)
-      ? -0.5
-      : undefined;
-
-  return {
-    title: `${currency ? `[${currency}] ` : ''}${name}${impact ? ` [${impact}]` : ''}`,
-    url: `${JBLANKED_BASE_URL}${endpoint}`,
-    source: 'JBlanked Forex Calendar',
-    publishedAt: date,
-    summary,
-    sentimentScore,
-    sentimentLabel: sentimentScore === undefined ? undefined : sentimentScore > 0 ? 'Bullish' : 'Bearish',
-    topics: [category, impact, strength, quality].filter(Boolean)
-  };
-}
-
-let jblankedNextAllowedAt = 0;
-
-async function fetchFromJBlanked(): Promise<{
-  status: LiveNewsProviderStatus;
-  articles: LiveNewsArticle[];
-  error?: string;
-  latencyMs?: number;
-}> {
-  const apiKey = process.env.JBLANKED_API_KEY?.trim();
-  if (!apiKey) return { status: 'UNCONFIGURED', articles: [] };
-
-  const startedAt = Date.now();
-  const endpoints = [
-    '/mql5/calendar/today/',
-    '/forex-factory/calendar/today/'
-  ];
-  const articles: LiveNewsArticle[] = [];
-  const errors: string[] = [];
-
-  for (const endpoint of endpoints) {
-    const waitMs = jblankedNextAllowedAt - Date.now();
-    if (waitMs > 0) {
-      await new Promise(resolve => setTimeout(resolve, waitMs));
-    }
-    jblankedNextAllowedAt = Date.now() + JBLANKED_MIN_INTERVAL_MS;
-
-    try {
-      const url = new URL(`${JBLANKED_BASE_URL}${endpoint}`);
-      const payload = await fetchJson(url, {
-        Authorization: `Api-Key ${apiKey}`,
-        'Content-Type': 'application/json'
-      });
-      const rows = Array.isArray(payload)
-        ? payload
-        : Array.isArray(payload?.results) ? payload.results : [];
-      for (const row of rows) {
-        const article = normalizeJBlankedEvent(row, endpoint);
-        if (article) articles.push(article);
-      }
-    } catch (error: any) {
-      errors.push(error?.name === 'AbortError'
-        ? 'JBlanked news request timed out.'
-        : error?.message || String(error));
-    }
-  }
-
-  // The MQL5 and Forex Factory calendar endpoints can expose the same
-  // economic event. Deduplicate by normalized event title across endpoints
-  // so the same event is not counted twice in provider diagnostics.
-  const uniqueEvents = new Map<string, LiveNewsArticle>();
-  for (const article of articles) {
-    const eventKey = article.title.trim().toLowerCase();
-    if (!uniqueEvents.has(eventKey)) {
-      uniqueEvents.set(eventKey, article);
-    }
-  }
-  const normalized = deduplicateArticles([...uniqueEvents.values()]);
-  return {
-    status: normalized.length > 0
-      ? 'LIVE'
-      : errors.length === endpoints.length ? 'ERROR' : 'NO_RESULTS',
-    articles: normalized,
     error: errors.length ? errors.join(' | ') : undefined,
     latencyMs: Date.now() - startedAt
   };
@@ -878,16 +823,16 @@ async function fetchLiveForexNewsInternal(
   const queryPairs = normalizePairs(options.pairs);
   const queryKey = queryPairs.join(',');
 
-  const [finnhubRes, newsApiRes, jblankedRes, googleNewsRssRes] = await Promise.all([
+  const [finnhubRes, massiveRes, currentsRes, googleNewsRssRes] = await Promise.all([
     fetchFromFinnhub(),
-    fetchFromNewsApi(queryPairs),
-    fetchFromJBlanked(),
+    fetchFromMassive(queryPairs),
+    fetchFromCurrents(queryPairs),
     fetchFromGoogleNewsRss(queryPairs)
   ]);
 
   const freshFinnhub = filterFreshArticles(finnhubRes.articles, now);
-  const freshNewsApi = filterFreshArticles(newsApiRes.articles, now);
-  const freshJBlanked = filterFreshArticles(jblankedRes.articles, now);
+  const freshMassive = filterFreshArticles(massiveRes.articles, now);
+  const freshCurrents = filterFreshArticles(currentsRes.articles, now);
   const freshGoogleNewsRss = filterFreshArticles(googleNewsRssRes.articles, now);
 
   const providerStatus: LiveNewsSnapshot['providerStatus'] = {
@@ -896,15 +841,15 @@ async function fetchLiveForexNewsInternal(
       finnhubRes.articles.length,
       freshFinnhub.length
     ),
-    NEWSAPI: providerEffectiveStatus(
-      newsApiRes.status,
-      newsApiRes.articles.length,
-      freshNewsApi.length
+    MASSIVE: providerEffectiveStatus(
+      massiveRes.status,
+      massiveRes.articles.length,
+      freshMassive.length
     ),
-    JBLANKED: providerEffectiveStatus(
-      jblankedRes.status,
-      jblankedRes.articles.length,
-      freshJBlanked.length
+    CURRENTS: providerEffectiveStatus(
+      currentsRes.status,
+      currentsRes.articles.length,
+      freshCurrents.length
     ),
     GOOGLE_NEWS_RSS: providerEffectiveStatus(
       googleNewsRssRes.status,
@@ -915,8 +860,8 @@ async function fetchLiveForexNewsInternal(
 
   const errors = [
     finnhubRes.error,
-    newsApiRes.error,
-    jblankedRes.error,
+    massiveRes.error,
+    currentsRes.error,
     googleNewsRssRes.error
   ].filter(Boolean) as string[];
 
@@ -932,29 +877,28 @@ async function fetchLiveForexNewsInternal(
       latestFreshArticleAt: latestArticleAt(freshFinnhub),
       error: finnhubRes.error
     },
-    NEWSAPI: {
-      status: providerStatus.NEWSAPI,
-      rawArticleCount: newsApiRes.articles.length,
-      freshArticleCount: freshNewsApi.length,
-      staleArticleCount: Math.max(0, newsApiRes.articles.length - freshNewsApi.length),
-      configured: newsApiRes.status !== 'UNCONFIGURED',
-      latencyMs: newsApiRes.latencyMs,
-      latestRawArticleAt: latestArticleAt(newsApiRes.articles),
-      latestFreshArticleAt: latestArticleAt(freshNewsApi),
-      error: newsApiRes.error
+    MASSIVE: {
+      status: providerStatus.MASSIVE,
+      rawArticleCount: massiveRes.articles.length,
+      freshArticleCount: freshMassive.length,
+      staleArticleCount: Math.max(0, massiveRes.articles.length - freshMassive.length),
+      configured: massiveRes.status !== 'UNCONFIGURED',
+      latencyMs: massiveRes.latencyMs,
+      latestRawArticleAt: latestArticleAt(massiveRes.articles),
+      latestFreshArticleAt: latestArticleAt(freshMassive),
+      error: massiveRes.error
     },
-    JBLANKED: {
-      status: providerStatus.JBLANKED,
-      rawArticleCount: jblankedRes.articles.length,
-      freshArticleCount: freshJBlanked.length,
-      staleArticleCount: Math.max(0, jblankedRes.articles.length - freshJBlanked.length),
-      configured: jblankedRes.status !== 'UNCONFIGURED',
-      latencyMs: jblankedRes.latencyMs,
-      latestRawArticleAt: latestArticleAt(jblankedRes.articles),
-      latestFreshArticleAt: latestArticleAt(freshJBlanked),
-      error: jblankedRes.error
-    }
-,
+    CURRENTS: {
+      status: providerStatus.CURRENTS,
+      rawArticleCount: currentsRes.articles.length,
+      freshArticleCount: freshCurrents.length,
+      staleArticleCount: Math.max(0, currentsRes.articles.length - freshCurrents.length),
+      configured: currentsRes.status !== 'UNCONFIGURED',
+      latencyMs: currentsRes.latencyMs,
+      latestRawArticleAt: latestArticleAt(currentsRes.articles),
+      latestFreshArticleAt: latestArticleAt(freshCurrents),
+      error: currentsRes.error
+    },
     GOOGLE_NEWS_RSS: {
       status: providerStatus.GOOGLE_NEWS_RSS,
       rawArticleCount: googleNewsRssRes.articles.length,
@@ -967,13 +911,14 @@ async function fetchLiveForexNewsInternal(
       error: googleNewsRssRes.error
     }  };
 
-  // Finnhub provides live market headlines, JBlanked provides structured
-  // macro/Forex calendar events, and NewsAPI is supplementary. Google News RSS
-  // is retained as a no-key backup when primary fresh coverage is thin.
+  // Finnhub provides live market headlines. Massive supplies financial news
+  // with ticker-tagged metadata, while Currents provides keyword/date search
+  // across a broad news source catalog. Google News RSS remains the no-key
+  // backup when primary fresh coverage is thin.
   const primaryFreshArticles = deduplicateArticles([
     ...freshFinnhub,
-    ...freshJBlanked,
-    ...freshNewsApi
+    ...freshMassive,
+    ...freshCurrents
   ]);
   const useGoogleNewsBackup = primaryFreshArticles.length < GOOGLE_NEWS_RSS_MIN_PRIMARY_ARTICLES;
   const fetchedArticles = useGoogleNewsBackup
@@ -982,7 +927,7 @@ async function fetchLiveForexNewsInternal(
   const articles = deduplicateArticles(fetchedArticles).slice(0, 100);
 
   if (articles.length === 0) {
-    const configuredProviders = [finnhubRes, newsApiRes, jblankedRes, googleNewsRssRes]
+    const configuredProviders = [finnhubRes, massiveRes, currentsRes, googleNewsRssRes]
       .filter(result => result.status !== 'UNCONFIGURED');
     const allUnavailable = configuredProviders.length > 0
       && configuredProviders.every(result => ['ERROR', 'RATE_LIMITED'].includes(result.status));
@@ -1032,10 +977,10 @@ async function fetchLiveForexNewsInternal(
 
   const source: LiveNewsSource = freshFinnhub.length > 0
     ? 'FINNHUB'
-    : freshJBlanked.length > 0
-      ? 'JBLANKED'
-      : freshNewsApi.length > 0
-        ? 'NEWSAPI'
+    : freshMassive.length > 0
+      ? 'MASSIVE'
+      : freshCurrents.length > 0
+        ? 'CURRENTS'
         : 'GOOGLE_NEWS_RSS';
 
   const snapshot: LiveNewsSnapshot = {
