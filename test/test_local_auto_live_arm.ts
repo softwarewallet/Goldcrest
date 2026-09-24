@@ -27,7 +27,7 @@ assert.equal(process.env.GOLDCREST_AUTO_TRADING_ENABLED, 'true');
 assert.equal(process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION, 'true');
 assert.equal(process.env.LIVE_TRADING_ENABLED, 'true');
 assert.equal(process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED, 'true');
-assert.equal(disarmLocalAutonomousExecution().undefined, undefined);
+disarmLocalAutonomousExecution();
 assert.equal(process.env.GOLDCREST_AUTO_TRADING_ENABLED, 'false');
 assert.equal(process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION, 'false');
 
