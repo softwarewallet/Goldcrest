@@ -6,6 +6,7 @@ import {
   BrokerInstrument,
   BrokerStatus,
   NormalizedPositionClose,
+  OrderSide,
   BrokerType,
   ConnectionTestResult,
   NormalizedOrder,
@@ -919,7 +920,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         return {
           brokerPositionId: String(numericPositionId),
           symbol: symbolInfo?.symbolName || String(deal.symbolId),
-          side: Number(deal.tradeSide) === 2 ? 'SELL' : 'BUY',
+          side: (Number(deal.tradeSide) === 2 ? 'SELL' : 'BUY') as OrderSide,
           quantity: Math.abs(Number(deal.filledVolume || 0)) / 100,
           exitPrice: Number(deal.executionPrice || 0),
           realizedPnL: Number.isFinite(gross + commission + swap) ? gross + commission + swap : 0,
