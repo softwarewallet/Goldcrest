@@ -445,6 +445,51 @@ function initSchema(db: Database) {
       value TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    -- Persistent Forex market-history synchronization state.
+    CREATE TABLE IF NOT EXISTS market_history_sync (
+      symbol TEXT PRIMARY KEY,
+      last_attempt_at INTEGER,
+      last_success_at INTEGER,
+      last_full_backfill_at INTEGER,
+      last_incremental_at INTEGER,
+      latest_daily_timestamp INTEGER,
+      daily_bars_stored INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL,
+      error TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
+    -- Derived market-period statistics used by the historical trend engine.
+    -- One row exists for each calendar period and each rolling snapshot.
+    CREATE TABLE IF NOT EXISTS market_period_stats (
+      id TEXT PRIMARY KEY,
+      symbol TEXT NOT NULL,
+      period_type TEXT NOT NULL,
+      period_start INTEGER NOT NULL,
+      period_end INTEGER NOT NULL,
+      open REAL NOT NULL,
+      high REAL NOT NULL,
+      low REAL NOT NULL,
+      close REAL NOT NULL,
+      range REAL NOT NULL,
+      range_pct REAL NOT NULL,
+      return_pct REAL NOT NULL,
+      atr14 REAL,
+      volatility_pct REAL,
+      data_points INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(symbol, period_type, period_start)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_candles_symbol_timeframe_timestamp
+      ON candles(symbol, timeframe, timestamp);
+
+    CREATE INDEX IF NOT EXISTS idx_market_period_stats_symbol_type_end
+      ON market_period_stats(symbol, period_type, period_end);
+
+    CREATE INDEX IF NOT EXISTS idx_market_history_sync_status
+      ON market_history_sync(status);
   `;
 
   db.run(schemaSQL);
@@ -574,6 +619,7 @@ export async function getDatabaseStats() {
   const db = await getDatabase();
   const tables = [
     'markets', 'currency_pairs', 'underlyings', 'contracts', 'candles',
+    'market_history_sync', 'market_period_stats',
     'signals', 'trades', 'positions', 'orders', 'economic_events',
     'risk_configs', 'system_settings', 'broker_accounts',
     'broker_reconciliation_snapshots', 'execution_intents', 'execution_fill_observations', 'execution_fill_events',
