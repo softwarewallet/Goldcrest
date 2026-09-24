@@ -39,6 +39,8 @@ export interface LiveTradeResearchAnalytics {
   byMarketRegime: Array<{ key: string; performance: LiveTradeResearchPerformance }>;
   bySession: Array<{ key: string; performance: LiveTradeResearchPerformance }>;
   byNewsImpact: Array<{ key: string; performance: LiveTradeResearchPerformance }>;
+  byTrendAlignment: Array<{ key: string; performance: LiveTradeResearchPerformance }>;
+  byTrendHorizon: Array<{ key: string; performance: LiveTradeResearchPerformance }>;
 }
 
 function finite(value: unknown, fallback = 0): number { const n = Number(value); return Number.isFinite(n) ? n : fallback; }
@@ -61,6 +63,56 @@ function performance(rows: any[]): LiveTradeResearchPerformance {
 }
 
 function scoreBand(score: number): string { if (score < 65) return '<65'; if (score <= 70) return '65-70'; if (score <= 78) return '>70-78'; if (score <= 80) return '>78-80'; return '>80'; }
+
+function parseMarketTrend(row: any): any | null {
+  try {
+    const context = row.context_json ? JSON.parse(row.context_json) : null;
+    return context?.marketTrend || null;
+  } catch {
+    return null;
+  }
+}
+
+function trendAlignment(row: any): string {
+  const trend = parseMarketTrend(row);
+  const trendDirection = String(trend?.direction || '').toUpperCase();
+  const tradeDirection = String(row.direction || '').toUpperCase();
+
+  if (!trendDirection || trendDirection === 'INSUFFICIENT_DATA') return 'INSUFFICIENT_DATA';
+  const isBuy = tradeDirection.includes('BUY');
+  const isSell = tradeDirection.includes('SELL');
+
+  if ((isBuy && trendDirection === 'BULLISH') || (isSell && trendDirection === 'BEARISH')) {
+    return 'ALIGNED';
+  }
+  if ((isBuy && trendDirection === 'BEARISH') || (isSell && trendDirection === 'BULLISH')) {
+    return 'CONTRARY';
+  }
+  return 'MIXED';
+}
+
+function trendHorizon(row: any): string {
+  const trend = parseMarketTrend(row);
+  const horizons = [
+    ['7D', trend?.horizon?.days7?.returnPct],
+    ['30D', trend?.horizon?.days30?.returnPct],
+    ['90D', trend?.horizon?.days90?.returnPct],
+    ['365D', trend?.horizon?.days365?.returnPct]
+  ] as const;
+  const available = horizons
+    .filter(([, value]) => Number.isFinite(Number(value)))
+    .map(([name, value]) => ({ name, value: Number(value) }));
+
+  if (available.length === 0) return 'NO_DATA';
+
+  const positive = available.filter(item => item.value > 0).length;
+  const negative = available.filter(item => item.value < 0).length;
+  if (positive === available.length) return 'ALL_POSITIVE';
+  if (negative === available.length) return 'ALL_NEGATIVE';
+  if (positive > negative) return 'MOSTLY_POSITIVE';
+  if (negative > positive) return 'MOSTLY_NEGATIVE';
+  return 'MIXED';
+}
 
 function newsImpact(row: any): string {
   try {
@@ -91,5 +143,5 @@ export async function getLiveTradeResearchAnalytics(filters: LiveTradeResearchAn
   if (Number.isFinite(filters.maxScore)) { conditions.push('score <= ?'); params.push(Number(filters.maxScore)); }
   const rows = await executeQuery<any>('SELECT * FROM live_trade_research WHERE ' + conditions.join(' AND ') + ' ORDER BY signal_timestamp ASC LIMIT 50000', params);
   const closed = rows.filter(row => row.lifecycle_status === 'CLOSED');
-  return { generatedAt: Date.now(), filters, dataCoverage: { evaluatedSignals: rows.length, executedTrades: rows.filter(row => ['OPEN','CLOSED'].includes(String(row.lifecycle_status))).length, closedTrades: closed.length, openTrades: rows.filter(row => row.lifecycle_status === 'OPEN').length, notExecuted: rows.filter(row => row.lifecycle_status === 'NOT_EXECUTED').length }, overall: performance(closed), bySymbol: groupBy(closed, row => String(row.symbol || 'UNKNOWN')), byScoreBand: groupBy(closed, row => scoreBand(finite(row.score))), byMarketRegime: groupBy(closed, row => String(row.market_regime || 'UNKNOWN')), bySession: groupBy(closed, row => String(row.session || 'UNKNOWN')), byNewsImpact: groupBy(closed, newsImpact) };
+  return { generatedAt: Date.now(), filters, dataCoverage: { evaluatedSignals: rows.length, executedTrades: rows.filter(row => ['OPEN','CLOSED'].includes(String(row.lifecycle_status))).length, closedTrades: closed.length, openTrades: rows.filter(row => row.lifecycle_status === 'OPEN').length, notExecuted: rows.filter(row => row.lifecycle_status === 'NOT_EXECUTED').length }, overall: performance(closed), bySymbol: groupBy(closed, row => String(row.symbol || 'UNKNOWN')), byScoreBand: groupBy(closed, row => scoreBand(finite(row.score))), byMarketRegime: groupBy(closed, row => String(row.market_regime || 'UNKNOWN')), bySession: groupBy(closed, row => String(row.session || 'UNKNOWN')), byNewsImpact: groupBy(closed, newsImpact), byTrendAlignment: groupBy(closed, trendAlignment), byTrendHorizon: groupBy(closed, trendHorizon) };
 }
