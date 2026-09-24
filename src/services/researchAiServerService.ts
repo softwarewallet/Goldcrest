@@ -93,7 +93,7 @@ export async function saveResearchAiServerConfig(input: {
 }): Promise<ResearchAiServerConfig> {
   const provider = normalizeProvider(input.provider);
   const current = await loadStored(provider);
-  const baseUrl = String(input.baseUrl ?? current.baseUrl).trim().replace(/\\/$/, '');
+  const baseUrl = String(input.baseUrl ?? current.baseUrl).trim().replace(/\/$/, '');
   const model = String(input.model ?? current.model).trim();
   const healthPath = String(input.healthPath ?? current.healthPath).trim() || '/health';
   const predictPath = String(input.predictPath ?? current.predictPath).trim() || '/predict';
@@ -101,7 +101,7 @@ export async function saveResearchAiServerConfig(input: {
   const enabled = input.enabled === undefined ? current.enabled : Boolean(input.enabled);
   const timeoutMs = clampTimeout(input.timeoutMs ?? current.timeoutMs);
 
-  if (enabled && !/^https?:\\/\\//i.test(baseUrl)) {
+  if (enabled && !/^https?:\/\//i.test(baseUrl)) {
     throw new Error(`${provider} AI server requires an HTTP(S) base URL when enabled.`);
   }
 
