@@ -224,6 +224,7 @@ export async function updateLiveTradeResearchExecution(execution: LiveTradeResea
   await executeRun(
     `UPDATE live_trade_research
        SET lifecycle_status = ?,
+           broker_position_id = COALESCE(?, broker_position_id),
            execution_status = ?,
            execution_code = ?,
            execution_reason = ?,
