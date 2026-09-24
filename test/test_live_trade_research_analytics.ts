@@ -40,10 +40,10 @@ for (const row of rows) {
       lifecycle_status, realized_pnl, outcome, holding_duration_ms,
       mfe_pnl, mae_pnl, news_status, news_json, updated_at
     ) VALUES (?, ?, 'CTRADER', 'LIVE', ?, ?, ?, 'TEST', ?, '{}',
-      'TEST', 'TEST', ?, ?, 'OK', '[]', '[]', '{}', 'CLOSED', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      'TEST', 'TEST', ?, ?, 'OK', '[]', '[]', ?, 'CLOSED', ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       row.id, row.symbol, now, now, row.direction, row.score, row.regime, row.session,
-      row.pnl, row.outcome, row.duration, row.mfe, row.mae,
+      row.context, row.pnl, row.outcome, row.duration, row.mfe, row.mae,
       JSON.parse(row.news).status || null, row.news, now
     ]
   );
@@ -68,6 +68,11 @@ assert.ok(analytics.bySymbol.some(group => group.key === 'EUR/USD' && group.perf
 assert.ok(analytics.byScoreBand.some(group => group.key === '>80' && group.performance.wins === 1));
 assert.ok(analytics.byMarketRegime.some(group => group.key === 'TRENDING' && group.performance.trades === 2));
 assert.ok(analytics.byNewsImpact.some(group => group.key === 'ACTIVE_HIGH_IMPACT' && group.performance.losses === 1));
+assert.ok(analytics.byTrendAlignment.some(group => group.key === 'ALIGNED' && group.performance.wins === 1));
+assert.ok(analytics.byTrendAlignment.some(group => group.key === 'CONTRARY' && group.performance.losses === 1));
+assert.ok(analytics.byTrendAlignment.some(group => group.key === 'MIXED' && group.performance.wins === 1));
+assert.ok(analytics.byTrendHorizon.some(group => group.key === 'ALL_POSITIVE' && group.performance.wins === 1));
+assert.ok(analytics.byTrendHorizon.some(group => group.key === 'ALL_NEGATIVE' && group.performance.losses === 1));
 
 await executeRun('DELETE FROM live_trade_research WHERE signal_id LIKE ?', [prefix + '%']);
 
