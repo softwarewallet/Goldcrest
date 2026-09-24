@@ -45,6 +45,7 @@ import {
 } from './src/services/liveTradeResearchService';
 import { getLiveTradeResearchAnalytics } from './src/services/liveTradeResearchAnalyticsService';
 import { getLiveTradeResearchFeatures, materializeLiveTradeResearchFeatures } from './src/services/liveTradeResearchFeatureService';
+import { evaluateLiveTradeResearch, getLiveTradeResearchEvaluations } from './src/services/liveTradeResearchEvaluationService';
 import {
   getLiveTradeResearchOutcomeTrackerStatus,
   startLiveTradeResearchOutcomeTracker,
@@ -520,6 +521,38 @@ app.get('/api/status', (req: Request, res: Response) => {
   });
 });
 
+app.get('/api/live-trade-research/evaluations', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    const limit = Number(req.query.limit || 50);
+    res.json({
+      evaluations: await getLiveTradeResearchEvaluations(limit),
+      timestamp: Date.now()
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Research evaluations unavailable.' });
+  }
+});
+
+app.post('/api/live-trade-research/evaluate', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    const horizon = String(req.body?.horizon || '1D').toUpperCase();
+    if (!['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'HORIZON_INVALID', message: 'Evaluation horizon must be 1D, 3D or 7D.' });
+    }
+    const result = await evaluateLiveTradeResearch({
+      fromTimestamp: req.body?.fromTimestamp === undefined ? undefined : Number(req.body.fromTimestamp),
+      toTimestamp: req.body?.toTimestamp === undefined ? undefined : Number(req.body.toTimestamp),
+      horizon: horizon as '1D' | '3D' | '7D',
+      modelVersion: req.body?.modelVersion ? String(req.body.modelVersion) : undefined
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Research evaluation failed.' });
+  }
+});
+
 app.get('/api/market-history/status', operatorAuthRequired, async (_req: Request, res: Response) => {
   try {
     await databaseInitPromise;
@@ -596,6 +629,9 @@ const DATABASE_EXPLORER_TABLES = [
   { name: 'signals', label: 'Signals', category: 'Strategy', description: 'Generated strategy signals and trade levels.' },
   { name: 'signal_events', label: 'Signal Events', category: 'Strategy', description: 'Signal lifecycle and status events.' },
   { name: 'live_trade_research', label: 'Live Trade Research', category: 'ML & Research', description: 'Decision-time Auto Live signals, market/news context, execution results and future outcome fields.' },
+  { name: 'live_trade_research_features', label: 'Live Trade Research Features', category: 'ML & Research', description: 'Normalized research features derived from closed live-trade observations.' },
+  { name: 'live_trade_research_training', label: 'Live Trade Research Training', category: 'ML & Research', description: 'Supervised research rows with 1D, 3D and 7D forward market labels.' },
+  { name: 'live_trade_research_evaluations', label: 'Live Trade Research Evaluations', category: 'ML & Research', description: 'Time-ordered out-of-sample directional evaluation results and confusion metrics.' },
   { name: 'strategy_configs', label: 'Strategy Configs', category: 'Strategy', description: 'Strategy thresholds and enablement.' },
   { name: 'economic_events', label: 'Economic Events', category: 'Strategy', description: 'Calendar events used by the strategy layer.' },
   { name: 'risk_configs', label: 'Risk Configs', category: 'Risk & System', description: 'Risk, loss and execution limits.' },
