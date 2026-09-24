@@ -344,7 +344,7 @@ const ResearchAiServerSettings: React.FC = () => {
             {busy === provider + '_TEST' ? 'TESTING…' : 'TEST CONNECTION'}
           </button>
           <span className={`text-[10px] font-mono ${config.enabled ? 'text-emerald-300' : 'text-slate-500'}`}>
-            {config.enabled ? 'OPTIONAL CONNECTOR ENABLED' : 'DISABLED · GOLDREST WORKS WITHOUT IT'}
+            {config.enabled ? 'OPTIONAL CONNECTOR ENABLED' : 'DISABLED · GOLDCREST WORKS WITHOUT IT'}
           </span>
         </div>
         {testResult[provider] && <div className="mt-3 text-[10px] font-mono text-slate-300">{testResult[provider]}</div>}
