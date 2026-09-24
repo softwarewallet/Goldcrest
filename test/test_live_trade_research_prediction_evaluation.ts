@@ -53,8 +53,8 @@ await executeRun(
     trend_30d_volatility_pct, trend_90d_volatility_pct, trend_365d_volatility_pct,
     news_risk_level, news_high_impact_count, news_active_high_impact_count, news_sentiment,
     quote_spread, risk_reward, stop_distance, target_distance, realized_pnl, outcome,
-    holding_duration_ms
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    holding_duration_ms, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   Object.values(baseFeature)
 );
 
