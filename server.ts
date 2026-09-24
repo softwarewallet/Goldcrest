@@ -46,6 +46,7 @@ import {
 import { getLiveTradeResearchAnalytics } from './src/services/liveTradeResearchAnalyticsService';
 import { getLiveTradeResearchFeatures, materializeLiveTradeResearchFeatures } from './src/services/liveTradeResearchFeatureService';
 import { evaluateLiveTradeResearch, getLiveTradeResearchEvaluations } from './src/services/liveTradeResearchEvaluationService';
+import { generateResearchPredictions, getLiveTradeResearchPredictions, getResearchPrediction } from './src/services/liveTradeResearchPredictionService';
 import {
   getLiveTradeResearchOutcomeTrackerStatus,
   startLiveTradeResearchOutcomeTracker,
@@ -1539,6 +1540,47 @@ app.get('/api/live-trade-research/outcomes/status', operatorAuthRequired, (_req:
   res.json(getLiveTradeResearchOutcomeTrackerStatus());
 });
 
+
+app.get('/api/live-trade-research/predictions', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const predictions = await getLiveTradeResearchPredictions({
+      limit: Number(req.query.limit || 50),
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol : undefined,
+      modelVersion: typeof req.query.modelVersion === 'string' ? req.query.modelVersion : undefined
+    });
+    res.json({ predictions, count: predictions.length, generatedAt: Date.now() });
+  } catch (err: any) {
+    res.status(503).json({ error: 'LIVE_TRADE_RESEARCH_PREDICTIONS_UNAVAILABLE', message: err?.message || 'Research predictions are unavailable.' });
+  }
+});
+
+app.get('/api/live-trade-research/predictions/:predictionId', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const prediction = await getResearchPrediction(String(req.params.predictionId));
+    if (!prediction) return res.status(404).json({ error: 'PREDICTION_NOT_FOUND' });
+    res.json(prediction);
+  } catch (err: any) {
+    res.status(503).json({ error: 'LIVE_TRADE_RESEARCH_PREDICTION_UNAVAILABLE', message: err?.message || 'Research prediction is unavailable.' });
+  }
+});
+
+app.post('/api/live-trade-research/predict', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = String(req.body?.horizon || '1D').toUpperCase();
+    if (!['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const predictions = await generateResearchPredictions({
+      fromTimestamp: Number.isFinite(Number(req.body?.fromTimestamp)) ? Number(req.body.fromTimestamp) : undefined,
+      toTimestamp: Number.isFinite(Number(req.body?.toTimestamp)) ? Number(req.body.toTimestamp) : undefined,
+      horizon: horizon as '1D' | '3D' | '7D',
+      limit: Number(req.body?.limit || 50000)
+    });
+    res.json({ predictions, count: predictions.length, generatedAt: Date.now() });
+  } catch (err: any) {
+    res.status(503).json({ error: 'LIVE_TRADE_RESEARCH_PREDICTION_FAILED', message: err?.message || 'Research prediction generation failed.' });
+  }
+});
 
 app.get('/api/live-trade-research/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
