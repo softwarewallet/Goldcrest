@@ -169,3 +169,54 @@ export async function testResearchAiServerConnection(providerInput: ResearchAiPr
     };
   }
 }
+
+export async function requestResearchAiPrediction(
+  providerInput: ResearchAiProvider,
+  payload: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const provider = normalizeProvider(providerInput);
+  const config = await loadStored(provider);
+  if (!config.enabled) throw new Error(`${provider} research AI server is disabled.`);
+  if (!config.baseUrl) throw new Error(`${provider} research AI server URL is not configured.`);
+
+  const url = config.baseUrl + (config.predictPath.startsWith('/') ? config.predictPath : '/' + config.predictPath);
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json'
+  };
+  if (config.authToken) headers.Authorization = `Bearer ${config.authToken}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        provider,
+        model: config.model || undefined,
+        payload
+      }),
+      signal: controller.signal
+    });
+    const text = await response.text();
+    let parsed: unknown = null;
+    try {
+      parsed = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`${provider} AI server returned non-JSON response (HTTP ${response.status}).`);
+    }
+    if (!response.ok) {
+      const message = parsed && typeof parsed === 'object' && 'message' in parsed
+        ? String((parsed as { message?: unknown }).message)
+        : `AI server returned HTTP ${response.status}.`;
+      throw new Error(message);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`${provider} AI server prediction response must be a JSON object.`);
+    }
+    return parsed as Record<string, unknown>;
+  } finally {
+    clearTimeout(timer);
+  }
+}
