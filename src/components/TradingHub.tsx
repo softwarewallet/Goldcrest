@@ -265,15 +265,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     let mounted = true;
     const fetchAutoStatus = async () => {
       try {
-        const [res, configRes] = await Promise.all([
-          fetch('/api/brokers/controls', { cache: 'no-store' }),
-          fetch('/api/config', { cache: 'no-store' })
-        ]);
-        if (configRes.ok) {
-          const config = await safeParseJson(configRes);
-          const configuredLimit = Number(config?.maxDailyLossPct);
-          if (Number.isFinite(configuredLimit) && configuredLimit > 0) setDailyLossLimitPct(configuredLimit);
-        }
+        const res = await fetch('/api/brokers/controls', { cache: 'no-store' });
         if (!res.ok) throw new Error('Auto Live status endpoint returned HTTP ' + res.status);
         const data = await safeParseJson(res);
         if (mounted && data?.autoTrading) {
@@ -315,6 +307,23 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       setDailyLossSaving(false);
     }
   }, [dailyLossLimitPct, safeParseJson, addLog]);
+
+  // Load the persisted risk setting once. Do not refresh it from the backend
+  // on the 2-second Auto Live status poll, otherwise an unsaved operator edit
+  // would be overwritten by the persisted value.
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/config', { cache: 'no-store' })
+      .then(async (res) => res.ok ? await safeParseJson(res) : null)
+      .then((config) => {
+        const configuredLimit = Number(config?.maxDailyLossPct);
+        if (mounted && Number.isFinite(configuredLimit) && configuredLimit > 0) {
+          setDailyLossLimitPct(configuredLimit);
+        }
+      })
+      .catch((err) => console.warn('Failed to load persisted daily loss limit:', err))
+    return () => { mounted = false; };
+  }, [safeParseJson]);
 
   // Initial load and polling setup
   useEffect(() => {
