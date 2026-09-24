@@ -329,11 +329,11 @@ async function markSyncStatus(
 
   const next = {
     symbol: normalizedSymbol,
-    lastAttemptAt: updates.lastAttemptAt ?? safeNumber(current?.last_attempt_at) || null,
-    lastSuccessAt: updates.lastSuccessAt ?? safeNumber(current?.last_success_at) || null,
-    lastFullBackfillAt: updates.lastFullBackfillAt ?? safeNumber(current?.last_full_backfill_at) || null,
-    lastIncrementalAt: updates.lastIncrementalAt ?? safeNumber(current?.last_incremental_at) || null,
-    latestDailyTimestamp: updates.latestDailyTimestamp ?? safeNumber(current?.latest_daily_timestamp) || null,
+    lastAttemptAt: updates.lastAttemptAt ?? (safeNumber(current?.last_attempt_at) || null),
+    lastSuccessAt: updates.lastSuccessAt ?? (safeNumber(current?.last_success_at) || null),
+    lastFullBackfillAt: updates.lastFullBackfillAt ?? (safeNumber(current?.last_full_backfill_at) || null),
+    lastIncrementalAt: updates.lastIncrementalAt ?? (safeNumber(current?.last_incremental_at) || null),
+    latestDailyTimestamp: updates.latestDailyTimestamp ?? (safeNumber(current?.latest_daily_timestamp) || null),
     dailyBarsStored: updates.dailyBarsStored ?? safeNumber(current?.daily_bars_stored),
     status: updates.status,
     error: updates.error ?? current?.error ?? null,
