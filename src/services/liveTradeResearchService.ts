@@ -181,6 +181,20 @@ export async function updateLiveTradeResearchQuote(params: {
   configuredQuantity?: number;
   context?: Record<string, unknown>;
 }): Promise<void> {
+  let mergedContext: Record<string, unknown> | null = null;
+  if (params.context) {
+    const existing = await executeQuery<any>(
+      'SELECT context_json FROM live_trade_research WHERE signal_id = ?',
+      [params.signalId]
+    );
+    try {
+      const current = existing[0]?.context_json ? JSON.parse(existing[0].context_json) : {};
+      mergedContext = { ...(current && typeof current === 'object' ? current : {}), ...params.context };
+    } catch {
+      mergedContext = { ...params.context };
+    }
+  }
+
   await executeRun(
     `UPDATE live_trade_research
        SET quote_bid = ?,
@@ -204,8 +218,8 @@ export async function updateLiveTradeResearchQuote(params: {
       params.quote?.status ?? null,
       params.requestedRiskQuantity ?? null,
       params.configuredQuantity ?? null,
-      params.context ? json(params.context) : null,
-      params.context ? json(params.context) : null,
+      mergedContext ? json(mergedContext) : null,
+      mergedContext ? json(mergedContext) : null,
       Date.now(),
       params.signalId
     ]
