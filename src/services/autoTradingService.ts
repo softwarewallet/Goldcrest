@@ -210,6 +210,10 @@ class AutoTradingService {
     updatedAt: Date.now()
   };
   private lastExecution: AutoTradingExecutionStatus | null = null;
+  // Once the operator has successfully started Auto Live in this process,
+  // STOP may disarm the runtime flags and a later explicit START is allowed
+  // to re-arm them. A fresh process still requires the configured execution
+  // flags, preserving the production safety boundary.
 
   private isRequested(): boolean {
     // Development mode is not itself an execution request. Autonomous live
@@ -347,10 +351,20 @@ class AutoTradingService {
       };
     }
 
-    // STOP intentionally disarms the autonomous execution flags. START AUTO LIVE
-    // is the explicit operator action that re-arms the same execution gate.
-    // Without this re-arm, a valid stop -> start sequence would fail the
-    // request-flag check before AutoExecutionEngine could enable execution.
+    // STOP intentionally disarms the autonomous execution flags. A fresh
+    // process still requires those flags to be configured before START.
+    // After one successful operator START, a later STOP -> START sequence is
+    // explicitly allowed to re-arm the same gate.
+    if (!this.isRequested() && !this.hasCompletedExplicitStart) {
+      this.state = 'BLOCKED';
+      this.lastCycleResult = 'Autonomous execution is not enabled. Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION must be true.';
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'REQUEST_FLAGS',
+        reason: this.lastCycleResult
+      });
+      return this.getStatus();
+    }
+
     const gateArm = armAutonomousExecutionGate();
     if (!gateArm.success) {
       this.state = 'BLOCKED';
@@ -418,7 +432,9 @@ class AutoTradingService {
       });
       void this.runCycle();
     } else {
-      this.state = 'PREPARING';
+      this.hasCompletedExplicitStart = true;
+
+    this.state = 'PREPARING';
       this.lastCycleResult = 'Markets are closed. Auto Live is armed; pre-open preparation is running and the system will begin evaluating trades as soon as a supported market opens.';
       this.preOpenStatus = 'RUNNING';
       liveRuntimeLog('SYSTEM', 'AUTO_TRADING_PRE_OPEN_ARMED', {
