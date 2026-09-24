@@ -32,8 +32,6 @@ import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission, armA
 import { autoTradingService } from './src/services/autoTradingService';
 import { initializeLiveRuntimeLog, getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile, listLiveRuntimeLogFiles, logApplicationAction, liveRuntimeLog } from './src/services/liveRuntimeLog';
 import { fetchLiveForexNews } from './src/services/liveNewsService';
-import { alphaVantageNewsService } from './src/services/alphaVantageNewsService';
-import { marketauxNewsService } from './src/services/marketauxNewsService';
 import { fetchIndianMarketNews } from './src/services/indianMarketNewsService';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
@@ -1387,91 +1385,18 @@ app.get('/api/forex/news', async (req: Request, res: Response) => {
   }
 });
 
-// 8b. Alpha Vantage Dedicated News & Sentiment Fetch
-app.get('/api/news/alphavantage', async (req: Request, res: Response) => {
-  try {
-    const tickers = typeof req.query.tickers === 'string' ? req.query.tickers : undefined;
-    const topics = typeof req.query.topics === 'string' ? req.query.topics : undefined;
-    const sort = (req.query.sort as 'LATEST' | 'EARLIEST' | 'RELEVANCE') || 'LATEST';
-    const limit = req.query.limit ? Number(req.query.limit) : 50;
-    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
-
-    // If pairs parameter is provided, use forex-tailored query
-    if (typeof req.query.pairs === 'string') {
-      const pairs = req.query.pairs.split(',').map(p => p.trim()).filter(Boolean);
-      const snapshot = await alphaVantageNewsService.fetchForexNews(pairs, {
-        sort,
-        limit,
-        forceRefresh
-      });
-      return res.json(snapshot);
-    }
-
-    const snapshot = await alphaVantageNewsService.fetchNewsSentiment({
-      tickers,
-      topics,
-      sort,
-      limit,
-      forceRefresh
-    });
-
-    res.json(snapshot);
-  } catch (err: any) {
-    res.status(500).json({
-      error: 'ALPHA_VANTAGE_NEWS_FAILED',
-      message: err?.message || 'Failed to fetch Alpha Vantage news and sentiment.'
-    });
-  }
-});
-
-// 8c. Marketaux Dedicated News & Sentiment Fetch
-app.get('/api/news/marketaux', async (req: Request, res: Response) => {
-  try {
-    const symbols = typeof req.query.symbols === 'string' ? req.query.symbols : undefined;
-    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
-    const countries = typeof req.query.countries === 'string' ? req.query.countries : undefined;
-    const limit = req.query.limit ? Number(req.query.limit) : 20;
-    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
-
-    // If pairs parameter is provided, use forex-tailored query
-    if (typeof req.query.pairs === 'string') {
-      const pairs = req.query.pairs.split(',').map(p => p.trim()).filter(Boolean);
-      const snapshot = await marketauxNewsService.fetchForexNews(pairs, {
-        limit,
-        forceRefresh
-      });
-      return res.json(snapshot);
-    }
-
-    const snapshot = await marketauxNewsService.fetchNewsSentiment({
-      symbols,
-      search,
-      countries,
-      limit,
-      forceRefresh
-    });
-
-    res.json(snapshot);
-  } catch (err: any) {
-    res.status(500).json({
-      error: 'MARKETAUX_NEWS_FAILED',
-      message: err?.message || 'Failed to fetch Marketaux news and sentiment.'
-    });
-  }
-});
-
-// 8d. News Service Provider Status
+// 8b. News Service Provider Status
 app.get('/api/news/status', async (_req: Request, res: Response) => {
-  const indianSession = getIndianSessionState();
+  const configuredPairs = getSystemConfig().autoLiveForexPairs;
   res.json({
-    alphaVantageConfigured: alphaVantageNewsService.isConfigured(),
-    marketauxConfigured: marketauxNewsService.isConfigured(),
-    providers: ['FOREX_FACTORY', 'ALPHA_VANTAGE', 'MARKETAUX', 'GDELT_DOC_2', 'GOOGLE_NEWS_RSS'],
-    indianMarket: {
-      marketOpen: indianSession.isOpen,
-      phase: indianSession.currentPhase,
-      providers: ['PULSE_ZERODHA', 'CNBC_TV18', 'ET_MARKETS', 'MINT', 'FMP']
-    }
+    providers: ['FINNHUB', 'MASSIVE', 'CURRENTS', 'GOOGLE_NEWS_RSS'],
+    configured: {
+      FINNHUB: Boolean(process.env.FINNHUB_API_KEY?.trim()),
+      MASSIVE: Boolean(process.env.MASSIVE_API_KEY?.trim()),
+      CURRENTS: Boolean(process.env.CURRENTS_API_KEY?.trim()),
+      GOOGLE_NEWS_RSS: true
+    },
+    forexPairsConfigured: configuredPairs
   });
 });
 
