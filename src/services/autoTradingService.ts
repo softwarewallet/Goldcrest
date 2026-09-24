@@ -6,7 +6,7 @@ import { getForexSessionState } from '../markets/common/session';
 import { getAutoLiveMarketGate, AutoLiveMarketGate } from './marketOpenGate';
 import { fetchLiveForexNews, LiveNewsSnapshot } from './liveNewsService';
 import { brokerRegistry } from '../brokers/registry';
-import { autoExecutionEngine, refreshAutonomousExecutionPermission, disarmLocalAutonomousExecution } from '../brokers/safety/AutoExecutionEngine';
+import { autoExecutionEngine, armAutonomousExecutionGate, refreshAutonomousExecutionPermission, disarmLocalAutonomousExecution } from '../brokers/safety/AutoExecutionEngine';
 import { autoTradeReadinessService } from '../brokers/safety/AutoTradeReadiness';
 import { getSystemConfig } from './configService';
 import { killSwitch } from '../brokers/safety/KillSwitch';
@@ -345,6 +345,22 @@ class AutoTradingService {
         ...this.getStatus(),
         requiresClosedMarketConfirmation: true
       };
+    }
+
+    // STOP intentionally disarms the autonomous execution flags. START AUTO LIVE
+    // is the explicit operator action that re-arms the same execution gate.
+    // Without this re-arm, a valid stop -> start sequence would fail the
+    // request-flag check before AutoExecutionEngine could enable execution.
+    const gateArm = armAutonomousExecutionGate();
+    if (!gateArm.success) {
+      this.state = 'BLOCKED';
+      this.lastCycleResult = gateArm.message;
+      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+        stage: 'REQUEST_FLAGS',
+        code: gateArm.code,
+        reason: gateArm.message
+      });
+      return this.getStatus();
     }
 
     if (!this.isRequested()) {
