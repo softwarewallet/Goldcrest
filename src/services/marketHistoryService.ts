@@ -63,6 +63,7 @@ const PAIR_CONCURRENCY = Math.max(
 let syncTimer: NodeJS.Timeout | null = null;
 let syncInFlight = false;
 let lastGlobalSyncAt: number | null = null;
+const trendContextCache = new Map<string, { expiresAt: number; value: Awaited<ReturnType<typeof getMarketTrendContext>> }>();
 
 function normalizeSymbol(symbol: string): string {
   return String(symbol || '').trim().toUpperCase().replace(/^([A-Z]{3})([A-Z]{3})$/, '$1/$2');
@@ -626,6 +627,10 @@ export async function getMarketTrendContext(symbol: string): Promise<{
   };
   observation: string;
 }> {
+  const cacheKey = normalizeSymbol(symbol);
+  const cached = trendContextCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
   const summary = await getMarketHistorySummary(symbol);
   const rolling = new Map(summary.rolling.map(stat => [stat.periodType, stat]));
   const get = (periodType: MarketPeriodStats['periodType']) => {
@@ -658,7 +663,7 @@ export async function getMarketTrendContext(symbol: string): Promise<{
     ? 'Insufficient long-horizon market history for a directional trend classification.'
     : `Long-horizon returns are ${direction.toLowerCase()} across the available rolling periods.`;
 
-  return {
+  const result = {
     symbol: summary.symbol,
     currentClose: latestClose,
     direction,
@@ -670,6 +675,8 @@ export async function getMarketTrendContext(symbol: string): Promise<{
     },
     observation
   };
+  trendContextCache.set(cacheKey, { expiresAt: Date.now() + 60_000, value: result });
+  return result;
 }
 
 export function startMarketHistoryScheduler(): void {
