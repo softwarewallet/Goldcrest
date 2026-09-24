@@ -534,6 +534,12 @@ function initSchema(db: Database) {
       no_trade_reasons_json TEXT NOT NULL,
       context_json TEXT NOT NULL,
       lifecycle_status TEXT NOT NULL,
+      broker_position_id TEXT,
+      mfe_pnl REAL,
+      mae_pnl REAL,
+      max_favorable_price REAL,
+      max_adverse_price REAL,
+      holding_duration_ms INTEGER,
       execution_status TEXT,
       execution_code TEXT,
       execution_reason TEXT,
@@ -555,6 +561,9 @@ function initSchema(db: Database) {
 
     CREATE INDEX IF NOT EXISTS idx_live_trade_research_lifecycle
       ON live_trade_research(lifecycle_status, updated_at);
+
+    CREATE INDEX IF NOT EXISTS idx_live_trade_research_position
+      ON live_trade_research(broker_position_id, lifecycle_status);
   `;
 
   db.run(schemaSQL);
@@ -570,7 +579,13 @@ function initSchema(db: Database) {
     'ALTER TABLE signals ADD COLUMN market_regime TEXT;',
     'ALTER TABLE signals ADD COLUMN session TEXT;',
     'ALTER TABLE signals ADD COLUMN data_status TEXT;',
-    'ALTER TABLE signals ADD COLUMN strategy_version TEXT;'
+    'ALTER TABLE signals ADD COLUMN strategy_version TEXT;',
+    'ALTER TABLE live_trade_research ADD COLUMN broker_position_id TEXT;',
+    'ALTER TABLE live_trade_research ADD COLUMN mfe_pnl REAL;',
+    'ALTER TABLE live_trade_research ADD COLUMN mae_pnl REAL;',
+    'ALTER TABLE live_trade_research ADD COLUMN max_favorable_price REAL;',
+    'ALTER TABLE live_trade_research ADD COLUMN max_adverse_price REAL;',
+    'ALTER TABLE live_trade_research ADD COLUMN holding_duration_ms INTEGER;'
   ];
   try {
     db.run('ALTER TABLE execution_intents ADD COLUMN claim_token TEXT;');
