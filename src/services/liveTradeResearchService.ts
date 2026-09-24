@@ -112,21 +112,22 @@ export async function recordLiveTradeResearchSignal(signal: LiveTradeResearchSig
       reasons_json, no_trade_reasons_json, context_json,
       lifecycle_status, updated_at
     ) VALUES (
-      ?, ?, 'CTRADER', 'LIVE', ?, ?,
+      ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?,
+      ?, ?, ?, ?, ?,
       ?, ?,
       ?, ?, ?,
       ?, ?, ?,
-      'SIGNAL_EVALUATED', ?
+      ?, ?
     )`,
     [
       signal.signalId,
       signal.symbol,
+      'CTRADER',
+      'LIVE',
       signal.timestamp,
       Date.now(),
       signal.direction,
@@ -160,6 +161,7 @@ export async function recordLiveTradeResearchSignal(signal: LiveTradeResearchSig
       json(signal.reasons || []),
       json(signal.noTradeReasons || []),
       json(signal.context || {}),
+      'SIGNAL_EVALUATED',
       Date.now()
     ]
   );
