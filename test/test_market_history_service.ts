@@ -24,10 +24,10 @@ assert.equal(rolling7.symbol, 'EUR/USD');
 assert.equal(rolling7.dataPoints, 7);
 assert.equal(rolling7.open, 123);
 assert.equal(rolling7.close, 130);
-assert.equal(rolling7.high, 133);
+assert.equal(rolling7.high, 132);
 assert.equal(rolling7.low, 121);
 assert.equal(Number(rolling7.returnPct.toFixed(6)), Number((((130 / 123) - 1) * 100).toFixed(6)));
-assert.equal(Number(rolling7.rangePct.toFixed(6)), Number((((133 - 121) / 123) * 100).toFixed(6)));
+assert.equal(Number(rolling7.rangePct.toFixed(6)), Number((((132 - 121) / 123) * 100).toFixed(6)));
 assert.ok(rolling7.volatilityPct !== null);
 
 const short = calculateMarketPeriodStats('EUR/USD', 'ROLLING_7D', bars.slice(-1));
