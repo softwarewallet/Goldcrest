@@ -41,7 +41,8 @@ const baseFeature = {
   targetDistance: 0.002,
   realizedPnl: 10,
   outcome: 'WIN',
-  holdingDurationMs: 1000
+  holdingDurationMs: 1000,
+  updatedAt: now
 };
 
 await executeRun(
