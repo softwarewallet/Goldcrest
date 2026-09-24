@@ -18,7 +18,7 @@ process.env.LIVE_TRADING_ENABLED = 'false';
 process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED = 'false';
 process.env.GOLDCREST_PRODUCTION_STRATEGY_ID = 'fx_structure_v2a';
 
-const { autoExecutionEngine, refreshAutonomousExecutionPermission } = await import('../src/brokers/safety/AutoExecutionEngine');
+const { autoExecutionEngine, armAutonomousExecutionGate, disarmLocalAutonomousExecution, refreshAutonomousExecutionPermission } = await import('../src/brokers/safety/AutoExecutionEngine');
 
 const result = autoExecutionEngine.enableAutomaticExecution();
 assert.equal(result.success, false, 'Broker credentials must still be required before automatic execution is allowed.');
@@ -27,6 +27,17 @@ assert.equal(process.env.GOLDCREST_AUTO_TRADING_ENABLED, 'true');
 assert.equal(process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION, 'true');
 assert.equal(process.env.LIVE_TRADING_ENABLED, 'true');
 assert.equal(process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED, 'true');
+assert.equal(disarmLocalAutonomousExecution().undefined, undefined);
+assert.equal(process.env.GOLDCREST_AUTO_TRADING_ENABLED, 'false');
+assert.equal(process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION, 'false');
+
+const restartArm = armAutonomousExecutionGate();
+assert.equal(restartArm.success, true, 'A new START AUTO LIVE action must re-arm the autonomous execution flags after STOP.');
+assert.equal(process.env.GOLDCREST_AUTO_TRADING_ENABLED, 'true');
+assert.equal(process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION, 'true');
+assert.equal(process.env.LIVE_TRADING_ENABLED, 'true');
+assert.equal(refreshAutonomousExecutionPermission(), false, 'Broker credentials must still remain a required execution permission.');
+
 
 if (originalNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = originalNodeEnv;
 if (originalHost === undefined) delete process.env.HOST; else process.env.HOST = originalHost;
