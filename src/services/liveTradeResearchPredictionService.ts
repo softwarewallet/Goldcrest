@@ -86,7 +86,7 @@ export class SignalDirectionBaselineModel implements PredictionModel {
 }
 
 async function ensurePredictionTable(): Promise<void> {
-  await executeRun(\`CREATE TABLE IF NOT EXISTS live_trade_research_predictions (
+  await executeRun(`CREATE TABLE IF NOT EXISTS live_trade_research_predictions (
     prediction_id TEXT PRIMARY KEY,
     model_version TEXT NOT NULL,
     prediction_source TEXT NOT NULL,
@@ -105,7 +105,7 @@ async function ensurePredictionTable(): Promise<void> {
     outcome_status TEXT,
     evaluated_at INTEGER,
     created_at INTEGER NOT NULL
-  )\`);
+  )`);
 }
 
 function makePrediction(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon, model: PredictionModel): ResearchPrediction {
@@ -139,12 +139,12 @@ export async function createResearchPrediction(params: {
   const prediction = makePrediction(params.row, horizon, model);
   await ensurePredictionTable();
   await executeRun(
-    \`INSERT OR REPLACE INTO live_trade_research_predictions (
+    `INSERT OR REPLACE INTO live_trade_research_predictions (
       prediction_id, model_version, prediction_source, symbol, signal_id,
       predicted_at, horizon, predicted_direction, confidence, feature_hash,
       model_agreement, reasoning, invalidation, actual_direction,
       actual_return_pct, outcome_status, evaluated_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [prediction.predictionId, prediction.modelVersion, prediction.predictionSource,
       prediction.symbol, prediction.signalId, prediction.predictedAt, prediction.horizon,
       prediction.predictedDirection, prediction.confidence, prediction.featureHash,
@@ -180,9 +180,9 @@ export async function getLiveTradeResearchPredictions(params: {
   if (params.modelVersion) { conditions.push('model_version = ?'); values.push(params.modelVersion); }
   const limit = Math.max(1, Math.min(250, Math.floor(Number(params.limit) || 50)));
   return executeQuery<any>(
-    \`SELECT * FROM live_trade_research_predictions
-      \${conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''}
-      ORDER BY predicted_at DESC LIMIT ?\`,
+    `SELECT * FROM live_trade_research_predictions
+      ${conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''}
+      ORDER BY predicted_at DESC LIMIT ?`,
     [...values, limit]
   );
 }
