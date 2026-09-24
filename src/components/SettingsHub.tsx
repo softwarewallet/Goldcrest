@@ -191,6 +191,182 @@ const LiveRuntimeLogSettings: React.FC = () => {
   );
 };
 
+
+interface ResearchAiServerConfig {
+  provider: 'QWEN' | 'LLAMA';
+  enabled: boolean;
+  baseUrl: string;
+  model: string;
+  healthPath: string;
+  predictPath: string;
+  timeoutMs: number;
+  authConfigured: boolean;
+  updatedAt: number | null;
+}
+
+const ResearchAiServerSettings: React.FC = () => {
+  const [servers, setServers] = useState<Record<'QWEN' | 'LLAMA', ResearchAiServerConfig>>({
+    QWEN: { provider: 'QWEN', enabled: false, baseUrl: '', model: '', healthPath: '/health', predictPath: '/predict', timeoutMs: 10000, authConfigured: false, updatedAt: null },
+    LLAMA: { provider: 'LLAMA', enabled: false, baseUrl: '', model: '', healthPath: '/health', predictPath: '/predict', timeoutMs: 10000, authConfigured: false, updatedAt: null }
+  });
+  const [tokens, setTokens] = useState<Record<'QWEN' | 'LLAMA', string>>({ QWEN: '', LLAMA: '' });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string>('');
+  const [testResult, setTestResult] = useState<Record<string, string>>({});
+
+  const load = async () => {
+    try {
+      const res = await fetch('/api/research-ai/servers', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to load AI server settings.');
+      const next: Record<'QWEN' | 'LLAMA', ResearchAiServerConfig> = { ...servers };
+      for (const row of Array.isArray(data.servers) ? data.servers : []) {
+        if (row?.provider === 'QWEN' || row?.provider === 'LLAMA') next[row.provider] = row;
+      }
+      setServers(next);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to load AI server settings.');
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const update = (provider: 'QWEN' | 'LLAMA', patch: Partial<ResearchAiServerConfig>) => {
+    setServers(prev => ({ ...prev, [provider]: { ...prev[provider], ...patch } }));
+  };
+
+  const save = async (provider: 'QWEN' | 'LLAMA') => {
+    setBusy(provider);
+    setMessage('');
+    try {
+      const config = servers[provider];
+      const body: Record<string, unknown> = {
+        provider,
+        enabled: config.enabled,
+        baseUrl: config.baseUrl,
+        model: config.model,
+        healthPath: config.healthPath,
+        predictPath: config.predictPath,
+        timeoutMs: config.timeoutMs
+      };
+      if (tokens[provider] !== '') body.authToken = tokens[provider];
+
+      const res = await fetch('/api/research-ai/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to save AI server settings.');
+      update(provider, data.server);
+      setTokens(prev => ({ ...prev, [provider]: '' }));
+      setMessage(provider + ' research AI server settings saved.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to save AI server settings.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const test = async (provider: 'QWEN' | 'LLAMA') => {
+    setBusy(provider + '_TEST');
+    setTestResult(prev => ({ ...prev, [provider]: 'Testing…' }));
+    try {
+      const res = await fetch('/api/research-ai/servers/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider })
+      });
+      const data = await res.json();
+      setTestResult(prev => ({
+        ...prev,
+        [provider]: data.ok
+          ? `CONNECTED · ${data.status} · ${data.latencyMs} ms`
+          : `NOT CONNECTED · ${data.message}`
+      }));
+    } catch (error) {
+      setTestResult(prev => ({ ...prev, [provider]: error instanceof Error ? error.message : 'Connection test failed.' }));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const card = (provider: 'QWEN' | 'LLAMA') => {
+    const config = servers[provider];
+    return (
+      <div key={provider} className="bg-slate-950 border border-slate-800 rounded-xl p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-cyan-400" />
+              <h3 className="text-sm font-bold text-white">{provider} AI RESEARCH SERVER</h3>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">Optional plug-and-play research connector. It is never required for Auto Live.</p>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            <input type="checkbox" checked={config.enabled} onChange={e => update(provider, { enabled: e.target.checked })} />
+            ENABLED
+          </label>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-3 mt-4">
+          <label className="text-[10px] uppercase text-slate-500 font-mono">
+            SERVER BASE URL
+            <input value={config.baseUrl} onChange={e => update(provider, { baseUrl: e.target.value })} placeholder="http://192.168.1.50:8000" className="mt-1 w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white" />
+          </label>
+          <label className="text-[10px] uppercase text-slate-500 font-mono">
+            MODEL NAME
+            <input value={config.model} onChange={e => update(provider, { model: e.target.value })} placeholder={provider === 'QWEN' ? 'qwen3' : 'llama3.3'} className="mt-1 w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white" />
+          </label>
+          <label className="text-[10px] uppercase text-slate-500 font-mono">
+            HEALTH PATH
+            <input value={config.healthPath} onChange={e => update(provider, { healthPath: e.target.value })} className="mt-1 w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white" />
+          </label>
+          <label className="text-[10px] uppercase text-slate-500 font-mono">
+            PREDICTION PATH
+            <input value={config.predictPath} onChange={e => update(provider, { predictPath: e.target.value })} className="mt-1 w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white" />
+          </label>
+          <label className="text-[10px] uppercase text-slate-500 font-mono">
+            TIMEOUT (MS)
+            <input type="number" min={1000} max={60000} value={config.timeoutMs} onChange={e => update(provider, { timeoutMs: Number(e.target.value) })} className="mt-1 w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white" />
+          </label>
+          <label className="text-[10px] uppercase text-slate-500 font-mono">
+            AUTH TOKEN
+            <input type="password" value={tokens[provider]} onChange={e => setTokens(prev => ({ ...prev, [provider]: e.target.value }))} placeholder={config.authConfigured ? 'Configured · leave blank to keep' : 'Optional bearer token'} className="mt-1 w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white" />
+          </label>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 mt-4">
+          <button onClick={() => void save(provider)} disabled={busy !== null} className="px-4 py-2 rounded bg-emerald-700 border border-emerald-600 text-white text-xs font-bold disabled:opacity-50">
+            {busy === provider ? 'SAVING…' : 'SAVE CONNECTION'}
+          </button>
+          <button onClick={() => void test(provider)} disabled={busy !== null || !config.baseUrl} className="px-4 py-2 rounded bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold disabled:opacity-50">
+            {busy === provider + '_TEST' ? 'TESTING…' : 'TEST CONNECTION'}
+          </button>
+          <span className={`text-[10px] font-mono ${config.enabled ? 'text-emerald-300' : 'text-slate-500'}`}>
+            {config.enabled ? 'OPTIONAL CONNECTOR ENABLED' : 'DISABLED · GOLDREST WORKS WITHOUT IT'}
+          </span>
+        </div>
+        {testResult[provider] && <div className="mt-3 text-[10px] font-mono text-slate-300">{testResult[provider]}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-cyan-950/20 border border-cyan-900 rounded-xl p-4 text-xs text-slate-300">
+        <div className="font-bold text-cyan-300">Optional AI Research Infrastructure</div>
+        <div className="mt-2 leading-5">
+          Goldcrest remains fully operational when both connectors are disabled or unavailable. These servers are isolated from broker execution and are intended for future research predictions, model comparison and consensus analysis.
+        </div>
+      </div>
+      {card('QWEN')}
+      {card('LLAMA')}
+      {message && <div className="text-xs text-slate-400 font-mono">{message}</div>}
+    </div>
+  );
+};
+
 export const SettingsHub: React.FC<SettingsHubProps> = ({
   currentEnvironment,
   selectedBroker,
@@ -198,7 +374,7 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
   onBrokerSelect,
   onRefreshGlobal
 }) => {
-  const [activeSettingsSection, setActiveSettingsSection] = useState<'BROKER_CONFIG' | 'LIVE_LOG'>('BROKER_CONFIG');
+  const [activeSettingsSection, setActiveSettingsSection] = useState<'BROKER_CONFIG' | 'LIVE_LOG' | 'RESEARCH_AI'>('BROKER_CONFIG');
 
   return (
     <div id="unified_settings_hub" className="space-y-4">
@@ -210,7 +386,8 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
           </span>
           {[
             { id: 'BROKER_CONFIG', label: 'BROKER & RISK CONFIGURATION', icon: Server },
-            { id: 'LIVE_LOG', label: 'LIVE RUNTIME LOG', icon: Activity }
+            { id: 'LIVE_LOG', label: 'LIVE RUNTIME LOG', icon: Activity },
+            { id: 'RESEARCH_AI', label: 'OPTIONAL AI SERVERS', icon: Cpu }
           ].map(tab => {
             const Icon = tab.icon;
             const isSel = activeSettingsSection === tab.id;
@@ -237,6 +414,8 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
           <span>Encrypted Secure Storage</span>
         </div>
       </div>
+
+      {activeSettingsSection === 'RESEARCH_AI' && <ResearchAiServerSettings />}
 
       {activeSettingsSection === 'LIVE_LOG' && (
         <LiveRuntimeLogSettings />
