@@ -4,6 +4,7 @@ import { FOREX_PAIRS, getForexPairConfig } from '../markets/forex/instruments';
 import { ForexSignalEngine } from '../markets/forex/signalEngine';
 import { getForexSessionState } from '../markets/common/session';
 import { getAutoLiveMarketGate, AutoLiveMarketGate } from './marketOpenGate';
+import { getMarketTrendContext } from './marketHistoryService';
 import { fetchLiveForexNews, LiveNewsSnapshot } from './liveNewsService';
 import { brokerRegistry } from '../brokers/registry';
 import { autoExecutionEngine, armAutonomousExecutionGate, refreshAutonomousExecutionPermission, disarmLocalAutonomousExecution } from '../brokers/safety/AutoExecutionEngine';
@@ -895,6 +896,27 @@ class AutoTradingService {
       await this.provider.refreshPair(pair);
       liveRuntimeLog('INFO', 'LIVE_DATA_REFRESHED', { pair });
       const signal = await this.signalEngine.generateSignal(pair);
+      let marketTrendContext: Awaited<ReturnType<typeof getMarketTrendContext>> | null = null;
+      try {
+        marketTrendContext = await getMarketTrendContext(pair);
+        liveRuntimeLog('INFO', 'MARKET_TREND_CONTEXT_CAPTURED', {
+          pair,
+          signalId: signal.id,
+          direction: marketTrendContext.direction,
+          returns: {
+            days7: marketTrendContext.horizon.days7.returnPct,
+            days30: marketTrendContext.horizon.days30.returnPct,
+            days90: marketTrendContext.horizon.days90.returnPct,
+            days365: marketTrendContext.horizon.days365.returnPct
+          }
+        });
+      } catch (trendError: any) {
+        liveRuntimeLog('WARN', 'MARKET_TREND_CONTEXT_UNAVAILABLE', {
+          pair,
+          signalId: signal.id,
+          error: trendError?.message || String(trendError)
+        });
+      }
       const isDirectionalSignal = signal.direction.includes('BUY') || signal.direction.includes('SELL');
       const signalSide: 'BUY' | 'SELL' | null = signal.direction.includes('BUY')
         ? 'BUY'
@@ -952,7 +974,8 @@ class AutoTradingService {
         context: {
           autoLiveCycleTimestamp: this.lastCycleAt,
           source: 'AUTO_LIVE',
-          lifecycleCapture: 'SIGNAL_TIME'
+          lifecycleCapture: 'SIGNAL_TIME',
+          marketTrend: marketTrendContext
         }
       });
       } catch (researchError: any) {
