@@ -643,7 +643,13 @@ export async function getMarketTrendContext(symbol: string): Promise<{
     };
   };
 
-  const returns = ['ROLLING_7D', 'ROLLING_30D', 'ROLLING_90D', 'ROLLING_365D']
+  const rollingPeriods: Array<MarketPeriodStats['periodType']> = [
+    'ROLLING_7D',
+    'ROLLING_30D',
+    'ROLLING_90D',
+    'ROLLING_365D'
+  ];
+  const returns = rollingPeriods
     .map(key => rolling.get(key)?.returnPct)
     .filter((value): value is number => Number.isFinite(value));
 
