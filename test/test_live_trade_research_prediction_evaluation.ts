@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import { getDatabase, executeRun } from '../src/database/db';
 import { createResearchPrediction } from '../src/services/liveTradeResearchPredictionService';
 import {
+  recordLiveTradeResearchSignal,
+  updateLiveTradeResearchExecution,
+  closeLiveTradeResearchOutcome
+} from '../src/services/liveTradeResearchService';
+import {
   evaluatePendingResearchPredictions,
   getResearchPredictionAnalytics
 } from '../src/services/liveTradeResearchPredictionEvaluationService';
@@ -44,6 +49,42 @@ const baseFeature = {
   holdingDurationMs: 1000,
   updatedAt: now
 };
+
+await recordLiveTradeResearchSignal({
+  signalId: baseFeature.signalId,
+  symbol: baseFeature.symbol,
+  timestamp: signalTimestamp,
+  direction: 'BUY',
+  signalCategory: 'BUY',
+  score: baseFeature.score,
+  scoreBreakdown: { totalScore: baseFeature.score },
+  strategyVersion: 'test',
+  modelVersion: 'baseline',
+  marketRegime: baseFeature.marketRegime,
+  session: baseFeature.session,
+  dataStatus: 'LIVE',
+  tradePlan: { riskReward: baseFeature.riskReward },
+  reasons: ['Prediction evaluation test'],
+  noTradeReasons: [],
+  context: { test: true }
+});
+await updateLiveTradeResearchExecution({
+  signalId: baseFeature.signalId,
+  status: 'FILLED',
+  brokerOrderId: 'prediction-eval-order',
+  brokerPositionId: 'prediction-eval-position',
+  executedEntryPrice: 100,
+  executedQuantity: 1,
+  commission: 0,
+  brokerStatus: 'FILLED'
+});
+await closeLiveTradeResearchOutcome({
+  signalId: baseFeature.signalId,
+  exitPrice: 101,
+  exitTimestamp: signalTimestamp + 8 * 86400000,
+  realizedPnl: 10,
+  commission: 0
+});
 
 await executeRun(
   `INSERT OR REPLACE INTO live_trade_research_features (
@@ -91,5 +132,7 @@ assert.equal(analytics.byTrendAlignment[0].key, 'ALIGNED');
 assert.equal(analytics.byNewsRisk[0].key, 'LOW');
 assert.equal(analytics.calibration[4].predictions, 1);
 assert.equal(analytics.calibration[4].evaluated, 1);
+
+await executeRun('DELETE FROM live_trade_research WHERE signal_id = ?', [baseFeature.signalId]);
 
 console.log('LIVE TRADE RESEARCH PREDICTION EVALUATION TEST PASSED');
