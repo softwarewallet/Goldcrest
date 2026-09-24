@@ -446,6 +446,20 @@ function initSchema(db: Database) {
       updated_at INTEGER NOT NULL
     );
 
+    -- Optional external research AI connectors. Credentials are stored server-side
+    -- and are never returned by the public configuration endpoint.
+    CREATE TABLE IF NOT EXISTS ai_research_server_connections (
+      provider TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      base_url TEXT NOT NULL DEFAULT '',
+      model TEXT NOT NULL DEFAULT '',
+      health_path TEXT NOT NULL DEFAULT '/health',
+      predict_path TEXT NOT NULL DEFAULT '/predict',
+      timeout_ms INTEGER NOT NULL DEFAULT 10000,
+      auth_token TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL
+    );
+
     -- Persistent Forex market-history synchronization state.
     CREATE TABLE IF NOT EXISTS market_history_sync (
       symbol TEXT PRIMARY KEY,
