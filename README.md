@@ -8,7 +8,7 @@ Goldcrest is an AI-assisted trading analysis platform with broker connectivity, 
 - **LIVE broker connectivity:** supported for account, balance, positions, orders, and market-data observation where authoritative broker data is available.
 - **Autonomous live-money execution:** permanently disabled.
 - **Authoritative data only:** fabricated balances, quotes, OHLC, volume, and synthetic `FRESH` market-data fallbacks are not permitted.
-- **Research program:** closed. No further research experiment is part of the active production workflow unless explicitly reopened.
+- **Research program:** active and observational. The research pipeline captures live-trade outcomes, builds features/training labels, and evaluates directional baselines; research outputs do not modify live execution.
 - **Persistence:** SQLite is the sole application persistence layer. Firestore/Firebase application storage has been removed.
 
 ## Safety Invariant
