@@ -29,6 +29,7 @@ import {
   fetchCTraderReconcileState,
   fetchCTraderPositionUnrealizedPnL,
   fetchCTraderDeals,
+  fetchCTraderDealsByPositionId,
   fetchCTraderOrderDetails,
   fetchCTraderAssets,
   fetchCTraderConversionSymbols,
@@ -873,6 +874,63 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     });
   }
 
+  async getPositionHistory(positionId: string, fromTimestamp: number, toTimestamp: number) {
+    this.syncConfig();
+    this.validateCredentials();
+    const raw = await this.resolveRawAccount();
+    const numericPositionId = Number(positionId);
+    if (!Number.isSafeInteger(numericPositionId) || numericPositionId <= 0) {
+      throw new BrokerError(
+        'INVALID_SYMBOL',
+        `Invalid cTrader position ID ${positionId} for outcome tracking.`,
+        'CTRADER',
+        this.environment
+      );
+    }
+
+    const deals = await fetchCTraderDealsByPositionId(
+      raw.ctidTraderAccountId,
+      numericPositionId,
+      Math.max(0, Number(fromTimestamp)),
+      Math.max(Number(fromTimestamp), Number(toTimestamp)),
+      this.config.clientId!,
+      this.config.clientSecret!,
+      this.config.accessToken!,
+      raw.isLive
+    );
+
+    const symbols = await this.getCachedCTraderSymbols(raw);
+    const byId = new Map(symbols.map(s => [s.symbolId, s]));
+
+    return deals
+      .filter((deal: any) => Number(deal.dealStatus) === 2 && Number(deal.filledVolume || 0) > 0)
+      .map((deal: any) => {
+        const detail = deal.closePositionDetail || deal.closePositionDetails;
+        if (!detail) return null;
+
+        const moneyDigits = Number(detail.moneyDigits ?? deal.moneyDigits ?? 0);
+        const divisor = Number.isInteger(moneyDigits) && moneyDigits > 0 ? 10 ** moneyDigits : 1;
+        const gross = Number(detail.grossProfit ?? detail.profit ?? 0) / divisor;
+        const commission = Number(detail.commission ?? deal.commission ?? 0) / divisor;
+        const swap = Number(detail.swap ?? detail.swap ?? 0) / divisor;
+        const symbolInfo = byId.get(Number(deal.symbolId));
+
+        return {
+          brokerPositionId: String(numericPositionId),
+          symbol: symbolInfo?.symbolName || String(deal.symbolId),
+          side: Number(deal.tradeSide) === 2 ? 'SELL' : 'BUY',
+          quantity: Math.abs(Number(deal.filledVolume || 0)) / 100,
+          exitPrice: Number(deal.executionPrice || 0),
+          realizedPnL: Number.isFinite(gross + commission + swap) ? gross + commission + swap : 0,
+          commission: Number.isFinite(commission) ? commission : undefined,
+          swap: Number.isFinite(swap) ? swap : undefined,
+          timestamp: Number(deal.executionTimestamp || deal.utcLastUpdateTimestamp || Date.now()),
+          brokerOrderId: deal.orderId !== undefined ? String(deal.orderId) : undefined
+        };
+      })
+      .filter(Boolean);
+  }
+
   async getHistoricalCandles(symbol: string, timeframe: string, limit: number) {
     try {
       const raw = await this.resolveRawAccount();
@@ -1321,6 +1379,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       .map((deal: any) => ({
         brokerFillId: String(deal.dealId),
         brokerOrderId: String(brokerId),
+        brokerPositionId: deal.positionId !== undefined ? String(deal.positionId) : undefined,
         quantity: Math.max(0, Number(deal.filledVolume || 0)) / 100,
         price: Number(deal.executionPrice),
         commission: Number(deal.commission || 0) || undefined,
