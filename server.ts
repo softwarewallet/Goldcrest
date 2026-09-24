@@ -43,6 +43,7 @@ import {
 import {
   getLiveTradeResearch,
 } from './src/services/liveTradeResearchService';
+import { getLiveTradeResearchAnalytics } from './src/services/liveTradeResearchAnalyticsService';
 import {
   getLiveTradeResearchOutcomeTrackerStatus,
   startLiveTradeResearchOutcomeTracker,
@@ -1499,6 +1500,32 @@ app.get('/api/live-trade-research', operatorAuthRequired, async (req: Request, r
 
 app.get('/api/live-trade-research/outcomes/status', operatorAuthRequired, (_req: Request, res: Response) => {
   res.json(getLiveTradeResearchOutcomeTrackerStatus());
+});
+
+app.get('/api/live-trade-research/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const parseNumber = (value: unknown) => {
+      if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : undefined;
+    };
+    const analytics = await getLiveTradeResearchAnalytics({
+      fromTimestamp: parseNumber(req.query.from),
+      toTimestamp: parseNumber(req.query.to),
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol : undefined,
+      direction: typeof req.query.direction === 'string' ? req.query.direction : undefined,
+      marketRegime: typeof req.query.marketRegime === 'string' ? req.query.marketRegime : undefined,
+      session: typeof req.query.session === 'string' ? req.query.session : undefined,
+      minScore: parseNumber(req.query.minScore),
+      maxScore: parseNumber(req.query.maxScore)
+    });
+    res.json(analytics);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_TRADE_RESEARCH_ANALYTICS_UNAVAILABLE',
+      message: err?.message || 'Live trade research analytics are unavailable.'
+    });
+  }
 });
 
 app.get('/api/db/stats', operatorAuthRequired, async (req: Request, res: Response) => {
