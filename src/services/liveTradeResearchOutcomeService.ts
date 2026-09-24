@@ -94,7 +94,6 @@ export async function syncLiveTradeResearchOutcomes(): Promise<void> {
           await updateLiveTradeResearchMark({
             signalId: String(row.signal_id),
             currentPnl: Number(position.unrealizedPnL || 0),
-            currentPrice: Number(position.currentPrice || 0),
             observedAt: Date.now()
           });
           continue;
