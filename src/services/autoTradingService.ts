@@ -214,6 +214,7 @@ class AutoTradingService {
   // STOP may disarm the runtime flags and a later explicit START is allowed
   // to re-arm them. A fresh process still requires the configured execution
   // flags, preserving the production safety boundary.
+  private hasCompletedExplicitStart = false;
 
   private isRequested(): boolean {
     // Development mode is not itself an execution request. Autonomous live
