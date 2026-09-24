@@ -40,6 +40,14 @@ import {
   startMarketHistoryScheduler,
   syncMarketHistory
 } from './src/services/marketHistoryService';
+import {
+  getLiveTradeResearch,
+} from './src/services/liveTradeResearchService';
+import {
+  getLiveTradeResearchOutcomeTrackerStatus,
+  startLiveTradeResearchOutcomeTracker,
+  stopLiveTradeResearchOutcomeTracker
+} from './src/services/liveTradeResearchOutcomeService';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
 // the public research/training API is retired while the research program is closed.
@@ -1473,6 +1481,26 @@ app.get('/api/economic-events', async (_req: Request, res: Response) => {
 });
 
 // 9. Database Stats & Diagnostics
+app.get('/api/live-trade-research', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const signalId = typeof req.query.signalId === 'string' ? req.query.signalId : undefined;
+    const rows = await getLiveTradeResearch(signalId);
+    res.json({
+      rows,
+      outcomeTracker: getLiveTradeResearchOutcomeTrackerStatus()
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_TRADE_RESEARCH_UNAVAILABLE',
+      message: err?.message || 'Live trade research data is unavailable.'
+    });
+  }
+});
+
+app.get('/api/live-trade-research/outcomes/status', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.json(getLiveTradeResearchOutcomeTrackerStatus());
+});
+
 app.get('/api/db/stats', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     const stats = await getDatabaseStats();
@@ -1673,6 +1701,9 @@ async function startServer() {
     // refreshes so today's high/low/close stays current without flooding
     // cTrader historical endpoints.
     void databaseInitPromise
+      .then(() => {
+        startLiveTradeResearchOutcomeTracker();
+      })
       .then(() => syncMarketHistory())
       .then(() => {
         startMarketHistoryScheduler();
@@ -1695,6 +1726,7 @@ async function startServer() {
   });
 
   const shutdown = (signal: string) => {
+    stopLiveTradeResearchOutcomeTracker();
     liveRuntimeLog('SYSTEM', 'SERVER_SHUTDOWN_REQUESTED', { signal });
     console.log(`Goldcrest received ${signal}; closing HTTP server gracefully.`);
     server.close(() => {
