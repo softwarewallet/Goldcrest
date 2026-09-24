@@ -906,7 +906,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
 
     return deals
       .filter((deal: any) => Number(deal.dealStatus) === 2 && Number(deal.filledVolume || 0) > 0)
-      .map((deal: any) => {
+      .map((deal: any): NormalizedPositionClose | null => {
         const detail = deal.closePositionDetail || deal.closePositionDetails;
         if (!detail) return null;
 
