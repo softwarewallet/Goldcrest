@@ -197,6 +197,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(parentAutoTradingStatus);
   const [autoTradingBusy, setAutoTradingBusy] = useState(false);
   const [closedMarketPrompt, setClosedMarketPrompt] = useState<any | null>(null);
+  const [dailyLossLimitPct, setDailyLossLimitPct] = useState<number>(3);
 
   // Filter States
   const [positionBrokerFilter, setPositionBrokerFilter] = useState<string>('ALL');
@@ -237,6 +238,18 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [newsError, setNewsError] = useState<string | null>(null);
   const [indianNewsSnapshot, setIndianNewsSnapshot] = useState<any | null>(null);
   const [indianNewsBusy, setIndianNewsBusy] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/config', { cache: 'no-store' })
+      .then(async (res) => res.ok ? await res.json() : null)
+      .then((config) => {
+        const value = Number(config?.maxDailyLossPct);
+        if (mounted && Number.isFinite(value) && value > 0) setDailyLossLimitPct(value);
+      })
+      .catch(() => undefined);
+    return () => { mounted = false; };
+  }, []);
 
   // Fetch live operational data from authoritative broker and runtime APIs.
   const fetchAllOperationalData = useCallback(async () => {
@@ -1942,7 +1955,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <ShieldAlert className="w-4 h-4 text-emerald-400" />
               <span>Risk Center & Chronological Risk Event Timeline</span>
             </h3>
-            <span className="text-xs text-slate-400 font-mono">1.0% Max Trade Risk | 3.0% Daily Loss Limit</span>
+            <span className="text-xs text-slate-400 font-mono">1.0% Max Trade Risk | {dailyLossLimitPct.toFixed(2)}% Daily Loss Limit</span>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
@@ -1961,7 +1974,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
               <div className="text-slate-400 text-[10px]">CURRENT DRAWDOWN</div>
               <div className="text-base font-bold text-emerald-400 mt-1">0.18%</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Limit: 3.00% Max</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Limit: {dailyLossLimitPct.toFixed(2)}% Max</div>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
