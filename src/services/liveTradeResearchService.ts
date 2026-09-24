@@ -75,7 +75,16 @@ function pairNews(snapshot: LiveNewsSnapshot | null | undefined, symbol: string)
     riskLevel: snapshot.riskLevel,
     sentimentSummary: snapshot.sentimentSummary,
     providerStatus: snapshot.providerStatus,
-    pairRisk: pairRisk || null
+    pairRisk: pairRisk || null,
+    articles: snapshot.articles.slice(0, 50).map(article => ({
+      title: article.title,
+      source: article.source,
+      publishedAt: article.publishedAt,
+      summary: article.summary || null,
+      sentimentScore: article.sentimentScore ?? null,
+      sentimentLabel: article.sentimentLabel || null,
+      topics: article.topics || []
+    }))
   };
 }
 
