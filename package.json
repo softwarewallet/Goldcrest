@@ -30,7 +30,8 @@
     "test:live_trade_research": "tsx test/test_live_trade_research.ts",
     "test:live_trade_research_analytics": "tsx test/test_live_trade_research_analytics.ts",
     "test:live_trade_research_features": "tsx test/test_live_trade_research_features.ts",
-    "test:live_trade_research_training": "tsx test/test_live_trade_research_training.ts"
+    "test:live_trade_research_training": "tsx test/test_live_trade_research_training.ts",
+    "test:live_trade_research_evaluation": "tsx test/test_live_trade_research_evaluation.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
