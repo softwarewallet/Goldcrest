@@ -585,6 +585,7 @@ const DATABASE_EXPLORER_TABLES = [
   { name: 'greeks', label: 'Greeks', category: 'Market Data', description: 'Option Greeks and IV records.' },
   { name: 'signals', label: 'Signals', category: 'Strategy', description: 'Generated strategy signals and trade levels.' },
   { name: 'signal_events', label: 'Signal Events', category: 'Strategy', description: 'Signal lifecycle and status events.' },
+  { name: 'live_trade_research', label: 'Live Trade Research', category: 'ML & Research', description: 'Decision-time Auto Live signals, market/news context, execution results and future outcome fields.' },
   { name: 'strategy_configs', label: 'Strategy Configs', category: 'Strategy', description: 'Strategy thresholds and enablement.' },
   { name: 'economic_events', label: 'Economic Events', category: 'Strategy', description: 'Calendar events used by the strategy layer.' },
   { name: 'risk_configs', label: 'Risk Configs', category: 'Risk & System', description: 'Risk, loss and execution limits.' },
