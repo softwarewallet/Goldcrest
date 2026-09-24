@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 
 process.env.FINNHUB_API_KEY = 'test-finnhub';
-process.env.NEWSAPI_API_KEY = 'test-newsapi';
-process.env.JBLANKED_API_KEY = 'test-jblanked';
+process.env.MASSIVE_API_KEY = 'test-massive';
+process.env.CURRENTS_API_KEY = 'test-currents';
 process.env.GOLDCREST_NEWS_TIMEOUT_MS = '5000';
 process.env.GOLDCREST_NEWS_CACHE_TTL_MS = '30000';
 process.env.GOLDCREST_NEWS_FAILURE_BACKOFF_MS = '60000';
 process.env.GOLDCREST_NEWS_MAX_ARTICLE_AGE_MS = String(2 * 60 * 60_000);
-process.env.JBLANKED_MIN_INTERVAL_MS = '1000';
+process.env.CURRENTS_PAGE_SIZE = '20';
 
 const { fetchLiveForexNews, resetLiveForexNewsCacheForTest } =
   await import('../src/services/liveNewsService');
@@ -46,37 +46,44 @@ try {
       return response(finnhubArticle('EUR/USD rises after ECB rate decision'));
     }
 
-    if (url.includes('newsapi.org')) {
-      assert.equal(init?.headers && (init.headers as Record<string, string>)['X-Api-Key'], 'test-newsapi');
+    if (url.includes('api.massive.com')) {
+      assert.equal(init?.headers && (init.headers as Record<string, string>)['Authorization'], 'Bearer test-massive');
       return response(JSON.stringify({
-        status: 'ok',
-        articles: [{
-          title: 'GBP/USD reacts to Bank of England update',
-          url: 'https://newsapi.example/gbp',
-          source: { name: 'NewsAPI Test' },
-          publishedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
-          description: 'Fresh supplementary article.'
+        status: 'OK',
+        results: [{
+          id: 1,
+          title: 'Dollar markets react to new tariff announcement',
+          article_url: 'https://massive.example/usd',
+          publisher: { name: 'Massive Test' },
+          published_utc: new Date(Date.now() - 2 * 60_000).toISOString(),
+          description: 'Fresh financial news for USD.',
+          keywords: ['tariff']
         }]
       }));
     }
 
-    if (url.includes('jblanked.com')) {
-      return response(JSON.stringify([{
-        Name: 'Core CPI m/m',
-        Currency: 'USD',
-        Category: 'Consumer Inflation Report',
-        Impact: 'High',
-        Date: new Date(Date.now() - 3 * 60_000).toISOString(),
-        Actual: 0.4,
-        Forecast: 0.4,
-        Previous: 0.2,
-        Outcome: 'Actual = Forecast > Previous',
-        Strength: 'Strong Data',
-        Quality: 'Bad Data'
-      }]));
+    if (url.includes('api.currentsapi.services')) {
+      assert.equal(init?.headers && (init.headers as Record<string, string>)['Authorization'], 'Bearer test-currents');
+      return response(JSON.stringify({
+        status: 'ok',
+        news: [{
+          id: 'currents-1',
+          title: 'GBP/USD reacts to Bank of England interest rate decision',
+          url: 'https://currents.example/gbp',
+          author: 'Currents Test',
+          published: new Date(Date.now() - 3 * 60_000).toISOString(),
+          description: 'Fresh FX news.',
+          language: 'en',
+          category: ['economy_business_finance']
+        }]
+      }));
     }
 
-    return response('', 404);
+    if (url.includes('news.google.com')) {
+      return response(JSON.stringify([]));
+    }
+
+    throw new Error('Unexpected news provider URL: ' + url);
   };
 
   const live = await fetchLiveForexNews({
@@ -88,17 +95,17 @@ try {
   assert.equal(live.source, 'FINNHUB');
   assert.ok(live.articleCount >= 3);
   assert.equal(live.providerStatus?.FINNHUB, 'LIVE');
-  assert.equal(live.providerStatus?.NEWSAPI, 'LIVE');
-  assert.equal(live.providerStatus?.JBLANKED, 'LIVE');
+  assert.equal(live.providerStatus?.MASSIVE, 'LIVE');
+  assert.equal(live.providerStatus?.CURRENTS, 'LIVE');
   assert.equal(live.providerDiagnostics?.FINNHUB?.freshArticleCount, 1);
-  assert.equal(live.providerDiagnostics?.NEWSAPI?.freshArticleCount, 1);
-  assert.equal(live.providerDiagnostics?.JBLANKED?.freshArticleCount, 1);
+  assert.equal(live.providerDiagnostics?.MASSIVE?.freshArticleCount, 1);
+  assert.equal(live.providerDiagnostics?.CURRENTS?.freshArticleCount, 1);
   assert.equal(live.highImpactCount, 2);
   assert.equal(live.pairRisk?.['EUR/USD']?.riskLevel, 'HIGH');
   assert.deepEqual(live.queryPairs, ['EUR/USD', 'GBP/USD']);
 
-  const finnhubUrls = requestedUrls.filter(url => url.includes('finnhub.io'));
-  assert.equal(finnhubUrls.length, 1);
+  assert.equal(requestedUrls.some(url => url.includes('newsapi.org')), false);
+  assert.equal(requestedUrls.some(url => url.includes('jblanked.com')), false);
 
   resetLiveForexNewsCacheForTest();
   globalThis.fetch = async (input: RequestInfo | URL) => {
@@ -108,12 +115,12 @@ try {
       return response(JSON.stringify([]));
     }
 
-    if (url.includes('newsapi.org')) {
-      return response(JSON.stringify({ status: 'ok', articles: [] }));
+    if (url.includes('api.massive.com')) {
+      return response(JSON.stringify({ status: 'OK', results: [] }));
     }
 
-    if (url.includes('jblanked.com')) {
-      return response(JSON.stringify([]));
+    if (url.includes('api.currentsapi.services')) {
+      return response(JSON.stringify({ status: 'ok', news: [] }));
     }
 
     if (url.includes('news.google.com')) {
@@ -137,7 +144,7 @@ try {
         </channel></rss>`);
     }
 
-    return response('', 404);
+    throw new Error('Unexpected news provider URL: ' + url);
   };
 
   const googleBackup = await fetchLiveForexNews({
@@ -165,29 +172,37 @@ try {
       }]));
     }
 
-    if (url.includes('newsapi.org')) {
+    if (url.includes('api.massive.com')) {
       return response(JSON.stringify({
-        status: 'ok',
-        articles: [{
-          title: 'Delayed article',
-          url: 'https://newsapi.example/old',
-          source: { name: 'NewsAPI' },
-          publishedAt: new Date(Date.now() - 26 * 60 * 60_000).toISOString()
+        status: 'OK',
+        results: [{
+          title: 'Old dollar tariff commentary',
+          article_url: 'https://massive.example/old',
+          publisher: { name: 'Massive' },
+          published_utc: new Date(Date.now() - 26 * 60 * 60_000).toISOString()
         }]
       }));
     }
 
-    if (url.includes('jblanked.com')) {
-      return response(JSON.stringify([{
-        Name: 'FOMC Rate Decision',
-        Currency: 'USD',
-        Impact: 'High',
-        Date: new Date(Date.now() - 30 * 60_000).toISOString(),
-        Quality: 'Good Data'
-      }]));
+    if (url.includes('api.currentsapi.services')) {
+      return response(JSON.stringify({
+        status: 'ok',
+        news: [{
+          title: 'FOMC rate decision keeps USD volatile',
+          url: 'https://currents.example/fomc',
+          author: 'Currents',
+          published: new Date(Date.now() - 30 * 60_000).toISOString(),
+          description: 'Fresh macro event.',
+          language: 'en'
+        }]
+      }));
     }
 
-    return response('', 404);
+    if (url.includes('news.google.com')) {
+      return response('');
+    }
+
+    throw new Error('Unexpected news provider URL: ' + url);
   };
 
   const staleCheck = await fetchLiveForexNews({
@@ -197,8 +212,8 @@ try {
 
   assert.equal(staleCheck.status, 'LIVE');
   assert.equal(staleCheck.providerStatus?.FINNHUB, 'STALE');
-  assert.equal(staleCheck.providerStatus?.NEWSAPI, 'STALE');
-  assert.equal(staleCheck.providerStatus?.JBLANKED, 'LIVE');
+  assert.equal(staleCheck.providerStatus?.MASSIVE, 'STALE');
+  assert.equal(staleCheck.providerStatus?.CURRENTS, 'LIVE');
   assert.equal(staleCheck.articleCount, 1);
 
   resetLiveForexNewsCacheForTest();
@@ -213,8 +228,8 @@ try {
   assert.equal(unavailable.riskLevel, 'UNAVAILABLE');
   assert.equal(unavailable.articleCount, 0);
   assert.equal(unavailable.providerStatus?.FINNHUB, 'ERROR');
-  assert.equal(unavailable.providerStatus?.NEWSAPI, 'ERROR');
-  assert.equal(unavailable.providerStatus?.JBLANKED, 'ERROR');
+  assert.equal(unavailable.providerStatus?.MASSIVE, 'ERROR');
+  assert.equal(unavailable.providerStatus?.CURRENTS, 'ERROR');
 
   resetLiveForexNewsCacheForTest();
   console.log('LIVE NEWS SERVICE TEST PASSED');
