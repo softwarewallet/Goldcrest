@@ -490,6 +490,71 @@ function initSchema(db: Database) {
 
     CREATE INDEX IF NOT EXISTS idx_market_history_sync_status
       ON market_history_sync(status);
+
+    -- Durable live-trading research ledger.
+    -- Stores the information Goldcrest knew at signal time and the resulting
+    -- broker execution state so future trend/prediction models can be trained
+    -- and evaluated without reconstructing historical TradeLog files.
+    CREATE TABLE IF NOT EXISTS live_trade_research (
+      signal_id TEXT PRIMARY KEY,
+      symbol TEXT NOT NULL,
+      broker TEXT NOT NULL,
+      environment TEXT NOT NULL,
+      signal_timestamp INTEGER NOT NULL,
+      captured_at INTEGER NOT NULL,
+      direction TEXT NOT NULL,
+      signal_category TEXT NOT NULL,
+      score REAL NOT NULL,
+      score_breakdown_json TEXT NOT NULL,
+      strategy_version TEXT NOT NULL,
+      model_version TEXT NOT NULL,
+      market_regime TEXT NOT NULL,
+      session TEXT NOT NULL,
+      data_status TEXT NOT NULL,
+      entry_min REAL,
+      entry_max REAL,
+      entry_preferred REAL,
+      entry_type TEXT,
+      stop_loss REAL,
+      take_profit_1 REAL,
+      take_profit_2 REAL,
+      take_profit_3 REAL,
+      risk_reward REAL,
+      quote_bid REAL,
+      quote_ask REAL,
+      quote_spread REAL,
+      quote_timestamp INTEGER,
+      quote_status TEXT,
+      requested_risk_quantity REAL,
+      configured_quantity REAL,
+      news_status TEXT,
+      news_source TEXT,
+      news_json TEXT,
+      reasons_json TEXT NOT NULL,
+      no_trade_reasons_json TEXT NOT NULL,
+      context_json TEXT NOT NULL,
+      lifecycle_status TEXT NOT NULL,
+      execution_status TEXT,
+      execution_code TEXT,
+      execution_reason TEXT,
+      broker_order_id TEXT,
+      executed_entry_price REAL,
+      executed_quantity REAL,
+      commission REAL,
+      broker_status TEXT,
+      execution_timestamp INTEGER,
+      realized_pnl REAL,
+      exit_price REAL,
+      exit_timestamp INTEGER,
+      outcome TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_live_trade_research_symbol_time
+      ON live_trade_research(symbol, signal_timestamp);
+
+    CREATE INDEX IF NOT EXISTS idx_live_trade_research_lifecycle
+      ON live_trade_research(lifecycle_status, updated_at);
   `;
 
   db.run(schemaSQL);
@@ -623,7 +688,8 @@ export async function getDatabaseStats() {
     'signals', 'trades', 'positions', 'orders', 'economic_events',
     'risk_configs', 'system_settings', 'broker_accounts',
     'broker_reconciliation_snapshots', 'execution_intents', 'execution_fill_observations', 'execution_fill_events',
-    'trade_traces', 'trade_trace_nodes', 'trade_notes', 'ml_storage_records'
+    'trade_traces', 'trade_trace_nodes', 'trade_notes', 'ml_storage_records',
+    'live_trade_research'
   ];
 
   const stats: Record<string, number> = {};
