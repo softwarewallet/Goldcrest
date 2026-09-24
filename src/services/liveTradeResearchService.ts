@@ -156,6 +156,50 @@ export async function recordLiveTradeResearchSignal(signal: LiveTradeResearchSig
   );
 }
 
+export async function updateLiveTradeResearchQuote(params: {
+  signalId: string;
+  quote?: {
+    bid: number;
+    ask: number;
+    spread: number;
+    timestamp: number;
+    status: string;
+  } | null;
+  requestedRiskQuantity?: number;
+  configuredQuantity?: number;
+  context?: Record<string, unknown>;
+}): Promise<void> {
+  await executeRun(
+    `UPDATE live_trade_research
+       SET quote_bid = ?,
+           quote_ask = ?,
+           quote_spread = ?,
+           quote_timestamp = ?,
+           quote_status = ?,
+           requested_risk_quantity = ?,
+           configured_quantity = ?,
+           context_json = CASE
+             WHEN ? IS NULL THEN context_json
+             ELSE ?
+           END,
+           updated_at = ?
+     WHERE signal_id = ?`,
+    [
+      params.quote?.bid ?? null,
+      params.quote?.ask ?? null,
+      params.quote?.spread ?? null,
+      params.quote?.timestamp ?? null,
+      params.quote?.status ?? null,
+      params.requestedRiskQuantity ?? null,
+      params.configuredQuantity ?? null,
+      params.context ? json(params.context) : null,
+      params.context ? json(params.context) : null,
+      Date.now(),
+      params.signalId
+    ]
+  );
+}
+
 export async function updateLiveTradeResearchExecution(execution: LiveTradeResearchExecution): Promise<void> {
   const status = String(execution.status || '').toUpperCase();
   const lifecycleStatus =
