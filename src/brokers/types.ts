@@ -98,10 +98,25 @@ export interface NormalizedPosition {
 export interface NormalizedFill {
   brokerFillId: string;
   brokerOrderId?: string;
+  /** Authoritative cTrader position ID associated with this fill, when available. */
+  brokerPositionId?: string;
   quantity: number;
   price: number;
   commission?: number;
   timestamp: number;
+}
+
+export interface NormalizedPositionClose {
+  brokerPositionId: string;
+  symbol: string;
+  side: OrderSide;
+  quantity: number;
+  exitPrice: number;
+  realizedPnL: number;
+  commission?: number;
+  swap?: number;
+  timestamp: number;
+  brokerOrderId?: string;
 }
 
 export interface NormalizedOrder {
@@ -213,6 +228,8 @@ export interface BrokerAdapter {
   getOpenOrders(): Promise<NormalizedOrder[]>;
   getOrderHistory(): Promise<NormalizedOrder[]>;
   getOrderHistoryRange?(fromTimestamp: number, toTimestamp: number): Promise<NormalizedOrder[]>;
+  /** Optional authoritative closed-position outcome history. */
+  getPositionHistory?(positionId: string, fromTimestamp: number, toTimestamp: number): Promise<NormalizedPositionClose[]>;
   getQuote(symbol: string): Promise<NormalizedQuote>;
   /** Optional broker-native conversion path for multi-currency exposure checks. */
   getAccountCurrencyConversionRate?(fromCurrency: string, toCurrency: string): Promise<number>;
