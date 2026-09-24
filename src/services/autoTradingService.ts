@@ -13,6 +13,7 @@ import { killSwitch } from '../brokers/safety/KillSwitch';
 import { BrokerAdapter, NormalizedQuote, OrderRequest } from '../brokers/types';
 import { liveRuntimeLog, tradeAuditLog } from './liveRuntimeLog';
 import { calculateForexPipTargets, normalizePriceToThreeDigits, sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
+import { recordLiveTradeResearchSignal, updateLiveTradeResearchQuote, updateLiveTradeResearchExecution } from './liveTradeResearchService';
 
 const LIVE_QUOTE_MAX_AGE_MS = 30_000;
 
@@ -189,6 +190,9 @@ class AutoTradingService {
   private lastPreOpenPreparedAt: number | null = null;
   private preOpenTrendPairsEvaluated = 0;
   private preOpenNews: LiveNewsSnapshot | null = null;
+  // Snapshot of the authoritative news input used by the current Auto Live
+  // cycle. It is copied into the research ledger with each evaluated signal.
+  private currentCycleNews: LiveNewsSnapshot | null = null;
   private preOpenStatus: 'IDLE' | 'RUNNING' | 'READY' | 'UNAVAILABLE' = 'IDLE';
   private cycleInFlight = false;
   // When the authoritative system-wide live-position limit is full, Auto Live
@@ -757,6 +761,7 @@ class AutoTradingService {
         pairs: getConfiguredAutoForexPairs()
       });
       this.preOpenNews = cycleNews;
+      this.currentCycleNews = cycleNews;
       this.preOpenStatus = cycleNews.status === 'LIVE' ? 'READY' : 'UNAVAILABLE';
 
       liveRuntimeLog(
@@ -914,6 +919,42 @@ class AutoTradingService {
         strategyId: signal.strategyVersion
       });
 
+      // Persist the complete model state at decision time. This is research
+      // telemetry only and does not participate in the execution decision.
+      await recordLiveTradeResearchSignal({
+        signalId: signal.id,
+        symbol: pair,
+        timestamp: signal.timestamp,
+        direction: signal.direction,
+        signalCategory: signal.signalCategory,
+        score: signal.score,
+        scoreBreakdown: signal.scoreBreakdown,
+        strategyVersion: signal.strategyVersion,
+        modelVersion: signal.modelVersion,
+        marketRegime: signal.marketRegime,
+        session: signal.session,
+        dataStatus: signal.dataStatus,
+        tradePlan: signal.tradePlan ? {
+          entryMin: signal.tradePlan.entryMin,
+          entryMax: signal.tradePlan.entryMax,
+          entryPreferred: signal.tradePlan.entryPreferred,
+          entryType: signal.tradePlan.entryType,
+          stopLoss: signal.tradePlan.stopLoss,
+          takeProfit1: signal.tradePlan.takeProfit1.targetPrice,
+          takeProfit2: signal.tradePlan.takeProfit2.targetPrice,
+          takeProfit3: signal.tradePlan.takeProfit3.targetPrice,
+          riskReward: signal.tradePlan.riskReward
+        } : null,
+        reasons: signal.reasons,
+        noTradeReasons: signal.noTradeReasons,
+        news: this.currentCycleNews,
+        context: {
+          autoLiveCycleTimestamp: this.lastCycleAt,
+          source: 'AUTO_LIVE',
+          lifecycleCapture: 'SIGNAL_TIME'
+        }
+      });
+
       // The signal engine has multiple directional categories (BUY, STRONG_BUY,
       // WATCH_BUY and their SELL equivalents). The scanner already normalizes
       // these to BUY/SELL for the UI. Auto Live must use the same directional
@@ -1008,6 +1049,22 @@ return;
         return;
       }
       const entryPrice = signalSide === 'BUY' ? quote.ask : quote.bid;
+
+      await updateLiveTradeResearchQuote({
+        signalId: signal.id,
+        quote: {
+          bid: quote.bid,
+          ask: quote.ask,
+          spread: quote.spread,
+          timestamp: quote.timestamp,
+          status: quote.status
+        },
+        context: {
+          dispatchQuoteAgeMs: Math.max(0, Date.now() - quote.timestamp),
+          selectedEntrySide: signalSide,
+          selectedEntryPrice: entryPrice
+        }
+      });
 
       // Auto Live submits a MARKET order using the authoritative broker quote
       // available at the dispatch boundary. The signal entry zone is an
@@ -1172,6 +1229,30 @@ return;
 
       const quantity = sizing.quantity;
 
+      await updateLiveTradeResearchQuote({
+        signalId: signal.id,
+        quote: {
+          bid: quote.bid,
+          ask: quote.ask,
+          spread: quote.spread,
+          timestamp: quote.timestamp,
+          status: quote.status
+        },
+        requestedRiskQuantity: riskQuantity,
+        configuredQuantity: sizing.maxTradeValueUsd,
+        context: {
+          dispatchQuoteAgeMs: Math.max(0, Date.now() - quote.timestamp),
+          selectedEntrySide: signalSide,
+          selectedEntryPrice: entryPrice,
+          executionEntryPrice,
+          stopLossPips: configuredTargets.stopLossPips,
+          takeProfitPips: configuredTargets.takeProfitPips,
+          pipSize: configuredTargets.pipSize,
+          directQuantity: sizing.directQuantity,
+          sizingAdjusted: sizing.adjusted
+        }
+      });
+
       this.setExecutionStatus({
         stage: 'PREPARING_ORDER',
         pair,
@@ -1278,6 +1359,19 @@ return;
           });
         }
       );
+
+      await updateLiveTradeResearchExecution({
+        signalId: signal.id,
+        status: result.executed ? 'FILLED' : 'BLOCKED',
+        code: result.code,
+        reason: result.reason,
+        brokerOrderId: result.order?.brokerOrderId || result.order?.id,
+        executedEntryPrice: result.order?.averageFillPrice ?? result.order?.price,
+        executedQuantity: result.order?.filledQuantity ?? result.order?.quantity,
+        commission: result.order?.commission,
+        brokerStatus: result.order?.status,
+        executionTimestamp: result.order?.timestamp || Date.now()
+      });
 
       if (result.executed) {
         this.finishExecution('TRADE_EXECUTED', pair + ' ' + order.side + ' trade confirmed by the execution engine.', {
