@@ -1555,6 +1555,26 @@ app.get('/api/live-trade-research/predictions', operatorAuthRequired, async (req
   }
 });
 
+app.get('/api/live-trade-research/predictions/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : undefined;
+    if (horizon && !['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const analytics = await getResearchPredictionAnalytics({
+      modelVersion: typeof req.query.modelVersion === 'string' ? req.query.modelVersion : undefined,
+      horizon: horizon as '1D' | '3D' | '7D' | undefined,
+      limit: Number(req.query.limit || 50000)
+    });
+    res.json(analytics);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_TRADE_RESEARCH_PREDICTION_ANALYTICS_UNAVAILABLE',
+      message: err?.message || 'Research prediction analytics are unavailable.'
+    });
+  }
+});
+
 app.get('/api/live-trade-research/predictions/:predictionId', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     const prediction = await getResearchPrediction(String(req.params.predictionId));
@@ -1600,26 +1620,6 @@ app.post('/api/live-trade-research/predictions/evaluate', operatorAuthRequired, 
     res.status(503).json({
       error: 'LIVE_TRADE_RESEARCH_PREDICTION_EVALUATION_FAILED',
       message: err?.message || 'Research prediction evaluation failed.'
-    });
-  }
-});
-
-app.get('/api/live-trade-research/predictions/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
-  try {
-    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : undefined;
-    if (horizon && !['1D', '3D', '7D'].includes(horizon)) {
-      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
-    }
-    const analytics = await getResearchPredictionAnalytics({
-      modelVersion: typeof req.query.modelVersion === 'string' ? req.query.modelVersion : undefined,
-      horizon: horizon as '1D' | '3D' | '7D' | undefined,
-      limit: Number(req.query.limit || 50000)
-    });
-    res.json(analytics);
-  } catch (err: any) {
-    res.status(503).json({
-      error: 'LIVE_TRADE_RESEARCH_PREDICTION_ANALYTICS_UNAVAILABLE',
-      message: err?.message || 'Research prediction analytics are unavailable.'
     });
   }
 });
