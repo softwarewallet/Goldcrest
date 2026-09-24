@@ -614,6 +614,64 @@ export async function getMarketHistorySummary(symbol: string): Promise<{
   };
 }
 
+export async function getMarketTrendContext(symbol: string): Promise<{
+  symbol: string;
+  currentClose: number | null;
+  direction: 'BULLISH' | 'BEARISH' | 'MIXED' | 'INSUFFICIENT_DATA';
+  horizon: {
+    days7: { returnPct: number | null; volatilityPct: number | null; high: number | null; low: number | null };
+    days30: { returnPct: number | null; volatilityPct: number | null; high: number | null; low: number | null };
+    days90: { returnPct: number | null; volatilityPct: number | null; high: number | null; low: number | null };
+    days365: { returnPct: number | null; volatilityPct: number | null; high: number | null; low: number | null };
+  };
+  observation: string;
+}> {
+  const summary = await getMarketHistorySummary(symbol);
+  const rolling = new Map(summary.rolling.map(stat => [stat.periodType, stat]));
+  const get = (periodType: MarketPeriodStats['periodType']) => {
+    const stat = rolling.get(periodType);
+    return {
+      returnPct: stat?.returnPct ?? null,
+      volatilityPct: stat?.volatilityPct ?? null,
+      high: stat?.high ?? null,
+      low: stat?.low ?? null
+    };
+  };
+
+  const returns = ['ROLLING_7D', 'ROLLING_30D', 'ROLLING_90D', 'ROLLING_365D']
+    .map(key => rolling.get(key)?.returnPct)
+    .filter((value): value is number => Number.isFinite(value));
+
+  let direction: 'BULLISH' | 'BEARISH' | 'MIXED' | 'INSUFFICIENT_DATA' = 'INSUFFICIENT_DATA';
+  if (returns.length >= 2) {
+    const positive = returns.filter(value => value > 0).length;
+    const negative = returns.filter(value => value < 0).length;
+    direction = positive === returns.length
+      ? 'BULLISH'
+      : negative === returns.length
+        ? 'BEARISH'
+        : 'MIXED';
+  }
+
+  const latestClose = summary.latestDaily?.close ?? null;
+  const observation = direction === 'INSUFFICIENT_DATA'
+    ? 'Insufficient long-horizon market history for a directional trend classification.'
+    : `Long-horizon returns are ${direction.toLowerCase()} across the available rolling periods.`;
+
+  return {
+    symbol: summary.symbol,
+    currentClose: latestClose,
+    direction,
+    horizon: {
+      days7: get('ROLLING_7D'),
+      days30: get('ROLLING_30D'),
+      days90: get('ROLLING_90D'),
+      days365: get('ROLLING_365D')
+    },
+    observation
+  };
+}
+
 export function startMarketHistoryScheduler(): void {
   if (syncTimer) return;
   syncTimer = setInterval(() => {
