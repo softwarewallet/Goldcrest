@@ -666,6 +666,7 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
     const requestedAutoLiveMinSignalScore = req.body?.autoLiveMinSignalScore;
     const requestedAutoLiveMaxTradesPerPair = req.body?.autoLiveMaxTradesPerPair;
     const requestedMaxOpenPositions = req.body?.maxOpenPositions;
+    const requestedMaxDailyLossPct = req.body?.maxDailyLossPct;
     const requestedForexStopLossPips = req.body?.forexStopLossPips;
     const requestedForexTakeProfitPips = req.body?.forexTakeProfitPips;
     const requestedForexPairs = req.body?.autoLiveForexPairs;
@@ -706,6 +707,14 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
         return res.status(400).json({ error: 'maxOpenPositions must be an integer from 1 to 100.' });
       }
       updates.maxOpenPositions = value;
+    }
+
+    if (requestedMaxDailyLossPct !== undefined) {
+      const value = Number(requestedMaxDailyLossPct);
+      if (!Number.isFinite(value) || value <= 0 || value > 100) {
+        return res.status(400).json({ error: 'maxDailyLossPct must be greater than 0 and no greater than 100 percent.' });
+      }
+      updates.maxDailyLossPct = value;
     }
 
     if (requestedForexStopLossPips !== undefined) {
