@@ -44,6 +44,7 @@ import {
   getLiveTradeResearch,
 } from './src/services/liveTradeResearchService';
 import { getLiveTradeResearchAnalytics } from './src/services/liveTradeResearchAnalyticsService';
+import { getLiveTradeResearchFeatures, materializeLiveTradeResearchFeatures } from './src/services/liveTradeResearchFeatureService';
 import {
   getLiveTradeResearchOutcomeTrackerStatus,
   startLiveTradeResearchOutcomeTracker,
@@ -1502,6 +1503,7 @@ app.get('/api/live-trade-research/outcomes/status', operatorAuthRequired, (_req:
   res.json(getLiveTradeResearchOutcomeTrackerStatus());
 });
 
+
 app.get('/api/live-trade-research/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     const parseNumber = (value: unknown) => {
@@ -1527,6 +1529,43 @@ app.get('/api/live-trade-research/analytics', operatorAuthRequired, async (req: 
     });
   }
 });
+
+app.get('/api/live-trade-research/features', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const parseNumber = (value: unknown) => {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : undefined;
+    };
+    const rows = await getLiveTradeResearchFeatures({
+      fromTimestamp: parseNumber(req.query.from),
+      toTimestamp: parseNumber(req.query.to),
+      closedOnly: req.query.closedOnly !== 'false',
+      limit: parseNumber(req.query.limit)
+    });
+    res.json({ rows, count: rows.length, generatedAt: Date.now() });
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_TRADE_RESEARCH_FEATURES_UNAVAILABLE',
+      message: err?.message || 'Research features are unavailable.'
+    });
+  }
+});
+
+app.post('/api/live-trade-research/features/materialize', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const result = await materializeLiveTradeResearchFeatures({
+      fromTimestamp: Number.isFinite(Number(req.body?.from)) ? Number(req.body.from) : undefined,
+      toTimestamp: Number.isFinite(Number(req.body?.to)) ? Number(req.body.to) : undefined
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_TRADE_RESEARCH_FEATURE_MATERIALIZATION_FAILED',
+      message: err?.message || 'Research feature materialization failed.'
+    });
+  }
+});
+
 
 app.get('/api/db/stats', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
