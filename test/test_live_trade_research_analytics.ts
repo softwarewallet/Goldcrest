@@ -11,22 +11,26 @@ const rows = [
   {
     id: prefix + '1', symbol: 'EUR/USD', direction: 'BUY', score: 84,
     regime: 'TRENDING', session: 'LONDON', pnl: 100, outcome: 'WIN',
-    duration: 60000, mfe: 120, mae: -20, news: JSON.stringify({ status: 'OK', highImpactCount: 0 })
+    duration: 60000, mfe: 120, mae: -20, news: JSON.stringify({ status: 'OK', highImpactCount: 0 }),
+    context: JSON.stringify({ marketTrend: { direction: 'BULLISH', horizon: { days7: { returnPct: 1 }, days30: { returnPct: 2 }, days90: { returnPct: 3 }, days365: { returnPct: 4 } } } })
   },
   {
     id: prefix + '2', symbol: 'EUR/USD', direction: 'BUY', score: 72,
     regime: 'RANGE', session: 'NEW_YORK', pnl: -40, outcome: 'LOSS',
-    duration: 120000, mfe: 15, mae: -55, news: JSON.stringify({ status: 'OK', activeHighImpactCount: 1 })
+    duration: 120000, mfe: 15, mae: -55, news: JSON.stringify({ status: 'OK', activeHighImpactCount: 1 }),
+    context: JSON.stringify({ marketTrend: { direction: 'BEARISH', horizon: { days7: { returnPct: -1 }, days30: { returnPct: -2 }, days90: { returnPct: -3 }, days365: { returnPct: -4 } } } })
   },
   {
     id: prefix + '3', symbol: 'GBP/USD', direction: 'SELL', score: 66,
     regime: 'TRENDING', session: 'LONDON', pnl: 60, outcome: 'WIN',
-    duration: 180000, mfe: 80, mae: -10, news: JSON.stringify({ status: 'OK', highImpactCount: 1 })
+    duration: 180000, mfe: 80, mae: -10, news: JSON.stringify({ status: 'OK', highImpactCount: 1 }),
+    context: JSON.stringify({ marketTrend: { direction: 'MIXED', horizon: { days7: { returnPct: 1 }, days30: { returnPct: -1 }, days90: { returnPct: 0 }, days365: { returnPct: 2 } } } })
   },
   {
     id: prefix + '4', symbol: 'USD/JPY', direction: 'BUY', score: 58,
     regime: 'RANGE', session: 'ASIA', pnl: 0, outcome: 'BREAKEVEN',
-    duration: 90000, mfe: 5, mae: -5, news: JSON.stringify({ status: 'UNAVAILABLE' })
+    duration: 90000, mfe: 5, mae: -5, news: JSON.stringify({ status: 'UNAVAILABLE' }),
+    context: JSON.stringify({ marketTrend: { direction: 'INSUFFICIENT_DATA', horizon: {} } })
   }
 ];
 
