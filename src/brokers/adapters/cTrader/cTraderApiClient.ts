@@ -58,6 +58,8 @@ const MSG_AMEND_POSITION_SLTP_REQ = 2110;
 const MSG_CLOSE_POSITION_REQ = 2111;
 const MSG_DEAL_LIST_REQ = 2133;
 const MSG_DEAL_LIST_RES = 2134;
+const MSG_DEAL_LIST_BY_POSITION_ID_REQ = 2179;
+const MSG_DEAL_LIST_BY_POSITION_ID_RES = 2180;
 const MSG_EXECUTION_EVENT = 2126;
 const MSG_ORDER_ERROR_EVENT = 2132;
 const MSG_ORDER_DETAILS_REQ = 2181;
@@ -1030,6 +1032,34 @@ export async function fetchCTraderDeals(
     }, MSG_DEAL_LIST_RES, 15000);
     return Array.isArray(payload.deal) ? payload.deal : [];
   });
+}
+
+export async function fetchCTraderDealsByPositionId(
+  ctidTraderAccountId: number,
+  positionId: number,
+  fromTimestamp: number,
+  toTimestamp: number,
+  clientId: string,
+  clientSecret: string,
+  accessToken: string,
+  isLive: boolean
+): Promise<any[]> {
+  return withAuthenticatedAccount(
+    ctidTraderAccountId,
+    clientId,
+    clientSecret,
+    accessToken,
+    isLive,
+    async ws => {
+      const payload = await sendAndAwait(ws, MSG_DEAL_LIST_BY_POSITION_ID_REQ, {
+        ctidTraderAccountId,
+        positionId,
+        fromTimestamp: Math.max(0, Number(fromTimestamp)),
+        toTimestamp: Math.max(0, Number(toTimestamp))
+      }, MSG_DEAL_LIST_BY_POSITION_ID_RES, 15000);
+      return Array.isArray(payload.deal) ? payload.deal : [];
+    }
+  );
 }
 
 export interface CTraderPositionUnrealizedPnL {
