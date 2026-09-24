@@ -33,6 +33,13 @@ import { autoTradingService } from './src/services/autoTradingService';
 import { initializeLiveRuntimeLog, getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile, listLiveRuntimeLogFiles, logApplicationAction, liveRuntimeLog } from './src/services/liveRuntimeLog';
 import { fetchLiveForexNews } from './src/services/liveNewsService';
 import { fetchIndianMarketNews } from './src/services/indianMarketNewsService';
+import {
+  getMarketHistorySchedulerStatus,
+  getMarketHistorySummary,
+  getMarketHistorySyncStatus,
+  startMarketHistoryScheduler,
+  syncMarketHistory
+} from './src/services/marketHistoryService';
 
 // Phase 3 Machine Learning Engine is retained for internal model compatibility;
 // the public research/training API is retired while the research program is closed.
@@ -503,6 +510,60 @@ app.get('/api/status', (req: Request, res: Response) => {
   });
 });
 
+app.get('/api/market-history/status', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    res.json({
+      scheduler: getMarketHistorySchedulerStatus(),
+      pairs: await getMarketHistorySyncStatus(),
+      timestamp: Date.now()
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Market history status unavailable.' });
+  }
+});
+
+app.post('/api/market-history/sync', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    const requestedPairs = Array.isArray(req.body?.pairs)
+      ? req.body.pairs.map((value: unknown) => String(value).toUpperCase().trim())
+      : undefined;
+    const forceFull = req.body?.forceFull === true;
+    const results = await syncMarketHistory({
+      forceFull,
+      symbols: requestedPairs
+    });
+    res.json({
+      success: true,
+      forceFull,
+      results,
+      scheduler: getMarketHistorySchedulerStatus(),
+      timestamp: Date.now()
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Market history synchronization failed.' });
+  }
+});
+
+app.get('/api/market-history/:pair', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    const pair = decodeURIComponent(String(req.params.pair || '')).toUpperCase().trim();
+    if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(pair)) {
+      return res.status(400).json({ error: 'PAIR_FORMAT_INVALID', message: 'Pair must use BASE/QUOTE format.' });
+    }
+    const summary = await getMarketHistorySummary(pair);
+    res.json({
+      ...summary,
+      scheduler: getMarketHistorySchedulerStatus(),
+      timestamp: Date.now()
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Market history summary unavailable.' });
+  }
+});
+
 
 const DATABASE_EXPLORER_TABLES = [
   { name: 'execution_intents', label: 'Execution Intents', category: 'Execution', description: 'Trigger Now and autonomous execution idempotency records.' },
@@ -517,6 +578,8 @@ const DATABASE_EXPLORER_TABLES = [
   { name: 'broker_reconciliation_snapshots', label: 'Reconciliation Snapshots', category: 'Trading', description: 'Broker account, position and order snapshots.' },
   { name: 'market_data', label: 'Market Data', category: 'Market Data', description: 'Persisted market observations.' },
   { name: 'candles', label: 'Candles', category: 'Market Data', description: 'OHLCV candle series.' },
+  { name: 'market_history_sync', label: 'Market History Sync', category: 'Market Data', description: 'Per-pair historical market-data synchronization state.' },
+  { name: 'market_period_stats', label: 'Market Period Statistics', category: 'Market Data', description: 'Daily, weekly, monthly and rolling 7D/30D/90D/365D market statistics.' },
   { name: 'options_chain', label: 'Options Chains', category: 'Market Data', description: 'Persisted options-chain snapshots.' },
   { name: 'option_contracts', label: 'Option Contracts', category: 'Market Data', description: 'Strike-level option observations.' },
   { name: 'greeks', label: 'Greeks', category: 'Market Data', description: 'Option Greeks and IV records.' },
@@ -1602,6 +1665,24 @@ async function startServer() {
     });
     void captureLiveBrokerReconciliation();
     void reconcileInFlightExecutionIntents();
+
+    // Phase 1: durable Forex historical market-data collection. The initial
+    // synchronization backfills daily history (plus broker-native weekly and
+    // monthly bars) and then the scheduler performs lightweight incremental
+    // refreshes so today's high/low/close stays current without flooding
+    // cTrader historical endpoints.
+    void databaseInitPromise
+      .then(() => syncMarketHistory())
+      .then(() => {
+        startMarketHistoryScheduler();
+      })
+      .catch((error) => {
+        liveRuntimeLog('ERROR', 'MARKET_HISTORY_INITIAL_SYNC_FAILED', {
+          error: error?.message || String(error)
+        });
+        startMarketHistoryScheduler();
+      });
+
     const reconciliationTimer = setInterval(() => void captureLiveBrokerReconciliation(), 5 * 60_000);
     const executionLifecycleTimer = setInterval(() => void reconcileInFlightExecutionIntents(), 15_000);
     if (process.env.GOLDCREST_AUTO_TRADING_START_ON_BOOT === 'true') {
