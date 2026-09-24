@@ -46,6 +46,7 @@ export interface LiveTradeResearchExecution {
   code?: string;
   reason?: string;
   brokerOrderId?: string;
+  brokerPositionId?: string;
   executedEntryPrice?: number;
   executedQuantity?: number;
   commission?: number;
@@ -236,6 +237,7 @@ export async function updateLiveTradeResearchExecution(execution: LiveTradeResea
      WHERE signal_id = ?`,
     [
       lifecycleStatus,
+      execution.brokerPositionId || null,
       status,
       execution.code || null,
       execution.reason || null,
@@ -260,5 +262,99 @@ export async function getLiveTradeResearch(signalId?: string): Promise<any[]> {
   }
   return executeQuery(
     'SELECT * FROM live_trade_research ORDER BY signal_timestamp DESC LIMIT 500'
+  );
+}
+
+
+export async function updateLiveTradeResearchMark(params: {
+  signalId: string;
+  currentPnl: number;
+  currentPrice?: number;
+  observedAt?: number;
+}): Promise<void> {
+  const observedAt = Number(params.observedAt || Date.now());
+  const currentPnl = Number(params.currentPnl);
+  const currentPrice = Number(params.currentPrice);
+
+  if (!Number.isFinite(currentPnl)) return;
+
+  await executeRun(
+    `UPDATE live_trade_research
+       SET mfe_pnl = CASE
+             WHEN mfe_pnl IS NULL OR ? > mfe_pnl THEN ?
+             ELSE mfe_pnl
+           END,
+           mae_pnl = CASE
+             WHEN mae_pnl IS NULL OR ? < mae_pnl THEN ?
+             ELSE mae_pnl
+           END,
+           max_favorable_price = CASE
+             WHEN ? > 0 AND (max_favorable_price IS NULL OR ? > max_favorable_price) THEN ?
+             ELSE max_favorable_price
+           END,
+           max_adverse_price = CASE
+             WHEN ? > 0 AND (max_adverse_price IS NULL OR ? < max_adverse_price) THEN ?
+             ELSE max_adverse_price
+           END,
+           holding_duration_ms = CASE
+             WHEN execution_timestamp IS NULL THEN holding_duration_ms
+             ELSE MAX(0, ? - execution_timestamp)
+           END,
+           updated_at = ?
+     WHERE signal_id = ? AND lifecycle_status = 'OPEN'`,
+    [
+      currentPnl, currentPnl,
+      currentPnl, currentPnl,
+      currentPrice, currentPrice, currentPrice,
+      currentPrice, currentPrice, currentPrice,
+      observedAt,
+      observedAt,
+      params.signalId
+    ]
+  );
+}
+
+export async function closeLiveTradeResearchOutcome(params: {
+  signalId: string;
+  exitPrice: number;
+  exitTimestamp: number;
+  realizedPnl: number;
+  commission?: number;
+  outcome?: 'WIN' | 'LOSS' | 'BREAKEVEN';
+}): Promise<void> {
+  const realizedPnl = Number(params.realizedPnl);
+  const outcome = params.outcome || (
+    realizedPnl > 0 ? 'WIN' : realizedPnl < 0 ? 'LOSS' : 'BREAKEVEN'
+  );
+  const exitTimestamp = Number(params.exitTimestamp || Date.now());
+
+  await executeRun(
+    `UPDATE live_trade_research
+       SET lifecycle_status = 'CLOSED',
+           realized_pnl = ?,
+           exit_price = ?,
+           exit_timestamp = ?,
+           outcome = ?,
+           commission = CASE
+             WHEN ? IS NULL THEN commission
+             ELSE ?
+           END,
+           holding_duration_ms = CASE
+             WHEN execution_timestamp IS NULL THEN holding_duration_ms
+             ELSE MAX(0, ? - execution_timestamp)
+           END,
+           updated_at = ?
+     WHERE signal_id = ? AND lifecycle_status = 'OPEN'`,
+    [
+      Number.isFinite(realizedPnl) ? realizedPnl : 0,
+      Number(params.exitPrice || 0),
+      exitTimestamp,
+      outcome,
+      params.commission ?? null,
+      params.commission ?? null,
+      exitTimestamp,
+      Date.now(),
+      params.signalId
+    ]
   );
 }
