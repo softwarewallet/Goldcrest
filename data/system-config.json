@@ -1,5 +1,5 @@
 {
-  "cTraderApiMode": "DEMO",
+  "cTraderApiMode": "LIVE",
   "defaultRiskPct": 1,
   "maxDailyLossPct": 3,
   "maxOpenPositions": 30,
