@@ -123,6 +123,36 @@ export function refreshAutonomousExecutionPermission(): boolean {
   return syncAutonomousPermission();
 }
 
+export interface AutoLiveOrderPacketValidation {
+  valid: boolean;
+  reasons: string[];
+}
+
+export function validateAutoLiveOrderPacket(order: OrderRequest): AutoLiveOrderPacketValidation {
+  const reasons: string[] = [];
+  if (String(order.market).toUpperCase() !== 'FOREX') reasons.push('market must be FOREX');
+  if (!/^[A-Z]{3}\\/[A-Z]{3}$/.test(String(order.symbol || '').toUpperCase())) reasons.push('symbol must be a valid FX pair');
+  if (order.orderType !== 'MARKET') reasons.push('Auto Live order type must be MARKET');
+  if (!(Number.isInteger(order.quantity) && order.quantity > 0)) reasons.push('quantity must be a positive integer');
+  if (!(Number.isFinite(order.price) && Number(order.price) > 0)) reasons.push('entry price must be positive');
+  if (!(Number.isFinite(order.stopLoss) && Number(order.stopLoss) > 0)) reasons.push('stop loss must be positive');
+  if (!(Number.isFinite(order.takeProfit) && Number(order.takeProfit) > 0)) reasons.push('take profit must be positive');
+
+  if (reasons.length === 0) {
+    const price = Number(order.price);
+    const stopLoss = Number(order.stopLoss);
+    const takeProfit = Number(order.takeProfit);
+    if (order.side === 'BUY' && !(stopLoss < price && price < takeProfit)) {
+      reasons.push('BUY packet must satisfy stopLoss < price < takeProfit');
+    }
+    if (order.side === 'SELL' && !(takeProfit < price && price < stopLoss)) {
+      reasons.push('SELL packet must satisfy takeProfit < price < stopLoss');
+    }
+  }
+
+  return { valid: reasons.length === 0, reasons };
+}
+
 export interface ExecutionPermissionConfig {
   liveConnectionEnabled: boolean;
   liveTradingEnabled: boolean;
@@ -291,6 +321,19 @@ class AutoExecutionEngine {
       stopLoss: order.stopLoss,
       takeProfit: order.takeProfit
     });
+
+    const packetValidation = validateAutoLiveOrderPacket(order);
+    if (!packetValidation.valid) {
+      auditExecution('FINAL_ORDER_PACKET_REJECTED', {
+        code: 'INVALID_AUTONOMOUS_ORDER_PACKET',
+        reason: packetValidation.reasons.join('; ')
+      });
+      return {
+        executed: false,
+        code: 'INVALID_AUTONOMOUS_ORDER_PACKET',
+        reason: packetValidation.reasons.join('; ')
+      };
+    }
 
     // Stage 1: Kill Switch Check
     if (killSwitch.isHalted()) {
