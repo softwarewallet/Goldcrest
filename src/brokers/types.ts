@@ -86,6 +86,8 @@ export interface NormalizedPosition {
   quantity: number;
   entryPrice: number;
   currentPrice: number;
+  /** Whether currentPrice came from a fresh broker quote or a broker-position fallback. */
+  currentPriceStatus?: 'LIVE' | 'FALLBACK' | 'UNAVAILABLE';
   stopLoss?: number;
   takeProfit?: number;
   unrealizedPnL: number;

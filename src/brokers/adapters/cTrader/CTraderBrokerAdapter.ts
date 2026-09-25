@@ -41,6 +41,17 @@ import {
   CTraderRawAccount
 } from './cTraderApiClient';
 
+export function resolveLivePositionPrice(
+  side: 'BUY' | 'SELL',
+  quote: Pick<NormalizedQuote, 'status' | 'bid' | 'ask'>
+): { currentPrice: number; currentPriceStatus: 'LIVE' | 'UNAVAILABLE' } {
+  const currentPrice = side === 'BUY' ? Number(quote.bid) : Number(quote.ask);
+  if (quote.status !== 'FRESH' || !(currentPrice > 0) || !Number.isFinite(currentPrice)) {
+    return { currentPrice: 0, currentPriceStatus: 'UNAVAILABLE' };
+  }
+  return { currentPrice, currentPriceStatus: 'LIVE' };
+}
+
 export interface CTraderConfig {
   clientId?: string;
   clientSecret?: string;
@@ -712,16 +723,17 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
           raw.isLive,
           Number(position.symbolInfo.digits || 5)
         );
-        return {
-          position,
-          currentPrice: position.side === 'BUY' ? Number(quote.bid || 0) : Number(quote.ask || 0)
-        };
+        const livePrice = resolveLivePositionPrice(position.side, quote);
+        return { position, ...livePrice };
       } catch {
-        return { position, currentPrice: position.entryPrice };
+        // Never present the entry price as a live market price. A failed or stale
+        // quote must remain visibly unavailable rather than silently becoming a
+        // misleading "current" price.
+        return { position, currentPrice: 0, currentPriceStatus: 'UNAVAILABLE' as const };
       }
     }));
 
-    return enriched.map(({ position, currentPrice }) => {
+    return enriched.map(({ position, currentPrice, currentPriceStatus }) => {
       const p = position.raw;
       const pnl = pnlByPositionId.get(Number(p.positionId));
 
@@ -734,7 +746,8 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         side: position.side,
         quantity: position.quantity,
         entryPrice: position.entryPrice,
-        currentPrice: currentPrice > 0 ? currentPrice : position.entryPrice,
+        currentPrice,
+        currentPriceStatus,
         stopLoss: Number(p.stopLoss || 0) > 0 ? Number(p.stopLoss) : undefined,
         takeProfit: Number(p.takeProfit || 0) > 0 ? Number(p.takeProfit) : undefined,
         unrealizedPnL: Number(pnl?.netUnrealizedPnL ?? p.netUnrealizedPnL ?? p.unrealizedPnL ?? 0),
