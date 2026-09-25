@@ -29,6 +29,25 @@ export interface ResearchFeatureRow {
   realizedPnl: number | null;
   outcome: string | null;
   holdingDurationMs: number | null;
+  // Optional live-only predictive features. They are absent from historical rows
+  // unless explicitly materialized by a current-market feature builder.
+  priceChange5mPct?: number | null;
+  priceChange15mPct?: number | null;
+  priceChange1hPct?: number | null;
+  priceChange4hPct?: number | null;
+  priceChangeDailyPct?: number | null;
+  atrPct?: number | null;
+  rsi?: number | null;
+  macdHistogram?: number | null;
+  adx?: number | null;
+  trendStrength?: number | null;
+  mtfAlignmentScore?: number | null;
+  structureTrend?: string | null;
+  structurePhase?: string | null;
+  structureType?: string | null;
+  breakoutStatus?: string | null;
+  distanceToSupportPips?: number | null;
+  distanceToResistancePips?: number | null;
 }
 
 function finite(value: unknown): number | null {
