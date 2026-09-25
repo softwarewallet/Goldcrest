@@ -194,6 +194,104 @@ export async function testResearchAiServerConnection(): Promise<{
   }
 }
 
+
+export async function testResearchAiServerPrediction(): Promise<{
+  ok: boolean;
+  status: number | null;
+  latencyMs: number | null;
+  direction: string | null;
+  confidence: number | null;
+  modelAgreement: number | null;
+  message: string;
+}> {
+  const config = await loadStored();
+  if (!config.baseUrl) {
+    return { ok: false, status: null, latencyMs: null, direction: null, confidence: null, modelAgreement: null, message: 'AI gateway URL is not configured.' };
+  }
+
+  const startedAt = Date.now();
+  try {
+    const response = await requestResearchAiPrediction({
+      task: 'RESEARCH_PREDICTION',
+      horizon: '1D',
+      features: {
+        signalId: 'gateway-connectivity-test',
+        symbol: 'EUR/USD',
+        signalTimestamp: Date.now(),
+        direction: 'BUY',
+        score: 80,
+        marketRegime: 'TRENDING',
+        session: 'LONDON',
+        trendDirection: 'BULLISH',
+        trendAlignment: 'ALIGNED',
+        trend7dReturnPct: 1,
+        trend30dReturnPct: 2,
+        trend90dReturnPct: 3,
+        trend365dReturnPct: 5,
+        trend7dVolatilityPct: 8,
+        trend30dVolatilityPct: 9,
+        trend90dVolatilityPct: 10,
+        trend365dVolatilityPct: 12,
+        newsRiskLevel: 'LOW',
+        newsHighImpactCount: 0,
+        newsActiveHighImpactCount: 0,
+        newsSentiment: 0,
+        quoteSpread: 0.0001,
+        riskReward: 2,
+        stopDistance: 0.001,
+        targetDistance: 0.002
+      }
+    });
+
+    const source = response.consensus && typeof response.consensus === 'object'
+      ? response.consensus as Record<string, unknown>
+      : response.prediction && typeof response.prediction === 'object'
+        ? response.prediction as Record<string, unknown>
+        : response;
+
+    const direction = String(source.direction || source.predictedDirection || '').toUpperCase();
+    if (!['UP', 'DOWN', 'FLAT'].includes(direction)) {
+      throw new Error('AI gateway prediction response has an invalid direction.');
+    }
+
+    const rawConfidence = Number(source.confidence);
+    const confidence = rawConfidence > 1 && rawConfidence <= 100 ? rawConfidence / 100 : rawConfidence;
+    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+      throw new Error('AI gateway prediction response has invalid confidence.');
+    }
+
+    const rawAgreement = source.modelAgreement;
+    let modelAgreement: number | null = null;
+    if (rawAgreement !== undefined && rawAgreement !== null) {
+      const numeric = Number(rawAgreement);
+      modelAgreement = numeric > 1 && numeric <= 100 ? numeric / 100 : numeric;
+      if (!Number.isFinite(modelAgreement) || modelAgreement < 0 || modelAgreement > 1) {
+        throw new Error('AI gateway prediction response has invalid model agreement.');
+      }
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      latencyMs: Date.now() - startedAt,
+      direction,
+      confidence,
+      modelAgreement,
+      message: 'AI gateway prediction contract is working.'
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: null,
+      latencyMs: Date.now() - startedAt,
+      direction: null,
+      confidence: null,
+      modelAgreement: null,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
 export async function requestResearchAiPrediction(
   payload: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
