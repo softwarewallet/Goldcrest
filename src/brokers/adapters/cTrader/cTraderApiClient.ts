@@ -198,7 +198,7 @@ export async function fetchLiveCTraderAccountDetails(
   clientSecret: string,
   accessToken: string
 ): Promise<CTraderRealTraderDetails> {
-  const host = getCTraderWsHost(rawAccount.isLive);
+  const host = getCTraderWsHost();
 
   if (!rawAccount.isLive) {
     return Promise.reject(new Error(`cTrader account ${rawAccount.ctidTraderAccountId} is not marked LIVE by Open API. The configured LIVE broker endpoint requires a LIVE cTrader account.`));
