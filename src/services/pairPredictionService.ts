@@ -11,6 +11,7 @@ import { getSystemConfig } from './configService';
 import {
   LlamaGatewayPredictionModel,
   SignalDirectionBaselineModel,
+  createCurrentResearchPrediction,
   type PredictionModel,
   type ResearchPredictionDirection,
   type ResearchPredictionHorizon,
@@ -208,7 +209,14 @@ export async function generateCurrentPairPredictions(params: {
     }
     let output: ResearchPredictionOutput;
     try {
-      output = await model.predict(row, horizon);
+      const persisted = await createCurrentResearchPrediction({ row, horizon, model });
+      output = {
+        direction: persisted.predictedDirection,
+        confidence: persisted.confidence,
+        modelAgreement: persisted.modelAgreement,
+        reasoning: persisted.reasoning,
+        invalidation: persisted.invalidation
+      };
     } catch (error: any) {
       output = {
         direction: 'FLAT',
