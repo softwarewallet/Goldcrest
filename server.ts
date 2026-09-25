@@ -49,10 +49,9 @@ import { evaluateLiveTradeResearch, getLiveTradeResearchEvaluations } from './sr
 import { generateResearchPredictions, getLiveTradeResearchPredictions, getResearchPrediction } from './src/services/liveTradeResearchPredictionService';
 import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } from './src/services/liveTradeResearchPredictionEvaluationService';
 import {
-  getResearchAiServerConfigs,
+  getResearchAiServerConfig,
   saveResearchAiServerConfig,
-  testResearchAiServerConnection,
-  ResearchAiProvider
+  testResearchAiServerConnection
 } from './src/services/researchAiServerService';
 import {
   getLiveTradeResearchOutcomeTrackerStatus,
@@ -656,7 +655,7 @@ const DATABASE_EXPLORER_TABLES = [
   { name: 'backtest_runs', label: 'Backtest Runs', category: 'ML & Research', description: 'Historical backtest run summaries.' },
   { name: 'backtest_trades', label: 'Backtest Trades', category: 'ML & Research', description: 'Historical backtest trade rows.' },
   { name: 'ml_storage_records', label: 'ML Storage Records', category: 'ML & Research', description: 'Persisted ML bridge records.' },
-  { name: 'ai_research_server_connections', label: 'Research AI Server Connections', category: 'ML & Research', description: 'Optional Qwen/Llama research-server connectors; authentication tokens are redacted.' },
+  { name: 'ai_research_server_connections', label: 'Research AI Gateway Connection', category: 'ML & Research', description: 'Single Llama-hosted research gateway connection that can orchestrate Qwen; authentication tokens are redacted.' },
 ];
 
 const DATABASE_EXPLORER_REDACT_PATTERNS = /(password|secret|token|encryption.?key|totp|pin|client.?secret|access.?token)/i;
@@ -915,29 +914,26 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
 });
 
 
-// Optional research AI server connectors. These are observational/research
-// integrations only; they are never consulted by Auto Live execution.
-app.get('/api/research-ai/servers', operatorAuthRequired, async (_req: Request, res: Response) => {
+// Optional single AI gateway connector. The gateway is Llama-hosted and can
+// orchestrate Qwen internally; this remains research-only and never controls
+// Auto Live execution.
+app.get('/api/research-ai/server', operatorAuthRequired, async (_req: Request, res: Response) => {
   try {
     await databaseInitPromise;
-    res.json({ servers: await getResearchAiServerConfigs(), timestamp: Date.now() });
+    res.json({ server: await getResearchAiServerConfig(), timestamp: Date.now() });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Research AI server configuration unavailable.' });
+    res.status(500).json({ error: err?.message || 'Research AI gateway configuration unavailable.' });
   }
 });
 
-app.post('/api/research-ai/servers', operatorAuthRequired, async (req: Request, res: Response) => {
+app.post('/api/research-ai/server', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     await databaseInitPromise;
-    const provider = String(req.body?.provider || '').toUpperCase();
-    if (!['QWEN', 'LLAMA'].includes(provider)) {
-      return res.status(400).json({ error: 'PROVIDER_INVALID', message: 'Provider must be QWEN or LLAMA.' });
-    }
     const config = await saveResearchAiServerConfig({
-      provider: provider as ResearchAiProvider,
       enabled: req.body?.enabled === undefined ? undefined : Boolean(req.body.enabled),
       baseUrl: req.body?.baseUrl === undefined ? undefined : String(req.body.baseUrl),
-      model: req.body?.model === undefined ? undefined : String(req.body.model),
+      llamaModel: req.body?.llamaModel === undefined ? undefined : String(req.body.llamaModel),
+      qwenModel: req.body?.qwenModel === undefined ? undefined : String(req.body.qwenModel),
       healthPath: req.body?.healthPath === undefined ? undefined : String(req.body.healthPath),
       predictPath: req.body?.predictPath === undefined ? undefined : String(req.body.predictPath),
       timeoutMs: req.body?.timeoutMs === undefined ? undefined : Number(req.body.timeoutMs),
@@ -945,20 +941,16 @@ app.post('/api/research-ai/servers', operatorAuthRequired, async (req: Request, 
     });
     res.json({ success: true, server: config });
   } catch (err: any) {
-    res.status(400).json({ error: err?.message || 'Research AI server configuration rejected.' });
+    res.status(400).json({ error: err?.message || 'Research AI gateway configuration rejected.' });
   }
 });
 
-app.post('/api/research-ai/servers/test', operatorAuthRequired, async (req: Request, res: Response) => {
+app.post('/api/research-ai/server/test', operatorAuthRequired, async (_req: Request, res: Response) => {
   try {
     await databaseInitPromise;
-    const provider = String(req.body?.provider || '').toUpperCase();
-    if (!['QWEN', 'LLAMA'].includes(provider)) {
-      return res.status(400).json({ error: 'PROVIDER_INVALID', message: 'Provider must be QWEN or LLAMA.' });
-    }
-    res.json(await testResearchAiServerConnection(provider as ResearchAiProvider));
+    res.json(await testResearchAiServerConnection());
   } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Research AI server connection test failed.' });
+    res.status(500).json({ error: err?.message || 'Research AI gateway connection test failed.' });
   }
 });
 
