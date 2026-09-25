@@ -45,13 +45,43 @@ async function loadStored(): Promise<StoredConfig> {
     'SELECT provider, enabled, base_url, model, health_path, predict_path, timeout_ms, auth_token, updated_at FROM ai_research_server_connections WHERE provider = ? LIMIT 1',
     [CONNECTION_KEY]
   );
-  const row = rows[0];
-  const legacyLlama = String(row?.model || '');
+  let row = rows[0];
+
+  // Migrate the previous two-connection layout into the single Llama gateway
+  // on first read. Qwen is an internal model behind this gateway.
+  if (!row) {
+    const legacyRows = await executeQuery<any>(
+      'SELECT provider, enabled, base_url, model, health_path, predict_path, timeout_ms, auth_token, updated_at FROM ai_research_server_connections WHERE provider IN (?, ?) ORDER BY updated_at DESC',
+      ['LLAMA', 'QWEN']
+    );
+    const llama = legacyRows.find(item => String(item.provider).toUpperCase() === 'LLAMA');
+    const qwen = legacyRows.find(item => String(item.provider).toUpperCase() === 'QWEN');
+    if (llama || qwen) {
+      row = {
+        enabled: Number(llama?.enabled ?? qwen?.enabled ?? 0),
+        base_url: String(llama?.base_url ?? qwen?.base_url ?? ''),
+        model: String(llama?.model || ''),
+        qwen_model: String(qwen?.model || ''),
+        health_path: String(llama?.health_path ?? qwen?.health_path ?? '/health'),
+        predict_path: String(llama?.predict_path ?? qwen?.predict_path ?? '/predict'),
+        timeout_ms: Number(llama?.timeout_ms ?? qwen?.timeout_ms ?? DEFAULT_TIMEOUT_MS),
+        auth_token: String(llama?.auth_token ?? qwen?.auth_token ?? ''),
+        updated_at: Number(llama?.updated_at ?? qwen?.updated_at ?? Date.now())
+      };
+      await executeRun(
+        `INSERT OR REPLACE INTO ai_research_server_connections
+          (provider, enabled, base_url, model, health_path, predict_path, timeout_ms, auth_token, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [CONNECTION_KEY, row.enabled, row.base_url, row.model, row.health_path, row.predict_path, row.timeout_ms, row.auth_token, row.updated_at]
+      );
+    }
+  }
+
   return {
     enabled: Number(row?.enabled || 0) === 1,
     baseUrl: String(row?.base_url || ''),
-    llamaModel: legacyLlama,
-    qwenModel: '',
+    llamaModel: String(row?.model || ''),
+    qwenModel: String(row?.qwen_model || ''),
     healthPath: String(row?.health_path || '/health'),
     predictPath: String(row?.predict_path || '/predict'),
     timeoutMs: clampTimeout(row?.timeout_ms),
