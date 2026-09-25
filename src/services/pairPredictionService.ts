@@ -1,6 +1,12 @@
 import { ScannerService } from './scannerService';
+import { LiveForexProvider } from '../markets/forex/provider';
+import { ForexSignalEngine } from '../markets/forex/signalEngine';
+import { getForexPairConfig } from '../markets/forex/instruments';
+import type { ForexCandle } from '../markets/forex/types';
 
 const scannerService = new ScannerService();
+const liveForexProvider = new LiveForexProvider();
+const forexSignalEngine = new ForexSignalEngine(undefined, liveForexProvider);
 import { getSystemConfig } from './configService';
 import {
   LlamaGatewayPredictionModel,
@@ -46,27 +52,55 @@ function finite(value: unknown, fallback: number | null = null): number | null {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function buildFeatureRow(item: any): ResearchFeatureRow {
+function pctChange(current: number, previous: number): number | null {
+  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return null;
+  return ((current - previous) / previous) * 100;
+}
+
+function lastBarChange(candles: ForexCandle[]): number | null {
+  if (candles.length < 2) return null;
+  return pctChange(candles[candles.length - 1].close, candles[candles.length - 2].close);
+}
+
+function periodChange(candles: ForexCandle[], barsBack: number): number | null {
+  if (candles.length <= barsBack) return null;
+  return pctChange(candles[candles.length - 1].close, candles[candles.length - 1 - barsBack].close);
+}
+
+function pipsBetween(a: number | null, b: number | null, pipSize: number): number | null {
+  if (a === null || b === null || !Number.isFinite(a) || !Number.isFinite(b) || pipSize <= 0) return null;
+  return Math.abs(a - b) / pipSize;
+}
+
+async function buildFeatureRow(item: any): Promise<ResearchFeatureRow> {
   const signal = item.signal || {};
   const direction = String(signal.direction || 'NO_TRADE');
-  const trendScore = Number(signal.scoreBreakdown?.trend);
+  const signalDirection = direction.toUpperCase();
+
+  await liveForexProvider.refreshPair(item.symbol);
+  const analysis = forexSignalEngine.analyzePair(item.symbol);
+  const pairConfig = getForexPairConfig(item.symbol);
+  const candles5m = liveForexProvider.getCandles(item.symbol, '5M', 80);
+  const candles15m = liveForexProvider.getCandles(item.symbol, '15M', 80);
+  const candles1h = liveForexProvider.getCandles(item.symbol, '1H', 80);
+  const candles4h = liveForexProvider.getCandles(item.symbol, '4H', 80);
+  const candlesDaily = liveForexProvider.getCandles(item.symbol, 'Daily', 80);
+  const indicators = analysis.indicators;
+  const support = analysis.supportResistance.nearestSupport;
+  const resistance = analysis.supportResistance.nearestResistance;
+  const entry = finite(analysis.tradePlan?.entryMin);
+  const stop = finite(analysis.tradePlan?.stopLoss);
+  const target = finite(analysis.tradePlan?.takeProfit1);
+
   const trendDirection =
-    Number.isFinite(trendScore) && trendScore > 0 ? 'BULLISH' :
-    Number.isFinite(trendScore) && trendScore < 0 ? 'BEARISH' :
+    analysis.trend.direction === 'bullish' ? 'BULLISH' :
+    analysis.trend.direction === 'bearish' ? 'BEARISH' :
     'INSUFFICIENT_DATA';
 
-  const signalDirection = direction.toUpperCase();
   const trendAlignment =
-    trendDirection === 'INSUFFICIENT_DATA' ? 'INSUFFICIENT_DATA' :
-    (signalDirection === 'BUY' && trendDirection === 'BULLISH') ||
-    (signalDirection === 'SELL' && trendDirection === 'BEARISH')
-      ? 'ALIGNED'
-      : 'MIXED';
-
-  const tradePlan = signal.entryZone || {};
-  const stopLoss = finite(signal.stopLoss);
-  const entry = finite(tradePlan.preferred);
-  const target = finite(signal.target1);
+    analysis.multiTimeframe.alignment.includes('BULLISH') && signalDirection.includes('BUY') ? 'ALIGNED' :
+    analysis.multiTimeframe.alignment.includes('BEARISH') && signalDirection.includes('SELL') ? 'ALIGNED' :
+    analysis.multiTimeframe.alignment === 'CONFLICTING' ? 'CONTRARY' : 'MIXED';
 
   return {
     signalId: String(signal.id || item.symbol + '-' + Date.now()),
@@ -74,12 +108,12 @@ function buildFeatureRow(item: any): ResearchFeatureRow {
     signalTimestamp: Number(signal.timestamp || Date.now()),
     direction,
     score: Number(signal.score || 0),
-    marketRegime: String(signal.marketRegime || 'LIVE_SIGNAL'),
-    session: String(signal.session || 'UNKNOWN'),
+    marketRegime: String(analysis.regime || signal.marketRegime || 'UNKNOWN'),
+    session: String(analysis.session || signal.session || 'UNKNOWN'),
     trendDirection,
     trendAlignment,
-    trend7dReturnPct: null,
-    trend30dReturnPct: null,
+    trend7dReturnPct: periodChange(candlesDaily, 7),
+    trend30dReturnPct: periodChange(candlesDaily, 30),
     trend90dReturnPct: null,
     trend365dReturnPct: null,
     trend7dVolatilityPct: null,
@@ -91,12 +125,52 @@ function buildFeatureRow(item: any): ResearchFeatureRow {
     newsActiveHighImpactCount: 0,
     newsSentiment: null,
     quoteSpread: finite(item.spreadPips),
-    riskReward: finite(signal.riskReward),
-    stopDistance: entry !== null && stopLoss !== null ? Math.abs(entry - stopLoss) : null,
+    riskReward: finite(analysis.tradePlan?.riskReward),
+    stopDistance: entry !== null && stop !== null ? Math.abs(entry - stop) : null,
     targetDistance: entry !== null && target !== null ? Math.abs(target - entry) : null,
     realizedPnl: null,
     outcome: null,
-    holdingDurationMs: null
+    holdingDurationMs: null,
+    priceChange5mPct: lastBarChange(candles5m),
+    priceChange15mPct: lastBarChange(candles15m),
+    priceChange1hPct: lastBarChange(candles1h),
+    priceChange4hPct: lastBarChange(candles4h),
+    priceChangeDailyPct: lastBarChange(candlesDaily),
+    atrPct: indicators.atr && analysis.currentPrice > 0 ? (indicators.atr / analysis.currentPrice) * 100 : null,
+    rsi: indicators.rsi,
+    macdHistogram: indicators.macdHistogram,
+    adx: indicators.adx,
+    trendStrength: analysis.trend.strength,
+    mtfAlignmentScore: signal.scoreBreakdown?.multiTimeframe ?? null,
+    structureTrend: analysis.trend.direction,
+    structurePhase: analysis.marketStructure.phase,
+    structureType: analysis.marketStructure.type,
+    breakoutStatus: analysis.marketStructure.breakoutStatus,
+    distanceToSupportPips: pipsBetween(analysis.currentPrice, support, pairConfig.pipSize),
+    distanceToResistancePips: pipsBetween(analysis.currentPrice, resistance, pairConfig.pipSize)
+  };
+}
+function buildFallbackFeatureRow(item: any, _error: unknown): ResearchFeatureRow {
+  const signal = item.signal || {};
+  const direction = String(signal.direction || 'NO_TRADE');
+  const trendDirection =
+    Number(signal.scoreBreakdown?.trend) > 0 ? 'BULLISH' :
+    Number(signal.scoreBreakdown?.trend) < 0 ? 'BEARISH' : 'INSUFFICIENT_DATA';
+  return {
+    signalId: String(signal.id || item.symbol + '-' + Date.now()),
+    symbol: String(item.symbol),
+    signalTimestamp: Number(signal.timestamp || Date.now()),
+    direction,
+    score: Number(signal.score || 0),
+    marketRegime: String(signal.marketRegime || 'UNKNOWN'),
+    session: String(signal.session || 'UNKNOWN'),
+    trendDirection,
+    trendAlignment: 'MIXED',
+    trend7dReturnPct: null, trend30dReturnPct: null, trend90dReturnPct: null, trend365dReturnPct: null,
+    trend7dVolatilityPct: null, trend30dVolatilityPct: null, trend90dVolatilityPct: null, trend365dVolatilityPct: null,
+    newsRiskLevel: 'UNKNOWN', newsHighImpactCount: 0, newsActiveHighImpactCount: 0, newsSentiment: null,
+    quoteSpread: finite(item.spreadPips), riskReward: finite(signal.riskReward),
+    stopDistance: null, targetDistance: null, realizedPnl: null, outcome: null, holdingDurationMs: null
   };
 }
 
@@ -126,7 +200,12 @@ export async function generateCurrentPairPredictions(params: {
   const generatedAt = Date.now();
 
   return Promise.all(scan.map(async item => {
-    const row = buildFeatureRow(item);
+    let row: ResearchFeatureRow;
+    try {
+      row = await buildFeatureRow(item);
+    } catch (error: any) {
+      row = buildFallbackFeatureRow(item, error);
+    }
     let output: ResearchPredictionOutput;
     try {
       output = await model.predict(row, horizon);
