@@ -208,8 +208,10 @@ export async function generateCurrentPairPredictions(params: {
       row = buildFallbackFeatureRow(item, error);
     }
     let output: ResearchPredictionOutput;
+    let persistedPredictionId = 'current-' + generatedAt + '-' + row.signalId + '-' + horizon;
     try {
       const persisted = await createCurrentResearchPrediction({ row, horizon, model });
+      persistedPredictionId = persisted.predictionId;
       output = {
         direction: persisted.predictedDirection,
         confidence: persisted.confidence,
@@ -229,7 +231,7 @@ export async function generateCurrentPairPredictions(params: {
 
     const normalized = normalizeOutput(output);
     return {
-      predictionId: 'current-' + generatedAt + '-' + row.signalId + '-' + horizon,
+      predictionId: persistedPredictionId,
       symbol: row.symbol,
       predictedAt: generatedAt,
       horizon,
