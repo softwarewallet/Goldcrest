@@ -1,6 +1,5 @@
 import WebSocket from 'ws';
 import { BrokerAccountInfo, TradingEnvironment } from '../../types';
-import { getCTraderApiMode } from '../../../services/configService';
 import { recordTradeRequest, recordTradeResult } from '../../../services/tradeAuditLog';
 
 export interface CTraderRawAccount {
@@ -71,24 +70,21 @@ const MSG_GET_POSITION_UNREALIZED_PNL_REQ = 2187;
 const MSG_GET_POSITION_UNREALIZED_PNL_RES = 2188;
 
 /**
- * The broker adapter remains the cTrader route for Forex; the Open API
- * endpoint is selected explicitly as LIVE or DEMO so credentials can be
- * tested against the matching cTrader account environment.
+ * Goldcrest is LIVE_ONLY: cTrader transport is always the authoritative LIVE endpoint.
+ * A custom host may be supplied through CTRADER_LIVE_API_HOST, but DEMO endpoints
+ * are never accepted or exposed by the runtime.
  */
-function getConfiguredCTraderWsHost(mode: 'LIVE' | 'DEMO'): string | null {
-  const primaryKey = mode === 'DEMO' ? 'CTRADER_DEMO_API_HOST' : 'CTRADER_LIVE_API_HOST';
-  const configured = String(process.env[primaryKey] || '').trim();
+function getConfiguredCTraderWsHost(): string | null {
+  const configured = String(process.env.CTRADER_LIVE_API_HOST || '').trim();
   if (!configured || configured.toLowerCase() === 'auto') return null;
+  if (configured.toLowerCase().includes('demo.ctraderapi.com')) {
+    throw new Error('DEMO cTrader endpoints are disabled. Use the LIVE cTrader API endpoint.');
+  }
   return configured;
 }
 
-function getCTraderWsHost(accountIsLive?: boolean): string {
-  const mode = getCTraderApiMode();
-  const configured = getConfiguredCTraderWsHost(mode);
-  if (configured) return configured;
-  return mode === 'DEMO'
-    ? 'wss://demo.ctraderapi.com:5036'
-    : 'wss://live.ctraderapi.com:5036';
+function getCTraderWsHost(): string {
+  return getConfiguredCTraderWsHost() || 'wss://live.ctraderapi.com:5036';
 }
 
 function isAuthoritativeLiveHost(host: string): boolean {
@@ -100,16 +96,10 @@ function isAuthoritativeLiveHost(host: string): boolean {
 }
 
 /**
- * Resolve the cTrader WebSocket endpoint from the selected cTrader API mode.
+ * Resolve the cTrader WebSocket endpoint. LIVE is the only supported mode.
  */
 export function getCTraderRequestHosts(_accountIsLive: boolean): string[] {
-  const mode = getCTraderApiMode();
-  const configuredHost = getConfiguredCTraderWsHost(mode);
-  return [configuredHost || (
-    mode === 'DEMO'
-      ? 'wss://demo.ctraderapi.com:5036'
-      : 'wss://live.ctraderapi.com:5036'
-  )];
+  return [getCTraderWsHost()];
 }
 
 /**
