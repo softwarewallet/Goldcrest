@@ -220,6 +220,7 @@ const ResearchAiServerSettings: React.FC = () => {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [testResult, setTestResult] = useState('');
+  const [predictionTestResult, setPredictionTestResult] = useState('');
 
   const load = async () => {
     try {
@@ -283,6 +284,25 @@ const ResearchAiServerSettings: React.FC = () => {
         : `NOT CONNECTED · ${data.message}`);
     } catch (error) {
       setTestResult(error instanceof Error ? error.message : 'Connection test failed.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const testPrediction = async () => {
+    setBusy('PREDICTION');
+    setPredictionTestResult('Testing prediction contract…');
+    try {
+      const res = await fetch('/api/research-ai/server/test-prediction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      setPredictionTestResult(data.ok
+        ? `PREDICTION OK · ${data.direction} · confidence ${Math.round(Number(data.confidence) * 100)}% · ${data.latencyMs} ms`
+        : `PREDICTION FAILED · ${data.message}`);
+    } catch (error) {
+      setPredictionTestResult(error instanceof Error ? error.message : 'Prediction contract test failed.');
     } finally {
       setBusy(null);
     }
@@ -353,11 +373,15 @@ const ResearchAiServerSettings: React.FC = () => {
           <button onClick={() => void test()} disabled={busy !== null || !config.baseUrl} className="px-4 py-2 rounded bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold disabled:opacity-50">
             {busy === 'TEST' ? 'TESTING…' : 'TEST CONNECTION'}
           </button>
+          <button onClick={() => void testPrediction()} disabled={busy !== null || !config.baseUrl} className="px-4 py-2 rounded bg-cyan-900/50 border border-cyan-700 text-cyan-200 text-xs font-bold disabled:opacity-50">
+            {busy === 'PREDICTION' ? 'TESTING…' : 'TEST PREDICTION'}
+          </button>
           <span className={`text-[10px] font-mono ${config.enabled ? 'text-emerald-300' : 'text-slate-500'}`}>
             {config.enabled ? 'GATEWAY ENABLED · QWEN + LLAMA' : 'DISABLED · GOLDCREST WORKS WITHOUT IT'}
           </span>
         </div>
         {testResult && <div className="mt-3 text-[10px] font-mono text-slate-300">{testResult}</div>}
+        {predictionTestResult && <div className="mt-2 text-[10px] font-mono text-cyan-300">{predictionTestResult}</div>}
         {message && <div className="mt-2 text-[10px] text-slate-400 font-mono">{message}</div>}
       </div>
     </div>
