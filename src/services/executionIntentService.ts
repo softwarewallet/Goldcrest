@@ -153,6 +153,16 @@ export async function reconcileExecutionIntent(
   }
 
   const payload = (intent.payload && typeof intent.payload === 'object') ? intent.payload as Record<string, unknown> : {};
+  const clientOrderId = String(payload.signalId || '').trim().replace(/[^A-Za-z0-9._-]/g, '').slice(0, 50);
+  if (clientOrderId && adapter.getOrderByClientOrderId) {
+    const nativeOrder = await adapter.getOrderByClientOrderId(clientOrderId);
+    if (nativeOrder) {
+      if (nativeOrder.status === 'FILLED') await completeExecutionIntent(idempotencyKey, nativeOrder);
+      else if (nativeOrder.status === 'REJECTED' || nativeOrder.status === 'CANCELLED' || nativeOrder.status === 'EXPIRED') await failExecutionIntent(idempotencyKey, nativeOrder);
+      else await markExecutionIntentInFlight(idempotencyKey, nativeOrder);
+      return { status: 'RESOLVED', candidates: [nativeOrder], order: nativeOrder, reason: `Execution intent reconciled using broker-native clientOrderId ${clientOrderId}.` };
+    }
+  }
   const from = Math.max(0, Date.now() - Math.max(60_000, lookbackMs));
   const orders = adapter.getOrderHistoryRange
     ? await adapter.getOrderHistoryRange(from, Date.now())
