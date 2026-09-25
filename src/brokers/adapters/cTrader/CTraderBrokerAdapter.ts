@@ -41,6 +41,17 @@ import {
   CTraderRawAccount
 } from './cTraderApiClient';
 
+export function resolveLivePositionPrice(
+  side: 'BUY' | 'SELL',
+  quote: Pick<NormalizedQuote, 'status' | 'bid' | 'ask'>
+): { currentPrice: number; currentPriceStatus: 'LIVE' | 'UNAVAILABLE' } {
+  const currentPrice = side === 'BUY' ? Number(quote.bid) : Number(quote.ask);
+  if (quote.status !== 'FRESH' || !(currentPrice > 0) || !Number.isFinite(currentPrice)) {
+    return { currentPrice: 0, currentPriceStatus: 'UNAVAILABLE' };
+  }
+  return { currentPrice, currentPriceStatus: 'LIVE' };
+}
+
 export interface CTraderConfig {
   clientId?: string;
   clientSecret?: string;
@@ -712,11 +723,8 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
           raw.isLive,
           Number(position.symbolInfo.digits || 5)
         );
-        const currentPrice = position.side === 'BUY' ? Number(quote.bid || 0) : Number(quote.ask || 0);
-        if (quote.status !== 'FRESH' || !(currentPrice > 0)) {
-          return { position, currentPrice: 0, currentPriceStatus: 'UNAVAILABLE' as const };
-        }
-        return { position, currentPrice, currentPriceStatus: 'LIVE' as const };
+        const livePrice = resolveLivePositionPrice(position.side, quote);
+        return { position, ...livePrice };
       } catch {
         // Never present the entry price as a live market price. A failed or stale
         // quote must remain visibly unavailable rather than silently becoming a
