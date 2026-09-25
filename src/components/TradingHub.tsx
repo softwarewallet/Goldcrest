@@ -340,7 +340,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     setCurrentPairLoading(true);
     try {
       const [predictionRes, analyticsRes] = await Promise.all([
-        fetch(`/api/live-trade-research/pair-predictions?horizon=${currentPairHorizon}&model=${currentPairModel}`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/predictions?horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}&limit=100`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/analytics?horizon=${currentPairHorizon}`, { cache: 'no-store' })
       ]);
       const [predictionData, analyticsData] = await Promise.all([
