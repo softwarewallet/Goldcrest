@@ -834,13 +834,14 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 <div className="overflow-x-auto">
                   <table className="w-full text-[10px] font-mono">
                     <thead><tr className="text-slate-500 border-b border-slate-800">
-                      <th className="py-2 text-left">Symbol</th><th>Side</th><th>State</th><th>Broker Order</th><th>Client Order</th><th className="text-right">Requested</th><th className="text-right">Filled</th><th className="text-right">Remaining</th><th>Broker Status</th><th>Attempts</th><th>Last Attempt</th><th>Reason</th>
+                      <th className="py-2 text-left">Symbol</th><th>Side</th><th>State</th><th>Intent Age</th><th>Broker Order</th><th>Client Order</th><th className="text-right">Requested</th><th className="text-right">Filled</th><th className="text-right">Remaining</th><th>Broker Status</th><th>Attempts</th><th>Last Attempt</th><th>Reason</th>
                     </tr></thead>
                     <tbody>{executionDiagnostics.map(intent => (
                       <tr key={intent.idempotencyKey} className="border-b border-slate-800/60">
                         <td className="py-2 text-white font-bold">{intent.symbol}</td>
                         <td className={intent.side === 'BUY' ? "text-emerald-400" : "text-rose-400"}>{intent.side}</td>
                         <td className={intent.state === 'COMPLETED' ? "text-emerald-400" : intent.state === 'FAILED' ? "text-rose-400" : intent.state === 'RECONCILIATION_TIMEOUT' ? "text-amber-300" : "text-cyan-300"}>{intent.state}</td>
+                        <td className="text-center">{formatAge(intent.createdAt)}</td>
                         <td className="text-slate-300">{intent.reconciliation.brokerOrderId || '—'}</td>
                         <td className="text-slate-400">{intent.reconciliation.clientOrderId || '—'}</td>
                         <td className="text-right">{intent.reconciliation.requestedQuantity ?? '—'}</td>
