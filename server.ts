@@ -57,7 +57,8 @@ import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } fr
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
-  testResearchAiServerConnection
+  testResearchAiServerConnection,
+  testResearchAiServerPrediction
 } from './src/services/researchAiServerService';
 import {
   getLiveTradeResearchOutcomeTrackerStatus,
@@ -957,6 +958,15 @@ app.post('/api/research-ai/server/test', operatorAuthRequired, async (_req: Requ
     res.json(await testResearchAiServerConnection());
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Research AI gateway connection test failed.' });
+  }
+});
+
+app.post('/api/research-ai/server/test-prediction', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    res.json(await testResearchAiServerPrediction());
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Research AI gateway prediction test failed.' });
   }
 });
 
