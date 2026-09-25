@@ -826,9 +826,17 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         filledQuantity,
         averageFillPrice: Number(o.executionPrice || 0) || undefined,
         timestamp: Number(o.utcTimestamp || 0) * 1000 || Date.now(),
-        brokerOrderId: String(o.orderId)
+        brokerOrderId: String(o.orderId),
+        clientOrderId: o.clientOrderId ? String(o.clientOrderId) : undefined
       } as NormalizedOrder;
     }).filter(Boolean) as NormalizedOrder[];
+  }
+
+  async getOrderByClientOrderId(clientOrderId: string): Promise<NormalizedOrder | null> {
+    const normalizedClientOrderId = String(clientOrderId || '').trim().slice(0, 50);
+    if (!normalizedClientOrderId) return null;
+    const orders = await this.getOpenOrders();
+    return orders.find(order => order.clientOrderId === normalizedClientOrderId) || null;
   }
 
   async getDailyRealizedPnL(): Promise<number> {
@@ -1219,6 +1227,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       commission: undefined,
       timestamp: Date.now(),
       brokerOrderId,
+      clientOrderId,
       strategyId: order.strategyId,
       signalId: order.signalId
     };
