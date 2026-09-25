@@ -7,7 +7,6 @@ function runCTraderTransportSelectionRegressionTest() {
 
   try {
     delete process.env.CTRADER_LIVE_API_HOST;
-    delete process.env.CTRADER_DEMO_API_HOST;
 
     updateSystemConfig({ cTraderApiMode: 'LIVE' });
     const liveHosts = getCTraderRequestHosts(true);
