@@ -239,6 +239,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairAnalytics, setCurrentPairAnalytics] = useState<CurrentPairPredictionAnalytics | null>(null);
   const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
   const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY'>('BASELINE');
+  const [currentPairSymbol, setCurrentPairSymbol] = useState<string>('ALL');
+  const [currentPairSymbols, setCurrentPairSymbols] = useState<string[]>([]);
   const [currentPairLoading, setCurrentPairLoading] = useState(false);
   const [currentPairError, setCurrentPairError] = useState<string | null>(null);
   const [currentPairEvaluationMessage, setCurrentPairEvaluationMessage] = useState<string | null>(null);
@@ -340,8 +342,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     setCurrentPairLoading(true);
     try {
       const [predictionRes, analyticsRes] = await Promise.all([
-        fetch(`/api/live-trade-research/current-pair/predictions?horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}&limit=100`, { cache: 'no-store' }),
-        fetch(`/api/live-trade-research/current-pair/analytics?horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}`, { cache: 'no-store' })
+        fetch(`/api/live-trade-research/current-pair/predictions?horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}&limit=100`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/analytics?horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`, { cache: 'no-store' })
       ]);
       const [predictionData, analyticsData] = await Promise.all([
         safeParseJson(predictionRes),
@@ -351,13 +353,21 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
+      const discoveredSymbols = Array.from(new Set([
+        ...currentPairSymbols,
+        ...(Array.isArray(predictionData?.predictions) ? predictionData.predictions.map((p: CurrentPairPrediction) => p.symbol) : []),
+        ...(Array.isArray(analyticsData?.groups) ? analyticsData.groups.map((g: CurrentPairGroupMetric) => g.symbol) : [])
+      ].filter(Boolean))).sort();
+      if (discoveredSymbols.length !== currentPairSymbols.length || discoveredSymbols.some((symbol, index) => symbol !== currentPairSymbols[index])) {
+        setCurrentPairSymbols(discoveredSymbols);
+      }
       setCurrentPairError(null);
     } catch (err: any) {
       setCurrentPairError(err?.message || 'Current pair research data unavailable.');
     } finally {
       setCurrentPairLoading(false);
     }
-  }, [currentPairHorizon, currentPairModel, safeParseJson]);
+  }, [currentPairHorizon, currentPairModel, currentPairSymbol, currentPairSymbols, safeParseJson]);
 
   const evaluateCurrentPairResearch = useCallback(async () => {
     setCurrentPairEvaluationMessage(null);
@@ -365,7 +375,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       const res = await fetch('/api/live-trade-research/current-pair/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ horizon: currentPairHorizon, limit: 50000 })
+        body: JSON.stringify({ horizon: currentPairHorizon, symbol: currentPairSymbol === 'ALL' ? undefined : currentPairSymbol, limit: 50000 })
       });
       const data = await safeParseJson(res);
       if (!res.ok) throw new Error(data?.message || data?.error || 'Current pair outcome evaluation failed.');
@@ -374,7 +384,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     } catch (err: any) {
       setCurrentPairEvaluationMessage(err?.message || 'Current pair outcome evaluation failed.');
     }
-  }, [currentPairHorizon, fetchCurrentPairResearch, safeParseJson]);
+  }, [currentPairHorizon, currentPairSymbol, fetchCurrentPairResearch, safeParseJson]);
 
   useEffect(() => {
     void fetchExecutionDiagnostics();
@@ -387,6 +397,22 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     const timer = setInterval(() => { void fetchCurrentPairResearch(); }, 60000);
     return () => clearInterval(timer);
   }, [fetchCurrentPairResearch]);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/config', { cache: 'no-store' })
+      .then(async (res) => res.ok ? await safeParseJson(res) : null)
+      .then((config) => {
+        const configuredPairs = Array.isArray(config?.autoLiveForexPairs)
+          ? config.autoLiveForexPairs.filter((pair: unknown): pair is string => typeof pair === 'string' && pair.length > 0)
+          : [];
+        if (mounted && configuredPairs.length) {
+          setCurrentPairSymbols(prev => Array.from(new Set([...configuredPairs, ...prev])).sort());
+        }
+      })
+      .catch((err) => console.warn('Failed to load configured Forex pairs for prediction research:', err));
+    return () => { mounted = false; };
+  }, [safeParseJson]);
 
   // Synchronize with backend system controls
   const syncAutoControls = useCallback(async (enabled: boolean) => {
@@ -970,6 +996,10 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 <div className="text-[10px] text-slate-500 mt-1">Observational analytics only. This panel does not control Auto Live execution.</div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <select value={currentPairSymbol} onChange={(e) => setCurrentPairSymbol(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-white">
+                  <option value="ALL">All Pairs</option>
+                  {currentPairSymbols.map(symbol => <option key={symbol} value={symbol}>{symbol}</option>)}
+                </select>
                 <select value={currentPairHorizon} onChange={(e) => setCurrentPairHorizon(e.target.value as '1D' | '3D' | '7D')} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-white">
                   <option value="1D">1D Horizon</option><option value="3D">3D Horizon</option><option value="7D">7D Horizon</option>
                 </select>
