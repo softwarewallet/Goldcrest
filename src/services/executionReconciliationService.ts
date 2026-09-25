@@ -30,6 +30,12 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
   if (!row || !['PENDING', 'IN_FLIGHT', 'RECONCILIATION_TIMEOUT'].includes(String(row.state))) return null;
 
   const stored = parseResult(row.result_json);
+  const reconciliationAttemptCount = Math.max(0, Number(stored?.reconciliationAttemptCount || 0)) + 1;
+  const attemptStartedAt = Date.now();
+  await executeRun(
+    'UPDATE execution_intents SET result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?, ?)',
+    [JSON.stringify({ ...stored, reconciliationAttemptCount, reconciliationLastAttemptAt: attemptStartedAt }), attemptStartedAt, idempotencyKey, 'PENDING', 'IN_FLIGHT', 'RECONCILIATION_TIMEOUT']
+  );
   const broker = String(row.broker) as BrokerType;
   if (broker !== 'CTRADER' && broker !== 'FIVE_PAISA') return null;
 
@@ -104,6 +110,8 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
       averageFillPrice: status.averageFillPrice,
       commission: status.commission,
       reconciledAt: Date.now(),
+      reconciliationAttemptCount,
+      reconciliationLastAttemptAt: attemptStartedAt,
       order: status
     };
 
@@ -222,7 +230,9 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
       brokerOrderId,
       reconciliationError: normalized.message,
       reconciliationErrorCode: normalized.code,
-      reconciledAt: Date.now()
+      reconciledAt: Date.now(),
+      reconciliationAttemptCount,
+      reconciliationLastAttemptAt: attemptStartedAt
     };
 
     if (age >= MAX_AGE_MS) {
