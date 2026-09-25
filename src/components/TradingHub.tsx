@@ -398,6 +398,22 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     return () => clearInterval(timer);
   }, [fetchCurrentPairResearch]);
 
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/config', { cache: 'no-store' })
+      .then(async (res) => res.ok ? await safeParseJson(res) : null)
+      .then((config) => {
+        const configuredPairs = Array.isArray(config?.autoLiveForexPairs)
+          ? config.autoLiveForexPairs.filter((pair: unknown): pair is string => typeof pair === 'string' && pair.length > 0)
+          : [];
+        if (mounted && configuredPairs.length) {
+          setCurrentPairSymbols(prev => Array.from(new Set([...configuredPairs, ...prev])).sort());
+        }
+      })
+      .catch((err) => console.warn('Failed to load configured Forex pairs for prediction research:', err));
+    return () => { mounted = false; };
+  }, [safeParseJson]);
+
   // Synchronize with backend system controls
   const syncAutoControls = useCallback(async (enabled: boolean) => {
     try {
