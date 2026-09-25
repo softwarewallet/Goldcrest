@@ -131,7 +131,7 @@ export interface AutoLiveOrderPacketValidation {
 export function validateAutoLiveOrderPacket(order: OrderRequest): AutoLiveOrderPacketValidation {
   const reasons: string[] = [];
   if (String(order.market).toUpperCase() !== 'FOREX') reasons.push('market must be FOREX');
-  if (!/^[A-Z]{3}\\/[A-Z]{3}$/.test(String(order.symbol || '').toUpperCase())) reasons.push('symbol must be a valid FX pair');
+  if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(String(order.symbol || '').toUpperCase())) reasons.push('symbol must be a valid FX pair');
   if (order.orderType !== 'MARKET') reasons.push('Auto Live order type must be MARKET');
   if (!(Number.isInteger(order.quantity) && order.quantity > 0)) reasons.push('quantity must be a positive integer');
   if (!(Number.isFinite(order.price) && Number(order.price) > 0)) reasons.push('entry price must be positive');
