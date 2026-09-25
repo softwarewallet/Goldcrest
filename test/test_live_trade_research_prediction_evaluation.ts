@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { getDatabase, executeRun } from '../src/database/db';
-import { createResearchPrediction } from '../src/services/liveTradeResearchPredictionService';
+import { createResearchPrediction, type PredictionModel } from '../src/services/liveTradeResearchPredictionService';
 import {
   recordLiveTradeResearchSignal,
   updateLiveTradeResearchExecution,
@@ -113,7 +113,18 @@ for (let offset = 1; offset <= 8; offset++) {
   );
 }
 
-await createResearchPrediction({ row: baseFeature as any, horizon: '1D' });
+const evaluationModel: PredictionModel = {
+  modelVersion: 'TEST_EVALUATION_MODEL_V1',
+  predictionSource: 'DETERMINISTIC_TEST',
+  predict: () => ({
+    direction: 'UP',
+    confidence: 0.9,
+    modelAgreement: 1,
+    reasoning: 'Deterministic evaluation fixture.',
+    invalidation: 'Test-only.'
+  })
+};
+await createResearchPrediction({ row: baseFeature as any, horizon: '1D', model: evaluationModel });
 const result = await evaluatePendingResearchPredictions({ horizon: '1D' });
 assert.equal(result.evaluated, 1);
 assert.equal(result.pending, 0);
