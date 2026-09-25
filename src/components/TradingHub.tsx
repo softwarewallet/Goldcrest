@@ -231,7 +231,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       updatedAt: number;
     } | null;
   }
-  const [activeTab, setActiveTab] = useState<'cockpit' | 'positions' | 'signals' | 'options' | 'execution' | 'controls'>('cockpit');
+  const [activeTab, setActiveTab] = useState<'cockpit' | 'positions' | 'signals' | 'options' | 'execution' | 'research' | 'controls'>('cockpit');
   const [autoStatus, setAutoStatus] = useState<AutoTradingStatusSnapshot | null>(null);
   const [autoStatusError, setAutoStatusError] = useState<string | null>(null);
   const [executionDiagnostics, setExecutionDiagnostics] = useState<ExecutionReconciliationDiagnostic[]>([]);
