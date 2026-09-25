@@ -31,6 +31,7 @@ async function ensureTable(): Promise<void> {
     enabled INTEGER NOT NULL DEFAULT 0,
     base_url TEXT NOT NULL DEFAULT '',
     model TEXT NOT NULL DEFAULT '',
+    qwen_model TEXT NOT NULL DEFAULT '',
     health_path TEXT NOT NULL DEFAULT '/health',
     predict_path TEXT NOT NULL DEFAULT '/predict',
     timeout_ms INTEGER NOT NULL DEFAULT 10000,
@@ -41,8 +42,11 @@ async function ensureTable(): Promise<void> {
 
 async function loadStored(): Promise<StoredConfig> {
   await ensureTable();
+  try {
+    await executeRun("ALTER TABLE ai_research_server_connections ADD COLUMN qwen_model TEXT NOT NULL DEFAULT ''");
+  } catch {}
   const rows = await executeQuery<any>(
-    'SELECT provider, enabled, base_url, model, health_path, predict_path, timeout_ms, auth_token, updated_at FROM ai_research_server_connections WHERE provider = ? LIMIT 1',
+    'SELECT provider, enabled, base_url, model, qwen_model, health_path, predict_path, timeout_ms, auth_token, updated_at FROM ai_research_server_connections WHERE provider = ? LIMIT 1',
     [CONNECTION_KEY]
   );
   let row = rows[0];
@@ -51,7 +55,7 @@ async function loadStored(): Promise<StoredConfig> {
   // on first read. Qwen is an internal model behind this gateway.
   if (!row) {
     const legacyRows = await executeQuery<any>(
-      'SELECT provider, enabled, base_url, model, health_path, predict_path, timeout_ms, auth_token, updated_at FROM ai_research_server_connections WHERE provider IN (?, ?) ORDER BY updated_at DESC',
+      'SELECT provider, enabled, base_url, model, qwen_model, health_path, predict_path, timeout_ms, auth_token, updated_at FROM ai_research_server_connections WHERE provider IN (?, ?) ORDER BY updated_at DESC',
       ['LLAMA', 'QWEN']
     );
     const llama = legacyRows.find(item => String(item.provider).toUpperCase() === 'LLAMA');
@@ -70,9 +74,9 @@ async function loadStored(): Promise<StoredConfig> {
       };
       await executeRun(
         `INSERT OR REPLACE INTO ai_research_server_connections
-          (provider, enabled, base_url, model, health_path, predict_path, timeout_ms, auth_token, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [CONNECTION_KEY, row.enabled, row.base_url, row.model, row.health_path, row.predict_path, row.timeout_ms, row.auth_token, row.updated_at]
+          (provider, enabled, base_url, model, qwen_model, health_path, predict_path, timeout_ms, auth_token, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [CONNECTION_KEY, row.enabled, row.base_url, row.model, row.qwen_model, row.health_path, row.predict_path, row.timeout_ms, row.auth_token, row.updated_at]
       );
     }
   }
@@ -132,9 +136,9 @@ export async function saveResearchAiServerConfig(input: {
   const updatedAt = Date.now();
   await executeRun(
     `INSERT OR REPLACE INTO ai_research_server_connections
-      (provider, enabled, base_url, model, health_path, predict_path, timeout_ms, auth_token, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [CONNECTION_KEY, enabled ? 1 : 0, baseUrl, llamaModel, healthPath, predictPath, timeoutMs, authToken, updatedAt]
+      (provider, enabled, base_url, model, qwen_model, health_path, predict_path, timeout_ms, auth_token, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [CONNECTION_KEY, enabled ? 1 : 0, baseUrl, llamaModel, qwenModel, healthPath, predictPath, timeoutMs, authToken, updatedAt]
   );
 
   return {
