@@ -1,12 +1,10 @@
 import { executeQuery, executeRun } from '../database/db';
 
-export type ResearchAiProvider = 'QWEN' | 'LLAMA';
-
-export interface ResearchAiServerConfig {
-  provider: ResearchAiProvider;
+export interface ResearchAiGatewayConfig {
   enabled: boolean;
   baseUrl: string;
-  model: string;
+  llamaModel: string;
+  qwenModel: string;
   healthPath: string;
   predictPath: string;
   timeoutMs: number;
@@ -14,15 +12,12 @@ export interface ResearchAiServerConfig {
   updatedAt: number | null;
 }
 
-interface StoredConfig extends Omit<ResearchAiServerConfig, 'authConfigured'> {
+interface StoredConfig extends Omit<ResearchAiGatewayConfig, 'authConfigured'> {
   authToken: string;
 }
 
+const CONNECTION_KEY = 'LLAMA_GATEWAY';
 const DEFAULT_TIMEOUT_MS = 10000;
-
-function normalizeProvider(value: unknown): ResearchAiProvider {
-  return String(value || '').toUpperCase() === 'LLAMA' ? 'LLAMA' : 'QWEN';
-}
 
 function clampTimeout(value: unknown): number {
   const numeric = Number(value);
@@ -44,18 +39,19 @@ async function ensureTable(): Promise<void> {
   )`);
 }
 
-async function loadStored(provider: ResearchAiProvider): Promise<StoredConfig> {
+async function loadStored(): Promise<StoredConfig> {
   await ensureTable();
   const rows = await executeQuery<any>(
     'SELECT provider, enabled, base_url, model, health_path, predict_path, timeout_ms, auth_token, updated_at FROM ai_research_server_connections WHERE provider = ? LIMIT 1',
-    [provider]
+    [CONNECTION_KEY]
   );
   const row = rows[0];
+  const legacyLlama = String(row?.model || '');
   return {
-    provider,
     enabled: Number(row?.enabled || 0) === 1,
     baseUrl: String(row?.base_url || ''),
-    model: String(row?.model || ''),
+    llamaModel: legacyLlama,
+    qwenModel: '',
     healthPath: String(row?.health_path || '/health'),
     predictPath: String(row?.predict_path || '/predict'),
     timeoutMs: clampTimeout(row?.timeout_ms),
@@ -64,37 +60,35 @@ async function loadStored(provider: ResearchAiProvider): Promise<StoredConfig> {
   };
 }
 
-export async function getResearchAiServerConfigs(): Promise<ResearchAiServerConfig[]> {
-  return Promise.all((['QWEN', 'LLAMA'] as ResearchAiProvider[]).map(async provider => {
-    const stored = await loadStored(provider);
-    return {
-      provider: stored.provider,
-      enabled: stored.enabled,
-      baseUrl: stored.baseUrl,
-      model: stored.model,
-      healthPath: stored.healthPath,
-      predictPath: stored.predictPath,
-      timeoutMs: stored.timeoutMs,
-      authConfigured: Boolean(stored.authToken),
-      updatedAt: stored.updatedAt
-    };
-  }));
+export async function getResearchAiServerConfig(): Promise<ResearchAiGatewayConfig> {
+  const stored = await loadStored();
+  return {
+    enabled: stored.enabled,
+    baseUrl: stored.baseUrl,
+    llamaModel: stored.llamaModel,
+    qwenModel: stored.qwenModel,
+    healthPath: stored.healthPath,
+    predictPath: stored.predictPath,
+    timeoutMs: stored.timeoutMs,
+    authConfigured: Boolean(stored.authToken),
+    updatedAt: stored.updatedAt
+  };
 }
 
 export async function saveResearchAiServerConfig(input: {
-  provider: ResearchAiProvider;
   enabled?: boolean;
   baseUrl?: string;
-  model?: string;
+  llamaModel?: string;
+  qwenModel?: string;
   healthPath?: string;
   predictPath?: string;
   timeoutMs?: number;
   authToken?: string;
-}): Promise<ResearchAiServerConfig> {
-  const provider = normalizeProvider(input.provider);
-  const current = await loadStored(provider);
+}): Promise<ResearchAiGatewayConfig> {
+  const current = await loadStored();
   const baseUrl = String(input.baseUrl ?? current.baseUrl).trim().replace(/\/$/, '');
-  const model = String(input.model ?? current.model).trim();
+  const llamaModel = String(input.llamaModel ?? current.llamaModel).trim();
+  const qwenModel = String(input.qwenModel ?? current.qwenModel).trim();
   const healthPath = String(input.healthPath ?? current.healthPath).trim() || '/health';
   const predictPath = String(input.predictPath ?? current.predictPath).trim() || '/predict';
   const authToken = input.authToken === undefined ? current.authToken : String(input.authToken);
@@ -102,7 +96,7 @@ export async function saveResearchAiServerConfig(input: {
   const timeoutMs = clampTimeout(input.timeoutMs ?? current.timeoutMs);
 
   if (enabled && !/^https?:\/\//i.test(baseUrl)) {
-    throw new Error(`${provider} AI server requires an HTTP(S) base URL when enabled.`);
+    throw new Error('AI gateway requires an HTTP(S) base URL when enabled.');
   }
 
   const updatedAt = Date.now();
@@ -110,14 +104,14 @@ export async function saveResearchAiServerConfig(input: {
     `INSERT OR REPLACE INTO ai_research_server_connections
       (provider, enabled, base_url, model, health_path, predict_path, timeout_ms, auth_token, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [provider, enabled ? 1 : 0, baseUrl, model, healthPath, predictPath, timeoutMs, authToken, updatedAt]
+    [CONNECTION_KEY, enabled ? 1 : 0, baseUrl, llamaModel, healthPath, predictPath, timeoutMs, authToken, updatedAt]
   );
 
   return {
-    provider,
     enabled,
     baseUrl,
-    model,
+    llamaModel,
+    qwenModel,
     healthPath,
     predictPath,
     timeoutMs,
@@ -126,17 +120,15 @@ export async function saveResearchAiServerConfig(input: {
   };
 }
 
-export async function testResearchAiServerConnection(providerInput: ResearchAiProvider): Promise<{
-  provider: ResearchAiProvider;
+export async function testResearchAiServerConnection(): Promise<{
   ok: boolean;
   status: number | null;
   latencyMs: number | null;
   message: string;
 }> {
-  const provider = normalizeProvider(providerInput);
-  const config = await loadStored(provider);
+  const config = await loadStored();
   if (!config.baseUrl) {
-    return { provider, ok: false, status: null, latencyMs: null, message: 'AI server URL is not configured.' };
+    return { ok: false, status: null, latencyMs: null, message: 'AI gateway URL is not configured.' };
   }
 
   const url = config.baseUrl + (config.healthPath.startsWith('/') ? config.healthPath : '/' + config.healthPath);
@@ -150,18 +142,16 @@ export async function testResearchAiServerConnection(providerInput: ResearchAiPr
     try {
       const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
       return {
-        provider,
         ok: response.ok,
         status: response.status,
         latencyMs: Date.now() - startedAt,
-        message: response.ok ? 'AI research server is reachable.' : `AI research server returned HTTP ${response.status}.`
+        message: response.ok ? 'AI gateway is reachable.' : `AI gateway returned HTTP ${response.status}.`
       };
     } finally {
       clearTimeout(timer);
     }
   } catch (error) {
     return {
-      provider,
       ok: false,
       status: null,
       latencyMs: Date.now() - startedAt,
@@ -171,13 +161,11 @@ export async function testResearchAiServerConnection(providerInput: ResearchAiPr
 }
 
 export async function requestResearchAiPrediction(
-  providerInput: ResearchAiProvider,
   payload: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const provider = normalizeProvider(providerInput);
-  const config = await loadStored(provider);
-  if (!config.enabled) throw new Error(`${provider} research AI server is disabled.`);
-  if (!config.baseUrl) throw new Error(`${provider} research AI server URL is not configured.`);
+  const config = await loadStored();
+  if (!config.enabled) throw new Error('AI gateway is disabled.');
+  if (!config.baseUrl) throw new Error('AI gateway URL is not configured.');
 
   const url = config.baseUrl + (config.predictPath.startsWith('/') ? config.predictPath : '/' + config.predictPath);
   const headers: Record<string, string> = {
@@ -193,8 +181,9 @@ export async function requestResearchAiPrediction(
       method: 'POST',
       headers,
       body: JSON.stringify({
-        provider,
-        model: config.model || undefined,
+        gateway: 'LLAMA',
+        llamaModel: config.llamaModel || undefined,
+        qwenModel: config.qwenModel || undefined,
         payload
       }),
       signal: controller.signal
@@ -204,16 +193,16 @@ export async function requestResearchAiPrediction(
     try {
       parsed = text ? JSON.parse(text) : {};
     } catch {
-      throw new Error(`${provider} AI server returned non-JSON response (HTTP ${response.status}).`);
+      throw new Error(`AI gateway returned non-JSON response (HTTP ${response.status}).`);
     }
     if (!response.ok) {
       const message = parsed && typeof parsed === 'object' && 'message' in parsed
         ? String((parsed as { message?: unknown }).message)
-        : `AI server returned HTTP ${response.status}.`;
+        : `AI gateway returned HTTP ${response.status}.`;
       throw new Error(message);
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error(`${provider} AI server prediction response must be a JSON object.`);
+      throw new Error('AI gateway prediction response must be a JSON object.');
     }
     return parsed as Record<string, unknown>;
   } finally {
