@@ -19,14 +19,16 @@ function row(direction: string, score: number): ResearchFeatureRow {
 }
 const model = new SignalDirectionBaselineModel();
 const buy = model.predict(row('BUY', 78), '1D');
-assert.equal(buy.direction, 'UP'); assert.ok(buy.confidence > 0.7 && buy.confidence < 1); assert.equal(buy.modelAgreement, 1);
-const sell = model.predict(row('SELL', 60), '3D');
-assert.equal(sell.direction, 'DOWN'); assert.equal(sell.confidence, 0.6);
-const flat = model.predict(row('UNKNOWN', 90), '7D');
+assert.equal(buy.direction, 'UP'); assert.ok(buy.confidence > 0.7 && buy.confidence < 1); assert.ok(buy.modelAgreement !== null && buy.modelAgreement >= 0 && buy.modelAgreement <= 1);
+const sellRow = { ...row('SELL', 60), trendDirection: 'BEARISH', structureTrend: 'bearish', trend7dReturnPct: -1, trend30dReturnPct: -2, trend90dReturnPct: -3, trend365dReturnPct: -5 };
+const sell = model.predict(sellRow, '3D');
+assert.equal(sell.direction, 'DOWN'); assert.ok(sell.confidence >= 0.5 && sell.confidence <= 0.95);
+const flatRow = { ...row('UNKNOWN', 50), trendDirection: 'NEUTRAL', structureTrend: 'neutral', trend7dReturnPct: 0, trend30dReturnPct: 0, trend90dReturnPct: 0, trend365dReturnPct: 0 };
+const flat = model.predict(flatRow, '7D');
 assert.equal(flat.direction, 'FLAT'); assert.equal(flat.confidence, 0.5);
 const prediction = await createResearchPrediction({ row: row('BUY', 80), horizon: '1D', model });
-assert.equal(prediction.predictedDirection, 'UP'); assert.equal(prediction.modelVersion, 'SIGNAL_DIRECTION_BASELINE_V1');
-assert.equal(prediction.predictionSource, 'LIVE_SIGNAL_DIRECTION'); assert.equal(prediction.symbol, 'EUR/USD');
+assert.equal(prediction.predictedDirection, 'UP'); assert.equal(prediction.modelVersion, 'PAIR_FEATURE_BASELINE_V2');
+assert.equal(prediction.predictionSource, 'LIVE_PAIR_FEATURES'); assert.equal(prediction.symbol, 'EUR/USD');
 assert.equal(prediction.signalId, 'signal-test-001'); assert.match(prediction.featureHash, /^[a-f0-9]{64}$/);
 assert.match(prediction.predictionId, /^pred-.*-signal-test-001-1D$/); assert.equal(prediction.horizon, '1D');
 assert.ok(prediction.confidence >= 0 && prediction.confidence <= 1);
