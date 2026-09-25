@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { CTraderBrokerAdapter } from '../src/brokers/adapters/cTrader/CTraderBrokerAdapter';
+import { getCTraderApiMode, updateSystemConfig } from '../src/services/configService';
 
 const prototype = CTraderBrokerAdapter.prototype as any;
 
@@ -26,10 +27,33 @@ const order = {
   strategyId: 'fx_structure_v2a'
 };
 
-const result = await prototype.placeAutonomousOrder.call(liveStub, order);
-assert.equal(placeOrderCalls, 1);
-assert.equal(result.status, 'FILLED');
-assert.equal(result.signalId, order.signalId);
+const previousApiMode = getCTraderApiMode();
+
+try {
+  // The cTrader API selector controls transport/account discovery. It must not
+  // disable the guarded Auto Live capability: the application-level broker
+  // adapter remains LIVE while the selected cTrader Open API endpoint may be
+  // LIVE or DEMO.
+  updateSystemConfig({ cTraderApiMode: 'DEMO' });
+  assert.equal(getCTraderApiMode(), 'DEMO');
+
+  const result = await prototype.placeAutonomousOrder.call(liveStub, order);
+  assert.equal(placeOrderCalls, 1);
+  assert.equal(result.status, 'FILLED');
+  assert.equal(result.signalId, order.signalId);
+
+  updateSystemConfig({ cTraderApiMode: 'LIVE' });
+  assert.equal(getCTraderApiMode(), 'LIVE');
+
+  const liveResult = await prototype.placeAutonomousOrder.call(liveStub, {
+    ...order,
+    signalId: 'test-live-autonomous-order-live-mode'
+  });
+  assert.equal(placeOrderCalls, 2);
+  assert.equal(liveResult.status, 'FILLED');
+} finally {
+  updateSystemConfig({ cTraderApiMode: previousApiMode });
+}
 
 const demoStub = {
   isLive: false,
