@@ -773,6 +773,67 @@ brokerRouter.get('/orders', async (_req: Request, res: Response) => {
   return res.json(await ordersInFlight);
 });
 
+brokerRouter.get('/execution-intents', async (req: Request, res: Response) => {
+  try {
+    const requestedLimit = Number(req.query.limit ?? 50);
+    const limit = Math.max(1, Math.min(200, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50));
+    const requestedState = String(req.query.state || 'ALL').toUpperCase();
+    const allowedStates = ['PENDING', 'IN_FLIGHT', 'RECONCILIATION_TIMEOUT', 'COMPLETED', 'FAILED'];
+    const states = requestedState === 'ALL' ? allowedStates : [requestedState];
+    if (!states.every(state => allowedStates.includes(state))) {
+      return res.status(400).json({ error: 'Invalid execution intent state filter.' });
+    }
+
+    const placeholders = states.map(() => '?').join(', ');
+    const rows = await executeQuery<any>(
+      `SELECT * FROM execution_intents WHERE state IN (${placeholders}) ORDER BY updated_at DESC LIMIT ?`,
+      [...states, limit]
+    );
+    const now = Date.now();
+    const intents = rows.map((row: any) => {
+      let payload: any = {};
+      let result: any = {};
+      try { payload = JSON.parse(row.payload_json || '{}'); } catch {}
+      try { result = JSON.parse(row.result_json || '{}'); } catch {}
+      const createdAt = Number(row.created_at || 0);
+      const updatedAt = Number(row.updated_at || 0);
+      const lastAttemptAt = Number(result.reconciliationLastAttemptAt || result.reconciledAt || 0);
+      const ageMs = createdAt > 0 ? Math.max(0, now - createdAt) : 0;
+      return {
+        idempotencyKey: row.idempotency_key,
+        broker: row.broker,
+        market: row.market,
+        symbol: row.symbol,
+        side: row.side,
+        state: row.state,
+        createdAt,
+        updatedAt,
+        ageMs,
+        ageSeconds: Math.floor(ageMs / 1000),
+        reconciliation: {
+          state: result.reconciliationState || row.state,
+          attemptCount: Number(result.reconciliationAttemptCount || 0),
+          lastAttemptAt: lastAttemptAt || null,
+          lastAttemptAgeMs: lastAttemptAt > 0 ? Math.max(0, now - lastAttemptAt) : null,
+          brokerOrderId: result.brokerOrderId || result.order?.brokerOrderId || result.order?.id || null,
+          clientOrderId: result.clientOrderId || payload.signalId || result.order?.clientOrderId || null,
+          brokerStatus: result.brokerStatus || result.order?.status || null,
+          requestedQuantity: Number(result.requestedQuantity ?? result.order?.requestedQuantity ?? result.order?.quantity ?? payload.quantity ?? 0) || null,
+          filledQuantity: Number(result.filledQuantity ?? result.order?.filledQuantity ?? 0) || 0,
+          remainingQuantity: result.remainingQuantity !== undefined ? Number(result.remainingQuantity) : null,
+          averageFillPrice: Number(result.averageFillPrice ?? result.order?.averageFillPrice ?? 0) || null,
+          errorCode: result.reconciliationErrorCode || result.code || null,
+          reason: result.reconciliationError || result.detail || result.error || null,
+          operatorActionRequired: Boolean(result.operatorActionRequired || row.state === 'RECONCILIATION_TIMEOUT')
+        }
+      };
+    });
+    res.json({ environment: 'LIVE', timestamp: now, count: intents.length, intents });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to load execution reconciliation diagnostics.' });
+  }
+});
+
 brokerRouter.get('/execution/:idempotencyKey', async (req: Request, res: Response) => {
   try {
     const key = String(req.params.idempotencyKey || '').trim();
