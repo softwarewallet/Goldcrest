@@ -55,6 +55,7 @@ import {
 } from './src/services/liveTradeResearchPredictionService';
 import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } from './src/services/liveTradeResearchPredictionEvaluationService';
 import { generateCurrentPairPredictions } from './src/services/pairPredictionService';
+import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics } from './src/services/currentPairPredictionOutcomeService';
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
@@ -1741,6 +1742,48 @@ app.get('/api/live-trade-research/pair-predictions', operatorAuthRequired, async
     res.status(503).json({
       error: 'CURRENT_PAIR_PREDICTION_UNAVAILABLE',
       message: err?.message || 'Current pair predictions are unavailable.'
+    });
+  }
+});
+
+app.post('/api/live-trade-research/current-pair/evaluate', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.body?.horizon ? String(req.body.horizon).toUpperCase() : undefined;
+    if (horizon && !['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const result = await evaluatePendingCurrentPairPredictions({
+      symbol: typeof req.body?.symbol === 'string' ? req.body.symbol.toUpperCase() : undefined,
+      modelVersion: typeof req.body?.modelVersion === 'string' ? req.body.modelVersion : undefined,
+      horizon: horizon as '1D' | '3D' | '7D' | undefined,
+      limit: Number(req.body?.limit || 50000)
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'CURRENT_PAIR_OUTCOME_EVALUATION_FAILED',
+      message: err?.message || 'Current pair outcome evaluation failed.'
+    });
+  }
+});
+
+app.get('/api/live-trade-research/current-pair/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : undefined;
+    if (horizon && !['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const analytics = await getCurrentPairPredictionAnalytics({
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol.toUpperCase() : undefined,
+      modelVersion: typeof req.query.modelVersion === 'string' ? req.query.modelVersion : undefined,
+      horizon: horizon as '1D' | '3D' | '7D' | undefined,
+      limit: Number(req.query.limit || 50000)
+    });
+    res.json(analytics);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'CURRENT_PAIR_PREDICTION_ANALYTICS_UNAVAILABLE',
+      message: err?.message || 'Current pair prediction analytics are unavailable.'
     });
   }
 });
