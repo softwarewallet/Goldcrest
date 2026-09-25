@@ -11,7 +11,7 @@ import type { SignalValidationInput } from './TradeValidator';
 import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
 import { autoTradeReadinessService } from './AutoTradeReadiness';
 import { logBrokerAction } from '../auditLog';
-import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight } from '../../services/executionIntentService';
+import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight, markExecutionIntentSubmissionAmbiguous } from '../../services/executionIntentService';
 import { getSystemConfig, updateSystemConfig } from '../../services/configService';
 import { liveRuntimeLog, tradeAuditLog } from '../../services/liveRuntimeLog';
 import { normalizePriceToInstrumentDigits } from './TradeSizing';
@@ -489,7 +489,36 @@ class AutoExecutionEngine {
       // This is the last guarded application-level point before the live broker API call.
       auditExecution('FINAL_ORDER_PACKET', { request: order });
       onReadyToSubmit?.();
-      const placedOrder = await autonomousPlacer.call(adapter, order);
+
+      // Move the durable intent to IN_FLIGHT immediately before submission.
+      // If the broker call then fails without a definitive broker response,
+      // the outcome is intentionally ambiguous: the broker may have accepted
+      // the order even though the client did not receive the response. Keep
+      // the intent non-retryable and route it to reconciliation instead of
+      // marking it FAILED.
+      await markExecutionIntentInFlight(idempotencyKey, {
+        status: 'SUBMISSION_STARTED',
+        broker,
+        symbol: order.symbol,
+        signalId: order.signalId
+      });
+
+      let brokerSubmissionStarted = true;
+      let placedOrder: NormalizedOrder;
+      try {
+        placedOrder = await autonomousPlacer.call(adapter, order);
+        brokerSubmissionStarted = false;
+      } catch (err: any) {
+        if (brokerSubmissionStarted) {
+          await markExecutionIntentSubmissionAmbiguous(idempotencyKey, {
+            message: err?.message || String(err),
+            broker,
+            symbol: order.symbol,
+            signalId: order.signalId
+          });
+        }
+        throw err;
+      }
 
       if (placedOrder.status === 'FILLED') {
         await completeExecutionIntent(idempotencyKey, placedOrder);
