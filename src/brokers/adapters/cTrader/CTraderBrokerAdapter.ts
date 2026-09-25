@@ -43,7 +43,7 @@ import {
 
 export function resolveLivePositionPrice(
   side: 'BUY' | 'SELL',
-  quote: Pick<NormalizedQuote, 'status' | 'bid' | 'ask'>
+  quote: { status: NormalizedQuote['status']; bid?: number; ask?: number }
 ): { currentPrice: number; currentPriceStatus: 'LIVE' | 'UNAVAILABLE' } {
   const currentPrice = side === 'BUY' ? Number(quote.bid) : Number(quote.ask);
   if (quote.status !== 'FRESH' || !(currentPrice > 0) || !Number.isFinite(currentPrice)) {
