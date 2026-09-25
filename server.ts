@@ -54,6 +54,7 @@ import {
   SignalDirectionBaselineModel
 } from './src/services/liveTradeResearchPredictionService';
 import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } from './src/services/liveTradeResearchPredictionEvaluationService';
+import { generateCurrentPairPredictions } from './src/services/pairPredictionService';
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
@@ -1714,6 +1715,33 @@ app.post('/api/live-trade-research/predict', operatorAuthRequired, async (req: R
     res.json({ predictions, count: predictions.length, generatedAt: Date.now() });
   } catch (err: any) {
     res.status(503).json({ error: 'LIVE_TRADE_RESEARCH_PREDICTION_FAILED', message: err?.message || 'Research prediction generation failed.' });
+  }
+});
+
+app.get('/api/live-trade-research/pair-predictions', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = String(req.query.horizon || '1D').toUpperCase();
+    if (!['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const model = String(req.query.model || 'BASELINE').toUpperCase();
+    if (!['BASELINE', 'AI_GATEWAY'].includes(model)) {
+      return res.status(400).json({ error: 'INVALID_PREDICTION_MODEL', message: 'model must be BASELINE or AI_GATEWAY.' });
+    }
+    const pairs = typeof req.query.pairs === 'string'
+      ? req.query.pairs.split(',').map(value => value.trim().toUpperCase()).filter(Boolean)
+      : undefined;
+    const predictions = await generateCurrentPairPredictions({
+      pairs,
+      horizon: horizon as '1D' | '3D' | '7D',
+      model: model as 'BASELINE' | 'AI_GATEWAY'
+    });
+    res.json({ predictions, count: predictions.length, generatedAt: Date.now(), model, horizon });
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'CURRENT_PAIR_PREDICTION_UNAVAILABLE',
+      message: err?.message || 'Current pair predictions are unavailable.'
+    });
   }
 });
 
