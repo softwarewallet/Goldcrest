@@ -11,7 +11,7 @@ import type { SignalValidationInput } from './TradeValidator';
 import { liveTradingGate, LiveGateEvaluationParams } from './LiveTradingGate';
 import { autoTradeReadinessService } from './AutoTradeReadiness';
 import { logBrokerAction } from '../auditLog';
-import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight, markExecutionIntentSubmissionAmbiguous } from '../../services/executionIntentService';
+import { claimExecutionIntent, completeExecutionIntent, failExecutionIntent, markExecutionIntentInFlight, markExecutionIntentSubmissionAmbiguous, reconcileExecutionIntent } from '../../services/executionIntentService';
 import { getSystemConfig, updateSystemConfig } from '../../services/configService';
 import { liveRuntimeLog, tradeAuditLog } from '../../services/liveRuntimeLog';
 import { normalizePriceToInstrumentDigits } from './TradeSizing';
@@ -460,6 +460,37 @@ class AutoExecutionEngine {
       });
 
       if (!intent.claimed) {
+        // An ambiguous prior submission is reconciled against authoritative broker
+        // history before the duplicate is rejected. Resolution is fail-closed:
+        // only one exact broker match can complete the durable intent.
+        if (intent.existing?.state === 'RECONCILIATION_TIMEOUT' || intent.existing?.state === 'IN_FLIGHT') {
+          try {
+            const reconciliation = await reconcileExecutionIntent(idempotencyKey, adapter);
+            if (reconciliation.status === 'RESOLVED' && reconciliation.order) {
+              auditExecution('EXECUTION_INTENT_RECONCILED', {
+                code: 'EXECUTION_INTENT_RECONCILED',
+                brokerOrderId: reconciliation.order.brokerOrderId || reconciliation.order.id
+              });
+              return {
+                executed: reconciliation.order.status === 'FILLED',
+                order: reconciliation.order,
+                code: 'EXECUTION_INTENT_RECONCILED',
+                reason: reconciliation.reason
+              };
+            }
+            auditExecution('EXECUTION_INTENT_RECONCILIATION_PENDING', {
+              code: 'EXECUTION_INTENT_RECONCILIATION_PENDING',
+              reason: reconciliation.reason,
+              candidateCount: reconciliation.candidates.length
+            });
+          } catch (reconciliationError: any) {
+            auditExecution('EXECUTION_INTENT_RECONCILIATION_FAILED', {
+              code: 'EXECUTION_INTENT_RECONCILIATION_FAILED',
+              reason: reconciliationError?.message || String(reconciliationError)
+            });
+          }
+        }
+
         auditExecution('EXECUTION_INTENT_DUPLICATE', { code: 'EXECUTION_INTENT_ALREADY_EXISTS', reason: 'This autonomous signal has already been submitted or is pending reconciliation.', existingState: intent.existing?.state });
         return {
           executed: intent.existing?.state === 'COMPLETED',
