@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { executeRun, executeQuery } from '../src/database/db';
 import { generateCurrentPairPredictions } from '../src/services/pairPredictionService';
 import { ScannerService } from '../src/services/scannerService';
 import { LiveForexProvider } from '../src/markets/forex/provider';
@@ -48,6 +49,7 @@ ScannerService.prototype.getForexScanner = async function () {
 };
 
 try {
+  await executeRun("DELETE FROM live_trade_research_predictions WHERE symbol = 'EUR/USD' AND model_version = 'PAIR_FEATURE_BASELINE_V2' AND horizon = '1D'");
   const predictions = await generateCurrentPairPredictions({
     pairs: ['EUR/USD'],
     horizon: '1D',
@@ -64,7 +66,15 @@ try {
   assert.equal(predictions[0].ask, 1.1003);
   assert.equal(predictions[0].mlProbability, 0.82);
   assert.ok(predictions[0].generatedAt > 0);
+  const persisted = await executeQuery<any>('SELECT * FROM live_trade_research_predictions WHERE prediction_id = ? LIMIT 1', [predictions[0].predictionId]);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].outcome_status, 'PENDING');
+  assert.ok(typeof persisted[0].feature_snapshot_json === 'string');
+  const snapshot = JSON.parse(persisted[0].feature_snapshot_json);
+  assert.equal(snapshot.symbol, 'EUR/USD');
+  assert.equal(snapshot.rsi, 61);
 } finally {
+  await executeRun("DELETE FROM live_trade_research_predictions WHERE symbol = 'EUR/USD' AND model_version = 'PAIR_FEATURE_BASELINE_V2' AND horizon = '1D'");
   ScannerService.prototype.getForexScanner = original;
   LiveForexProvider.prototype.refreshPair = originalRefresh;
   LiveForexProvider.prototype.getCandles = originalGetCandles;

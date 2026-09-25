@@ -11,6 +11,7 @@ import { getSystemConfig } from './configService';
 import {
   LlamaGatewayPredictionModel,
   SignalDirectionBaselineModel,
+  createCurrentResearchPrediction,
   type PredictionModel,
   type ResearchPredictionDirection,
   type ResearchPredictionHorizon,
@@ -207,8 +208,17 @@ export async function generateCurrentPairPredictions(params: {
       row = buildFallbackFeatureRow(item, error);
     }
     let output: ResearchPredictionOutput;
+    let persistedPredictionId = 'current-' + generatedAt + '-' + row.signalId + '-' + horizon;
     try {
-      output = await model.predict(row, horizon);
+      const persisted = await createCurrentResearchPrediction({ row, horizon, model });
+      persistedPredictionId = persisted.predictionId;
+      output = {
+        direction: persisted.predictedDirection,
+        confidence: persisted.confidence,
+        modelAgreement: persisted.modelAgreement,
+        reasoning: persisted.reasoning,
+        invalidation: persisted.invalidation
+      };
     } catch (error: any) {
       output = {
         direction: 'FLAT',
@@ -221,7 +231,7 @@ export async function generateCurrentPairPredictions(params: {
 
     const normalized = normalizeOutput(output);
     return {
-      predictionId: 'current-' + generatedAt + '-' + row.signalId + '-' + horizon,
+      predictionId: persistedPredictionId,
       symbol: row.symbol,
       predictedAt: generatedAt,
       horizon,
