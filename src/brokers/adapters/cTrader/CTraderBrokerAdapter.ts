@@ -835,8 +835,16 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   async getOrderByClientOrderId(clientOrderId: string): Promise<NormalizedOrder | null> {
     const normalizedClientOrderId = String(clientOrderId || '').trim().slice(0, 50);
     if (!normalizedClientOrderId) return null;
-    const orders = await this.getOpenOrders();
-    return orders.find(order => order.clientOrderId === normalizedClientOrderId) || null;
+
+    // Reconciliation runs independently every 15 seconds. Search both the
+    // currently open order state and recent broker history so an accepted
+    // submission can still be resolved after it has already filled.
+    const openOrders = await this.getOpenOrders();
+    const openMatch = openOrders.find(order => order.clientOrderId === normalizedClientOrderId);
+    if (openMatch) return openMatch;
+
+    const history = await this.getOrderHistoryRange(Date.now() - 15 * 60_000, Date.now());
+    return history.find(order => order.clientOrderId === normalizedClientOrderId) || null;
   }
 
   async getDailyRealizedPnL(): Promise<number> {
@@ -896,7 +904,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         broker: 'CTRADER',
         environment: this.environment,
         market: 'FOREX',
-        symbol: String(deal.symbolId),
+        symbol: byId.get(Number(deal.symbolId))?.symbolName || String(deal.symbolId),
         side,
         orderType: 'MARKET',
         quantity: volume,
@@ -907,6 +915,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         commission: Number(deal.commission || 0) || undefined,
         timestamp: Number(deal.executionTimestamp || deal.utcLastUpdateTimestamp || Date.now()),
         brokerOrderId: String(deal.orderId),
+        clientOrderId: deal.clientOrderId !== undefined ? String(deal.clientOrderId) : (deal.order?.clientOrderId !== undefined ? String(deal.order.clientOrderId) : undefined),
       } as NormalizedOrder;
     });
   }
