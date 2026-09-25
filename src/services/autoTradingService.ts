@@ -11,7 +11,7 @@ import { autoExecutionEngine, armAutonomousExecutionGate, refreshAutonomousExecu
 import { autoTradeReadinessService } from '../brokers/safety/AutoTradeReadiness';
 import { getSystemConfig } from './configService';
 import { killSwitch } from '../brokers/safety/KillSwitch';
-import { BrokerAdapter, NormalizedQuote, OrderRequest } from '../brokers/types';
+import { BrokerAdapter, ConnectionTestResult, NormalizedQuote, OrderRequest } from '../brokers/types';
 import { liveRuntimeLog, tradeAuditLog } from './liveRuntimeLog';
 import { calculateForexPipTargets, normalizePriceToThreeDigits, sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
 import { recordLiveTradeResearchSignal, updateLiveTradeResearchQuote, updateLiveTradeResearchExecution } from './liveTradeResearchService';
@@ -24,6 +24,41 @@ const AUTO_INTERVAL_MS = Math.max(
 );
 
 const DEFAULT_AUTO_FOREX_PAIRS = FOREX_PAIRS.map(pair => pair.symbol);
+
+export async function validateAutoLiveCTraderConnection(
+  adapter: Pick<BrokerAdapter, 'testConnection'>
+): Promise<{ ok: boolean; message: string; result: ConnectionTestResult }> {
+  try {
+    const result = await adapter.testConnection();
+    const selectedMode = result.apiMode || 'LIVE';
+    const endpoint = result.apiEndpoint || 'unknown endpoint';
+    if (!result.connected) {
+      return {
+        ok: false,
+        message: `cTrader ${selectedMode} API connection preflight failed: ${result.error || 'connection test failed'} (${endpoint}).`,
+        result
+      };
+    }
+    return {
+      ok: true,
+      message: `cTrader ${selectedMode} API connection preflight passed (${endpoint}).`,
+      result
+    };
+  } catch (error: any) {
+    const result = {
+      broker: 'CTRADER' as const,
+      environment: 'LIVE' as const,
+      connected: false,
+      error: error?.message || String(error),
+      timestamp: Date.now()
+    } satisfies ConnectionTestResult;
+    return {
+      ok: false,
+      message: `cTrader API connection preflight failed: ${result.error}.`,
+      result
+    };
+  }
+}
 
 function getConfiguredAutoForexPairs(): string[] {
   const configured = getSystemConfig().autoLiveForexPairs;
@@ -607,6 +642,27 @@ class AutoTradingService {
     this.preOpenStatus = 'RUNNING';
 
     try {
+      const cTraderAdapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+      const cTraderPreflight = await validateAutoLiveCTraderConnection(cTraderAdapter);
+      liveRuntimeLog(cTraderPreflight.ok ? 'INFO' : 'WARN', 'AUTO_TRADING_CTRADER_PREFLIGHT', {
+        ok: cTraderPreflight.ok,
+        apiMode: cTraderPreflight.result.apiMode,
+        apiEndpoint: cTraderPreflight.result.apiEndpoint,
+        account: cTraderPreflight.result.account,
+        accountType: cTraderPreflight.result.accountType,
+        error: cTraderPreflight.result.error
+      });
+      if (!cTraderPreflight.ok) {
+        this.state = 'BLOCKED';
+        this.lastCycleResult = cTraderPreflight.message;
+        liveRuntimeLog('WARN', 'AUTO_TRADING_BLOCKED_CTRADER_PREFLIGHT', {
+          reason: cTraderPreflight.message,
+          apiMode: cTraderPreflight.result.apiMode,
+          apiEndpoint: cTraderPreflight.result.apiEndpoint
+        });
+        return;
+      }
+
       if (killSwitch.isHalted()) {
         this.state = 'BLOCKED';
         this.lastCycleResult = 'Emergency kill switch is active.';
