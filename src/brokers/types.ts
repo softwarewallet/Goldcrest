@@ -141,6 +141,8 @@ export interface NormalizedOrder {
   commission?: number;
   timestamp: number;
   brokerOrderId?: string;
+  /** Broker-native client order identity used for exact submission reconciliation. */
+  clientOrderId?: string;
   strategyId?: string;
   signalId?: string;
   rejectionReason?: string;
@@ -247,6 +249,8 @@ export interface BrokerAdapter {
   cancelOrder(orderId: string): Promise<boolean>;
   closePosition(positionId: string, quantity?: number): Promise<boolean>;
   getOrderStatus(orderId: string, requestedQuantity?: number): Promise<NormalizedOrder>;
+  /** Optional broker-native lookup using the client order identity submitted with an order. */
+  getOrderByClientOrderId?(clientOrderId: string): Promise<NormalizedOrder | null>;
   getTradingStatus(): Promise<BrokerStatus>;
   getDailyRealizedPnL?(): Promise<number>;
 }
