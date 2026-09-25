@@ -96,4 +96,21 @@ await failExecutionIntent(key, {
 intent = await getExecutionIntent(key);
 assert.equal(intent?.state, 'COMPLETED');
 
+const nativeKey = 'test-native-reconciliation-' + Date.now();
+const nativePayload = { ...payload, signalId: nativeKey };
+await claimExecutionIntent(nativeKey, {
+  broker: 'CTRADER', market: 'FOREX', symbol: 'EUR/USD', side: 'BUY', payload: nativePayload
+});
+await markExecutionIntentSubmissionAmbiguous(nativeKey, { message: 'timeout after send' });
+const nativeOrder = { ...reconciledOrder, brokerOrderId: '987654', clientOrderId: nativeKey };
+const nativeResult = await reconcileExecutionIntent(nativeKey, {
+  getOrderByClientOrderId: async (clientOrderId: string) => clientOrderId === nativeKey ? nativeOrder : null,
+  getOrderHistory: async () => [],
+  getOrderHistoryRange: async () => []
+} as any);
+assert.equal(nativeResult.status, 'RESOLVED');
+assert.equal(nativeResult.order?.clientOrderId, nativeKey);
+const nativeIntent = await getExecutionIntent(nativeKey);
+assert.equal(nativeIntent?.state, 'COMPLETED');
+
 console.log('EXECUTION INTENT RECONCILIATION TESTS PASSED');
