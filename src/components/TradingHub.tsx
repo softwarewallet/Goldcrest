@@ -848,8 +848,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                         <td className="text-right">{intent.reconciliation.remainingQuantity ?? '—'}</td>
                         <td>{intent.reconciliation.brokerStatus || '—'}</td>
                         <td className="text-center">{intent.reconciliation.attemptCount}</td>
-                        <td className="text-center">{intent.reconciliation.lastAttemptAgeMs != null ? formatAge(Date.now() - intent.reconciliation.lastAttemptAgeMs) : '—'}</td>
-                        <td className="max-w-xs truncate text-amber-200" title={intent.reconciliation.reason || undefined}>{intent.reconciliation.reason || '—'}</td>
+                        <td className="text-center">{intent.reconciliation.lastAttemptAt != null ? formatAge(intent.reconciliation.lastAttemptAt) : '—'}</td>
+                        <td className="max-w-xs truncate text-amber-200" title={intent.reconciliation.reason || undefined}>{intent.reconciliation.operatorActionRequired ? 'OPERATOR ACTION: ' : ''}{intent.reconciliation.reason || '—'}</td>
                       </tr>
                     ))}</tbody>
                   </table>
