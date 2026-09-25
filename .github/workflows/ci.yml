@@ -31,5 +31,8 @@ jobs:
       - name: Production build
         run: npm run build
 
+      - name: Test suite
+        run: npm test
+
       - name: Validate Docker production image
         run: docker build --tag goldcrest:ci .
