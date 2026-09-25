@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
-import { autoTradeReadinessService } from '../src/brokers/safety/AutoTradeReadiness';
-import { getSystemConfig } from '../src/services/configService';
+import os from 'node:os';
+import path from 'node:path';
+
+process.env.GOLDCREST_CONFIG_DIR = path.join(os.tmpdir(), 'goldcrest-readiness-test-' + Date.now());
+process.env.GOLDCREST_CONFIG_FILE = path.join(process.env.GOLDCREST_CONFIG_DIR, 'system-config.json');
+
+const { autoTradeReadinessService } = await import('../src/brokers/safety/AutoTradeReadiness');
+const { getSystemConfig } = await import('../src/services/configService');
 
 const config = getSystemConfig();
 
