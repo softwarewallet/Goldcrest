@@ -240,8 +240,13 @@ async function ensurePredictionTable(): Promise<void> {
     actual_return_pct REAL,
     outcome_status TEXT,
     evaluated_at INTEGER,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    feature_snapshot_json TEXT
   )`);
+  const columns = await executeQuery<{ name: string }>('PRAGMA table_info(live_trade_research_predictions)');
+  if (!columns.some(column => column.name === 'feature_snapshot_json')) {
+    await executeRun('ALTER TABLE live_trade_research_predictions ADD COLUMN feature_snapshot_json TEXT');
+  }
 }
 
 async function makePrediction(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon, model: PredictionModel): Promise<ResearchPrediction> {
@@ -279,15 +284,58 @@ export async function createResearchPrediction(params: {
       prediction_id, model_version, prediction_source, symbol, signal_id,
       predicted_at, horizon, predicted_direction, confidence, feature_hash,
       model_agreement, reasoning, invalidation, actual_direction,
-      actual_return_pct, outcome_status, evaluated_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      actual_return_pct, outcome_status, evaluated_at, created_at, feature_snapshot_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [prediction.predictionId, prediction.modelVersion, prediction.predictionSource,
       prediction.symbol, prediction.signalId, prediction.predictedAt, prediction.horizon,
       prediction.predictedDirection, prediction.confidence, prediction.featureHash,
       prediction.modelAgreement, prediction.reasoning, prediction.invalidation,
-      null, null, 'PENDING', null, prediction.predictedAt]
+      null, null, 'PENDING', null, prediction.predictedAt, JSON.stringify(params.row)]
   );
   return prediction;
+}
+
+
+export async function createCurrentResearchPrediction(params: {
+  row: ResearchFeatureRow;
+  horizon?: ResearchPredictionHorizon;
+  model?: PredictionModel;
+  dedupeWindowMs?: number;
+}): Promise<ResearchPrediction> {
+  const horizon = params.horizon || '1D';
+  const model = params.model || new SignalDirectionBaselineModel();
+  const dedupeWindowMs = Math.max(0, Math.floor(Number(params.dedupeWindowMs ?? 5 * 60_000)));
+  await ensurePredictionTable();
+
+  if (dedupeWindowMs > 0) {
+    const cutoff = Date.now() - dedupeWindowMs;
+    const existing = await executeQuery<any>(
+      `SELECT * FROM live_trade_research_predictions
+        WHERE symbol = ? AND model_version = ? AND horizon = ? AND predicted_at >= ?
+        ORDER BY predicted_at DESC LIMIT 1`,
+      [params.row.symbol, model.modelVersion, horizon, cutoff]
+    );
+    if (existing[0]) {
+      const row = existing[0];
+      return {
+        predictionId: String(row.prediction_id),
+        modelVersion: String(row.model_version),
+        predictionSource: String(row.prediction_source),
+        symbol: String(row.symbol),
+        signalId: row.signal_id == null ? null : String(row.signal_id),
+        predictedAt: Number(row.predicted_at),
+        horizon: row.horizon as ResearchPredictionHorizon,
+        predictedDirection: row.predicted_direction as ResearchPredictionDirection,
+        confidence: Number(row.confidence),
+        featureHash: String(row.feature_hash),
+        modelAgreement: row.model_agreement == null ? null : Number(row.model_agreement),
+        reasoning: row.reasoning == null ? null : String(row.reasoning),
+        invalidation: row.invalidation == null ? null : String(row.invalidation)
+      };
+    }
+  }
+
+  return createResearchPrediction({ row: params.row, horizon, model });
 }
 
 export async function generateResearchPredictions(params: {
