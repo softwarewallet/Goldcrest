@@ -1,6 +1,6 @@
 import { BaseBrokerAdapter } from '../BaseBrokerAdapter';
 import { FOREX_PAIRS } from '../../../markets/forex/instruments';
-import { getSystemConfig, getCTraderApiMode } from '../../../services/configService';
+import { getSystemConfig } from '../../../services/configService';
 import {
   BrokerAccountInfo,
   BrokerInstrument,
@@ -85,7 +85,6 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
   private static readonly SYMBOL_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly ACCOUNT_DATA_CACHE_TTL_MS = 10 * 1000;
   private accountFetchInFlight: Promise<BrokerAccountInfo> | null = null;
-  private lastKnownApiMode: string | null = null;
 
   /**
    * Derives effective trading permissions from the authoritative cTrader
@@ -122,13 +121,6 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
    */
   protected syncConfig(): void {
     const globalConfig = getSystemConfig();
-    const currentApiMode = getCTraderApiMode();
-
-    if (this.lastKnownApiMode !== null && this.lastKnownApiMode !== currentApiMode) {
-      this.clearCache();
-    }
-    this.lastKnownApiMode = currentApiMode;
-
     // If the global config has a selected account ID, override the adapter's accountId.
     // Conversion metadata is account-scoped, so invalidate it if the selected
     // account changes during the lifetime of this adapter instance.

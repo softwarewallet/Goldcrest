@@ -57,9 +57,6 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
     FIVE_PAISA: { ...emptyFivePaisa }
   });
   const [ack, setAck] = useState(false);
-  const [cTraderApiMode, setCTraderApiMode] = useState<'LIVE' | 'DEMO'>('LIVE');
-  const [savingCTraderApiMode, setSavingCTraderApiMode] = useState(false);
-  const [cTraderApiModeMessage, setCTraderApiModeMessage] = useState('');
   const [saving, setSaving] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,9 +102,6 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
 
       if (configRes?.ok) {
         const config = await configRes.json();
-        if (config.cTraderApiMode === 'LIVE' || config.cTraderApiMode === 'DEMO') {
-          setCTraderApiMode(config.cTraderApiMode);
-        }
         if (Number.isFinite(Number(config.maxTradeValueForexUsd))) {
           setMaxForexUsd(Number(config.maxTradeValueForexUsd));
         }
@@ -202,64 +196,14 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
           <Lock className="w-5 h-5 text-emerald-400 mt-0.5" />
           <div>
             <div className="text-sm font-bold text-white">Broker Configuration</div>
-            <p className="text-xs text-slate-400 mt-1">cTrader Open API can connect to either the LIVE or DEMO endpoint. Forex routing remains on cTrader; 5paisa remains on its LIVE integration. Broker credentials are held by the server and must never be exposed in the client UI.</p>
+            <p className="text-xs text-slate-400 mt-1">cTrader Open API is restricted to the authoritative LIVE endpoint. Forex routing remains on cTrader; 5paisa remains on its LIVE integration. Broker credentials are held by the server and must never be exposed in the client UI.</p>
           </div>
         </div>
         <label className="flex items-center gap-2 mt-4 text-xs text-amber-300 font-mono">
           <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
           I acknowledge that these credentials access the selected cTrader broker environment.
         </label>
-        <div className="mt-4 p-4 rounded-lg border border-cyan-900/60 bg-slate-950">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block min-w-[220px] space-y-1">
-              <span className="text-[10px] uppercase text-cyan-300 font-mono">cTrader Open API Mode</span>
-              <select
-                value={cTraderApiMode}
-                onChange={e => setCTraderApiMode(e.target.value as 'LIVE' | 'DEMO')}
-                className={inputClass}
-              >
-                <option value="LIVE">LIVE</option>
-                <option value="DEMO">DEMO</option>
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={savingCTraderApiMode}
-              onClick={async () => {
-                setSavingCTraderApiMode(true);
-                setCTraderApiModeMessage('');
-                try {
-                  const res = await fetch('/api/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cTraderApiMode })
-                  });
-                  const data = await res.json();
-                  if (!res.ok) throw new Error(data.error || 'Failed to save cTrader API mode.');
-                  setCTraderApiModeMessage(
-                    'cTrader API mode saved: ' + cTraderApiMode + '. TEST CONNECTION will now use the matching endpoint.'
-                  );
-                  onRefreshGlobal?.();
-                } catch (err: any) {
-                  setCTraderApiModeMessage(err.message || 'Failed to save cTrader API mode.');
-                } finally {
-                  setSavingCTraderApiMode(false);
-                }
-              }}
-              className="px-4 py-2 rounded bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold"
-            >
-              {savingCTraderApiMode ? 'SAVING…' : 'APPLY API MODE'}
-            </button>
-            {cTraderApiModeMessage && (
-              <span className="text-[10px] text-slate-400 font-mono">{cTraderApiModeMessage}</span>
-            )}
-          </div>
-          <div className="mt-2 text-[10px] text-slate-500 font-mono">
-            LIVE → wss://live.ctraderapi.com:5036 · DEMO → wss://demo.ctraderapi.com:5036
-          </div>
-        </div>
       </div>
-
       <div className="bg-slate-900 border border-amber-800/50 rounded-xl p-5">
         <div className="flex items-start gap-3">
           <ShieldCheck className="w-5 h-5 text-amber-400 mt-0.5" />
@@ -651,7 +595,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
           return (
             <div key={broker} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2"><Server className="w-4 h-4 text-cyan-400" /><h3 className="text-sm font-bold text-white">{isC ? 'cTrader API' : '5paisa'} {isC ? `(${cTraderApiMode})` : 'LIVE'}</h3></div>
+                <div className="flex items-center gap-2"><Server className="w-4 h-4 text-cyan-400" /><h3 className="text-sm font-bold text-white">{isC ? 'cTrader API' : '5paisa'} {'LIVE'}</h3></div>
                 <span className={s?.configured ? 'text-emerald-400 text-[10px] font-bold' : 'text-amber-400 text-[10px] font-bold'}>{s?.configured ? 'CONFIGURED' : 'NOT CONFIGURED'}</span>
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
@@ -697,7 +641,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
         <div className="flex items-center gap-2 mb-2"><ShieldCheck className="w-4 h-4 text-cyan-400" /><span className="text-sm font-bold text-white">Routing & Safety</span></div>
         <div className="grid md:grid-cols-2 gap-2 text-xs font-mono">
-          <div className="p-2 bg-slate-950 border border-slate-800 rounded">FOREX → <strong className="text-emerald-400">cTrader ({cTraderApiMode})</strong></div>
+          <div className="p-2 bg-slate-950 border border-slate-800 rounded">FOREX → <strong className="text-emerald-400">cTrader LIVE</strong></div>
           <div className="p-2 bg-slate-950 border border-slate-800 rounded">INDIAN_EQUITY → <strong className="text-emerald-400">5paisa LIVE</strong></div>
           <div className="p-2 bg-slate-950 border border-slate-800 rounded">INDIAN_FUTURES → <strong className="text-emerald-400">5paisa LIVE</strong></div>
           <div className="p-2 bg-slate-950 border border-slate-800 rounded">INDIAN_OPTIONS → <strong className="text-emerald-400">5paisa LIVE</strong></div>
@@ -706,7 +650,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         </div>
       </div>
 
-      <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2"><Database className="w-3 h-3" /> Execution environment: LIVE_ONLY. cTrader API transport may use LIVE or DEMO; the selected API mode is used for the cTrader connection.</div>
+      <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2"><Database className="w-3 h-3" /> Execution environment: LIVE_ONLY. cTrader API transport is restricted to the authoritative LIVE endpoint.</div>
     </div>
   );
 };

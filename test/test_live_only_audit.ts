@@ -13,7 +13,9 @@ const FORBIDDEN = [
   /sandbox[A-Z][A-Za-z0-9_]*/g,
   /synthetic/gi,
   /simulated capital/gi,
-  /PAPER_SIMULATION/gi
+  /PAPER_SIMULATION/gi,
+  /\bdemo\b/gi,
+  /CTRADER_DEMO_/gi
 ];
 
 function walk(dir: string): string[] {
@@ -45,5 +47,13 @@ assert.equal(
   0,
   `LIVE runtime audit failed. Forbidden paper/sandbox/synthetic runtime references remain:\n${findings.join('\n')}`
 );
+
+const configSnapshot = fs.readFileSync(path.resolve(process.cwd(), 'data/system-config.json'), 'utf8');
+assert.equal(/"cTraderApiMode"\s*:\s*"DEMO"/i.test(configSnapshot), false, 'Persisted cTrader configuration must not select DEMO mode.');
+const envExample = fs.readFileSync(path.resolve(process.cwd(), '.env.example'), 'utf8');
+assert.equal(/CTRADER_DEMO_|demo\.ctraderapi\.com/i.test(envExample), false, 'Environment template must not expose cTrader DEMO settings.');
+
+const { getCTraderApiMode } = await import('../src/services/configService');
+assert.equal(getCTraderApiMode(), 'LIVE', 'cTrader API mode must be LIVE-only.');
 
 console.log('LIVE-ONLY SOURCE AUDIT PASSED');

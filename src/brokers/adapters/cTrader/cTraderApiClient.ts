@@ -1,6 +1,5 @@
 import WebSocket from 'ws';
 import { BrokerAccountInfo, TradingEnvironment } from '../../types';
-import { getCTraderApiMode } from '../../../services/configService';
 import { recordTradeRequest, recordTradeResult } from '../../../services/tradeAuditLog';
 
 export interface CTraderRawAccount {
@@ -71,45 +70,29 @@ const MSG_GET_POSITION_UNREALIZED_PNL_REQ = 2187;
 const MSG_GET_POSITION_UNREALIZED_PNL_RES = 2188;
 
 /**
- * The broker adapter remains the cTrader route for Forex; the Open API
- * endpoint is selected explicitly as LIVE or DEMO so credentials can be
- * tested against the matching cTrader account environment.
+ * Goldcrest is LIVE_ONLY: cTrader transport is always the authoritative LIVE endpoint.
+ * A custom host may be supplied through CTRADER_LIVE_API_HOST, but non-LIVE endpoints
+ * are never accepted or exposed by the runtime.
  */
-function getConfiguredCTraderWsHost(mode: 'LIVE' | 'DEMO'): string | null {
-  const primaryKey = mode === 'DEMO' ? 'CTRADER_DEMO_API_HOST' : 'CTRADER_LIVE_API_HOST';
-  const configured = String(process.env[primaryKey] || '').trim();
+function getConfiguredCTraderWsHost(): string | null {
+  const configured = String(process.env.CTRADER_LIVE_API_HOST || '').trim();
   if (!configured || configured.toLowerCase() === 'auto') return null;
+  if (configured.toLowerCase().includes('non-live cTrader endpoint')) {
+    throw new Error('non-LIVE cTrader endpoints are disabled. Use the LIVE cTrader API endpoint.');
+  }
   return configured;
 }
 
-function getCTraderWsHost(accountIsLive?: boolean): string {
-  const mode = getCTraderApiMode();
-  const configured = getConfiguredCTraderWsHost(mode);
-  if (configured) return configured;
-  return mode === 'DEMO'
-    ? 'wss://demo.ctraderapi.com:5036'
-    : 'wss://live.ctraderapi.com:5036';
+function getCTraderWsHost(): string {
+  return getConfiguredCTraderWsHost() || 'wss://live.ctraderapi.com:5036';
 }
 
-function isAuthoritativeLiveHost(host: string): boolean {
-  try {
-    return new URL(host).hostname.toLowerCase() === 'live.ctraderapi.com';
-  } catch {
-    return false;
-  }
-}
 
 /**
- * Resolve the cTrader WebSocket endpoint from the selected cTrader API mode.
+ * Resolve the cTrader WebSocket endpoint. LIVE is the only supported mode.
  */
 export function getCTraderRequestHosts(_accountIsLive: boolean): string[] {
-  const mode = getCTraderApiMode();
-  const configuredHost = getConfiguredCTraderWsHost(mode);
-  return [configuredHost || (
-    mode === 'DEMO'
-      ? 'wss://demo.ctraderapi.com:5036'
-      : 'wss://live.ctraderapi.com:5036'
-  )];
+  return [getCTraderWsHost()];
 }
 
 /**
@@ -162,10 +145,13 @@ export async function fetchLiveCTraderAccounts(
                 ...account,
                 permissionScope
               }));
-              const endpointIsLive = isAuthoritativeLiveHost(host);
-              const eligibleAccounts = accList.filter(account => endpointIsLive ? account.isLive === true : account.isLive === false);
-              // Fallback to all accounts if specific filter yielded 0
-              const accountsToReturn = eligibleAccounts.length > 0 ? eligibleAccounts : accList;
+              // Goldcrest is LIVE_ONLY: only cTrader accounts explicitly marked LIVE are eligible.
+              const eligibleAccounts = accList.filter(account => account.isLive === true);
+              if (eligibleAccounts.length === 0) {
+                reject(new Error('cTrader returned no LIVE accounts for the authenticated identity. non-LIVE accounts are not supported by Goldcrest.'));
+                return;
+              }
+              const accountsToReturn = eligibleAccounts;
               if (accountsToReturn.length === 0) {
                 reject(new Error('cTrader returned accounts, but none match the connected Open API account environment.'));
                 return;
@@ -214,7 +200,7 @@ export async function fetchLiveCTraderAccountDetails(
 ): Promise<CTraderRealTraderDetails> {
   const host = getCTraderWsHost(rawAccount.isLive);
 
-  if (isAuthoritativeLiveHost(host) && !rawAccount.isLive) {
+  if (!rawAccount.isLive) {
     return Promise.reject(new Error(`cTrader account ${rawAccount.ctidTraderAccountId} is not marked LIVE by Open API. The configured LIVE broker endpoint requires a LIVE cTrader account.`));
   }
 
