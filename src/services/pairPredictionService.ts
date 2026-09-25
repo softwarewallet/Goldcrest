@@ -1,4 +1,6 @@
-import { scannerService } from './scannerService';
+import { ScannerService } from './scannerService';
+
+const scannerService = new ScannerService();
 import { getSystemConfig } from './configService';
 import {
   LlamaGatewayPredictionModel,
