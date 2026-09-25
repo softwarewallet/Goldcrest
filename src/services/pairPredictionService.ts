@@ -85,7 +85,6 @@ async function buildFeatureRow(item: any): Promise<ResearchFeatureRow> {
   const candles1h = liveForexProvider.getCandles(item.symbol, '1H', 80);
   const candles4h = liveForexProvider.getCandles(item.symbol, '4H', 80);
   const candlesDaily = liveForexProvider.getCandles(item.symbol, 'Daily', 80);
-  const latest15m = candles15m[candles15m.length - 1];
   const indicators = analysis.indicators;
   const support = analysis.supportResistance.nearestSupport;
   const resistance = analysis.supportResistance.nearestResistance;
@@ -151,7 +150,7 @@ async function buildFeatureRow(item: any): Promise<ResearchFeatureRow> {
     distanceToResistancePips: pipsBetween(analysis.currentPrice, resistance, pairConfig.pipSize)
   };
 }
-function buildFallbackFeatureRow(item: any, error: unknown): ResearchFeatureRow {
+function buildFallbackFeatureRow(item: any, _error: unknown): ResearchFeatureRow {
   const signal = item.signal || {};
   const direction = String(signal.direction || 'NO_TRADE');
   const trendDirection =
@@ -201,7 +200,12 @@ export async function generateCurrentPairPredictions(params: {
   const generatedAt = Date.now();
 
   return Promise.all(scan.map(async item => {
-    const row = buildFeatureRow(item);
+    let row: ResearchFeatureRow;
+    try {
+      row = await buildFeatureRow(item);
+    } catch (error: any) {
+      row = buildFallbackFeatureRow(item, error);
+    }
     let output: ResearchPredictionOutput;
     try {
       output = await model.predict(row, horizon);
