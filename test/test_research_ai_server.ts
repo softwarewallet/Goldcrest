@@ -3,7 +3,8 @@ import { getDatabase, executeRun } from '../src/database/db';
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
-  testResearchAiServerConnection
+  testResearchAiServerConnection,
+  testResearchAiServerPrediction
 } from '../src/services/researchAiServerService';
 
 await getDatabase();
@@ -40,6 +41,30 @@ assert.equal((loaded as any).authToken, undefined);
 const disconnected = await testResearchAiServerConnection();
 assert.equal(disconnected.ok, false);
 assert.notEqual(disconnected.message, 'AI gateway URL is not configured.');
+
+const originalFetch = globalThis.fetch;
+try {
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.gateway, 'LLAMA');
+    assert.equal(body.payload.task, 'RESEARCH_PREDICTION');
+    return new Response(JSON.stringify({
+      consensus: {
+        direction: 'UP',
+        confidence: 82,
+        modelAgreement: 91
+      }
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+
+  const predictionTest = await testResearchAiServerPrediction();
+  assert.equal(predictionTest.ok, true);
+  assert.equal(predictionTest.direction, 'UP');
+  assert.equal(predictionTest.confidence, 0.82);
+  assert.equal(predictionTest.modelAgreement, 0.91);
+} finally {
+  globalThis.fetch = originalFetch;
+}
 
 await executeRun('DELETE FROM ai_research_server_connections');
 console.log('RESEARCH AI SERVER CONNECTOR TEST PASSED');

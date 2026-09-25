@@ -31,5 +31,19 @@ jobs:
       - name: Production build
         run: npm run build
 
+      - name: Test suite
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee npm-test.log
+
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: goldcrest-ci-test-log
+          path: npm-test.log
+          if-no-files-found: warn
+
       - name: Validate Docker production image
         run: docker build --tag goldcrest:ci .

@@ -68,6 +68,8 @@ For compatibility, the server may return a `prediction` object instead of `conse
 
 GET `/health` should return HTTP 2xx when the gateway is ready to accept prediction requests.
 
+Goldcrest also exposes an operator-authenticated connectivity check at `POST /api/research-ai/server/test-prediction`. It sends a synthetic signal-time payload through the configured gateway and validates the returned direction, confidence, and optional model agreement without creating a broker order or writing execution state.
+
 ## Operational rules
 
 1. The gateway is optional. Goldcrest must operate normally when it is disabled or unavailable.
