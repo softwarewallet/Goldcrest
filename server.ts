@@ -46,7 +46,13 @@ import {
 import { getLiveTradeResearchAnalytics } from './src/services/liveTradeResearchAnalyticsService';
 import { getLiveTradeResearchFeatures, materializeLiveTradeResearchFeatures } from './src/services/liveTradeResearchFeatureService';
 import { evaluateLiveTradeResearch, getLiveTradeResearchEvaluations } from './src/services/liveTradeResearchEvaluationService';
-import { generateResearchPredictions, getLiveTradeResearchPredictions, getResearchPrediction } from './src/services/liveTradeResearchPredictionService';
+import {
+  generateResearchPredictions,
+  getLiveTradeResearchPredictions,
+  getResearchPrediction,
+  LlamaGatewayPredictionModel,
+  SignalDirectionBaselineModel
+} from './src/services/liveTradeResearchPredictionService';
 import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } from './src/services/liveTradeResearchPredictionEvaluationService';
 import {
   getResearchAiServerConfig,
@@ -1638,11 +1644,24 @@ app.post('/api/live-trade-research/predict', operatorAuthRequired, async (req: R
     if (!['1D', '3D', '7D'].includes(horizon)) {
       return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
     }
+    const modelName = String(req.body?.model || 'BASELINE').toUpperCase();
+    if (!['BASELINE', 'AI_GATEWAY'].includes(modelName)) {
+      return res.status(400).json({
+        error: 'INVALID_PREDICTION_MODEL',
+        message: 'model must be BASELINE or AI_GATEWAY.'
+      });
+    }
+
+    const model = modelName === 'AI_GATEWAY'
+      ? new LlamaGatewayPredictionModel()
+      : new SignalDirectionBaselineModel();
+
     const predictions = await generateResearchPredictions({
       fromTimestamp: Number.isFinite(Number(req.body?.fromTimestamp)) ? Number(req.body.fromTimestamp) : undefined,
       toTimestamp: Number.isFinite(Number(req.body?.toTimestamp)) ? Number(req.body.toTimestamp) : undefined,
       horizon: horizon as '1D' | '3D' | '7D',
-      limit: Number(req.body?.limit || 50000)
+      limit: Number(req.body?.limit || 50000),
+      model
     });
     res.json({ predictions, count: predictions.length, generatedAt: Date.now() });
   } catch (err: any) {
