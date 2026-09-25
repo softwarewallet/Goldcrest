@@ -187,10 +187,17 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       const account = await this.getAccount();
       const latency = Date.now() - start;
 
+      const apiMode = getCTraderApiMode();
+      const apiEndpoint = apiMode === 'DEMO'
+        ? 'wss://demo.ctraderapi.com:5036'
+        : 'wss://live.ctraderapi.com:5036';
+
       const res: ConnectionTestResult = {
         broker: 'CTRADER',
         environment: this.environment,
         connected: true,
+        apiMode,
+        apiEndpoint,
         account: account.accountId,
         accountType: account.accountType,
         balance: account.balance,
@@ -212,10 +219,17 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       this.status = 'AUTHENTICATION_FAILED';
       this.lastError = err.message;
 
+      const apiMode = getCTraderApiMode();
+      const apiEndpoint = apiMode === 'DEMO'
+        ? 'wss://demo.ctraderapi.com:5036'
+        : 'wss://live.ctraderapi.com:5036';
+
       const res: ConnectionTestResult = {
         broker: 'CTRADER',
         environment: this.environment,
         connected: false,
+        apiMode,
+        apiEndpoint,
         account: maskIdentifier(this.config.accountId),
         accountType: 'LIVE',
         error: err.message,

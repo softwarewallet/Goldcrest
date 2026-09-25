@@ -678,6 +678,7 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
                 <div className={`mt-3 p-3 rounded border text-xs font-mono ${result.connected ? 'border-emerald-800 bg-emerald-950/30' : 'border-rose-800 bg-rose-950/30'}`}>
                   <div className="flex items-center gap-2 font-bold">{result.connected ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-rose-400" />}{result.connected ? 'CONNECTED' : 'UNAVAILABLE'}</div>
                   {result.connected && <div className="mt-1 text-slate-400">Account: {result.account || '—'} · {result.currency || '—'} {typeof result.balance === 'number' ? result.balance.toLocaleString() : '—'}</div>}
+                  {result.connected && result.apiMode && <div className="mt-1 text-cyan-300">cTrader API: {result.apiMode} · {result.apiEndpoint || 'endpoint unavailable'}</div>}
                   {!result.connected && <div className="mt-1 text-rose-300 break-words">{result.error || 'Connection unavailable'}</div>}
                 </div>
               )}
