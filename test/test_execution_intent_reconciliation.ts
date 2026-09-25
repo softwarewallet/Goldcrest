@@ -5,7 +5,8 @@ import {
   failExecutionIntent,
   getExecutionIntent,
   markExecutionIntentSubmissionAmbiguous,
-  resumeExecutionIntentReconciliation
+  resumeExecutionIntentReconciliation,
+  reconcileExecutionIntent
 } from '../src/services/executionIntentService';
 
 const key = 'test-reconciliation-' + Date.now();
@@ -62,12 +63,32 @@ await resumeExecutionIntentReconciliation(key);
 intent = await getExecutionIntent(key);
 assert.equal(intent?.state, 'IN_FLIGHT');
 
-await completeExecutionIntent(key, {
-  status: 'FILLED',
-  id: 'broker-order-reconciled'
-});
+const reconciledOrder = {
+  id: 'broker-order-reconciled',
+  broker: 'CTRADER' as const,
+  environment: 'LIVE' as const,
+  market: 'FOREX',
+  symbol: 'EUR/USD',
+  side: 'BUY' as const,
+  orderType: 'MARKET' as const,
+  quantity: 1000,
+  requestedQuantity: 1000,
+  price: 1.123,
+  status: 'FILLED' as const,
+  filledQuantity: 1000,
+  averageFillPrice: 1.1231,
+  timestamp: Date.now(),
+  brokerOrderId: 'broker-order-reconciled'
+};
+const reconciliation = await reconcileExecutionIntent(key, {
+  getOrderHistory: async () => [reconciledOrder],
+  getOrderHistoryRange: async () => [reconciledOrder]
+} as any);
+assert.equal(reconciliation.status, 'RESOLVED');
+assert.equal(reconciliation.order?.brokerOrderId, 'broker-order-reconciled');
 intent = await getExecutionIntent(key);
 assert.equal(intent?.state, 'COMPLETED');
+
 
 await failExecutionIntent(key, {
   status: 'REJECTED'
