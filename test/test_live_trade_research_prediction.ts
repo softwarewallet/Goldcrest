@@ -3,6 +3,7 @@ import {
   SignalDirectionBaselineModel, createResearchPrediction, type PredictionModel
 } from '../src/services/liveTradeResearchPredictionService';
 import type { ResearchFeatureRow } from '../src/services/liveTradeResearchFeatureService';
+import { saveResearchAiServerConfig } from '../src/services/researchAiServerService';
 
 function row(direction: string, score: number): ResearchFeatureRow {
   return {
