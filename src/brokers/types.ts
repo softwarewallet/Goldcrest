@@ -200,10 +200,6 @@ export interface ConnectionTestResult {
   broker: BrokerType;
   environment: TradingEnvironment;
   connected: boolean;
-  /** cTrader Open API transport mode used by the connection test, when applicable. */
-  apiMode?: 'LIVE' | 'DEMO';
-  /** cTrader Open API WebSocket endpoint used by the connection test, when applicable. */
-  apiEndpoint?: string;
   account?: string;
   accountType?: string;
   balance?: number;
