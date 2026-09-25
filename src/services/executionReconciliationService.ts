@@ -30,14 +30,31 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
   if (!row || !['PENDING', 'IN_FLIGHT', 'RECONCILIATION_TIMEOUT'].includes(String(row.state))) return null;
 
   const stored = parseResult(row.result_json);
-  const brokerOrderId = brokerOrderIdFromResult(stored);
-  if (!brokerOrderId) return null;
-
   const broker = String(row.broker) as BrokerType;
   if (broker !== 'CTRADER' && broker !== 'FIVE_PAISA') return null;
 
+  const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
+  let brokerOrderId = brokerOrderIdFromResult(stored);
+
+  // An ambiguous submission can lose the broker response before an order ID
+  // reaches Goldcrest. Recover the authoritative broker order using the
+  // stable client order identity first, then continue through the existing
+  // cumulative fill reconciliation path.
+  if (!brokerOrderId && adapter.getOrderByClientOrderId) {
+    const payload = parseResult(row.payload_json);
+    const clientOrderId = String(payload?.signalId || '').trim().replace(/[^A-Za-z0-9._-]/g, '').slice(0, 50);
+    if (clientOrderId) {
+      const nativeOrder = await adapter.getOrderByClientOrderId(clientOrderId);
+      if (nativeOrder?.brokerOrderId || nativeOrder?.id) {
+        brokerOrderId = nativeOrder.brokerOrderId || nativeOrder.id;
+        stored.brokerOrderId = brokerOrderId;
+        stored.clientOrderId = nativeOrder.clientOrderId || clientOrderId;
+      }
+    }
+  }
+  if (!brokerOrderId) return null;
+
   try {
-    const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
     const requestedQuantityHint = Number(stored?.requestedQuantity ?? stored?.quantity ?? stored?.order?.quantity ?? 0);
     const status = await adapter.getOrderStatus(
       String(brokerOrderId),
