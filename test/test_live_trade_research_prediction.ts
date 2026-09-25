@@ -37,4 +37,54 @@ const customModel: PredictionModel = {
 const custom = await createResearchPrediction({ row: row('BUY', 80), horizon: '7D', model: customModel });
 assert.equal(custom.modelVersion, 'TEST_MODEL_V1'); assert.equal(custom.predictedDirection, 'DOWN');
 assert.equal(custom.confidence, 0.87); assert.equal(custom.modelAgreement, 0.5); assert.equal(custom.reasoning, 'Test prediction');
+await saveResearchAiServerConfig({
+  enabled: true,
+  baseUrl: 'http://127.0.0.1:8124',
+  llamaModel: 'llama-test',
+  qwenModel: 'qwen-test',
+  predictPath: '/predict',
+  timeoutMs: 2000
+});
+
+const originalFetch = globalThis.fetch;
+let gatewayRequest: any = null;
+globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+  gatewayRequest = init?.body ? JSON.parse(String(init.body)) : null;
+  return new Response(JSON.stringify({
+    prediction: {
+      direction: 'UP',
+      confidence: 82,
+      modelAgreement: 0.91,
+      reasoning: 'Gateway test prediction.',
+      invalidation: 'Gateway test invalidation.'
+    }
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}) as typeof fetch;
+
+try {
+  const aiPrediction = await createResearchPrediction({
+    row: row('BUY', 82),
+    horizon: '3D',
+    model: new LlamaGatewayPredictionModel()
+  });
+  assert.equal(aiPrediction.modelVersion, 'LLAMA_GATEWAY_QWEN_LLAMA_V1');
+  assert.equal(aiPrediction.predictionSource, 'LLAMA_GATEWAY');
+  assert.equal(aiPrediction.predictedDirection, 'UP');
+  assert.equal(aiPrediction.confidence, 0.82);
+  assert.equal(aiPrediction.modelAgreement, 0.91);
+  assert.equal(aiPrediction.reasoning, 'Gateway test prediction.');
+  assert.equal(gatewayRequest.gateway, 'LLAMA');
+  assert.equal(gatewayRequest.llamaModel, 'llama-test');
+  assert.equal(gatewayRequest.qwenModel, 'qwen-test');
+  assert.equal(gatewayRequest.payload.task, 'RESEARCH_PREDICTION');
+  assert.equal(gatewayRequest.payload.horizon, '3D');
+  assert.equal(gatewayRequest.payload.features.symbol, 'EUR/USD');
+  assert.equal(gatewayRequest.payload.features.realizedPnl, undefined);
+  assert.equal(gatewayRequest.payload.features.outcome, undefined);
+  assert.equal(gatewayRequest.payload.features.holdingDurationMs, undefined);
+} finally {
+  globalThis.fetch = originalFetch;
+  await saveResearchAiServerConfig({ enabled: false, baseUrl: '', authToken: '' });
+}
+
 console.log('Live trade research prediction tests passed.');
