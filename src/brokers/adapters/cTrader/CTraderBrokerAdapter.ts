@@ -894,6 +894,8 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     const safeFrom = Math.max(0, Number(fromTimestamp));
     const safeTo = Math.max(safeFrom, Number(toTimestamp));
     const deals = await fetchCTraderDeals(raw.ctidTraderAccountId, safeFrom, safeTo, this.config.clientId!, this.config.clientSecret!, this.config.accessToken!, raw.isLive);
+    const symbols = await this.getCachedCTraderSymbols(raw);
+    const byId = new Map(symbols.map(s => [s.symbolId, s]));
     return deals.map((deal: any) => {
       const status = Number(deal.dealStatus) === 2 ? 'FILLED' : 'REJECTED';
       const side = Number(deal.tradeSide) === 2 ? 'SELL' : 'BUY';
