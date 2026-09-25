@@ -74,7 +74,7 @@ export class LiveTradingGate {
       failedReasons.push('Condition 6 Failed: Market is currently closed or emergency halted.');
     }
 
-    // Check 7: Goldcrest-wide live quote freshness policy is fixed at 20s.
+    // Check 7: Goldcrest-wide live quote freshness policy is fixed at 30s.
     // There is intentionally no caller override or shorter fallback. This
     // prevents any future execution path from silently reintroducing a 10s
     // freshness requirement without an explicit code change here.
