@@ -120,9 +120,14 @@ export class LlamaGatewayPredictionModel implements PredictionModel {
 
   async predict(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon): Promise<ResearchPredictionOutput> {
     const response = await requestResearchAiPrediction(researchPredictionPayload(row, horizon));
-    const source = response.prediction && typeof response.prediction === 'object'
-      ? response.prediction as Record<string, unknown>
-      : response;
+    // The gateway may return a dedicated consensus object after Llama
+    // orchestrates Qwen internally. Keep the legacy prediction envelope as a
+    // compatible fallback, but prefer the explicit consensus result.
+    const source = response.consensus && typeof response.consensus === 'object'
+      ? response.consensus as Record<string, unknown>
+      : response.prediction && typeof response.prediction === 'object'
+        ? response.prediction as Record<string, unknown>
+        : response;
 
     const directionValue = String(source.direction || source.predictedDirection || '').toUpperCase();
     const direction: ResearchPredictionDirection =
