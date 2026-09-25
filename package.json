@@ -17,7 +17,7 @@
     "test:quant_review": "tsx test/test_quantitative_performance_review.ts",
     "test:exp_2026_research_004": "tsx test/test_exp_2026_research_004.ts",
     "test:exp_2026_research_008": "tsx test/test_exp_2026_research_008.ts",
-    "test": "tsx test/test_live_runtime_log.ts && tsx test/test_config_persistence.ts && tsx test/test_trade_sizing.ts && tsx test/test_live_news_service.ts && tsx test/test_indian_market_news_service.ts && tsx test/test_auto_live_market_gate.ts && tsx test/test_live_only_audit.ts && tsx test/test_local_operator_bypass.ts && tsx test/test_auto_trade_readiness.ts && tsx test/test_auto_trading_orchestrator.ts && tsx test/test_local_auto_live_arm.ts && tsx test/test_cTrader_transport_selection.ts && tsx test/test_market_history_service.ts && tsx test/test_live_trade_research.ts && tsx test/test_live_trade_research_analytics.ts && tsx test/test_live_trade_research_features.ts && tsx test/test_live_trade_research_training.ts && tsx test/test_live_trade_research_evaluation.ts && tsx test/test_live_trade_research_prediction.ts && tsx test/test_live_trade_research_prediction_evaluation.ts && tsx test/test_research_ai_gateway_contract.ts && tsx test/test_research_ai_server.ts",
+    "test": "tsx test/test_live_runtime_log.ts && tsx test/test_config_persistence.ts && tsx test/test_trade_sizing.ts && tsx test/test_live_news_service.ts && tsx test/test_indian_market_news_service.ts && tsx test/test_auto_live_market_gate.ts && tsx test/test_live_only_audit.ts && tsx test/test_local_operator_bypass.ts && tsx test/test_auto_trade_readiness.ts && tsx test/test_auto_trading_orchestrator.ts && tsx test/test_local_auto_live_arm.ts && tsx test/test_cTrader_transport_selection.ts && tsx test/test_market_history_service.ts && tsx test/test_live_trade_research.ts && tsx test/test_live_trade_research_analytics.ts && tsx test/test_live_trade_research_features.ts && tsx test/test_live_trade_research_training.ts && tsx test/test_live_trade_research_evaluation.ts && tsx test/test_live_trade_research_prediction.ts && tsx test/test_live_trade_research_prediction_evaluation.ts && tsx test/test_research_ai_gateway_contract.ts && tsx test/test_research_ai_server.ts && tsx test/test_live_position_price.ts",
     "start:prod": "NODE_ENV=production node dist/server.cjs",
     "prestart:prod": "npm run build",
     "test:auto_trading_orchestrator": "tsx test/test_auto_trading_orchestrator.ts",
@@ -35,7 +35,8 @@
     "test:live_trade_research_prediction": "tsx test/test_live_trade_research_prediction.ts",
     "test:live_trade_research_prediction_evaluation": "tsx test/test_live_trade_research_prediction_evaluation.ts",
     "test:research_ai_gateway_contract": "tsx test/test_research_ai_gateway_contract.ts",
-    "test:research_ai_server": "tsx test/test_research_ai_server.ts"
+    "test:research_ai_server": "tsx test/test_research_ai_server.ts",
+    "test:live_position_price": "tsx test/test_live_position_price.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
