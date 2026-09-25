@@ -1628,6 +1628,44 @@ app.get('/api/live-trade-research/predictions/analytics', operatorAuthRequired, 
   }
 });
 
+app.get('/api/live-trade-research/predictions/compare', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : undefined;
+    if (horizon && !['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+
+    const requestedLimit = Math.max(1, Math.min(100000, Number(req.query.limit || 50000)));
+    const [baseline, aiGateway] = await Promise.all([
+      getResearchPredictionAnalytics({
+        modelVersion: 'SIGNAL_DIRECTION_BASELINE_V1',
+        horizon: horizon as '1D' | '3D' | '7D' | undefined,
+        limit: requestedLimit
+      }),
+      getResearchPredictionAnalytics({
+        modelVersion: 'LLAMA_GATEWAY_QWEN_LLAMA_V1',
+        horizon: horizon as '1D' | '3D' | '7D' | undefined,
+        limit: requestedLimit
+      })
+    ]);
+
+    res.json({
+      horizon: horizon || null,
+      models: {
+        baseline,
+        aiGateway
+      },
+      note: 'This endpoint reports observed research metrics side-by-side. It does not select a winner and does not affect live execution.',
+      generatedAt: Date.now()
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'LIVE_TRADE_RESEARCH_PREDICTION_COMPARISON_UNAVAILABLE',
+      message: err?.message || 'Research prediction comparison is unavailable.'
+    });
+  }
+});
+
 app.get('/api/live-trade-research/predictions/:predictionId', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     const prediction = await getResearchPrediction(String(req.params.predictionId));
