@@ -219,7 +219,7 @@ export async function createResearchPrediction(params: {
 }): Promise<ResearchPrediction> {
   const horizon = params.horizon || '1D';
   const model = params.model || new SignalDirectionBaselineModel();
-  const prediction = makePrediction(params.row, horizon, model);
+  const prediction = await makePrediction(params.row, horizon, model);
   await ensurePredictionTable();
   await executeRun(
     `INSERT OR REPLACE INTO live_trade_research_predictions (
