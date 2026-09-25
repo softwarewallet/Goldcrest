@@ -241,11 +241,15 @@ async function ensurePredictionTable(): Promise<void> {
     outcome_status TEXT,
     evaluated_at INTEGER,
     created_at INTEGER NOT NULL,
-    feature_snapshot_json TEXT
+    feature_snapshot_json TEXT,
+    prediction_context TEXT NOT NULL DEFAULT 'RESEARCH'
   )`);
   const columns = await executeQuery<{ name: string }>('PRAGMA table_info(live_trade_research_predictions)');
   if (!columns.some(column => column.name === 'feature_snapshot_json')) {
     await executeRun('ALTER TABLE live_trade_research_predictions ADD COLUMN feature_snapshot_json TEXT');
+  }
+  if (!columns.some(column => column.name === 'prediction_context')) {
+    await executeRun("ALTER TABLE live_trade_research_predictions ADD COLUMN prediction_context TEXT NOT NULL DEFAULT 'RESEARCH'");
   }
 }
 
@@ -274,9 +278,11 @@ export async function createResearchPrediction(params: {
   row: ResearchFeatureRow;
   horizon?: ResearchPredictionHorizon;
   model?: PredictionModel;
+  predictionContext?: 'RESEARCH' | 'CURRENT_PAIR';
 }): Promise<ResearchPrediction> {
   const horizon = params.horizon || '1D';
   const model = params.model || new SignalDirectionBaselineModel();
+  const predictionContext = params.predictionContext || 'RESEARCH';
   const prediction = await makePrediction(params.row, horizon, model);
   await ensurePredictionTable();
   await executeRun(
@@ -284,13 +290,13 @@ export async function createResearchPrediction(params: {
       prediction_id, model_version, prediction_source, symbol, signal_id,
       predicted_at, horizon, predicted_direction, confidence, feature_hash,
       model_agreement, reasoning, invalidation, actual_direction,
-      actual_return_pct, outcome_status, evaluated_at, created_at, feature_snapshot_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      actual_return_pct, outcome_status, evaluated_at, created_at, feature_snapshot_json, prediction_context
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [prediction.predictionId, prediction.modelVersion, prediction.predictionSource,
       prediction.symbol, prediction.signalId, prediction.predictedAt, prediction.horizon,
       prediction.predictedDirection, prediction.confidence, prediction.featureHash,
       prediction.modelAgreement, prediction.reasoning, prediction.invalidation,
-      null, null, 'PENDING', null, prediction.predictedAt, JSON.stringify(params.row)]
+      null, null, 'PENDING', null, prediction.predictedAt, JSON.stringify(params.row), predictionContext]
   );
   return prediction;
 }
@@ -311,7 +317,7 @@ export async function createCurrentResearchPrediction(params: {
     const cutoff = Date.now() - dedupeWindowMs;
     const existing = await executeQuery<any>(
       `SELECT * FROM live_trade_research_predictions
-        WHERE symbol = ? AND model_version = ? AND horizon = ? AND predicted_at >= ?
+        WHERE symbol = ? AND model_version = ? AND horizon = ? AND prediction_context = 'CURRENT_PAIR' AND predicted_at >= ?
         ORDER BY predicted_at DESC LIMIT 1`,
       [params.row.symbol, model.modelVersion, horizon, cutoff]
     );
@@ -335,7 +341,7 @@ export async function createCurrentResearchPrediction(params: {
     }
   }
 
-  return createResearchPrediction({ row: params.row, horizon, model });
+  return createResearchPrediction({ row: params.row, horizon, model, predictionContext: 'CURRENT_PAIR' });
 }
 
 export async function generateResearchPredictions(params: {
