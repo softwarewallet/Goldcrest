@@ -204,7 +204,6 @@ export class SignalDirectionBaselineModel implements PredictionModel {
     if (row.mtfAlignmentScore != null) push((row.mtfAlignmentScore - 10) / 10);
     if (row.rsi != null) push((row.rsi - 50) / 20);
     if (row.macdHistogram != null) push(Math.tanh(row.macdHistogram * 1000));
-    if (row.diPlus !== undefined && row.diMinus !== undefined) push(Math.tanh((Number(row.diPlus) - Number(row.diMinus)) / 10));
 
     const meanEvidence = evidence.length ? evidence.reduce((a, b) => a + b, 0) / evidence.length : 0;
     const scoreBias = sourceDirection === 'UP' ? 0.15 : sourceDirection === 'DOWN' ? -0.15 : 0;
