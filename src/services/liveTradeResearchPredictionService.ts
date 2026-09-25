@@ -59,7 +59,16 @@ function featureHash(row: ResearchFeatureRow): string {
     newsRiskLevel: row.newsRiskLevel, newsHighImpactCount: row.newsHighImpactCount,
     newsActiveHighImpactCount: row.newsActiveHighImpactCount, newsSentiment: row.newsSentiment,
     quoteSpread: row.quoteSpread, riskReward: row.riskReward, stopDistance: row.stopDistance,
-    targetDistance: row.targetDistance
+    targetDistance: row.targetDistance,
+    priceChange5mPct: row.priceChange5mPct, priceChange15mPct: row.priceChange15mPct,
+    priceChange1hPct: row.priceChange1hPct, priceChange4hPct: row.priceChange4hPct,
+    priceChangeDailyPct: row.priceChangeDailyPct, atrPct: row.atrPct,
+    rsi: row.rsi, macdHistogram: row.macdHistogram, adx: row.adx,
+    trendStrength: row.trendStrength, mtfAlignmentScore: row.mtfAlignmentScore,
+    structureTrend: row.structureTrend, structurePhase: row.structurePhase,
+    structureType: row.structureType, breakoutStatus: row.breakoutStatus,
+    distanceToSupportPips: row.distanceToSupportPips,
+    distanceToResistancePips: row.distanceToResistancePips
   };
   return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
 }
@@ -109,7 +118,24 @@ function researchPredictionPayload(row: ResearchFeatureRow, horizon: ResearchPre
       quoteSpread: row.quoteSpread,
       riskReward: row.riskReward,
       stopDistance: row.stopDistance,
-      targetDistance: row.targetDistance
+      targetDistance: row.targetDistance,
+      priceChange5mPct: row.priceChange5mPct,
+      priceChange15mPct: row.priceChange15mPct,
+      priceChange1hPct: row.priceChange1hPct,
+      priceChange4hPct: row.priceChange4hPct,
+      priceChangeDailyPct: row.priceChangeDailyPct,
+      atrPct: row.atrPct,
+      rsi: row.rsi,
+      macdHistogram: row.macdHistogram,
+      adx: row.adx,
+      trendStrength: row.trendStrength,
+      mtfAlignmentScore: row.mtfAlignmentScore,
+      structureTrend: row.structureTrend,
+      structurePhase: row.structurePhase,
+      structureType: row.structureType,
+      breakoutStatus: row.breakoutStatus,
+      distanceToSupportPips: row.distanceToSupportPips,
+      distanceToResistancePips: row.distanceToResistancePips
     }
   };
 }
@@ -152,23 +178,46 @@ export class LlamaGatewayPredictionModel implements PredictionModel {
 }
 
 export class SignalDirectionBaselineModel implements PredictionModel {
-  readonly modelVersion = 'SIGNAL_DIRECTION_BASELINE_V1';
-  readonly predictionSource = 'LIVE_SIGNAL_DIRECTION';
+  readonly modelVersion = 'PAIR_FEATURE_BASELINE_V2';
+  readonly predictionSource = 'LIVE_PAIR_FEATURES';
 
   predict(row: ResearchFeatureRow): ResearchPredictionOutput {
-    const direction = normalizeDirection(row.direction);
+    const sourceDirection = normalizeDirection(row.direction);
     const score = Number.isFinite(row.score) ? row.score : 0;
-    const confidence = direction === 'FLAT'
-      ? 0.5
-      : clamp(0.5 + Math.max(0, score - 50) / 100, 0.5, 0.99);
+    const evidence: number[] = [];
+
+    const push = (value: number | null | undefined) => {
+      if (value !== null && value !== undefined && Number.isFinite(Number(value))) evidence.push(Number(value));
+    };
+
+    // Normalize independent directional evidence to -1..1. This is a deterministic
+    // baseline, not a trained forecast model; its purpose is to provide a transparent
+    // benchmark for later out-of-sample model evaluation.
+    push(row.priceChange5mPct == null ? null : Math.tanh(row.priceChange5mPct * 20));
+    push(row.priceChange15mPct == null ? null : Math.tanh(row.priceChange15mPct * 10));
+    push(row.priceChange1hPct == null ? null : Math.tanh(row.priceChange1hPct * 6));
+    push(row.priceChange4hPct == null ? null : Math.tanh(row.priceChange4hPct * 3));
+    push(row.priceChangeDailyPct == null ? null : Math.tanh(row.priceChangeDailyPct * 2));
+    push(row.structureTrend === 'bullish' ? 1 : row.structureTrend === 'bearish' ? -1 : 0);
+    push(row.trendDirection === 'BULLISH' ? 1 : row.trendDirection === 'BEARISH' ? -1 : 0);
+    push(row.breakoutStatus === 'bullish_breakout' ? 1 : row.breakoutStatus === 'bearish_breakdown' ? -1 : 0);
+    if (row.mtfAlignmentScore != null) push((row.mtfAlignmentScore - 10) / 10);
+    if (row.rsi != null) push((row.rsi - 50) / 20);
+    if (row.macdHistogram != null) push(Math.tanh(row.macdHistogram * 1000));
+    if (row.diPlus !== undefined && row.diMinus !== undefined) push(Math.tanh((Number(row.diPlus) - Number(row.diMinus)) / 10));
+
+    const meanEvidence = evidence.length ? evidence.reduce((a, b) => a + b, 0) / evidence.length : 0;
+    const scoreBias = sourceDirection === 'UP' ? 0.15 : sourceDirection === 'DOWN' ? -0.15 : 0;
+    const composite = Math.max(-1, Math.min(1, meanEvidence * 0.75 + scoreBias + (score - 50) / 200));
+    const direction = composite > 0.12 ? 'UP' : composite < -0.12 ? 'DOWN' : 'FLAT';
+    const confidence = clamp(0.5 + Math.abs(composite) * 0.45, 0.5, 0.95);
+
     return {
       direction,
       confidence,
-      modelAgreement: 1,
-      reasoning: direction === 'FLAT'
-        ? 'The baseline has no BUY/SELL direction in the source signal.'
-        : 'Baseline prediction follows the recorded live signal direction; source score=' + score.toFixed(2) + '.',
-      invalidation: 'Prediction is research-only and must not be used as an execution instruction.'
+      modelAgreement: evidence.length ? 1 - Math.min(1, Math.abs(meanEvidence - composite)) : 0.5,
+      reasoning: 'Deterministic live-pair baseline using available momentum, multi-timeframe, trend, structure, breakout, RSI/MACD and source-score evidence. Evidence=' + evidence.length + ', composite=' + composite.toFixed(3) + '.',
+      invalidation: 'Prediction is research-only; invalidate when the current feature set materially changes. Do not use as an execution instruction.'
     };
   }
 }
