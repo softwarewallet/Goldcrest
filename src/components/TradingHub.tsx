@@ -76,6 +76,33 @@ interface RealSignal {
   reasons: string[];
 }
 
+interface ExecutionReconciliationDiagnostic {
+  idempotencyKey: string;
+  broker: string;
+  market: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  state: string;
+  createdAt: number;
+  ageMs: number;
+  reconciliation: {
+    state: string;
+    attemptCount: number;
+    lastAttemptAt: number | null;
+    lastAttemptAgeMs: number | null;
+    brokerOrderId: string | null;
+    clientOrderId: string | null;
+    brokerStatus: string | null;
+    requestedQuantity: number | null;
+    filledQuantity: number;
+    remainingQuantity: number | null;
+    averageFillPrice: number | null;
+    errorCode: string | null;
+    reason: string | null;
+    operatorActionRequired: boolean;
+  };
+}
+
 export const TradingHub: React.FC<TradingHubProps> = ({ 
   environment, 
   selectedBroker = 'cTrader', 
@@ -164,6 +191,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [activeTab, setActiveTab] = useState<'cockpit' | 'positions' | 'signals' | 'options' | 'execution' | 'controls'>('cockpit');
   const [autoStatus, setAutoStatus] = useState<AutoTradingStatusSnapshot | null>(null);
   const [autoStatusError, setAutoStatusError] = useState<string | null>(null);
+  const [executionDiagnostics, setExecutionDiagnostics] = useState<ExecutionReconciliationDiagnostic[]>([]);
+  const [executionDiagnosticsError, setExecutionDiagnosticsError] = useState<string | null>(null);
   const [dailyLossLimitPct, setDailyLossLimitPct] = useState<number>(3);
   const [dailyLossSaving, setDailyLossSaving] = useState<boolean>(false);
   const [dailyLossSaveMessage, setDailyLossSaveMessage] = useState<string | null>(null);
@@ -244,6 +273,24 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       setIsLoadingSignals(false);
     }
   }, [safeParseJson]);
+
+  const fetchExecutionDiagnostics = useCallback(async () => {
+    try {
+      const res = await fetch('/api/brokers/execution-intents?limit=50', { cache: 'no-store' });
+      const data = await safeParseJson(res);
+      if (!res.ok) throw new Error(data?.error || 'Execution reconciliation diagnostics unavailable.');
+      setExecutionDiagnostics(Array.isArray(data?.intents) ? data.intents : []);
+      setExecutionDiagnosticsError(null);
+    } catch (err: any) {
+      setExecutionDiagnosticsError(err?.message || 'Execution reconciliation diagnostics unavailable.');
+    }
+  }, [safeParseJson]);
+
+  useEffect(() => {
+    void fetchExecutionDiagnostics();
+    const timer = setInterval(fetchExecutionDiagnostics, 10000);
+    return () => clearInterval(timer);
+  }, [fetchExecutionDiagnostics]);
 
   // Synchronize with backend system controls
   const syncAutoControls = useCallback(async (enabled: boolean) => {
@@ -772,6 +819,44 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 </div>
               ))}
             </div>
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-sm font-bold text-white font-mono">Execution Reconciliation Diagnostics</div>
+                  <div className="text-[10px] text-slate-500 mt-1">Durable broker reconciliation state · refreshed every 10 seconds</div>
+                </div>
+                <button type="button" onClick={() => void fetchExecutionDiagnostics()} className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">Refresh</button>
+              </div>
+              {executionDiagnosticsError && <div className="mb-3 text-[11px] font-mono text-rose-300 border border-rose-900 bg-rose-950/30 rounded p-2">{executionDiagnosticsError}</div>}
+              {executionDiagnostics.length === 0 ? (
+                <div className="py-5 text-center text-xs text-slate-600 font-mono">No execution intents recorded.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[10px] font-mono">
+                    <thead><tr className="text-slate-500 border-b border-slate-800">
+                      <th className="py-2 text-left">Symbol</th><th>Side</th><th>State</th><th>Broker Order</th><th>Client Order</th><th className="text-right">Requested</th><th className="text-right">Filled</th><th className="text-right">Remaining</th><th>Broker Status</th><th>Attempts</th><th>Last Attempt</th><th>Reason</th>
+                    </tr></thead>
+                    <tbody>{executionDiagnostics.map(intent => (
+                      <tr key={intent.idempotencyKey} className="border-b border-slate-800/60">
+                        <td className="py-2 text-white font-bold">{intent.symbol}</td>
+                        <td className={intent.side === 'BUY' ? "text-emerald-400" : "text-rose-400"}>{intent.side}</td>
+                        <td className={intent.state === 'COMPLETED' ? "text-emerald-400" : intent.state === 'FAILED' ? "text-rose-400" : intent.state === 'RECONCILIATION_TIMEOUT' ? "text-amber-300" : "text-cyan-300"}>{intent.state}</td>
+                        <td className="text-slate-300">{intent.reconciliation.brokerOrderId || '—'}</td>
+                        <td className="text-slate-400">{intent.reconciliation.clientOrderId || '—'}</td>
+                        <td className="text-right">{intent.reconciliation.requestedQuantity ?? '—'}</td>
+                        <td className="text-right text-emerald-300">{intent.reconciliation.filledQuantity}</td>
+                        <td className="text-right">{intent.reconciliation.remainingQuantity ?? '—'}</td>
+                        <td>{intent.reconciliation.brokerStatus || '—'}</td>
+                        <td className="text-center">{intent.reconciliation.attemptCount}</td>
+                        <td className="text-center">{intent.reconciliation.lastAttemptAgeMs != null ? formatAge(Date.now() - intent.reconciliation.lastAttemptAgeMs) : '—'}</td>
+                        <td className="max-w-xs truncate text-amber-200" title={intent.reconciliation.reason || undefined}>{intent.reconciliation.reason || '—'}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             <div className="text-sm font-bold text-white font-mono">Runtime Output</div>
             <div className="bg-slate-950 rounded-lg p-3 max-h-72 overflow-y-auto font-mono text-[11px] space-y-1">{logs.length === 0 ? <div className="text-slate-600">No UI telemetry.</div> : logs.map((log, i) => <div key={i}><span className="text-slate-600">[{log.timestamp}]</span> <span className={log.type === 'error' ? "text-rose-400" : log.type === 'success' ? "text-emerald-400" : "text-cyan-400"}>[{log.type.toUpperCase()}]</span> <span className="text-slate-300">{log.message}</span></div>)}</div>
           </div>
