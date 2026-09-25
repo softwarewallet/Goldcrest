@@ -99,15 +99,6 @@ export function filterCTraderAccountsForApiMode(
   return accounts.filter(account => account.isLive === expectedLive);
 }
 
-function isAuthoritativeLiveHost(host: string): boolean {
-  try {
-    return new URL(host).hostname.toLowerCase() === 'live.ctraderapi.com';
-  } catch {
-    return false;
-  }
-}
-
-
 /**
  * Resolve the cTrader WebSocket endpoint. LIVE is the only supported mode.
  */
