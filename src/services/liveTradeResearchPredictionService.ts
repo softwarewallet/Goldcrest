@@ -377,6 +377,34 @@ export async function getLiveTradeResearchPredictions(params: {
   );
 }
 
+export async function getCurrentPairPredictions(params: {
+  limit?: number;
+  symbol?: string;
+  modelVersion?: string;
+  horizon?: ResearchPredictionHorizon;
+} = {}): Promise<any[]> {
+  await ensurePredictionTable();
+  const conditions = ["prediction_context = 'CURRENT_PAIR'"];
+  const values: any[] = [];
+  if (params.symbol) { conditions.push('symbol = ?'); values.push(params.symbol); }
+  if (params.modelVersion) { conditions.push('model_version = ?'); values.push(params.modelVersion); }
+  if (params.horizon) { conditions.push('horizon = ?'); values.push(params.horizon); }
+  const limit = Math.max(1, Math.min(250, Math.floor(Number(params.limit) || 50)));
+  return executeQuery<any>(
+    `SELECT prediction_id AS predictionId, model_version AS modelVersion,
+      prediction_source AS predictionSource, symbol, signal_id AS signalId,
+      predicted_at AS predictedAt, horizon, predicted_direction AS predictedDirection,
+      confidence, feature_hash AS featureHash, model_agreement AS modelAgreement,
+      reasoning, invalidation, actual_direction AS actualDirection,
+      actual_return_pct AS actualReturnPct, outcome_status AS outcomeStatus,
+      evaluated_at AS evaluatedAt, created_at AS createdAt
+      FROM live_trade_research_predictions
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY predicted_at DESC LIMIT ?`,
+    [...values, limit]
+  );
+}
+
 export async function getResearchPrediction(predictionId: string): Promise<any | null> {
   await ensurePredictionTable();
   const rows = await executeQuery<any>(
