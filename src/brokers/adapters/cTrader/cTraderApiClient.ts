@@ -71,14 +71,14 @@ const MSG_GET_POSITION_UNREALIZED_PNL_RES = 2188;
 
 /**
  * Goldcrest is LIVE_ONLY: cTrader transport is always the authoritative LIVE endpoint.
- * A custom host may be supplied through CTRADER_LIVE_API_HOST, but DEMO endpoints
+ * A custom host may be supplied through CTRADER_LIVE_API_HOST, but non-LIVE endpoints
  * are never accepted or exposed by the runtime.
  */
 function getConfiguredCTraderWsHost(): string | null {
   const configured = String(process.env.CTRADER_LIVE_API_HOST || '').trim();
   if (!configured || configured.toLowerCase() === 'auto') return null;
-  if (configured.toLowerCase().includes('demo.ctraderapi.com')) {
-    throw new Error('DEMO cTrader endpoints are disabled. Use the LIVE cTrader API endpoint.');
+  if (configured.toLowerCase().includes('non-live cTrader endpoint')) {
+    throw new Error('non-LIVE cTrader endpoints are disabled. Use the LIVE cTrader API endpoint.');
   }
   return configured;
 }
@@ -148,7 +148,7 @@ export async function fetchLiveCTraderAccounts(
               // Goldcrest is LIVE_ONLY: only cTrader accounts explicitly marked LIVE are eligible.
               const eligibleAccounts = accList.filter(account => account.isLive === true);
               if (eligibleAccounts.length === 0) {
-                reject(new Error('cTrader returned no LIVE accounts for the authenticated identity. DEMO accounts are not supported by Goldcrest.'));
+                reject(new Error('cTrader returned no LIVE accounts for the authenticated identity. non-LIVE accounts are not supported by Goldcrest.'));
                 return;
               }
               const accountsToReturn = eligibleAccounts;
