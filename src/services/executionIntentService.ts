@@ -75,14 +75,16 @@ export async function markExecutionIntentInFlight(idempotencyKey: string, result
 }
 
 export async function completeExecutionIntent(idempotencyKey: string, result: unknown): Promise<void> {
-  await executeRun('UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ?',
-    ['COMPLETED', JSON.stringify(result), Date.now(), idempotencyKey]);
+  await executeRun(
+    'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?)',
+    ['COMPLETED', JSON.stringify(result), Date.now(), idempotencyKey, 'IN_FLIGHT', 'RECONCILIATION_TIMEOUT']
+  );
 }
 
 export async function failExecutionIntent(idempotencyKey: string, result: unknown): Promise<void> {
   await executeRun(
-    'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?)',
-    ['FAILED', JSON.stringify(result), Date.now(), idempotencyKey, 'PENDING', 'IN_FLIGHT']
+    'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?, ?)',
+    ['FAILED', JSON.stringify(result), Date.now(), idempotencyKey, 'PENDING', 'IN_FLIGHT', 'RECONCILIATION_TIMEOUT']
   );
 }
 
