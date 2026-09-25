@@ -79,8 +79,20 @@ export async function completeExecutionIntent(idempotencyKey: string, result: un
 }
 
 export async function failExecutionIntent(idempotencyKey: string, result: unknown): Promise<void> {
-  await executeRun('UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ?',
-    ['FAILED', JSON.stringify(result), Date.now(), idempotencyKey]);
+  await executeRun(
+    'UPDATE execution_intents SET state = ?, result_json = ?, updated_at = ? WHERE idempotency_key = ? AND state IN (?, ?)',
+    ['FAILED', JSON.stringify(result), Date.now(), idempotencyKey, 'PENDING', 'IN_FLIGHT']
+  );
+}
+
+export async function markExecutionIntentSubmissionAmbiguous(
+  idempotencyKey: string,
+  result: unknown
+): Promise<void> {
+  await markExecutionIntentReconciliationTimeout(idempotencyKey, {
+    code: 'BROKER_SUBMISSION_AMBIGUOUS',
+    ...(typeof result === 'object' && result !== null ? result : { detail: result })
+  });
 }
 
 export async function markExecutionIntentReconciliationTimeout(idempotencyKey: string, result: unknown): Promise<void> {
