@@ -8,7 +8,7 @@ export interface SystemConfig {
   dataStatus: 'LIVE' | 'DELAYED' | 'STALE' | 'UNAVAILABLE';
   modelStatus: string;
   researchStatus: 'CLOSED';
-  cTraderApiMode: 'LIVE';
+  cTraderApiMode: 'LIVE' | 'DEMO';
   selectedCtraderAccountId?: string;
   selectedCtraderAccountCurrency?: string;
   selectedCtraderAccountLabel?: string;
@@ -76,7 +76,7 @@ let activeConfig: SystemConfig = {
   dataStatus: 'UNAVAILABLE',
   modelStatus: 'ML BASELINE / UNCALIBRATED (PHASE 1)',
   researchStatus: 'CLOSED',
-  cTraderApiMode: 'LIVE',
+  cTraderApiMode: 'DEMO',
   defaultRiskPct: 1.0,
   maxDailyLossPct: 3.0,
   maxOpenPositions: 5,
@@ -218,8 +218,8 @@ export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig
   if (updates.tradingMode !== undefined && updates.tradingMode !== 'LIVE_ONLY') {
     throw new Error('Trading mode rejected: Goldcrest supports LIVE_ONLY mode only.');
   }
-  if (updates.cTraderApiMode !== undefined && updates.cTraderApiMode !== 'LIVE') {
-    throw new Error('cTrader API mode must be LIVE. Goldcrest is LIVE_ONLY.');
+  if (updates.cTraderApiMode !== undefined && !['LIVE', 'DEMO'].includes(updates.cTraderApiMode)) {
+    throw new Error('cTrader API mode must be LIVE or DEMO.');
   }
 
   activeConfig = {
@@ -232,7 +232,7 @@ export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig
   return { ...activeConfig };
 }
 
-export function getCTraderApiMode(): 'LIVE' {
+export function getCTraderApiMode(): 'LIVE' | 'DEMO' {
   loadPersistedSystemConfig();
-  return 'LIVE';
+  return activeConfig.cTraderApiMode;
 }

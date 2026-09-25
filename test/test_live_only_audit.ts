@@ -14,8 +14,6 @@ const FORBIDDEN = [
   /synthetic/gi,
   /simulated capital/gi,
   /PAPER_SIMULATION/gi,
-  /\bdemo\b/gi,
-  /CTRADER_DEMO_/gi
 ];
 
 function walk(dir: string): string[] {
@@ -49,11 +47,12 @@ assert.equal(
 );
 
 const configSnapshot = fs.readFileSync(path.resolve(process.cwd(), 'data/system-config.json'), 'utf8');
-assert.equal(/"cTraderApiMode"\s*:\s*"DEMO"/i.test(configSnapshot), false, 'Persisted cTrader configuration must not select DEMO mode.');
+assert.match(configSnapshot, /"cTraderApiMode"\s*:\s*"(LIVE|DEMO)"/i, 'Persisted cTrader configuration must select LIVE or DEMO explicitly.');
 const envExample = fs.readFileSync(path.resolve(process.cwd(), '.env.example'), 'utf8');
-assert.equal(/CTRADER_DEMO_|demo\.ctraderapi\.com/i.test(envExample), false, 'Environment template must not expose cTrader DEMO settings.');
+assert.match(envExample, /CTRADER_LIVE_API_HOST/);
+assert.match(envExample, /CTRADER_DEMO_API_HOST/);
 
 const { getCTraderApiMode } = await import('../src/services/configService');
-assert.equal(getCTraderApiMode(), 'LIVE', 'cTrader API mode must be LIVE-only.');
+assert.ok(['LIVE', 'DEMO'].includes(getCTraderApiMode()), 'cTrader API mode must be LIVE or DEMO.');
 
 console.log('LIVE-ONLY SOURCE AUDIT PASSED');
