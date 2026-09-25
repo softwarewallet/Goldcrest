@@ -1097,6 +1097,19 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
     return instruments.find(i => i.symbol.replace('/', '').toUpperCase() === normalized) || null;
   }
 
+  /**
+   * Guarded capability used exclusively by the autonomous execution engine.
+   * The engine performs the shared live safety/readiness gates before calling
+   * this method; the adapter still enforces LIVE-only execution and reuses the
+   * authoritative cTrader order submission path.
+   */
+  async placeAutonomousOrder(order: OrderRequest): Promise<NormalizedOrder> {
+    if (!this.isLive) {
+      throw new BrokerError('ENVIRONMENT_MISMATCH', 'Autonomous execution is available only for cTrader LIVE.', 'CTRADER', this.environment);
+    }
+    return this.placeOrder(order);
+  }
+
   async placeOrder(order: OrderRequest): Promise<NormalizedOrder> {
     this.syncConfig();
     this.validateCredentials();
