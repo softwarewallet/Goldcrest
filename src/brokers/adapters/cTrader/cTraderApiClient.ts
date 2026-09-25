@@ -91,6 +91,14 @@ function getCTraderWsHost(_accountIsLive?: boolean): string {
     : 'wss://live.ctraderapi.com:5036';
 }
 
+export function filterCTraderAccountsForApiMode(
+  accounts: CTraderRawAccount[],
+  mode: 'LIVE' | 'DEMO'
+): CTraderRawAccount[] {
+  const expectedLive = mode === 'LIVE';
+  return accounts.filter(account => account.isLive === expectedLive);
+}
+
 function isAuthoritativeLiveHost(host: string): boolean {
   try {
     return new URL(host).hostname.toLowerCase() === 'live.ctraderapi.com';
@@ -158,8 +166,7 @@ export async function fetchLiveCTraderAccounts(
                 permissionScope
               }));
               const mode = getCTraderApiMode();
-              const expectedLive = mode === 'LIVE';
-              const eligibleAccounts = accList.filter(account => account.isLive === expectedLive);
+              const eligibleAccounts = filterCTraderAccountsForApiMode(accList, mode);
               if (eligibleAccounts.length === 0) {
                 reject(new Error(`cTrader returned accounts, but none match the selected ${mode} Open API account environment.`));
                 return;
