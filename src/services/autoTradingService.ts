@@ -429,6 +429,7 @@ class AutoTradingService {
     if (this.timer) return this.getStatus();
 
     if (marketGate.anyMarketOpen) {
+      this.hasCompletedExplicitStart = true;
       this.state = 'RUNNING';
       this.lastCycleResult = 'Auto-trading loop started.';
       liveRuntimeLog('SYSTEM', 'AUTO_TRADING_STARTED', {
