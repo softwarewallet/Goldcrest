@@ -49,6 +49,7 @@ import { evaluateLiveTradeResearch, getLiveTradeResearchEvaluations } from './sr
 import {
   generateResearchPredictions,
   getLiveTradeResearchPredictions,
+  getCurrentPairPredictions,
   getResearchPrediction,
   LlamaGatewayPredictionModel,
   SignalDirectionBaselineModel
@@ -1763,6 +1764,27 @@ app.post('/api/live-trade-research/current-pair/evaluate', operatorAuthRequired,
     res.status(503).json({
       error: 'CURRENT_PAIR_OUTCOME_EVALUATION_FAILED',
       message: err?.message || 'Current pair outcome evaluation failed.'
+    });
+  }
+});
+
+app.get('/api/live-trade-research/current-pair/predictions', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : undefined;
+    if (horizon && !['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const predictions = await getCurrentPairPredictions({
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol.toUpperCase() : undefined,
+      modelVersion: typeof req.query.modelVersion === 'string' ? req.query.modelVersion : undefined,
+      horizon: horizon as '1D' | '3D' | '7D' | undefined,
+      limit: Number(req.query.limit || 100)
+    });
+    res.json({ predictions, count: predictions.length, generatedAt: Date.now() });
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'CURRENT_PAIR_PREDICTIONS_UNAVAILABLE',
+      message: err?.message || 'Current pair prediction history is unavailable.'
     });
   }
 });

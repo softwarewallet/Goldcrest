@@ -76,6 +76,49 @@ interface RealSignal {
   reasons: string[];
 }
 
+interface CurrentPairPrediction {
+  predictionId: string;
+  symbol: string;
+  predictedAt: number;
+  horizon: '1D' | '3D' | '7D';
+  predictedDirection: 'UP' | 'DOWN' | 'FLAT';
+  confidence: number;
+  modelVersion: string;
+  predictionSource: string;
+  modelAgreement: number;
+  reasoning: string;
+  invalidation: string;
+  actualDirection?: 'UP' | 'DOWN' | 'FLAT' | null;
+  actualReturnPct?: number | null;
+  outcomeStatus?: string;
+  evaluatedAt?: number | null;
+}
+
+interface CurrentPairGroupMetric {
+  symbol: string;
+  modelVersion: string;
+  horizon: '1D' | '3D' | '7D';
+  total: number;
+  evaluated: number;
+  pending: number;
+  correct: number;
+  directionalEvaluated: number;
+  accuracyPct: number | null;
+  brierScore: number | null;
+}
+
+interface CurrentPairPredictionAnalytics {
+  total: number;
+  evaluated: number;
+  pending: number;
+  correct: number;
+  directionalEvaluated: number;
+  accuracyPct: number | null;
+  brierScore: number | null;
+  groups: CurrentPairGroupMetric[];
+  generatedAt: number;
+}
+
 interface ExecutionReconciliationDiagnostic {
   idempotencyKey: string;
   broker: string;
@@ -192,6 +235,13 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [autoStatus, setAutoStatus] = useState<AutoTradingStatusSnapshot | null>(null);
   const [autoStatusError, setAutoStatusError] = useState<string | null>(null);
   const [executionDiagnostics, setExecutionDiagnostics] = useState<ExecutionReconciliationDiagnostic[]>([]);
+  const [currentPairPredictions, setCurrentPairPredictions] = useState<CurrentPairPrediction[]>([]);
+  const [currentPairAnalytics, setCurrentPairAnalytics] = useState<CurrentPairPredictionAnalytics | null>(null);
+  const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
+  const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY'>('BASELINE');
+  const [currentPairLoading, setCurrentPairLoading] = useState(false);
+  const [currentPairError, setCurrentPairError] = useState<string | null>(null);
+  const [currentPairEvaluationMessage, setCurrentPairEvaluationMessage] = useState<string | null>(null);
   const [executionDiagnosticsError, setExecutionDiagnosticsError] = useState<string | null>(null);
   const [dailyLossLimitPct, setDailyLossLimitPct] = useState<number>(3);
   const [dailyLossSaving, setDailyLossSaving] = useState<boolean>(false);
@@ -286,11 +336,57 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     }
   }, [safeParseJson]);
 
+  const fetchCurrentPairResearch = useCallback(async () => {
+    setCurrentPairLoading(true);
+    try {
+      const [predictionRes, analyticsRes] = await Promise.all([
+        fetch(`/api/live-trade-research/current-pair/predictions?horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}&limit=100`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/analytics?horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}`, { cache: 'no-store' })
+      ]);
+      const [predictionData, analyticsData] = await Promise.all([
+        safeParseJson(predictionRes),
+        safeParseJson(analyticsRes)
+      ]);
+      if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
+      if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
+      setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
+      setCurrentPairAnalytics(analyticsData || null);
+      setCurrentPairError(null);
+    } catch (err: any) {
+      setCurrentPairError(err?.message || 'Current pair research data unavailable.');
+    } finally {
+      setCurrentPairLoading(false);
+    }
+  }, [currentPairHorizon, currentPairModel, safeParseJson]);
+
+  const evaluateCurrentPairResearch = useCallback(async () => {
+    setCurrentPairEvaluationMessage(null);
+    try {
+      const res = await fetch('/api/live-trade-research/current-pair/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ horizon: currentPairHorizon, limit: 50000 })
+      });
+      const data = await safeParseJson(res);
+      if (!res.ok) throw new Error(data?.message || data?.error || 'Current pair outcome evaluation failed.');
+      setCurrentPairEvaluationMessage(`Evaluated ${Number(data?.evaluated || 0)} prediction(s); ${Number(data?.pending || 0)} remain pending.`);
+      await fetchCurrentPairResearch();
+    } catch (err: any) {
+      setCurrentPairEvaluationMessage(err?.message || 'Current pair outcome evaluation failed.');
+    }
+  }, [currentPairHorizon, fetchCurrentPairResearch, safeParseJson]);
+
   useEffect(() => {
     void fetchExecutionDiagnostics();
     const timer = setInterval(fetchExecutionDiagnostics, 10000);
     return () => clearInterval(timer);
   }, [fetchExecutionDiagnostics]);
+
+  useEffect(() => {
+    void fetchCurrentPairResearch();
+    const timer = setInterval(() => { void fetchCurrentPairResearch(); }, 60000);
+    return () => clearInterval(timer);
+  }, [fetchCurrentPairResearch]);
 
   // Synchronize with backend system controls
   const syncAutoControls = useCallback(async (enabled: boolean) => {
@@ -675,6 +771,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         ['signals', 'Signals'],
         ['options', 'NIFTY Options'],
         ['execution', 'Execution Log'],
+        ['research', 'Prediction Research'],
         ['controls', 'Controls']
       ].map(([id, label]) => (
         <button key={id} type="button" onClick={() => setActiveTab(id as typeof activeTab)}
@@ -860,6 +957,90 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
             <div className="text-sm font-bold text-white font-mono">Runtime Output</div>
             <div className="bg-slate-950 rounded-lg p-3 max-h-72 overflow-y-auto font-mono text-[11px] space-y-1">{logs.length === 0 ? <div className="text-slate-600">No UI telemetry.</div> : logs.map((log, i) => <div key={i}><span className="text-slate-600">[{log.timestamp}]</span> <span className={log.type === 'error' ? "text-rose-400" : log.type === 'success' ? "text-emerald-400" : "text-cyan-400"}>[{log.type.toUpperCase()}]</span> <span className="text-slate-300">{log.message}</span></div>)}</div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'research' && (
+        <div className="space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-bold text-white font-mono">Current Pair Prediction Research</div>
+                <div className="text-[10px] text-slate-500 mt-1">Observational analytics only. This panel does not control Auto Live execution.</div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={currentPairHorizon} onChange={(e) => setCurrentPairHorizon(e.target.value as '1D' | '3D' | '7D')} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-white">
+                  <option value="1D">1D Horizon</option><option value="3D">3D Horizon</option><option value="7D">7D Horizon</option>
+                </select>
+                <select value={currentPairModel} onChange={(e) => setCurrentPairModel(e.target.value as 'BASELINE' | 'AI_GATEWAY')} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-white">
+                  <option value="BASELINE">Baseline</option><option value="AI_GATEWAY">AI Gateway</option>
+                </select>
+                <button type="button" onClick={() => void fetchCurrentPairResearch()} disabled={currentPairLoading} className="px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">{currentPairLoading ? 'Loading...' : 'Refresh'}</button>
+                <button type="button" onClick={() => void evaluateCurrentPairResearch()} className="px-2.5 py-1.5 rounded-lg border border-cyan-700 bg-cyan-950/40 text-cyan-300 text-[11px] font-mono">Evaluate Matured</button>
+              </div>
+            </div>
+            {currentPairError && <div className="mt-3 text-[11px] font-mono text-rose-300 border border-rose-900 bg-rose-950/30 rounded p-2">{currentPairError}</div>}
+            {currentPairEvaluationMessage && <div className="mt-3 text-[11px] font-mono text-cyan-300 border border-cyan-900 bg-cyan-950/30 rounded p-2">{currentPairEvaluationMessage}</div>}
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            {[
+              ['Predictions', currentPairAnalytics?.total ?? 0],
+              ['Evaluated', currentPairAnalytics?.evaluated ?? 0],
+              ['Pending', currentPairAnalytics?.pending ?? 0],
+              ['Correct', currentPairAnalytics?.correct ?? 0],
+              ['Accuracy', currentPairAnalytics?.accuracyPct == null ? '—' : currentPairAnalytics.accuracyPct.toFixed(1) + '%'],
+              ['Brier', currentPairAnalytics?.brierScore == null ? '—' : currentPairAnalytics.brierScore.toFixed(4)]
+            ].map(([label, value]) => (
+              <div key={String(label)} className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+                <div className="text-[10px] text-slate-500 font-mono uppercase">{label}</div>
+                <div className="text-lg font-bold text-white mt-1 font-mono">{value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div className="text-sm font-bold text-white font-mono mb-3">Pair Prediction Snapshots</div>
+            {currentPairPredictions.length === 0 ? (
+              <div className="py-7 text-center text-xs text-slate-600 font-mono">No current-pair prediction snapshots available.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[10px] font-mono">
+                  <thead><tr className="text-slate-500 border-b border-slate-800">
+                    <th className="py-2 text-left">Symbol</th><th>Prediction</th><th>Confidence</th><th>Agreement</th><th>Model</th><th>Predicted At</th><th>Outcome</th><th>Return</th>
+                  </tr></thead>
+                  <tbody>{currentPairPredictions.slice(0, 50).map(prediction => (
+                    <tr key={prediction.predictionId} className="border-b border-slate-800/60">
+                      <td className="py-2 text-white font-bold">{prediction.symbol}</td>
+                      <td className={prediction.predictedDirection === 'UP' ? 'text-emerald-400' : prediction.predictedDirection === 'DOWN' ? 'text-rose-400' : 'text-slate-400'}>{prediction.predictedDirection}</td>
+                      <td className="text-center">{(Number(prediction.confidence) * 100).toFixed(1)}%</td>
+                      <td className="text-center">{(Number(prediction.modelAgreement) * 100).toFixed(1)}%</td>
+                      <td className="text-center text-cyan-300">{prediction.modelVersion}</td>
+                      <td className="text-center text-slate-400">{new Date(prediction.predictedAt).toLocaleString()}</td>
+                      <td className={prediction.outcomeStatus === 'EVALUATED' ? 'text-emerald-300' : 'text-amber-300'}>{prediction.outcomeStatus || 'PENDING'}</td>
+                      <td className="text-right">{prediction.actualReturnPct == null ? '—' : Number(prediction.actualReturnPct).toFixed(3) + '%'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div className="text-sm font-bold text-white font-mono mb-3">Grouped Performance</div>
+            {(!currentPairAnalytics?.groups?.length) ? <div className="text-xs text-slate-600 font-mono">No evaluated or pending groups available.</div> : (
+              <div className="overflow-x-auto"><table className="w-full text-[10px] font-mono">
+                <thead><tr className="text-slate-500 border-b border-slate-800">
+                  <th className="py-2 text-left">Pair</th><th>Model</th><th>Horizon</th><th>Total</th><th>Evaluated</th><th>Pending</th><th>Correct</th><th>Directional</th><th>Accuracy</th><th>Brier</th>
+                </tr></thead>
+                <tbody>{currentPairAnalytics.groups.map(group => (
+                  <tr key={`${group.symbol}-${group.modelVersion}-${group.horizon}`} className="border-b border-slate-800/60">
+                    <td className="py-2 text-white font-bold">{group.symbol}</td><td>{group.modelVersion}</td><td>{group.horizon}</td><td className="text-center">{group.total}</td><td className="text-center">{group.evaluated}</td><td className="text-center text-amber-300">{group.pending}</td><td className="text-center text-emerald-300">{group.correct}</td><td className="text-center">{group.directionalEvaluated}</td><td className="text-center">{group.accuracyPct == null ? '—' : group.accuracyPct.toFixed(1) + '%'}</td><td className="text-center">{group.brierScore == null ? '—' : group.brierScore.toFixed(4)}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            )}
           </div>
         </div>
       )}
