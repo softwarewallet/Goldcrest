@@ -51,13 +51,15 @@ let gatewayRequest: any = null;
 globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
   gatewayRequest = init?.body ? JSON.parse(String(init.body)) : null;
   return new Response(JSON.stringify({
-    prediction: {
+    consensus: {
       direction: 'UP',
       confidence: 82,
       modelAgreement: 0.91,
-      reasoning: 'Gateway test prediction.',
-      invalidation: 'Gateway test invalidation.'
-    }
+      reasoning: 'Llama/Qwen consensus test prediction.',
+      invalidation: 'Consensus test invalidation.'
+    },
+    qwen: { direction: 'UP', confidence: 0.84 },
+    llama: { direction: 'UP', confidence: 0.80 }
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }) as typeof fetch;
 
@@ -72,7 +74,7 @@ try {
   assert.equal(aiPrediction.predictedDirection, 'UP');
   assert.equal(aiPrediction.confidence, 0.82);
   assert.equal(aiPrediction.modelAgreement, 0.91);
-  assert.equal(aiPrediction.reasoning, 'Gateway test prediction.');
+  assert.equal(aiPrediction.reasoning, 'Llama/Qwen consensus test prediction.');
   assert.equal(gatewayRequest.gateway, 'LLAMA');
   assert.equal(gatewayRequest.llamaModel, 'llama-test');
   assert.equal(gatewayRequest.qwenModel, 'qwen-test');
