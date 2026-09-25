@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { executeQuery, executeRun } from '../database/db';
 import { getLiveTradeResearchFeatures, ResearchFeatureRow } from './liveTradeResearchFeatureService';
+import { requestResearchAiPrediction } from './researchAiServerService';
 
 export type ResearchPredictionHorizon = '1D' | '3D' | '7D';
 export type ResearchPredictionDirection = 'UP' | 'DOWN' | 'FLAT';
@@ -24,7 +25,7 @@ export interface ResearchPrediction {
 export interface PredictionModel {
   modelVersion: string;
   predictionSource: string;
-  predict(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon): ResearchPredictionOutput;
+  predict(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon): ResearchPredictionOutput | Promise<ResearchPredictionOutput>;
 }
 
 export interface ResearchPredictionOutput {
@@ -61,6 +62,88 @@ function featureHash(row: ResearchFeatureRow): string {
     targetDistance: row.targetDistance
   };
   return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
+}
+
+function normalizeAiProbability(value: unknown, field: string): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    throw new Error(`AI gateway returned an invalid ${field}.`);
+  }
+  // Accept 0-1 as the canonical format and 0-100 for interoperability with
+  // common model-serving payloads, then normalize internally to 0-1.
+  const normalized = numeric > 1 && numeric <= 100 ? numeric / 100 : numeric;
+  if (normalized < 0 || normalized > 1) {
+    throw new Error(`AI gateway returned ${field} outside the 0-1 range.`);
+  }
+  return normalized;
+}
+
+function researchPredictionPayload(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon) {
+  // Deliberately exclude realized P&L, outcome, and holding duration: these are
+  // post-outcome fields and would leak future information into the prediction.
+  return {
+    task: 'RESEARCH_PREDICTION',
+    horizon,
+    features: {
+      signalId: row.signalId,
+      symbol: row.symbol,
+      signalTimestamp: row.signalTimestamp,
+      direction: row.direction,
+      score: row.score,
+      marketRegime: row.marketRegime,
+      session: row.session,
+      trendDirection: row.trendDirection,
+      trendAlignment: row.trendAlignment,
+      trend7dReturnPct: row.trend7dReturnPct,
+      trend30dReturnPct: row.trend30dReturnPct,
+      trend90dReturnPct: row.trend90dReturnPct,
+      trend365dReturnPct: row.trend365dReturnPct,
+      trend7dVolatilityPct: row.trend7dVolatilityPct,
+      trend30dVolatilityPct: row.trend30dVolatilityPct,
+      trend90dVolatilityPct: row.trend90dVolatilityPct,
+      trend365dVolatilityPct: row.trend365dVolatilityPct,
+      newsRiskLevel: row.newsRiskLevel,
+      newsHighImpactCount: row.newsHighImpactCount,
+      newsActiveHighImpactCount: row.newsActiveHighImpactCount,
+      newsSentiment: row.newsSentiment,
+      quoteSpread: row.quoteSpread,
+      riskReward: row.riskReward,
+      stopDistance: row.stopDistance,
+      targetDistance: row.targetDistance
+    }
+  };
+}
+
+export class LlamaGatewayPredictionModel implements PredictionModel {
+  readonly modelVersion = 'LLAMA_GATEWAY_QWEN_LLAMA_V1';
+  readonly predictionSource = 'LLAMA_GATEWAY';
+
+  async predict(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon): Promise<ResearchPredictionOutput> {
+    const response = await requestResearchAiPrediction(researchPredictionPayload(row, horizon));
+    const source = response.prediction && typeof response.prediction === 'object'
+      ? response.prediction as Record<string, unknown>
+      : response;
+
+    const directionValue = String(source.direction || source.predictedDirection || '').toUpperCase();
+    const direction: ResearchPredictionDirection =
+      directionValue === 'UP' || directionValue.includes('BUY') ? 'UP' :
+      directionValue === 'DOWN' || directionValue.includes('SELL') ? 'DOWN' :
+      directionValue === 'FLAT' ? 'FLAT' :
+      (() => { throw new Error('AI gateway returned an invalid prediction direction.'); })();
+
+    const confidence = normalizeAiProbability(source.confidence, 'confidence');
+    const modelAgreement = source.modelAgreement === undefined || source.modelAgreement === null
+      ? null
+      : normalizeAiProbability(source.modelAgreement, 'modelAgreement');
+
+    return {
+      direction,
+      confidence,
+      modelAgreement,
+      reasoning: source.reasoning === undefined || source.reasoning === null ? null : String(source.reasoning),
+      invalidation: source.invalidation === undefined || source.invalidation === null ? null : String(source.invalidation)
+    };
+  }
 }
 
 export class SignalDirectionBaselineModel implements PredictionModel {
@@ -108,8 +191,8 @@ async function ensurePredictionTable(): Promise<void> {
   )`);
 }
 
-function makePrediction(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon, model: PredictionModel): ResearchPrediction {
-  const output = model.predict(row, horizon);
+async function makePrediction(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon, model: PredictionModel): Promise<ResearchPrediction> {
+  const output = await model.predict(row, horizon);
   const predictedAt = Date.now();
   return {
     predictionId: 'pred-' + predictedAt + '-' + row.signalId + '-' + horizon,
