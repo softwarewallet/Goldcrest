@@ -152,10 +152,13 @@ export async function fetchLiveCTraderAccounts(
                 ...account,
                 permissionScope
               }));
-              const endpointIsLive = isAuthoritativeLiveHost(host);
-              const eligibleAccounts = accList.filter(account => endpointIsLive ? account.isLive === true : account.isLive === false);
-              // Fallback to all accounts if specific filter yielded 0
-              const accountsToReturn = eligibleAccounts.length > 0 ? eligibleAccounts : accList;
+              // Goldcrest is LIVE_ONLY: only cTrader accounts explicitly marked LIVE are eligible.
+              const eligibleAccounts = accList.filter(account => account.isLive === true);
+              if (eligibleAccounts.length === 0) {
+                reject(new Error('cTrader returned no LIVE accounts for the authenticated identity. DEMO accounts are not supported by Goldcrest.'));
+                return;
+              }
+              const accountsToReturn = eligibleAccounts;
               if (accountsToReturn.length === 0) {
                 reject(new Error('cTrader returned accounts, but none match the connected Open API account environment.'));
                 return;
@@ -204,7 +207,7 @@ export async function fetchLiveCTraderAccountDetails(
 ): Promise<CTraderRealTraderDetails> {
   const host = getCTraderWsHost(rawAccount.isLive);
 
-  if (isAuthoritativeLiveHost(host) && !rawAccount.isLive) {
+  if (!rawAccount.isLive) {
     return Promise.reject(new Error(`cTrader account ${rawAccount.ctidTraderAccountId} is not marked LIVE by Open API. The configured LIVE broker endpoint requires a LIVE cTrader account.`));
   }
 
