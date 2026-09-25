@@ -141,8 +141,8 @@ assert.equal(analytics.accuracyPct, 100);
 assert.equal(analytics.bySymbol[0].key, 'EUR/USD');
 assert.equal(analytics.byTrendAlignment[0].key, 'ALIGNED');
 assert.equal(analytics.byNewsRisk[0].key, 'LOW');
-assert.equal(analytics.calibration[3].predictions, 1);
-assert.equal(analytics.calibration[3].evaluated, 1);
+assert.equal(analytics.calibration[4].predictions, 1);
+assert.equal(analytics.calibration[4].evaluated, 1);
 
 await executeRun('DELETE FROM live_trade_research WHERE signal_id = ?', [baseFeature.signalId]);
 
