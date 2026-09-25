@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {
-  SignalDirectionBaselineModel, createResearchPrediction, type PredictionModel
+  SignalDirectionBaselineModel, LlamaGatewayPredictionModel, createResearchPrediction, type PredictionModel
 } from '../src/services/liveTradeResearchPredictionService';
 import type { ResearchFeatureRow } from '../src/services/liveTradeResearchFeatureService';
 import { saveResearchAiServerConfig } from '../src/services/researchAiServerService';
