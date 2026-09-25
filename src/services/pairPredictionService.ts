@@ -1,6 +1,7 @@
 import { ScannerService } from './scannerService';
 import { LiveForexProvider } from '../markets/forex/provider';
 import { ForexSignalEngine } from '../markets/forex/signalEngine';
+import { getForexPairConfig } from '../markets/forex/instruments';
 import type { ForexCandle } from '../markets/forex/types';
 
 const scannerService = new ScannerService();
