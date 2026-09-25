@@ -10,6 +10,8 @@ Goldcrest is an AI-assisted trading analysis platform with broker connectivity, 
 - **Authoritative data only:** fabricated balances, quotes, OHLC, volume, and synthetic `FRESH` market-data fallbacks are not permitted.
 - **Research program:** active and observational. The research pipeline captures live-trade outcomes, builds features/training labels, and evaluates directional baselines; research outputs do not modify live execution.
 - **Persistence:** SQLite is the sole application persistence layer. Firestore/Firebase application storage has been removed.
+- **Research AI gateway:** optional single `LLAMA_GATEWAY` connection. Llama is the gateway/orchestrator and may run Qwen internally through the same network connection. The gateway is used only by the research prediction layer; it has no broker credentials and cannot place or modify trades.
+- **Prediction modes:** the research prediction API supports the deterministic `BASELINE` model and an opt-in `AI_GATEWAY` model. AI inference receives only pre-outcome features; realized P&L, outcome, and holding duration are excluded to prevent label leakage.
 
 ## Safety Invariant
 
