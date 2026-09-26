@@ -88,7 +88,7 @@ export async function getCurrentPairResearchReadinessLedger(params: {
       id: 'paired-sample',
       status: validation.data.pairedEvaluated >= MIN_SAMPLE_COUNT ? 'PASS' : 'INSUFFICIENT',
       title: 'Paired evaluation sample',
-      detail: `${validation.paired.pairedEvaluated} jointly evaluated pairs; minimum is ${MIN_SAMPLE_COUNT}.`
+      detail: `${validation.data.pairedEvaluated} jointly evaluated pairs; minimum is ${MIN_SAMPLE_COUNT}.`
     },
     {
       id: 'oos-windows',
@@ -134,7 +134,7 @@ export async function getCurrentPairResearchReadinessLedger(params: {
       validationInsufficient,
       aiDirectionalEvaluated: aiModel?.directionalEvaluated ?? 0,
       baselineDirectionalEvaluated: baselineModel?.directionalEvaluated ?? 0,
-      pairedEvaluated: validation.paired.pairedEvaluated,
+      pairedEvaluated: validation.data.pairedEvaluated,
       currentOosDirectionalEvaluated: oosDrift.currentWindow.directionalEvaluated,
       referenceOosDirectionalEvaluated: oosDrift.baselineWindow.directionalEvaluated,
       calibrationRows: calibrationMatrix.rows.length,
