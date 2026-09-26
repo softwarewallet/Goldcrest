@@ -53,6 +53,7 @@ export interface CurrentPairOosDriftReport {
     brierDelta: number | null;
     confidenceDeltaPct: number | null;
     calibrationGapDeltaPct: number | null;
+    calibrationErrorDeltaPct: number | null;
     accuracyDriftFlag: boolean;
     brierDriftFlag: boolean;
     confidenceDriftFlag: boolean;
