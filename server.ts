@@ -57,6 +57,7 @@ import {
 import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } from './src/services/liveTradeResearchPredictionEvaluationService';
 import { generateCurrentPairPredictions } from './src/services/pairPredictionService';
 import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics } from './src/services/currentPairPredictionOutcomeService';
+import { getCurrentPairPredictionCollectionStatus, startCurrentPairPredictionCollectionScheduler, stopCurrentPairPredictionCollectionScheduler } from './src/services/currentPairPredictionCollectionService';
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
@@ -1789,6 +1790,10 @@ app.get('/api/live-trade-research/current-pair/predictions', operatorAuthRequire
   }
 });
 
+app.get('/api/live-trade-research/current-pair/collection-status', operatorAuthRequired, (_req: Request, res: Response) => {
+  res.json(getCurrentPairPredictionCollectionStatus());
+});
+
 app.get('/api/live-trade-research/current-pair/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : undefined;
@@ -2096,6 +2101,7 @@ async function startServer() {
     void databaseInitPromise
       .then(() => {
         startLiveTradeResearchOutcomeTracker();
+        startCurrentPairPredictionCollectionScheduler();
       })
       .then(() => syncMarketHistory())
       .then(() => {
@@ -2120,6 +2126,7 @@ async function startServer() {
 
   const shutdown = (signal: string) => {
     stopLiveTradeResearchOutcomeTracker();
+    stopCurrentPairPredictionCollectionScheduler();
     liveRuntimeLog('SYSTEM', 'SERVER_SHUTDOWN_REQUESTED', { signal });
     console.log(`Goldcrest received ${signal}; closing HTTP server gracefully.`);
     server.close(() => {
