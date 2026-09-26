@@ -28,6 +28,16 @@ export interface CurrentPairOutcomeEvaluationResult {
   updatedAt: number;
 }
 
+export interface CurrentPairPredictionCalibrationBin {
+  lowerPct: number;
+  upperPct: number;
+  predictions: number;
+  evaluated: number;
+  correct: number;
+  accuracyPct: number | null;
+  averageConfidencePct: number | null;
+}
+
 export interface CurrentPairPredictionGroupMetrics {
   symbol: string;
   modelVersion: string;
@@ -39,6 +49,13 @@ export interface CurrentPairPredictionGroupMetrics {
   directionalEvaluated: number;
   accuracyPct: number | null;
   brierScore: number | null;
+  upPredictions: number;
+  downPredictions: number;
+  flatPredictions: number;
+  upActuals: number;
+  downActuals: number;
+  flatActuals: number;
+  calibration: CurrentPairPredictionCalibrationBin[];
 }
 
 const liveForexProvider = new LiveForexProvider();
@@ -244,6 +261,30 @@ export async function getCurrentPairPredictionAnalytics(params: {
       .map(result => result.brier)
       .filter((value): value is number => value !== null);
 
+    const calibration = [0, 1, 2, 3, 4].map(index => {
+      const lower = index * 0.2;
+      const upper = index === 4 ? 1 : lower + 0.2;
+      const binRows = evaluatedRows.filter(row => {
+        const confidence = Math.max(0, Math.min(1, Number(row.confidence) || 0));
+        return confidence >= lower && (index === 4 ? confidence <= upper : confidence < upper);
+      });
+      const binDirectional = binRows
+        .map(row => directionalScore(row, row.actual_direction as 'UP' | 'DOWN' | 'FLAT'))
+        .filter(result => result.evaluated);
+      const binCorrect = binDirectional.filter(result => result.correct).length;
+      return {
+        lowerPct: lower * 100,
+        upperPct: upper * 100,
+        predictions: binRows.length,
+        evaluated: binDirectional.length,
+        correct: binCorrect,
+        accuracyPct: binDirectional.length ? (binCorrect / binDirectional.length) * 100 : null,
+        averageConfidencePct: binRows.length
+          ? binRows.reduce((sum, row) => sum + Math.max(0, Math.min(1, Number(row.confidence) || 0)), 0) / binRows.length * 100
+          : null
+      };
+    });
+
     return {
       symbol: group[0].symbol,
       modelVersion: group[0].model_version,
@@ -256,7 +297,14 @@ export async function getCurrentPairPredictionAnalytics(params: {
       accuracyPct: directional.length ? (correct / directional.length) * 100 : null,
       brierScore: brierValues.length
         ? brierValues.reduce((sum, value) => sum + value, 0) / brierValues.length
-        : null
+        : null,
+      upPredictions: group.filter(row => row.predicted_direction === 'UP').length,
+      downPredictions: group.filter(row => row.predicted_direction === 'DOWN').length,
+      flatPredictions: group.filter(row => row.predicted_direction === 'FLAT').length,
+      upActuals: evaluatedRows.filter(row => row.actual_direction === 'UP').length,
+      downActuals: evaluatedRows.filter(row => row.actual_direction === 'DOWN').length,
+      flatActuals: evaluatedRows.filter(row => row.actual_direction === 'FLAT').length,
+      calibration
     };
   }).sort((a, b) =>
     a.symbol.localeCompare(b.symbol) ||
