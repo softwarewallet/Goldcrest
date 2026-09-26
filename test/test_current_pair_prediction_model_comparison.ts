@@ -77,6 +77,9 @@ try {
   assert.equal(paired.aiOnlyCorrect, 0);
   assert.equal(paired.bothIncorrect, 1);
   assert.equal(paired.directionAgreementPct, 0);
+  assert.equal(paired.discordantPairs, 0);
+  assert.equal(paired.exactMcNemarPValue, null);
+
 
 } finally {
   for (const [id] of rows) {
