@@ -80,6 +80,12 @@ try {
   assert.equal(analytics.groups[0].calibration[4].correct, 1);
   assert.equal(analytics.groups[0].marketRegime, 'TRENDING');
   assert.equal(analytics.groups[0].session, 'LONDON');
+  assert.equal(analytics.groups[0].sampleSufficient, false);
+  assert.equal(analytics.groups[0].minimumSampleCount, 30);
+  assert.ok(analytics.groups[0].accuracyConfidenceInterval95Pct !== null);
+  assert.ok((analytics.groups[0].accuracyConfidenceInterval95Pct?.lowerPct || 0) < 100);
+  assert.equal(analytics.groups[0].accuracyConfidenceInterval95Pct?.upperPct, 100);
+  assert.equal(analytics.groups[0].calibration[4].sampleSufficient, false);
 } finally {
   await executeRun("DELETE FROM live_trade_research_predictions WHERE prediction_id = ?", [predictionId]);
   LiveForexProvider.prototype.refreshPair = originalRefresh;

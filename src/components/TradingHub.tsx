@@ -105,6 +105,18 @@ interface CurrentPairGroupMetric {
   directionalEvaluated: number;
   accuracyPct: number | null;
   brierScore: number | null;
+  sampleSufficient: boolean;
+  minimumSampleCount: number;
+  accuracyConfidenceInterval95Pct: { lowerPct: number; upperPct: number } | null;
+  upPredictions: number;
+  downPredictions: number;
+  flatPredictions: number;
+  upActuals: number;
+  downActuals: number;
+  flatActuals: number;
+  calibration: Array<{ lowerPct:number; upperPct:number; predictions:number; evaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; sampleSufficient:boolean }>;
+  marketRegime: string;
+  session: string;
 }
 
 interface CurrentPairPredictionAnalytics {
@@ -1151,7 +1163,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 </div>
               ))}
             </div>
-            <div className="text-[10px] text-slate-600 font-mono mt-2">Descriptive research telemetry only; calibration does not alter prediction or Auto Live behavior.</div>
+            <div className="text-[10px] text-slate-600 font-mono mt-2">Descriptive research telemetry only. Accuracy is accompanied by a Wilson 95% confidence interval; groups with fewer than 30 directional evaluations are explicitly marked insufficient-sample. These controls do not alter prediction or Auto Live behavior.</div>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
@@ -1159,11 +1171,11 @@ export const TradingHub: React.FC<TradingHubProps> = ({
             {(!currentPairAnalytics?.groups?.length) ? <div className="text-xs text-slate-600 font-mono">No evaluated or pending groups available.</div> : (
               <div className="overflow-x-auto"><table className="w-full text-[10px] font-mono">
                 <thead><tr className="text-slate-500 border-b border-slate-800">
-                  <th className="py-2 text-left">Pair</th><th>Model</th><th>Horizon</th><th>Total</th><th>Evaluated</th><th>Pending</th><th>Correct</th><th>Directional</th><th>Accuracy</th><th>Brier</th><th>UP / DOWN / FLAT</th><th>Regime</th><th>Session</th>
+                  <th className="py-2 text-left">Pair</th><th>Model</th><th>Horizon</th><th>Total</th><th>Evaluated</th><th>Pending</th><th>Correct</th><th>Directional</th><th>Accuracy</th><th>95% CI</th><th>Sample</th><th>Brier</th><th>UP / DOWN / FLAT</th><th>Regime</th><th>Session</th>
                 </tr></thead>
                 <tbody>{currentPairAnalytics.groups.map(group => (
                   <tr key={`${group.symbol}-${group.modelVersion}-${group.horizon}`} className="border-b border-slate-800/60">
-                    <td className="py-2 text-white font-bold">{group.symbol}</td><td>{group.modelVersion}</td><td>{group.horizon}</td><td className="text-center">{group.total}</td><td className="text-center">{group.evaluated}</td><td className="text-center text-amber-300">{group.pending}</td><td className="text-center text-emerald-300">{group.correct}</td><td className="text-center">{group.directionalEvaluated}</td><td className="text-center">{group.accuracyPct == null ? '—' : group.accuracyPct.toFixed(1) + '%'}</td><td className="text-center">{group.brierScore == null ? '—' : group.brierScore.toFixed(4)}</td><td className="text-center">{group.upPredictions} / {group.downPredictions} / {group.flatPredictions}</td><td className="text-center text-cyan-300">{group.marketRegime}</td><td className="text-center text-cyan-300">{group.session}</td>
+                    <td className="py-2 text-white font-bold">{group.symbol}</td><td>{group.modelVersion}</td><td>{group.horizon}</td><td className="text-center">{group.total}</td><td className="text-center">{group.evaluated}</td><td className="text-center text-amber-300">{group.pending}</td><td className="text-center text-emerald-300">{group.correct}</td><td className="text-center">{group.directionalEvaluated}</td><td className="text-center">{group.accuracyPct == null ? '—' : group.accuracyPct.toFixed(1) + '%'}</td><td className="text-center">{group.accuracyConfidenceInterval95Pct == null ? '—' : `${group.accuracyConfidenceInterval95Pct.lowerPct.toFixed(1)}–${group.accuracyConfidenceInterval95Pct.upperPct.toFixed(1)}%`}</td><td className={`text-center ${group.sampleSufficient ? 'text-emerald-300' : 'text-amber-300'}`}>{group.sampleSufficient ? 'SUFFICIENT' : `INSUFFICIENT (<${group.minimumSampleCount})`}</td><td className="text-center">{group.brierScore == null ? '—' : group.brierScore.toFixed(4)}</td><td className="text-center">{group.upPredictions} / {group.downPredictions} / {group.flatPredictions}</td><td className="text-center text-cyan-300">{group.marketRegime}</td><td className="text-center text-cyan-300">{group.session}</td>
                   </tr>
                 ))}</tbody>
               </table></div>
