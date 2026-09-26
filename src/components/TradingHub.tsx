@@ -199,13 +199,13 @@ interface CurrentPairOosCalibrationBucket {
   lowerPct:number; upperPct:number; predictions:number; directionalEvaluated:number; correct:number;
   averageConfidencePct:number|null; accuracyPct:number|null;
   accuracyConfidenceInterval95Pct:{lowerPct:number;upperPct:number}|null;
-  calibrationGapPct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; sampleSufficient:boolean;
+  calibrationGapPct:number|null; sampleSufficient:boolean;
 }
 
 interface CurrentPairOosDriftReport {
   symbol: string | null; horizon: string; modelVersion: string; generatedAt: number;
-  currentWindow: { windowDays: 30; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; sampleSufficient:boolean; calibrationBuckets:CurrentPairOosCalibrationBucket[] };
-  baselineWindow: { windowDays: 90; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; sampleSufficient:boolean; calibrationBuckets:CurrentPairOosCalibrationBucket[] };
+  currentWindow: { windowDays: 30; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; sampleSufficient:boolean; calibrationBuckets:CurrentPairOosCalibrationBucket[] };
+  baselineWindow: { windowDays: 90; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; sampleSufficient:boolean; calibrationBuckets:CurrentPairOosCalibrationBucket[] };
   uncertainty: {
     accuracyDelta95Pct:{lower:number;upper:number;confidenceLevelPct:number;resamples:number}|null;
     brierDelta95:{lower:number;upper:number;confidenceLevelPct:number;resamples:number}|null;
