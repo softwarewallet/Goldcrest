@@ -13,6 +13,8 @@ export interface CurrentPairCalibrationMatrixWindow {
   averageConfidencePct: number | null;
   expectedCalibrationErrorPct: number | null;
   maximumCalibrationErrorPct: number | null;
+  calibrationSlope: number | null;
+  calibrationInterceptPct: number | null;
   sampleSufficient: boolean;
 }
 
@@ -26,6 +28,8 @@ export interface CurrentPairCalibrationMatrixRow {
     confidenceDeltaPct: number | null;
     expectedCalibrationErrorDeltaPct: number | null;
     maximumCalibrationErrorDeltaPct: number | null;
+    calibrationSlopeDelta: number | null;
+    calibrationInterceptDeltaPct: number | null;
   };
 }
 
@@ -42,8 +46,30 @@ function emptyWindow(): CurrentPairCalibrationMatrixWindow {
     averageConfidencePct: null,
     expectedCalibrationErrorPct: null,
     maximumCalibrationErrorPct: null,
+    calibrationSlope: null,
+    calibrationInterceptPct: null,
     sampleSufficient: false
   };
+}
+
+function calculateCalibrationRegression(rows: any[], maturityCutoff: number): { slope: number | null; interceptPct: number | null } {
+  const observations: Array<{ confidence: number; correct: number }> = [];
+  for (const row of rows) {
+    if (Number(row.predicted_at) > maturityCutoff || row.outcome_status !== 'EVALUATED' || !row.actual_direction) continue;
+    if (row.predicted_direction === 'FLAT' || row.actual_direction === 'FLAT') continue;
+    observations.push({
+      confidence: clampConfidence(row.confidence),
+      correct: row.predicted_direction === row.actual_direction ? 1 : 0
+    });
+  }
+  if (observations.length < MIN_SAMPLE_COUNT) return { slope: null, interceptPct: null };
+  const meanX = observations.reduce((sum, item) => sum + item.confidence, 0) / observations.length;
+  const meanY = observations.reduce((sum, item) => sum + item.correct, 0) / observations.length;
+  const varianceX = observations.reduce((sum, item) => sum + Math.pow(item.confidence - meanX, 2), 0);
+  if (varianceX <= Number.EPSILON) return { slope: null, interceptPct: meanY * 100 };
+  const covariance = observations.reduce((sum, item) => sum + (item.confidence - meanX) * (item.correct - meanY), 0);
+  const slope = covariance / varianceX;
+  return { slope, interceptPct: (meanY - slope * meanX) * 100 };
 }
 
 function calculateWindow(rows: any[], maturityCutoff: number): CurrentPairCalibrationMatrixWindow {
@@ -112,6 +138,9 @@ function calculateWindow(rows: any[], maturityCutoff: number): CurrentPairCalibr
     ? rows.reduce((sum, row) => sum + clampConfidence(row.confidence), 0) / confidenceCount * 100
     : null;
   result.sampleSufficient = result.directionalEvaluated >= MIN_SAMPLE_COUNT;
+  const calibrationRegression = calculateCalibrationRegression(rows, maturityCutoff);
+  result.calibrationSlope = calibrationRegression.slope;
+  result.calibrationInterceptPct = calibrationRegression.interceptPct;
   return result;
 }
 
@@ -193,7 +222,9 @@ export async function getCurrentPairCalibrationMatrix(params: {
         accuracyDeltaPct: delta(current.accuracyPct, reference.accuracyPct),
         confidenceDeltaPct: delta(current.averageConfidencePct, reference.averageConfidencePct),
         expectedCalibrationErrorDeltaPct: delta(current.expectedCalibrationErrorPct, reference.expectedCalibrationErrorPct),
-        maximumCalibrationErrorDeltaPct: delta(current.maximumCalibrationErrorPct, reference.maximumCalibrationErrorPct)
+        maximumCalibrationErrorDeltaPct: delta(current.maximumCalibrationErrorPct, reference.maximumCalibrationErrorPct),
+        calibrationSlopeDelta: delta(current.calibrationSlope, reference.calibrationSlope),
+        calibrationInterceptDeltaPct: delta(current.calibrationInterceptPct, reference.calibrationInterceptPct)
       }
     });
   }
