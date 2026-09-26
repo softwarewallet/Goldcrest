@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { executeRun } from '../src/database/db';
-import { getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison } from '../src/services/currentPairPredictionOutcomeService';
+import { getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison, getCurrentPairPairedModelComparisonRolling } from '../src/services/currentPairPredictionOutcomeService';
 
 const now = Date.now();
 const day = 24 * 60 * 60 * 1000;
@@ -105,6 +105,17 @@ try {
   assert.equal(discordant.aiOnlyCorrect, 1);
   assert.equal(discordant.discordantPairs, 3);
   assert.equal(discordant.exactMcNemarPValue, 1);
+
+  const rolling = await getCurrentPairPairedModelComparisonRolling({ symbol: 'EUR/USD', horizon: '1D' });
+  assert.equal(rolling.length, 2);
+  assert.equal(rolling[0].windowDays, 30);
+  assert.equal(rolling[0].pairedObservations, 3);
+  assert.equal(rolling[0].pairedEvaluated, 3);
+  assert.equal(rolling[0].discordantPairs, 3);
+  assert.equal(rolling[1].windowDays, 90);
+  assert.equal(rolling[1].pairedObservations, 3);
+  assert.equal(rolling[1].pairedEvaluated, 3);
+  assert.equal(rolling[1].discordantPairs, 3);
 
   for (const [id] of discordantRows) {
     await executeRun('DELETE FROM live_trade_research_predictions WHERE prediction_id = ?', [id]);
