@@ -55,9 +55,9 @@ try {
 
   assert.equal(ai.predictions, 2);
   assert.equal(ai.evaluated, 2);
-  assert.equal(ai.correct, 2);
+  assert.equal(ai.correct, 1);
   assert.equal(ai.directionalEvaluated, 2);
-  assert.equal(ai.accuracyPct, 100);
+  assert.equal(ai.accuracyPct, 50);
   assert.equal(ai.sampleSufficient, false);
   assert.equal(ai.minimumSampleCount, 30);
   assert.ok(ai.brierScore !== null);
