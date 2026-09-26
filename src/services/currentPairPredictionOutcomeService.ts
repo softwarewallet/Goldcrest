@@ -495,9 +495,13 @@ export async function getCurrentPairPairedModelComparison(params: {
       continue;
     }
 
+    if (baselineRow.actual_direction !== aiRow.actual_direction) {
+      pairedPending++;
+      continue;
+    }
     const actual = baselineRow.actual_direction as 'UP' | 'DOWN' | 'FLAT';
     const baselineScore = directionalScore(baselineRow, actual);
-    const aiScore = directionalScore(aiRow, aiRow.actual_direction as 'UP' | 'DOWN' | 'FLAT');
+    const aiScore = directionalScore(aiRow, actual);
     if (!baselineScore.evaluated || !aiScore.evaluated) {
       pairedPending++;
       continue;
