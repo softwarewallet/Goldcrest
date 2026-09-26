@@ -434,6 +434,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairValidationReport, setCurrentPairValidationReport] = useState<CurrentPairResearchValidationReport | null>(null);
   const [currentPairOosDrift, setCurrentPairOosDrift] = useState<CurrentPairOosDriftReport | null>(null);
   const [currentPairCalibrationMatrix, setCurrentPairCalibrationMatrix] = useState<CurrentPairCalibrationMatrix | null>(null);
+  const [currentPairCrossModelContextCalibration, setCurrentPairCrossModelContextCalibration] = useState<any>(null);
   const [currentPairCrossModelCalibration, setCurrentPairCrossModelCalibration] = useState<CurrentPairCrossModelCalibration | null>(null);
   const [currentPairWalkForward, setCurrentPairWalkForward] = useState<CurrentPairWalkForwardAnalytics | null>(null);
   const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
@@ -596,6 +597,10 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       setCurrentPairValidationReport(validationData || null);
       setCurrentPairOosDrift(oosDriftData || null);
       setCurrentPairCalibrationMatrix(calibrationMatrixData || null);
+      const contextCalibrationRes = await fetch(`/api/live-trade-research/current-pair/cross-model-context-calibration?${comparisonQuery}`, { cache: 'no-store' });
+      const contextCalibrationData = await safeParseJson(contextCalibrationRes);
+      if (!contextCalibrationRes.ok) throw new Error(contextCalibrationData?.message || contextCalibrationData?.error || 'Context calibration unavailable.');
+      setCurrentPairCrossModelContextCalibration(contextCalibrationData || null);
       setCurrentPairCrossModelCalibration(crossModelCalibrationData || null);
       const discoveredSymbols = Array.from(new Set([
         ...currentPairSymbols,
@@ -1412,6 +1417,15 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                       })}</tbody>
                     </table>
                   </div>
+                </div>
+              )}
+
+
+              {currentPairCrossModelContextCalibration?.rows?.length > 0 && (
+                <div className="border border-slate-800 rounded-lg p-3 mb-3">
+                  <div className="text-xs font-bold text-white font-mono mb-1">Paired Context Calibration Matrix</div>
+                  <div className="text-[10px] text-slate-600 font-mono mb-2">Baseline vs AI on exact paired observations grouped by market regime and session. Deltas are AI minus baseline; research telemetry only.</div>
+                  <div className="overflow-x-auto"><table className="w-full text-[10px] font-mono"><thead><tr className="text-slate-500 border-b border-slate-800"><th className="py-2 text-left">Pair</th><th>Horizon</th><th>Regime</th><th>Session</th><th>Paired</th><th>Eval.</th><th>Acc Δ</th><th>Conf Δ</th><th>ECE Δ</th><th>Slope Δ</th><th>Status</th></tr></thead><tbody>{currentPairCrossModelContextCalibration.rows.map((row:any)=>{const ok=row.baseline.metrics.sampleSufficient&&row.ai.metrics.sampleSufficient;return <tr key={row.symbol+row.horizon+row.marketRegime+row.session} className="border-b border-slate-800/60"><td className="py-2 text-white">{row.symbol}</td><td className="text-center">{row.horizon}</td><td className="text-center">{row.marketRegime}</td><td className="text-center">{row.session}</td><td className="text-center">{row.pairedObservations}</td><td className="text-center">{row.pairedEvaluated}</td><td className="text-center">{row.deltas.accuracyDeltaPct==null?'—':row.deltas.accuracyDeltaPct.toFixed(1)+' pp'}</td><td className="text-center">{row.deltas.confidenceDeltaPct==null?'—':row.deltas.confidenceDeltaPct.toFixed(1)+' pp'}</td><td className="text-center">{row.deltas.expectedCalibrationErrorDeltaPct==null?'—':row.deltas.expectedCalibrationErrorDeltaPct.toFixed(1)+' pp'}</td><td className="text-center">{row.deltas.calibrationSlopeDelta==null?'—':row.deltas.calibrationSlopeDelta.toFixed(3)}</td><td className={ok?'text-emerald-300 text-center':'text-cyan-300 text-center'}>{ok?'SUFFICIENT':'INSUFFICIENT'}</td></tr>})}</tbody></table></div>
                 </div>
               )}
 
