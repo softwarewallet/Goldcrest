@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { executeRun } from '../src/database/db';
-import { getCurrentPairPredictionModelComparison } from '../src/services/currentPairPredictionOutcomeService';
+import { getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison } from '../src/services/currentPairPredictionOutcomeService';
 
 const now = Date.now();
 const day = 24 * 60 * 60 * 1000;
@@ -62,6 +62,22 @@ try {
   assert.equal(ai.minimumSampleCount, 30);
   assert.ok(ai.brierScore !== null);
   assert.ok(ai.accuracyConfidenceInterval95Pct !== null);
+  const paired = await getCurrentPairPairedModelComparison({
+    symbol: 'EUR/USD',
+    horizon: '1D'
+  });
+
+  assert.equal(paired.baselineModelVersion, 'PAIR_FEATURE_BASELINE_V2');
+  assert.equal(paired.aiModelVersion, 'LLAMA_GATEWAY_QWEN_LLAMA_V1');
+  assert.equal(paired.pairedObservations, 2);
+  assert.equal(paired.pairedEvaluated, 2);
+  assert.equal(paired.pairedPending, 0);
+  assert.equal(paired.bothCorrect, 1);
+  assert.equal(paired.baselineOnlyCorrect, 0);
+  assert.equal(paired.aiOnlyCorrect, 0);
+  assert.equal(paired.bothIncorrect, 1);
+  assert.equal(paired.directionAgreementPct, 0);
+
 } finally {
   for (const [id] of rows) {
     await executeRun('DELETE FROM live_trade_research_predictions WHERE prediction_id = ?', [id]);
