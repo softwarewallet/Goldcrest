@@ -1356,7 +1356,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                           <td className="text-center">{row.deltas.accuracyDeltaPct == null ? '—' : row.deltas.accuracyDeltaPct.toFixed(1) + ' pp'}</td>
                           <td className="text-center">{row.deltas.expectedCalibrationErrorDeltaPct == null ? '—' : row.deltas.expectedCalibrationErrorDeltaPct.toFixed(1) + ' pp'}</td>
                           <td className="text-center">{row.deltas.maximumCalibrationErrorDeltaPct == null ? '—' : row.deltas.maximumCalibrationErrorDeltaPct.toFixed(1) + ' pp'}</td>
-                          <td className="text-center">{row.deltas.calibrationSlope == null ? '—' : row.deltas.calibrationSlope.toFixed(3)}</td>
+                          <td className="text-center">{row.deltas.calibrationSlopeDelta == null ? '—' : row.deltas.calibrationSlopeDelta.toFixed(3)}</td>
                           <td className="text-center">{row.deltas.calibrationInterceptDeltaPct == null ? '—' : row.deltas.calibrationInterceptDeltaPct.toFixed(1) + ' pp'}</td>
                           <td className={status === 'WARN' ? 'text-amber-300 text-center' : status === 'PASS' ? 'text-emerald-300 text-center' : 'text-cyan-300 text-center'}>{status}</td>
                         </tr>;
