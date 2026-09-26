@@ -80,6 +80,36 @@ try {
   assert.equal(paired.discordantPairs, 0);
   assert.equal(paired.exactMcNemarPValue, null);
 
+  const discordantAt = now - 12 * day;
+  const discordantRows = [
+    ['model-comparison-baseline-3', 'PAIR_FEATURE_BASELINE_V2', discordantAt, 'DOWN', 0.8, 'DOWN', -1.2],
+    ['model-comparison-ai-3', 'LLAMA_GATEWAY_QWEN_LLAMA_V1', discordantAt, 'UP', 0.8, 'DOWN', -1.2]
+  ] as const;
+  for (const [id, model, predictedAt, predictedDirection, confidence, actualDirection, actualReturn] of discordantRows) {
+    await executeRun(
+      `INSERT INTO live_trade_research_predictions (
+        prediction_id, model_version, prediction_source, symbol, signal_id, predicted_at,
+        horizon, predicted_direction, confidence, feature_hash, model_agreement, reasoning,
+        invalidation, actual_direction, actual_return_pct, outcome_status, evaluated_at,
+        created_at, feature_snapshot_json, prediction_context
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, model, model.includes('LLAMA') ? 'LLAMA_GATEWAY' : 'LIVE_PAIR_FEATURES', 'EUR/USD', `${id}-signal`,
+        predictedAt, '1D', predictedDirection, confidence, `${id}-feature`, 1, 'test', 'test',
+        actualDirection, actualReturn, 'EVALUATED', predictedAt + day, predictedAt, '{}', 'CURRENT_PAIR']
+    );
+  }
+
+  const discordant = await getCurrentPairPairedModelComparison({ symbol: 'EUR/USD', horizon: '1D' });
+  assert.equal(discordant.pairedEvaluated, 3);
+  assert.equal(discordant.baselineOnlyCorrect, 1);
+  assert.equal(discordant.aiOnlyCorrect, 0);
+  assert.equal(discordant.discordantPairs, 1);
+  assert.equal(discordant.exactMcNemarPValue, 1);
+
+  for (const [id] of discordantRows) {
+    await executeRun('DELETE FROM live_trade_research_predictions WHERE prediction_id = ?', [id]);
+  }
+
 
 } finally {
   for (const [id] of rows) {
