@@ -326,6 +326,85 @@ export async function getCurrentPairPredictionWalkForwardAnalytics(params: {
   }).sort((a, b) => a.symbol.localeCompare(b.symbol) || a.modelVersion.localeCompare(b.modelVersion) || a.horizon.localeCompare(b.horizon));
   return { total: rows.length, evaluated: rows.length, cohortDays, minimumSampleCount: CURRENT_PAIR_MIN_SAMPLE_COUNT, groups, generatedAt: Date.now() };
 }
+export interface CurrentPairPredictionModelComparisonMetric {
+  modelVersion: string;
+  predictions: number;
+  evaluated: number;
+  pending: number;
+  correct: number;
+  directionalEvaluated: number;
+  accuracyPct: number | null;
+  brierScore: number | null;
+  sampleSufficient: boolean;
+  minimumSampleCount: number;
+  accuracyConfidenceInterval95Pct: { lowerPct: number; upperPct: number } | null;
+}
+
+export async function getCurrentPairPredictionModelComparison(params: {
+  horizon?: CurrentPairPredictionHorizon;
+  symbol?: string;
+  limit?: number;
+} = {}): Promise<{
+  total: number;
+  evaluated: number;
+  pending: number;
+  models: CurrentPairPredictionModelComparisonMetric[];
+  generatedAt: number;
+}> {
+  const analytics = await getCurrentPairPredictionAnalytics({
+    horizon: params.horizon,
+    symbol: params.symbol,
+    limit: params.limit
+  });
+  const grouped = new Map<string, CurrentPairPredictionModelComparisonMetric & { brierNumerator: number }>();
+
+  for (const group of analytics.groups) {
+    const current = grouped.get(group.modelVersion) || {
+      modelVersion: group.modelVersion,
+      predictions: 0,
+      evaluated: 0,
+      pending: 0,
+      correct: 0,
+      directionalEvaluated: 0,
+      accuracyPct: null,
+      brierScore: null,
+      sampleSufficient: false,
+      minimumSampleCount: CURRENT_PAIR_MIN_SAMPLE_COUNT,
+      accuracyConfidenceInterval95Pct: null,
+      brierNumerator: 0
+    };
+    current.predictions += group.predictions;
+    current.evaluated += group.evaluated;
+    current.pending += group.pending;
+    current.correct += group.correct;
+    current.directionalEvaluated += group.directionalEvaluated;
+    if (group.brierScore !== null && group.directionalEvaluated > 0) {
+      current.brierNumerator += group.brierScore * group.directionalEvaluated;
+    }
+    grouped.set(group.modelVersion, current);
+  }
+
+  const models = [...grouped.values()].map(({ brierNumerator, ...metric }) => ({
+    ...metric,
+    accuracyPct: metric.directionalEvaluated > 0
+      ? (metric.correct / metric.directionalEvaluated) * 100
+      : null,
+    brierScore: metric.directionalEvaluated > 0
+      ? brierNumerator / metric.directionalEvaluated
+      : null,
+    sampleSufficient: metric.directionalEvaluated >= CURRENT_PAIR_MIN_SAMPLE_COUNT,
+    accuracyConfidenceInterval95Pct: wilsonConfidenceInterval95(metric.correct, metric.directionalEvaluated)
+  }));
+
+  return {
+    total: analytics.total,
+    evaluated: analytics.evaluated,
+    pending: analytics.pending,
+    models,
+    generatedAt: Date.now()
+  };
+}
+
 export async function getCurrentPairPredictionAnalytics(params: {
   modelVersion?: string;
   horizon?: CurrentPairPredictionHorizon;
