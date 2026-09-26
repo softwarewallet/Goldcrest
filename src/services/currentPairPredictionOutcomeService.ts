@@ -29,6 +29,8 @@ export interface CurrentPairOutcomeEvaluationResult {
   updatedAt: number;
 }
 
+export const CURRENT_PAIR_MIN_SAMPLE_COUNT = 30;
+
 export interface CurrentPairPredictionCalibrationBin {
   lowerPct: number;
   upperPct: number;
@@ -37,6 +39,7 @@ export interface CurrentPairPredictionCalibrationBin {
   correct: number;
   accuracyPct: number | null;
   averageConfidencePct: number | null;
+  sampleSufficient: boolean;
 }
 
 export interface CurrentPairPredictionGroupMetrics {
@@ -59,6 +62,9 @@ export interface CurrentPairPredictionGroupMetrics {
   calibration: CurrentPairPredictionCalibrationBin[];
   marketRegime: string;
   session: string;
+  sampleSufficient: boolean;
+  minimumSampleCount: number;
+  accuracyConfidenceInterval95Pct: { lowerPct: number; upperPct: number } | null;
 }
 
 const liveForexProvider = new LiveForexProvider();
@@ -81,6 +87,21 @@ function directionalScore(predicted: CurrentPairPredictionRow, actual: 'UP' | 'D
     evaluated: true,
     correct,
     brier: Math.pow(probabilityUp - actualUp, 2)
+  };
+}
+
+function wilsonConfidenceInterval95(successes: number, trials: number): { lowerPct: number; upperPct: number } | null {
+  if (!Number.isFinite(successes) || !Number.isFinite(trials) || trials <= 0) return null;
+  const n = Math.max(0, Math.floor(trials));
+  const k = Math.max(0, Math.min(n, Math.floor(successes)));
+  const z = 1.959963984540054;
+  const p = k / n;
+  const denominator = 1 + (z * z) / n;
+  const centre = (p + (z * z) / (2 * n)) / denominator;
+  const margin = (z / denominator) * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n));
+  return {
+    lowerPct: Math.max(0, centre - margin) * 100,
+    upperPct: Math.min(1, centre + margin) * 100
   };
 }
 
