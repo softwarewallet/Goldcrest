@@ -58,6 +58,7 @@ import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } fr
 import { generateCurrentPairPredictions } from './src/services/pairPredictionService';
 import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics, getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison, getCurrentPairPairedModelComparisonRolling, getCurrentPairPairedContextComparison, getCurrentPairPredictionWalkForwardAnalytics, type CurrentPairPredictionHorizon } from './src/services/currentPairPredictionOutcomeService';
 import { getCurrentPairPredictionCollectionStatus, runCurrentPairPredictionCollectionCycle, startCurrentPairPredictionCollectionScheduler, stopCurrentPairPredictionCollectionScheduler } from './src/services/currentPairPredictionCollectionService';
+import { getCurrentPairResearchValidationReport } from './src/services/currentPairResearchValidationService';
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
@@ -1916,6 +1917,27 @@ app.get('/api/live-trade-research/current-pair/paired-model-comparison-rolling',
 });
 
 
+
+app.get('/api/live-trade-research/current-pair/validation-report', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : undefined;
+    if (horizon && !['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const report = await getCurrentPairResearchValidationReport({
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol.toUpperCase() : undefined,
+      horizon: horizon as CurrentPairPredictionHorizon | undefined,
+      limit: Number(req.query.limit || 50000)
+    });
+    return res.json(report);
+  } catch (error: any) {
+    console.error('[CURRENT_PAIR_VALIDATION_REPORT]', error);
+    return res.status(503).json({
+      error: 'CURRENT_PAIR_VALIDATION_REPORT_UNAVAILABLE',
+      message: error?.message || 'Current pair research validation report is unavailable.'
+    });
+  }
+});
 
 app.get('/api/live-trade-research/current-pair/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
