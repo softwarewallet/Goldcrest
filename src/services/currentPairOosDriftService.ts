@@ -416,7 +416,7 @@ export async function getCurrentPairOosDriftReport(params: {
     accuracyDelta95Pct: bootstrapDifferenceInterval(currentAccuracySamples, baselineAccuracySamples, 0xA11CE),
     brierDelta95: bootstrapDifferenceInterval(currentBrierSamples, baselineBrierSamples, 0xB11E7),
     calibrationErrorDelta95Pct: bootstrapCalibrationMetricInterval(currentRows, baselineRowsForBootstrap, maturityCutoff, 'ECE', 0xECE01),
-    maximumCalibrationErrorDelta95Pct: bootstrapCalibrationMetricInterval(currentRows, baselineRowsForBootstrap, maturityCutoff, 'MCE', 0xMCE01)
+    maximumCalibrationErrorDelta95Pct: bootstrapCalibrationMetricInterval(currentRows, baselineRowsForBootstrap, maturityCutoff, 'MCE', 0x0CE01)
   };
 
   const checks = [
