@@ -195,6 +195,14 @@ interface CurrentPairResearchValidationReport {
   checks: Array<{ id: string; status: 'PASS' | 'WARN' | 'INSUFFICIENT'; title: string; detail: string }>;
 }
 
+interface CurrentPairOosDriftReport {
+  symbol: string | null; horizon: string; modelVersion: string; generatedAt: number;
+  currentWindow: { windowDays: 30; predictions: number; evaluated: number; directionalEvaluated: number; correct: number; accuracyPct: number|null; brierScore: number|null; averageConfidencePct: number|null; calibrationGapPct: number|null; sampleSufficient: boolean };
+  baselineWindow: { windowDays: 90; predictions: number; evaluated: number; directionalEvaluated: number; correct: number; accuracyPct: number|null; brierScore: number|null; averageConfidencePct: number|null; calibrationGapPct: number|null; sampleSufficient: boolean };
+  drift: { accuracyDeltaPct:number|null; brierDelta:number|null; confidenceDeltaPct:number|null; calibrationGapDeltaPct:number|null; accuracyDriftFlag:boolean; brierDriftFlag:boolean; confidenceDriftFlag:boolean; calibrationDriftFlag:boolean };
+  checks: Array<{id:string;status:'PASS'|'WARN'|'INSUFFICIENT';title:string;detail:string}>;
+}
+
 interface CurrentPairPairedContextComparison {
   symbol: string;
   horizon: string;
@@ -379,6 +387,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairPairedRolling, setCurrentPairPairedRolling] = useState<CurrentPairPairedRollingWindowMetrics[]>([]);
   const [currentPairPairedContexts, setCurrentPairPairedContexts] = useState<CurrentPairPairedContextComparison[]>([]);
   const [currentPairValidationReport, setCurrentPairValidationReport] = useState<CurrentPairResearchValidationReport | null>(null);
+  const [currentPairOosDrift, setCurrentPairOosDrift] = useState<CurrentPairOosDriftReport | null>(null);
   const [currentPairWalkForward, setCurrentPairWalkForward] = useState<CurrentPairWalkForwardAnalytics | null>(null);
   const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
   const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY' | 'COMPARE'>('BASELINE');
@@ -493,7 +502,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           : '';
       const query = `horizon=${currentPairHorizon}${modelVersion ? `&modelVersion=${modelVersion}` : ''}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
       const comparisonQuery = `horizon=${currentPairHorizon}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
-      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes] = await Promise.all([
+      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes] = await Promise.all([
         fetch(`/api/live-trade-research/current-pair/predictions?${query}&limit=100`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/analytics?${query}`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' }),
@@ -501,7 +510,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         fetch(`/api/live-trade-research/current-pair/paired-model-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/paired-model-comparison-rolling?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/paired-context-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
-        fetch(`/api/live-trade-research/current-pair/validation-report?${comparisonQuery}&limit=50000`, { cache: 'no-store' })
+        fetch(`/api/live-trade-research/current-pair/validation-report?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/oos-drift?${comparisonQuery}&modelVersion=LLAMA_GATEWAY_QWEN_LLAMA_V1`, { cache: 'no-store' })
       ]);
       const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData, pairedContextData, validationData] = await Promise.all([
         safeParseJson(predictionRes),
@@ -511,7 +521,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         safeParseJson(pairedComparisonRes),
         safeParseJson(pairedRollingRes),
         safeParseJson(pairedContextRes),
-        safeParseJson(validationRes)
+        safeParseJson(validationRes),
+        safeParseJson(oosDriftRes)
       ]);
       if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
@@ -521,6 +532,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       if (!pairedRollingRes.ok) throw new Error(pairedRollingData?.message || pairedRollingData?.error || 'Paired rolling model comparison unavailable.');
       if (!pairedContextRes.ok) throw new Error(pairedContextData?.message || pairedContextData?.error || 'Context-conditioned paired comparison unavailable.');
       if (!validationRes.ok) throw new Error(validationData?.message || validationData?.error || 'Research validation report unavailable.');
+      if (!oosDriftRes.ok) throw new Error(oosDriftData?.message || oosDriftData?.error || 'OOS drift report unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
       setCurrentPairWalkForward(walkForwardData || null);
@@ -529,6 +541,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       setCurrentPairPairedRolling(Array.isArray(pairedRollingData?.rollingWindows) ? pairedRollingData.rollingWindows : []);
       setCurrentPairPairedContexts(Array.isArray(pairedContextData?.groups) ? pairedContextData.groups : []);
       setCurrentPairValidationReport(validationData || null);
+      setCurrentPairOosDrift(oosDriftData || null);
       const discoveredSymbols = Array.from(new Set([
         ...currentPairSymbols,
         ...(Array.isArray(predictionData?.predictions) ? predictionData.predictions.map((p: CurrentPairPrediction) => p.symbol) : []),
