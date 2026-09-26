@@ -47,6 +47,8 @@ export interface CurrentPairOosDriftReport {
   uncertainty: {
     accuracyDelta95Pct: CurrentPairOosBootstrapInterval | null;
     brierDelta95: CurrentPairOosBootstrapInterval | null;
+    calibrationErrorDelta95Pct: CurrentPairOosBootstrapInterval | null;
+    maximumCalibrationErrorDelta95Pct: CurrentPairOosBootstrapInterval | null;
   };
   drift: {
     accuracyDeltaPct: number | null;
@@ -136,6 +138,42 @@ function bootstrapDifferenceInterval(
     for (let i = 0; i < baselineValues.length; i++) baselineSum += baselineValues[Math.floor(rng() * baselineValues.length)];
     differences[sample] = currentSum / currentValues.length - baselineSum / baselineValues.length;
   }
+  differences.sort((a, b) => a - b);
+  const lower = percentile(differences, 0.025);
+  const upper = percentile(differences, 0.975);
+  return lower == null || upper == null ? null : { lower, upper, confidenceLevelPct: 95, resamples };
+}
+
+function bootstrapCalibrationMetricInterval(
+  currentRows: any[],
+  baselineRows: any[],
+  maturityCutoff: number,
+  metric: 'ECE' | 'MCE',
+  seed: number,
+  resamples = BOOTSTRAP_RESAMPLES
+): CurrentPairOosBootstrapInterval | null {
+  const currentDirectional = getDirectionalAccuracySamples(currentRows, maturityCutoff);
+  const baselineDirectional = getDirectionalAccuracySamples(baselineRows, maturityCutoff);
+  if (currentDirectional.length < MIN_SAMPLE_COUNT || baselineDirectional.length < MIN_SAMPLE_COUNT) return null;
+
+  const rng = createDeterministicRng(seed);
+  const differences: number[] = new Array(resamples);
+  const sampleMetric = (sourceRows: any[], sampleSize: number): number | null => {
+    const sampledRows: any[] = new Array(sampleSize);
+    for (let i = 0; i < sampleSize; i++) {
+      sampledRows[i] = sourceRows[Math.floor(rng() * sourceRows.length)];
+    }
+    const buckets = buildCalibrationBuckets(sampledRows, maturityCutoff);
+    const aggregate = aggregateCalibrationMetrics(buckets);
+    return metric === 'ECE' ? aggregate.expectedCalibrationErrorPct : aggregate.maximumCalibrationErrorPct;
+  };
+
+  for (let sample = 0; sample < resamples; sample++) {
+    const currentValue = sampleMetric(currentRows, currentRows.length);
+    const baselineValue = sampleMetric(baselineRows, baselineRows.length);
+    differences[sample] = currentValue == null || baselineValue == null ? 0 : currentValue - baselineValue;
+  }
+
   differences.sort((a, b) => a - b);
   const lower = percentile(differences, 0.025);
   const upper = percentile(differences, 0.975);
@@ -376,7 +414,9 @@ export async function getCurrentPairOosDriftReport(params: {
   const baselineBrierSamples = getBrierSamples(baselineRowsForBootstrap, maturityCutoff);
   const uncertainty = {
     accuracyDelta95Pct: bootstrapDifferenceInterval(currentAccuracySamples, baselineAccuracySamples, 0xA11CE),
-    brierDelta95: bootstrapDifferenceInterval(currentBrierSamples, baselineBrierSamples, 0xB11E7)
+    brierDelta95: bootstrapDifferenceInterval(currentBrierSamples, baselineBrierSamples, 0xB11E7),
+    calibrationErrorDelta95Pct: bootstrapCalibrationMetricInterval(currentRows, baselineRowsForBootstrap, maturityCutoff, 'ECE', 0xECE01),
+    maximumCalibrationErrorDelta95Pct: bootstrapCalibrationMetricInterval(currentRows, baselineRowsForBootstrap, maturityCutoff, 'MCE', 0xMCE01)
   };
 
   const checks = [
