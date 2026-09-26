@@ -105,9 +105,6 @@ interface CurrentPairGroupMetric {
   directionalEvaluated: number;
   accuracyPct: number | null;
   brierScore: number | null;
-  sampleSufficient: boolean;
-  minimumSampleCount: number;
-  accuracyConfidenceInterval95Pct: { lowerPct: number; upperPct: number } | null;
   upPredictions: number;
   downPredictions: number;
   flatPredictions: number;
@@ -121,6 +118,40 @@ interface CurrentPairGroupMetric {
   minimumSampleCount: number;
   accuracyConfidenceInterval95Pct: { lowerPct:number; upperPct:number } | null;
   rollingWindows: Array<{windowDays:30|90; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; sampleSufficient:boolean; accuracyConfidenceInterval95Pct:{lowerPct:number; upperPct:number}|null}>;
+}
+
+interface CurrentPairWalkForwardCohort {
+  cohortIndex: number;
+  cohortDays: number;
+  fromTimestamp: number;
+  toTimestamp: number;
+  evaluated: number;
+  directionalEvaluated: number;
+  correct: number;
+  accuracyPct: number | null;
+  brierScore: number | null;
+  sampleSufficient: boolean;
+  accuracyConfidenceInterval95Pct: { lowerPct:number; upperPct:number } | null;
+}
+
+interface CurrentPairWalkForwardGroup {
+  symbol: string;
+  modelVersion: string;
+  horizon: '1D' | '3D' | '7D';
+  marketRegime: string;
+  session: string;
+  cohortDays: number;
+  minimumSampleCount: number;
+  cohorts: CurrentPairWalkForwardCohort[];
+}
+
+interface CurrentPairWalkForwardAnalytics {
+  total: number;
+  evaluated: number;
+  cohortDays: number;
+  minimumSampleCount: number;
+  groups: CurrentPairWalkForwardGroup[];
+  generatedAt: number;
 }
 
 interface CurrentPairPredictionAnalytics {
@@ -266,6 +297,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [executionDiagnostics, setExecutionDiagnostics] = useState<ExecutionReconciliationDiagnostic[]>([]);
   const [currentPairPredictions, setCurrentPairPredictions] = useState<CurrentPairPrediction[]>([]);
   const [currentPairAnalytics, setCurrentPairAnalytics] = useState<CurrentPairPredictionAnalytics | null>(null);
+  const [currentPairWalkForward, setCurrentPairWalkForward] = useState<CurrentPairWalkForwardAnalytics | null>(null);
   const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
   const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY'>('BASELINE');
   const [currentPairSymbol, setCurrentPairSymbol] = useState<string>('ALL');
@@ -372,18 +404,23 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const fetchCurrentPairResearch = useCallback(async () => {
     setCurrentPairLoading(true);
     try {
-      const [predictionRes, analyticsRes] = await Promise.all([
-        fetch(`/api/live-trade-research/current-pair/predictions?horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}&limit=100`, { cache: 'no-store' }),
-        fetch(`/api/live-trade-research/current-pair/analytics?horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`, { cache: 'no-store' })
+      const query = `horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
+      const [predictionRes, analyticsRes, walkForwardRes] = await Promise.all([
+        fetch(`/api/live-trade-research/current-pair/predictions?${query}&limit=100`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/analytics?${query}`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' })
       ]);
-      const [predictionData, analyticsData] = await Promise.all([
+      const [predictionData, analyticsData, walkForwardData] = await Promise.all([
         safeParseJson(predictionRes),
-        safeParseJson(analyticsRes)
+        safeParseJson(analyticsRes),
+        safeParseJson(walkForwardRes)
       ]);
       if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
+      if (!walkForwardRes.ok) throw new Error(walkForwardData?.message || walkForwardData?.error || 'Current pair walk-forward analytics unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
+      setCurrentPairWalkForward(walkForwardData || null);
       const discoveredSymbols = Array.from(new Set([
         ...currentPairSymbols,
         ...(Array.isArray(predictionData?.predictions) ? predictionData.predictions.map((p: CurrentPairPrediction) => p.symbol) : []),
@@ -1178,6 +1215,29 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                   <div className={window.sampleSufficient ? 'text-emerald-300 text-[11px] mt-1' : 'text-amber-300 text-[11px] mt-1'}>{window.sampleSufficient ? 'SAMPLE SUFFICIENT' : 'INSUFFICIENT SAMPLE'}</div>
                 </div>
               ))}
+            </div>
+            <div className="text-sm font-bold text-white font-mono mt-5 mb-3">Walk-Forward Cohort Stability</div>
+            <div className="text-[10px] text-slate-500 mb-3">Successive non-overlapping 30-day evaluation cohorts. Cohort 1 is the latest period; older cohorts follow chronologically backward. This is observational stability analysis, not model retraining.</div>
+            <div className="overflow-x-auto">
+              {(() => {
+                const wfGroup = currentPairWalkForward?.groups?.find(g => g.symbol === (currentPairSymbol === 'ALL' ? currentPairWalkForward.groups[0]?.symbol : currentPairSymbol));
+                if (!wfGroup?.cohorts?.length) return <div className="text-xs text-slate-600 font-mono py-3">No evaluated walk-forward cohorts available.</div>;
+                return <table className="w-full text-[10px] font-mono">
+                  <thead><tr className="text-slate-500 border-b border-slate-800"><th className="py-2 text-left">Cohort</th><th>Period</th><th>Directional</th><th>Correct</th><th>Accuracy</th><th>95% CI</th><th>Brier</th><th>Sample</th></tr></thead>
+                  <tbody>{wfGroup.cohorts.map(cohort => (
+                    <tr key={cohort.cohortIndex} className="border-b border-slate-800/60">
+                      <td className="py-2 text-white">Cohort {cohort.cohortIndex}</td>
+                      <td className="text-center text-slate-400">{new Date(cohort.fromTimestamp).toLocaleDateString()} – {new Date(cohort.toTimestamp).toLocaleDateString()}</td>
+                      <td className="text-center">{cohort.directionalEvaluated}</td>
+                      <td className="text-center text-emerald-300">{cohort.correct}</td>
+                      <td className="text-center">{cohort.accuracyPct == null ? '—' : cohort.accuracyPct.toFixed(1) + '%'}</td>
+                      <td className="text-center">{cohort.accuracyConfidenceInterval95Pct == null ? '—' : cohort.accuracyConfidenceInterval95Pct.lowerPct.toFixed(1) + '–' + cohort.accuracyConfidenceInterval95Pct.upperPct.toFixed(1) + '%'}</td>
+                      <td className="text-center">{cohort.brierScore == null ? '—' : cohort.brierScore.toFixed(4)}</td>
+                      <td className={cohort.sampleSufficient ? 'text-center text-emerald-300' : 'text-center text-amber-300'}>{cohort.sampleSufficient ? 'SUFFICIENT' : 'INSUFFICIENT'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>;
+              })()}
             </div>
             <div className="text-[10px] text-slate-600 font-mono mt-2">Descriptive research telemetry only. Accuracy is accompanied by a Wilson 95% confidence interval; groups with fewer than 30 directional evaluations are explicitly marked insufficient-sample. These controls do not alter prediction or Auto Live behavior.</div>
           </div>

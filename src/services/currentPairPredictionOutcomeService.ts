@@ -76,6 +76,33 @@ export interface CurrentPairPredictionGroupMetrics {
   sampleSufficient: boolean;
   minimumSampleCount: number;
   accuracyConfidenceInterval95Pct: { lowerPct: number; upperPct: number } | null;
+  rollingWindows: CurrentPairRollingWindowMetrics[];
+  walkForwardCohorts: CurrentPairWalkForwardCohortMetrics[];
+}
+
+export interface CurrentPairWalkForwardCohortMetrics {
+  cohortIndex: number;
+  cohortDays: number;
+  fromTimestamp: number;
+  toTimestamp: number;
+  evaluated: number;
+  directionalEvaluated: number;
+  correct: number;
+  accuracyPct: number | null;
+  brierScore: number | null;
+  sampleSufficient: boolean;
+  accuracyConfidenceInterval95Pct: { lowerPct: number; upperPct: number } | null;
+}
+
+export interface CurrentPairWalkForwardGroupMetrics {
+  symbol: string;
+  modelVersion: string;
+  horizon: CurrentPairPredictionHorizon;
+  marketRegime: string;
+  session: string;
+  cohortDays: number;
+  minimumSampleCount: number;
+  cohorts: CurrentPairWalkForwardCohortMetrics[];
 }
 
 const liveForexProvider = new LiveForexProvider();
@@ -249,6 +276,43 @@ function predictionContextValue(row: CurrentPairPredictionRow, field: 'marketReg
   }
 }
 
+export async function getCurrentPairPredictionWalkForwardAnalytics(params: {
+  modelVersion?: string; horizon?: CurrentPairPredictionHorizon; symbol?: string; limit?: number; cohortDays?: number; maxCohorts?: number;
+} = {}): Promise<{ total: number; evaluated: number; cohortDays: number; minimumSampleCount: number; groups: CurrentPairWalkForwardGroupMetrics[]; generatedAt: number }> {
+  const conditions = ["prediction_context = 'CURRENT_PAIR'", "outcome_status = 'EVALUATED'"];
+  const values: unknown[] = [];
+  if (params.modelVersion) { conditions.push('model_version = ?'); values.push(params.modelVersion); }
+  if (params.horizon) { conditions.push('horizon = ?'); values.push(params.horizon); }
+  if (params.symbol) { conditions.push('symbol = ?'); values.push(params.symbol); }
+  const limit = Math.max(1, Math.min(100000, Math.floor(Number(params.limit) || 50000)));
+  const cohortDays = Math.max(7, Math.min(365, Math.floor(Number(params.cohortDays) || 30)));
+  const maxCohorts = Math.max(1, Math.min(24, Math.floor(Number(params.maxCohorts) || 6)));
+  const rows = await executeQuery<CurrentPairPredictionRow>(
+    `SELECT prediction_id, model_version, prediction_source, symbol, predicted_at, horizon, predicted_direction, confidence, actual_direction, actual_return_pct, outcome_status, feature_snapshot_json FROM live_trade_research_predictions WHERE ${conditions.join(' AND ')} ORDER BY predicted_at ASC LIMIT ?`,
+    [...values, limit]
+  );
+  const grouped = new Map<string, CurrentPairPredictionRow[]>();
+  for (const row of rows) {
+    const key = [row.symbol, row.model_version, row.horizon, predictionContextValue(row, 'marketRegime'), predictionContextValue(row, 'session')].join('|');
+    const group = grouped.get(key) || []; group.push(row); grouped.set(key, group);
+  }
+  const cohortMs = cohortDays * 24 * 60 * 60 * 1000;
+  const groups: CurrentPairWalkForwardGroupMetrics[] = [...grouped.values()].map(group => {
+    const latest = group.reduce((value, row) => Math.max(value, Number(row.predicted_at) || 0), 0);
+    const cohorts: CurrentPairWalkForwardCohortMetrics[] = [];
+    for (let index = 0; index < maxCohorts; index++) {
+      const toTimestamp = latest - index * cohortMs; const fromTimestamp = toTimestamp - cohortMs;
+      const cohortRows = group.filter(row => { const timestamp = Number(row.predicted_at) || 0; return timestamp >= fromTimestamp && (index === 0 ? timestamp <= toTimestamp : timestamp < toTimestamp); });
+      if (cohortRows.length === 0) continue;
+      const directional = cohortRows.map(row => directionalScore(row, row.actual_direction as 'UP' | 'DOWN' | 'FLAT')).filter(result => result.evaluated);
+      const correct = directional.filter(result => result.correct).length;
+      const brierValues = directional.map(result => result.brier).filter((value): value is number => value !== null);
+      cohorts.push({ cohortIndex: index + 1, cohortDays, fromTimestamp, toTimestamp, evaluated: cohortRows.length, directionalEvaluated: directional.length, correct, accuracyPct: directional.length ? (correct / directional.length) * 100 : null, brierScore: brierValues.length ? brierValues.reduce((sum, value) => sum + value, 0) / brierValues.length : null, sampleSufficient: directional.length >= CURRENT_PAIR_MIN_SAMPLE_COUNT, accuracyConfidenceInterval95Pct: wilsonConfidenceInterval95(correct, directional.length) });
+    }
+    return { symbol: group[0].symbol, modelVersion: group[0].model_version, horizon: group[0].horizon, marketRegime: predictionContextValue(group[0], 'marketRegime'), session: predictionContextValue(group[0], 'session'), cohortDays, minimumSampleCount: CURRENT_PAIR_MIN_SAMPLE_COUNT, cohorts };
+  }).sort((a, b) => a.symbol.localeCompare(b.symbol) || a.modelVersion.localeCompare(b.modelVersion) || a.horizon.localeCompare(b.horizon));
+  return { total: rows.length, evaluated: rows.length, cohortDays, minimumSampleCount: CURRENT_PAIR_MIN_SAMPLE_COUNT, groups, generatedAt: Date.now() };
+}
 export async function getCurrentPairPredictionAnalytics(params: {
   modelVersion?: string;
   horizon?: CurrentPairPredictionHorizon;
@@ -378,7 +442,8 @@ export async function getCurrentPairPredictionAnalytics(params: {
       sampleSufficient: directional.length >= CURRENT_PAIR_MIN_SAMPLE_COUNT,
       minimumSampleCount: CURRENT_PAIR_MIN_SAMPLE_COUNT,
       accuracyConfidenceInterval95Pct: wilsonConfidenceInterval95(correct, directional.length),
-      rollingWindows
+      rollingWindows,
+      walkForwardCohorts: []
     };
   }).sort((a, b) =>
     a.symbol.localeCompare(b.symbol) ||
