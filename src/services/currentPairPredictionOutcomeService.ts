@@ -16,6 +16,7 @@ interface CurrentPairPredictionRow {
   actual_direction: 'UP' | 'DOWN' | 'FLAT' | null;
   actual_return_pct: number | null;
   outcome_status: string;
+  feature_snapshot_json: string | null;
 }
 
 export interface CurrentPairOutcomeEvaluationResult {
@@ -56,6 +57,8 @@ export interface CurrentPairPredictionGroupMetrics {
   downActuals: number;
   flatActuals: number;
   calibration: CurrentPairPredictionCalibrationBin[];
+  marketRegime: string;
+  session: string;
 }
 
 const liveForexProvider = new LiveForexProvider();
@@ -137,7 +140,7 @@ export async function evaluatePendingCurrentPairPredictions(params: {
   const rows = await executeQuery<CurrentPairPredictionRow>(
     `SELECT prediction_id, model_version, prediction_source, symbol, predicted_at,
             horizon, predicted_direction, confidence, actual_direction,
-            actual_return_pct, outcome_status
+            actual_return_pct, outcome_status, feature_snapshot_json
        FROM live_trade_research_predictions
       WHERE ${conditions.join(' AND ')}
       ORDER BY predicted_at ASC
@@ -204,6 +207,16 @@ export async function evaluatePendingCurrentPairPredictions(params: {
   };
 }
 
+function predictionContextValue(row: CurrentPairPredictionRow, field: 'marketRegime' | 'session'): string {
+  try {
+    const snapshot = row.feature_snapshot_json ? JSON.parse(row.feature_snapshot_json) : null;
+    const value = snapshot?.[field];
+    return typeof value === 'string' && value.trim() ? value.trim().toUpperCase() : 'UNKNOWN';
+  } catch {
+    return 'UNKNOWN';
+  }
+}
+
 export async function getCurrentPairPredictionAnalytics(params: {
   modelVersion?: string;
   horizon?: CurrentPairPredictionHorizon;
@@ -245,7 +258,7 @@ export async function getCurrentPairPredictionAnalytics(params: {
 
   const groups = new Map<string, CurrentPairPredictionRow[]>();
   for (const row of rows) {
-    const key = [row.symbol, row.model_version, row.horizon].join('|');
+    const key = [row.symbol, row.model_version, row.horizon, predictionContextValue(row, 'marketRegime'), predictionContextValue(row, 'session')].join('|');
     const group = groups.get(key) || [];
     group.push(row);
     groups.set(key, group);
@@ -304,7 +317,9 @@ export async function getCurrentPairPredictionAnalytics(params: {
       upActuals: evaluatedRows.filter(row => row.actual_direction === 'UP').length,
       downActuals: evaluatedRows.filter(row => row.actual_direction === 'DOWN').length,
       flatActuals: evaluatedRows.filter(row => row.actual_direction === 'FLAT').length,
-      calibration
+      calibration,
+      marketRegime: predictionContextValue(group[0], 'marketRegime'),
+      session: predictionContextValue(group[0], 'session')
     };
   }).sort((a, b) =>
     a.symbol.localeCompare(b.symbol) ||
