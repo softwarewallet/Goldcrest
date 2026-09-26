@@ -226,6 +226,8 @@ interface CurrentPairOosDriftReport {
   uncertainty: {
     accuracyDelta95Pct:{lower:number;upper:number;confidenceLevelPct:number;resamples:number}|null;
     brierDelta95:{lower:number;upper:number;confidenceLevelPct:number;resamples:number}|null;
+    calibrationErrorDelta95Pct:{lower:number;upper:number;confidenceLevelPct:number;resamples:number}|null;
+    maximumCalibrationErrorDelta95Pct:{lower:number;upper:number;confidenceLevelPct:number;resamples:number}|null;
   };
   drift:{accuracyDeltaPct:number|null;brierDelta:number|null;confidenceDeltaPct:number|null;calibrationGapDeltaPct:number|null;calibrationErrorDeltaPct:number|null;accuracyDriftFlag:boolean;brierDriftFlag:boolean;confidenceDriftFlag:boolean;calibrationDriftFlag:boolean;calibrationErrorDriftFlag:boolean};
   checks:Array<{id:string;status:'PASS'|'WARN'|'INSUFFICIENT';title:string;detail:string}>;
@@ -1371,6 +1373,18 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                   <div><div className="text-slate-500">ECE Δ</div><div className={currentPairOosDrift.drift.calibrationErrorDriftFlag ? 'text-amber-300 text-lg' : 'text-emerald-300 text-lg'}>{currentPairOosDrift.drift.calibrationErrorDeltaPct == null ? '—' : currentPairOosDrift.drift.calibrationErrorDeltaPct.toFixed(1) + ' pp'}</div></div>
                   <div><div className="text-slate-500">30D MCE</div><div className="text-white text-lg">{currentPairOosDrift.currentWindow.maximumCalibrationErrorPct == null ? '—' : currentPairOosDrift.currentWindow.maximumCalibrationErrorPct.toFixed(1) + ' pp'}</div></div>
                   <div><div className="text-slate-500">90D MCE</div><div className="text-white text-lg">{currentPairOosDrift.baselineWindow.maximumCalibrationErrorPct == null ? '—' : currentPairOosDrift.baselineWindow.maximumCalibrationErrorPct.toFixed(1) + ' pp'}</div></div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-[10px] font-mono">
+                  <div className="border border-slate-800 rounded-lg p-3">
+                    <div className="text-slate-500">ECE Δ 95% Bootstrap CI</div>
+                    <div className="text-white mt-1">{currentPairOosDrift.uncertainty.calibrationErrorDelta95Pct == null ? 'Insufficient sample' : currentPairOosDrift.uncertainty.calibrationErrorDelta95Pct.lower.toFixed(1) + ' to ' + currentPairOosDrift.uncertainty.calibrationErrorDelta95Pct.upper.toFixed(1) + ' pp'}</div>
+                    <div className="text-slate-600 mt-1">{currentPairOosDrift.uncertainty.calibrationErrorDelta95Pct?.resamples ?? 0} deterministic bootstrap resamples</div>
+                  </div>
+                  <div className="border border-slate-800 rounded-lg p-3">
+                    <div className="text-slate-500">MCE Δ 95% Bootstrap CI</div>
+                    <div className="text-white mt-1">{currentPairOosDrift.uncertainty.maximumCalibrationErrorDelta95Pct == null ? 'Insufficient sample' : currentPairOosDrift.uncertainty.maximumCalibrationErrorDelta95Pct.lower.toFixed(1) + ' to ' + currentPairOosDrift.uncertainty.maximumCalibrationErrorDelta95Pct.upper.toFixed(1) + ' pp'}</div>
+                    <div className="text-slate-600 mt-1">{currentPairOosDrift.uncertainty.maximumCalibrationErrorDelta95Pct?.resamples ?? 0} deterministic bootstrap resamples</div>
+                  </div>
                 </div>
               </div>
 
