@@ -64,6 +64,7 @@ import { getCurrentPairCalibrationMatrix } from './src/services/currentPairCalib
 import { getCurrentPairCrossModelContextCalibration } from './src/services/currentPairCrossModelContextCalibrationService';
 import { getCurrentPairCrossModelCalibration } from './src/services/currentPairCrossModelCalibrationService';
 import { getCurrentPairResearchReadinessLedger } from './src/services/currentPairResearchReadinessLedgerService';
+import { getCurrentPairTemporalCalibrationMatrix } from './src/services/currentPairTemporalCalibrationService';
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
@@ -1963,6 +1964,22 @@ app.get('/api/live-trade-research/current-pair/research-readiness-ledger', opera
     });
   }
 });
+app.get('/api/live-trade-research/current-pair/temporal-calibration', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() as CurrentPairPredictionHorizon : undefined;
+    if (horizon && !['1D','3D','7D'].includes(horizon)) return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    const report = await getCurrentPairTemporalCalibrationMatrix({
+      horizon,
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol.toUpperCase() : undefined,
+      modelVersion: typeof req.query.modelVersion === 'string' ? req.query.modelVersion : undefined
+    });
+    return res.json(report);
+  } catch (error: any) {
+    console.error('[CURRENT_PAIR_TEMPORAL_CALIBRATION]', error);
+    return res.status(503).json({ error: 'CURRENT_PAIR_TEMPORAL_CALIBRATION_UNAVAILABLE', message: error?.message || 'Temporal calibration report is unavailable.' });
+  }
+});
+
 
 app.get('/api/live-trade-research/current-pair/oos-drift', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
