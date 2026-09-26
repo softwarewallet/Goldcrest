@@ -448,6 +448,23 @@ export interface CurrentPairPairedRollingWindowMetrics {
   exactMcNemarPValue: number | null;
 }
 
+export interface CurrentPairPairedContextComparison {
+  symbol: string;
+  horizon: CurrentPairPredictionHorizon;
+  marketRegime: string;
+  session: string;
+  pairedObservations: number;
+  pairedEvaluated: number;
+  pairedPending: number;
+  bothCorrect: number;
+  baselineOnlyCorrect: number;
+  aiOnlyCorrect: number;
+  bothIncorrect: number;
+  directionAgreementPct: number | null;
+  discordantPairs: number;
+  exactMcNemarPValue: number | null;
+}
+
 function exactMcNemarTwoSidedPValue(baselineOnlyCorrect: number, aiOnlyCorrect: number): number | null {
   const n = baselineOnlyCorrect + aiOnlyCorrect;
   if (n === 0) return null;
@@ -655,6 +672,106 @@ export async function getCurrentPairPairedModelComparisonRolling(params: {
       exactMcNemarPValue: exactMcNemarTwoSidedPValue(baselineOnlyCorrect, aiOnlyCorrect)
     };
   });
+}
+
+export async function getCurrentPairPairedContextComparison(params: {
+  horizon?: CurrentPairPredictionHorizon;
+  symbol?: string;
+  marketRegime?: string;
+  session?: string;
+  limit?: number;
+} = {}): Promise<{ groups: CurrentPairPairedContextComparison[]; generatedAt: number }> {
+  const conditions = ["prediction_context = 'CURRENT_PAIR'"];
+  const values: unknown[] = [];
+  if (params.horizon) { conditions.push('horizon = ?'); values.push(params.horizon); }
+  if (params.symbol) { conditions.push('symbol = ?'); values.push(params.symbol); }
+
+  const limit = Math.max(1, Math.min(100000, Math.floor(Number(params.limit) || 50000)));
+  const rows = await executeQuery<CurrentPairPredictionRow>(
+    `SELECT prediction_id, model_version, prediction_source, symbol, predicted_at,
+            horizon, predicted_direction, confidence, actual_direction,
+            actual_return_pct, outcome_status, feature_snapshot_json
+       FROM live_trade_research_predictions
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY predicted_at ASC
+      LIMIT ?`,
+    [...values, limit]
+  );
+
+  const pairs = new Map<string, { baseline?: CurrentPairPredictionRow; ai?: CurrentPairPredictionRow }>();
+  for (const row of rows) {
+    const marketRegime = predictionContextValue(row, 'marketRegime');
+    const session = predictionContextValue(row, 'session');
+    if (params.marketRegime && marketRegime !== params.marketRegime.trim().toUpperCase()) continue;
+    if (params.session && session !== params.session.trim().toUpperCase()) continue;
+    const key = [row.symbol, row.horizon, marketRegime, session, Number(row.predicted_at)].join('|');
+    const pair = pairs.get(key) || {};
+    if (row.model_version === 'PAIR_FEATURE_BASELINE_V2') pair.baseline = row;
+    if (row.model_version === 'LLAMA_GATEWAY_QWEN_LLAMA_V1') pair.ai = row;
+    pairs.set(key, pair);
+  }
+
+  const grouped = new Map<string, { symbol: string; horizon: CurrentPairPredictionHorizon; marketRegime: string; session: string; pairs: { baseline?: CurrentPairPredictionRow; ai?: CurrentPairPredictionRow }[] }>();
+  for (const pair of pairs.values()) {
+    if (!pair.baseline || !pair.ai) continue;
+    const marketRegime = predictionContextValue(pair.baseline, 'marketRegime');
+    const session = predictionContextValue(pair.baseline, 'session');
+    const key = [pair.baseline.symbol, pair.baseline.horizon, marketRegime, session].join('|');
+    const group = grouped.get(key) || { symbol: pair.baseline.symbol, horizon: pair.baseline.horizon, marketRegime, session, pairs: [] };
+    group.pairs.push(pair);
+    grouped.set(key, group);
+  }
+
+  const groups = [...grouped.values()].map(group => {
+    let pairedEvaluated = 0;
+    let pairedPending = 0;
+    let bothCorrect = 0;
+    let baselineOnlyCorrect = 0;
+    let aiOnlyCorrect = 0;
+    let bothIncorrect = 0;
+    let directionAgreement = 0;
+
+    for (const pair of group.pairs) {
+      if (pair.baseline!.predicted_direction === pair.ai!.predicted_direction) directionAgreement++;
+      const baselineEvaluated = pair.baseline!.outcome_status === 'EVALUATED' && Boolean(pair.baseline!.actual_direction);
+      const aiEvaluated = pair.ai!.outcome_status === 'EVALUATED' && Boolean(pair.ai!.actual_direction);
+      if (!baselineEvaluated || !aiEvaluated || pair.baseline!.actual_direction !== pair.ai!.actual_direction) {
+        pairedPending++;
+        continue;
+      }
+      const actual = pair.baseline!.actual_direction as 'UP' | 'DOWN' | 'FLAT';
+      const baselineScore = directionalScore(pair.baseline!, actual);
+      const aiScore = directionalScore(pair.ai!, actual);
+      if (!baselineScore.evaluated || !aiScore.evaluated) {
+        pairedPending++;
+        continue;
+      }
+      pairedEvaluated++;
+      if (baselineScore.correct && aiScore.correct) bothCorrect++;
+      else if (baselineScore.correct) baselineOnlyCorrect++;
+      else if (aiScore.correct) aiOnlyCorrect++;
+      else bothIncorrect++;
+    }
+
+    return {
+      symbol: group.symbol,
+      horizon: group.horizon,
+      marketRegime: group.marketRegime,
+      session: group.session,
+      pairedObservations: group.pairs.length,
+      pairedEvaluated,
+      pairedPending,
+      bothCorrect,
+      baselineOnlyCorrect,
+      aiOnlyCorrect,
+      bothIncorrect,
+      directionAgreementPct: group.pairs.length ? (directionAgreement / group.pairs.length) * 100 : null,
+      discordantPairs: baselineOnlyCorrect + aiOnlyCorrect,
+      exactMcNemarPValue: exactMcNemarTwoSidedPValue(baselineOnlyCorrect, aiOnlyCorrect)
+    };
+  }).sort((a, b) => a.symbol.localeCompare(b.symbol) || a.horizon.localeCompare(b.horizon) || a.marketRegime.localeCompare(b.marketRegime) || a.session.localeCompare(b.session));
+
+  return { groups, generatedAt: Date.now() };
 }
 
 export async function getCurrentPairPredictionAnalytics(params: {

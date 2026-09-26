@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { executeRun } from '../src/database/db';
-import { getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison, getCurrentPairPairedModelComparisonRolling } from '../src/services/currentPairPredictionOutcomeService';
+import { getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison, getCurrentPairPairedModelComparisonRolling, getCurrentPairPairedContextComparison } from '../src/services/currentPairPredictionOutcomeService';
 
 const now = Date.now();
 const day = 24 * 60 * 60 * 1000;
@@ -23,7 +23,8 @@ try {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, model, model.includes('LLAMA') ? 'LLAMA_GATEWAY' : 'LIVE_PAIR_FEATURES', 'EUR/USD', `${id}-signal`,
         predictedAt, '1D', predictedDirection, confidence, `${id}-feature`, 1, 'test', 'test',
-        actualDirection, actualReturn, 'EVALUATED', predictedAt + day, predictedAt, '{}', 'CURRENT_PAIR']
+        actualDirection, actualReturn, 'EVALUATED', predictedAt + day, predictedAt,
+        JSON.stringify(id.endsWith('-1') ? { marketRegime: 'TREND', session: 'LONDON' } : { marketRegime: 'RANGE', session: 'NEW_YORK' }), 'CURRENT_PAIR']
     );
   }
 
@@ -95,7 +96,8 @@ try {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, model, model.includes('LLAMA') ? 'LLAMA_GATEWAY' : 'LIVE_PAIR_FEATURES', 'EUR/USD', `${id}-signal`,
         predictedAt, '1D', predictedDirection, confidence, `${id}-feature`, 1, 'test', 'test',
-        actualDirection, actualReturn, 'EVALUATED', predictedAt + day, predictedAt, '{}', 'CURRENT_PAIR']
+        actualDirection, actualReturn, 'EVALUATED', predictedAt + day, predictedAt,
+        JSON.stringify({ marketRegime: 'RANGE', session: 'NEW_YORK' }), 'CURRENT_PAIR']
     );
   }
 
@@ -106,6 +108,14 @@ try {
   assert.equal(discordant.discordantPairs, 3);
   assert.equal(discordant.exactMcNemarPValue, 1);
 
+  const contextComparison = await getCurrentPairPairedContextComparison({ symbol: 'EUR/USD', horizon: '1D' });
+  assert.equal(contextComparison.groups.length, 2);
+  const trendLondon = contextComparison.groups.find(group => group.marketRegime === 'TREND' && group.session === 'LONDON');
+  const rangeNewYork = contextComparison.groups.find(group => group.marketRegime === 'RANGE' && group.session === 'NEW_YORK');
+  assert.ok(trendLondon);
+  assert.ok(rangeNewYork);
+  assert.equal(trendLondon?.pairedObservations, 1);
+  assert.equal(rangeNewYork?.pairedObservations, 2);
   const rolling = await getCurrentPairPairedModelComparisonRolling({ symbol: 'EUR/USD', horizon: '1D' });
   assert.equal(rolling.length, 2);
   assert.equal(rolling[0].windowDays, 30);
