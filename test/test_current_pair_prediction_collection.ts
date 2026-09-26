@@ -48,5 +48,6 @@ assert.equal(status.lastPending, 3);
 assert.equal(status.lastError, null);
 assert.ok(status.lastCycleAt !== null);
 assert.ok(status.lastCompletedAt !== null);
+assert.equal(status.nextScheduledAt, null);
 
 console.log('CURRENT PAIR PREDICTION COLLECTION TEST PASSED');

@@ -24,6 +24,7 @@ let lastGenerated = 0;
 let lastEvaluated = 0;
 let lastPending = 0;
 let lastError: string | null = null;
+let nextScheduledAt: number | null = null;
 
 export async function runCurrentPairPredictionCollectionCycle(
   deps: {
@@ -100,7 +101,9 @@ export function startCurrentPairPredictionCollectionScheduler(): void {
 
   void runCurrentPairPredictionCollectionCycle().catch(() => undefined);
   const pollMs = configuredPollMs();
+  nextScheduledAt = Date.now() + pollMs;
   timer = setInterval(() => {
+    nextScheduledAt = Date.now() + pollMs;
     void runCurrentPairPredictionCollectionCycle().catch(() => undefined);
   }, pollMs);
   timer.unref?.();
@@ -116,6 +119,7 @@ export function stopCurrentPairPredictionCollectionScheduler(): void {
   if (!timer) return;
   clearInterval(timer);
   timer = null;
+  nextScheduledAt = null;
   liveRuntimeLog('INFO', 'CURRENT_PAIR_PREDICTION_COLLECTION_STOPPED');
 }
 
@@ -129,6 +133,7 @@ export function getCurrentPairPredictionCollectionStatus() {
     lastGenerated,
     lastEvaluated,
     lastPending,
-    lastError
+    lastError,
+    nextScheduledAt
   };
 }

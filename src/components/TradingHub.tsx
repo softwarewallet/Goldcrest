@@ -119,6 +119,19 @@ interface CurrentPairPredictionAnalytics {
   generatedAt: number;
 }
 
+interface CurrentPairCollectionStatus {
+  running: boolean;
+  pollIntervalMs: number;
+  cycleInFlight: boolean;
+  lastCycleAt: number | null;
+  lastCompletedAt: number | null;
+  lastGenerated: number;
+  lastEvaluated: number;
+  lastPending: number;
+  lastError: string | null;
+  nextScheduledAt: number | null;
+}
+
 interface ExecutionReconciliationDiagnostic {
   idempotencyKey: string;
   broker: string;
@@ -244,6 +257,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairLoading, setCurrentPairLoading] = useState(false);
   const [currentPairError, setCurrentPairError] = useState<string | null>(null);
   const [currentPairEvaluationMessage, setCurrentPairEvaluationMessage] = useState<string | null>(null);
+  const [currentPairCollectionStatus, setCurrentPairCollectionStatus] = useState<CurrentPairCollectionStatus | null>(null);
+  const [currentPairCollectionAction, setCurrentPairCollectionAction] = useState(false);
   const [executionDiagnosticsError, setExecutionDiagnosticsError] = useState<string | null>(null);
   const [dailyLossLimitPct, setDailyLossLimitPct] = useState<number>(3);
   const [dailyLossSaving, setDailyLossSaving] = useState<boolean>(false);
@@ -369,6 +384,45 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     }
   }, [currentPairHorizon, currentPairModel, currentPairSymbol, currentPairSymbols, safeParseJson]);
 
+  const fetchCurrentPairCollectionStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/live-trade-research/current-pair/collection-status', { cache: 'no-store' });
+      const data = await safeParseJson(res);
+      if (!res.ok) throw new Error(data?.error || 'Current pair collection status unavailable.');
+      setCurrentPairCollectionStatus(data);
+    } catch (err: any) {
+      console.warn('Failed to load current pair collection status:', err);
+    }
+  }, [safeParseJson]);
+
+  const runCurrentPairCollectionNow = useCallback(async () => {
+    setCurrentPairCollectionAction(true);
+    try {
+      const res = await fetch('/api/live-trade-research/current-pair/collect-now', {
+        method: 'POST',
+        cache: 'no-store'
+      });
+      const data = await safeParseJson(res);
+      if (!res.ok) throw new Error(data?.error || 'Current pair collection failed.');
+      setCurrentPairCollectionStatus(prev => prev ? {
+        ...prev,
+        lastCycleAt: data.completedAt || Date.now(),
+        lastCompletedAt: data.completedAt || Date.now(),
+        lastGenerated: Number(data.generated || 0),
+        lastEvaluated: Number(data.evaluated || 0),
+        lastPending: Number(data.pending || 0),
+        lastError: null,
+        nextScheduledAt: prev.nextScheduledAt
+      } : prev);
+      await fetchCurrentPairResearch();
+      await fetchCurrentPairCollectionStatus();
+    } catch (err: any) {
+      setCurrentPairEvaluationMessage(err?.message || 'Current pair collection failed.');
+    } finally {
+      setCurrentPairCollectionAction(false);
+    }
+  }, [fetchCurrentPairCollectionStatus, fetchCurrentPairResearch, safeParseJson]);
+
   const evaluateCurrentPairResearch = useCallback(async () => {
     setCurrentPairEvaluationMessage(null);
     try {
@@ -397,6 +451,12 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     const timer = setInterval(() => { void fetchCurrentPairResearch(); }, 60000);
     return () => clearInterval(timer);
   }, [fetchCurrentPairResearch]);
+  useEffect(() => {
+    void fetchCurrentPairCollectionStatus();
+    const timer = setInterval(() => { void fetchCurrentPairCollectionStatus(); }, 10000);
+    return () => clearInterval(timer);
+  }, [fetchCurrentPairCollectionStatus]);
+
 
   useEffect(() => {
     let mounted = true;
@@ -989,6 +1049,28 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
       {activeTab === 'research' && (
         <div className="space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-bold text-white font-mono">Collection Scheduler</div>
+                <div className="text-[10px] text-slate-500 mt-1">Continuous observational collection · 1D BASELINE · no Auto Live execution impact</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={currentPairCollectionStatus?.running ? "text-emerald-300" : "text-amber-300"}>{currentPairCollectionStatus?.running ? 'RUNNING' : 'STOPPED'}</span>
+                <button type="button" onClick={() => void runCurrentPairCollectionNow()} disabled={currentPairCollectionAction || currentPairCollectionStatus?.cycleInFlight} className="px-2.5 py-1.5 rounded-lg border border-cyan-700 bg-cyan-950/40 text-cyan-300 text-[11px] font-mono disabled:opacity-50">{currentPairCollectionAction ? 'Collecting...' : 'Collect Now'}</button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-3 text-[10px] font-mono">
+              <div><span className="text-slate-500 block">Interval</span><span className="text-white">{currentPairCollectionStatus ? Math.round(currentPairCollectionStatus.pollIntervalMs / 60000) + ' min' : '—'}</span></div>
+              <div><span className="text-slate-500 block">Last Generated</span><span className="text-white">{currentPairCollectionStatus?.lastGenerated ?? '—'}</span></div>
+              <div><span className="text-slate-500 block">Last Evaluated</span><span className="text-white">{currentPairCollectionStatus?.lastEvaluated ?? '—'}</span></div>
+              <div><span className="text-slate-500 block">Pending</span><span className="text-amber-300">{currentPairCollectionStatus?.lastPending ?? '—'}</span></div>
+              <div><span className="text-slate-500 block">Last Cycle</span><span className="text-white">{currentPairCollectionStatus?.lastCompletedAt ? new Date(currentPairCollectionStatus.lastCompletedAt).toLocaleString() : '—'}</span></div>
+              <div><span className="text-slate-500 block">Next Cycle</span><span className="text-white">{currentPairCollectionStatus?.nextScheduledAt ? new Date(currentPairCollectionStatus.nextScheduledAt).toLocaleString() : '—'}</span></div>
+            </div>
+            {currentPairCollectionStatus?.lastError && <div className="mt-3 text-[11px] font-mono text-rose-300 border border-rose-900 bg-rose-950/30 rounded p-2">{currentPairCollectionStatus.lastError}</div>}
+          </div>
+
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
