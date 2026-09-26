@@ -587,7 +587,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         safeParseJson(validationRes),
         safeParseJson(oosDriftRes),
         safeParseJson(calibrationMatrixRes),
-        safeParseJson(crossModelCalibrationRes)
+        safeParseJson(crossModelCalibrationRes),
+        safeParseJson(readinessLedgerRes)
       ]);
       if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
@@ -600,6 +601,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       if (!oosDriftRes.ok) throw new Error(oosDriftData?.message || oosDriftData?.error || 'OOS drift report unavailable.');
       if (!calibrationMatrixRes.ok) throw new Error(calibrationMatrixData?.message || calibrationMatrixData?.error || 'Calibration matrix unavailable.');
       if (!crossModelCalibrationRes.ok) throw new Error(crossModelCalibrationData?.message || crossModelCalibrationData?.error || 'Cross-model calibration unavailable.');
+      if (!readinessLedgerRes.ok) throw new Error(readinessLedgerData?.message || readinessLedgerData?.error || 'Research readiness ledger unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
       setCurrentPairWalkForward(walkForwardData || null);
@@ -608,6 +610,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       setCurrentPairPairedRolling(Array.isArray(pairedRollingData?.rollingWindows) ? pairedRollingData.rollingWindows : []);
       setCurrentPairPairedContexts(Array.isArray(pairedContextData?.groups) ? pairedContextData.groups : []);
       setCurrentPairValidationReport(validationData || null);
+      setCurrentPairResearchReadinessLedger(readinessLedgerData || null);
       setCurrentPairOosDrift(oosDriftData || null);
       setCurrentPairCalibrationMatrix(calibrationMatrixData || null);
       const contextCalibrationRes = await fetch(`/api/live-trade-research/current-pair/cross-model-context-calibration?${comparisonQuery}`, { cache: 'no-store' });
