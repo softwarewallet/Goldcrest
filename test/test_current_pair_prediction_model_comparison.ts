@@ -6,9 +6,9 @@ const now = Date.now();
 const day = 24 * 60 * 60 * 1000;
 const rows = [
   ['model-comparison-baseline-1', 'PAIR_FEATURE_BASELINE_V2', now - 10 * day, 'UP', 0.8, 'UP', 1.5],
-  ['model-comparison-baseline-2', 'PAIR_FEATURE_BASELINE_V2', now - 11 * day, 'UP', 0.7, 'DOWN', -1.0],
-  ['model-comparison-ai-1', 'LLAMA_GATEWAY_QWEN_LLAMA_V1', now - 10 * day, 'DOWN', 0.9, 'DOWN', -1.5],
-  ['model-comparison-ai-2', 'LLAMA_GATEWAY_QWEN_LLAMA_V1', now - 11 * day, 'UP', 0.6, 'DOWN', -0.5]
+  ['model-comparison-baseline-2', 'PAIR_FEATURE_BASELINE_V2', now - 11 * day, 'DOWN', 0.7, 'UP', 1.0],
+  ['model-comparison-ai-1', 'LLAMA_GATEWAY_QWEN_LLAMA_V1', now - 10 * day, 'DOWN', 0.9, 'UP', 1.2],
+  ['model-comparison-ai-2', 'LLAMA_GATEWAY_QWEN_LLAMA_V1', now - 11 * day, 'UP', 0.6, 'UP', 1.0]
 ] as const;
 
 try {
@@ -75,10 +75,10 @@ try {
   assert.equal(paired.bothCorrect, 1);
   assert.equal(paired.baselineOnlyCorrect, 0);
   assert.equal(paired.aiOnlyCorrect, 0);
-  assert.equal(paired.bothIncorrect, 1);
+  assert.equal(paired.bothIncorrect, 0);
   assert.equal(paired.directionAgreementPct, 0);
-  assert.equal(paired.discordantPairs, 0);
-  assert.equal(paired.exactMcNemarPValue, null);
+  assert.equal(paired.discordantPairs, 2);
+  assert.equal(paired.exactMcNemarPValue, 1);
 
   const discordantAt = now - 12 * day;
   const discordantRows = [
