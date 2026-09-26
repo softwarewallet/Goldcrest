@@ -195,6 +195,17 @@ interface CurrentPairResearchValidationReport {
   checks: Array<{ id: string; status: 'PASS' | 'WARN' | 'INSUFFICIENT'; title: string; detail: string }>;
 }
 
+interface CurrentPairResearchReadinessLedger {
+  scope: { symbol: string | null; horizon: string; generatedAt: number; aiModelVersion: string };
+  evidence: {
+    validationChecks: number; validationWarnings: number; validationInsufficient: number;
+    aiDirectionalEvaluated: number; baselineDirectionalEvaluated: number; pairedEvaluated: number;
+    currentOosDirectionalEvaluated: number; referenceOosDirectionalEvaluated: number;
+    calibrationRows: number; sufficientCalibrationRows: number; contextRows: number; sufficientContextRows: number;
+  };
+  checks: Array<{ id: string; status: 'PASS' | 'WARN' | 'INSUFFICIENT'; title: string; detail: string }>;
+}
+
 interface CurrentPairOosCalibrationBucket {
   lowerPct:number; upperPct:number; predictions:number; directionalEvaluated:number; correct:number;
   averageConfidencePct:number|null; accuracyPct:number|null;
@@ -432,6 +443,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairPairedRolling, setCurrentPairPairedRolling] = useState<CurrentPairPairedRollingWindowMetrics[]>([]);
   const [currentPairPairedContexts, setCurrentPairPairedContexts] = useState<CurrentPairPairedContextComparison[]>([]);
   const [currentPairValidationReport, setCurrentPairValidationReport] = useState<CurrentPairResearchValidationReport | null>(null);
+  const [currentPairResearchReadinessLedger, setCurrentPairResearchReadinessLedger] = useState<CurrentPairResearchReadinessLedger | null>(null);
   const [currentPairOosDrift, setCurrentPairOosDrift] = useState<CurrentPairOosDriftReport | null>(null);
   const [currentPairCalibrationMatrix, setCurrentPairCalibrationMatrix] = useState<CurrentPairCalibrationMatrix | null>(null);
   const [currentPairCrossModelContextCalibration, setCurrentPairCrossModelContextCalibration] = useState<any>(null);
@@ -550,7 +562,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           : '';
       const query = `horizon=${currentPairHorizon}${modelVersion ? `&modelVersion=${modelVersion}` : ''}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
       const comparisonQuery = `horizon=${currentPairHorizon}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
-      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes, calibrationMatrixRes, crossModelCalibrationRes] = await Promise.all([
+      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes, calibrationMatrixRes, crossModelCalibrationRes, readinessLedgerRes] = await Promise.all([
         fetch(`/api/live-trade-research/current-pair/predictions?${query}&limit=100`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/analytics?${query}`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' }),
@@ -561,9 +573,10 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         fetch(`/api/live-trade-research/current-pair/validation-report?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/oos-drift?${comparisonQuery}&modelVersion=LLAMA_GATEWAY_QWEN_LLAMA_V1`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/calibration-matrix?${comparisonQuery}&modelVersion=LLAMA_GATEWAY_QWEN_LLAMA_V1`, { cache: 'no-store' }),
-        fetch(`/api/live-trade-research/current-pair/cross-model-calibration?${comparisonQuery}`, { cache: 'no-store' })
+        fetch(`/api/live-trade-research/current-pair/cross-model-calibration?${comparisonQuery}`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/research-readiness-ledger?${comparisonQuery}`, { cache: 'no-store' })
       ]);
-      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData, pairedContextData, validationData, oosDriftData, calibrationMatrixData, crossModelCalibrationData] = await Promise.all([
+      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData, pairedContextData, validationData, oosDriftData, calibrationMatrixData, crossModelCalibrationData, readinessLedgerData] = await Promise.all([
         safeParseJson(predictionRes),
         safeParseJson(analyticsRes),
         safeParseJson(walkForwardRes),
@@ -574,7 +587,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         safeParseJson(validationRes),
         safeParseJson(oosDriftRes),
         safeParseJson(calibrationMatrixRes),
-        safeParseJson(crossModelCalibrationRes)
+        safeParseJson(crossModelCalibrationRes),
+        safeParseJson(readinessLedgerRes)
       ]);
       if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
@@ -587,6 +601,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       if (!oosDriftRes.ok) throw new Error(oosDriftData?.message || oosDriftData?.error || 'OOS drift report unavailable.');
       if (!calibrationMatrixRes.ok) throw new Error(calibrationMatrixData?.message || calibrationMatrixData?.error || 'Calibration matrix unavailable.');
       if (!crossModelCalibrationRes.ok) throw new Error(crossModelCalibrationData?.message || crossModelCalibrationData?.error || 'Cross-model calibration unavailable.');
+      if (!readinessLedgerRes.ok) throw new Error(readinessLedgerData?.message || readinessLedgerData?.error || 'Research readiness ledger unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
       setCurrentPairWalkForward(walkForwardData || null);
@@ -595,6 +610,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       setCurrentPairPairedRolling(Array.isArray(pairedRollingData?.rollingWindows) ? pairedRollingData.rollingWindows : []);
       setCurrentPairPairedContexts(Array.isArray(pairedContextData?.groups) ? pairedContextData.groups : []);
       setCurrentPairValidationReport(validationData || null);
+      setCurrentPairResearchReadinessLedger(readinessLedgerData || null);
       setCurrentPairOosDrift(oosDriftData || null);
       setCurrentPairCalibrationMatrix(calibrationMatrixData || null);
       const contextCalibrationRes = await fetch(`/api/live-trade-research/current-pair/cross-model-context-calibration?${comparisonQuery}`, { cache: 'no-store' });
@@ -1486,6 +1502,38 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {currentPairModel === 'COMPARE' && currentPairResearchReadinessLedger && (
+            <div className="bg-slate-900 border border-cyan-900/60 rounded-xl p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-sm font-bold text-white font-mono">Research Evidence Readiness Ledger</div>
+                  <div className="text-[10px] text-slate-500 mt-1">Consolidates research evidence coverage only. This ledger does not promote, select, or authorize a model for Auto Live execution.</div>
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono">{currentPairResearchReadinessLedger.scope.aiModelVersion}</div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-[10px] font-mono mb-4">
+                <div><div className="text-slate-500">AI Directional</div><div className="text-white text-lg">{currentPairResearchReadinessLedger.evidence.aiDirectionalEvaluated}</div></div>
+                <div><div className="text-slate-500">Baseline</div><div className="text-white text-lg">{currentPairResearchReadinessLedger.evidence.baselineDirectionalEvaluated}</div></div>
+                <div><div className="text-slate-500">Paired</div><div className="text-white text-lg">{currentPairResearchReadinessLedger.evidence.pairedEvaluated}</div></div>
+                <div><div className="text-slate-500">OOS 30D / 90D</div><div className="text-white text-lg">{currentPairResearchReadinessLedger.evidence.currentOosDirectionalEvaluated} / {currentPairResearchReadinessLedger.evidence.referenceOosDirectionalEvaluated}</div></div>
+                <div><div className="text-slate-500">Calibration</div><div className="text-white text-lg">{currentPairResearchReadinessLedger.evidence.sufficientCalibrationRows} / {currentPairResearchReadinessLedger.evidence.calibrationRows}</div></div>
+                <div><div className="text-slate-500">Context</div><div className="text-white text-lg">{currentPairResearchReadinessLedger.evidence.sufficientContextRows} / {currentPairResearchReadinessLedger.evidence.contextRows}</div></div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {currentPairResearchReadinessLedger.checks.map(check => (
+                  <div key={check.id} className="border border-slate-800 rounded-lg p-2 font-mono text-[10px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-300">{check.title}</span>
+                      <span className={check.status === 'PASS' ? 'text-emerald-300' : check.status === 'WARN' ? 'text-amber-300' : 'text-cyan-300'}>{check.status}</span>
+                    </div>
+                    <div className="text-slate-500 mt-1">{check.detail}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-[10px] text-slate-600 font-mono">Validation warnings: {currentPairResearchReadinessLedger.evidence.validationWarnings} · Insufficient: {currentPairResearchReadinessLedger.evidence.validationInsufficient} · Research telemetry only.</div>
             </div>
           )}
 
