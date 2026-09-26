@@ -21,8 +21,8 @@ try {
         invalidation, actual_direction, actual_return_pct, outcome_status, evaluated_at,
         created_at, feature_snapshot_json, prediction_context
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, model, model.includes('LLAMA') ? 'LLAMA_GATEWAY' : 'LIVE_PAIR_FEATURES', 'EUR/USD', null,
-        predictedAt, '1D', predictedDirection, confidence, 'comparison-test', 1, 'test', 'test',
+      [id, model, model.includes('LLAMA') ? 'LLAMA_GATEWAY' : 'LIVE_PAIR_FEATURES', 'EUR/USD', `${id}-signal`,
+        predictedAt, '1D', predictedDirection, confidence, `${id}-feature`, 1, 'test', 'test',
         actualDirection, actualReturn, 'EVALUATED', predictedAt + day, predictedAt, '{}', 'CURRENT_PAIR']
     );
   }
