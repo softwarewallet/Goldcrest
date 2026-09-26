@@ -19,10 +19,10 @@ const insert = async (id: string, symbol: string, horizon: string, timestamp: nu
 };
 
 for (let i = 0; i < 30; i++) {
-  await insert(`old-eur-${i}`, 'EUR/USD', '1D', now - 60 * 24 * 60 * 60 * 1000 + i * 1000, i < 24 ? 'UP' : 'DOWN', 0.7);
+  await insert(`old-eur-${i}`, 'EUR/USD', '1D', now - 60 * 24 * 60 * 60 * 1000 + i * 1000, i < 24 ? 'UP' : 'DOWN', i < 15 ? 0.65 : 0.75);
 }
 for (let i = 0; i < 30; i++) {
-  await insert(`new-eur-${i}`, 'EUR/USD', '1D', now - 10 * 24 * 60 * 60 * 1000 + i * 1000, i < 18 ? 'UP' : 'DOWN', 0.9);
+  await insert(`new-eur-${i}`, 'EUR/USD', '1D', now - 10 * 24 * 60 * 60 * 1000 + i * 1000, i < 18 ? 'UP' : 'DOWN', i < 15 ? 0.85 : 0.95);
 }
 for (let i = 0; i < 10; i++) {
   await insert(`new-gbp-${i}`, 'GBP/USD', '3D', now - 10 * 24 * 60 * 60 * 1000 + i * 1000, 'UP', 0.8);
@@ -46,6 +46,12 @@ assert.equal(eur.reference.sampleSufficient, true);
 assert.ok(eur.current.expectedCalibrationErrorPct != null);
 assert.ok(eur.reference.expectedCalibrationErrorPct != null);
 assert.ok(eur.deltas.expectedCalibrationErrorDeltaPct != null);
+assert.ok(eur.current.calibrationSlope != null);
+assert.ok(eur.reference.calibrationSlope != null);
+assert.ok(eur.current.calibrationInterceptPct != null);
+assert.ok(eur.reference.calibrationInterceptPct != null);
+assert.ok(eur.deltas.calibrationSlopeDelta != null);
+assert.ok(eur.deltas.calibrationInterceptDeltaPct != null);
 
 const gbp = matrix.rows.find(row => row.symbol === 'GBP/USD' && row.horizon === '3D');
 assert.ok(gbp);
