@@ -36,7 +36,7 @@ try {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [predictionId, 'PAIR_FEATURE_BASELINE_V2', 'LIVE_PAIR_FEATURES', 'EUR/USD', null,
       now - 8 * day, '1D', 'UP', 0.9, 'test-hash', 1, 'test', 'test',
-      null, null, 'PENDING', null, now - 8 * day, '{}', 'CURRENT_PAIR']
+      null, null, 'PENDING', null, now - 8 * day, '{"marketRegime":"TRENDING","session":"LONDON"}', 'CURRENT_PAIR']
   );
 
   const result = await evaluatePendingCurrentPairPredictions({
@@ -78,6 +78,8 @@ try {
   assert.equal(analytics.groups[0].calibration.length, 5);
   assert.equal(analytics.groups[0].calibration[4].predictions, 1);
   assert.equal(analytics.groups[0].calibration[4].correct, 1);
+  assert.equal(analytics.groups[0].marketRegime, 'TRENDING');
+  assert.equal(analytics.groups[0].session, 'LONDON');
 } finally {
   await executeRun("DELETE FROM live_trade_research_predictions WHERE prediction_id = ?", [predictionId]);
   LiveForexProvider.prototype.refreshPair = originalRefresh;
