@@ -195,9 +195,10 @@ interface CurrentPairResearchValidationReport {
   checks: Array<{ id: string; status: 'PASS' | 'WARN' | 'INSUFFICIENT'; title: string; detail: string }>;
 }
 
+interface CurrentPairTemporalBootstrapInterval { lower:number; upper:number; confidenceLevelPct:number; resamples:number }
 interface CurrentPairTemporalCalibrationMatrix {
-  modelVersion: string; generatedAt: number; windowsDays: number[]; minimumSampleCount: number;
-  rows: Array<{ symbol: string; horizon: '1D'|'3D'|'7D'; windows: Array<{ windowDays:number; predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; calibrationSlope:number|null; calibrationInterceptPct:number|null; sampleSufficient:boolean }>; deltas: { accuracy7dVs90dPct:number|null; confidence7dVs90dPct:number|null; ece7dVs90dPct:number|null; mce7dVs90dPct:number|null; slope7dVs90d:number|null; intercept7dVs90dPct:number|null } }>;
+  modelVersion: string; generatedAt: number; windowsDays: number[]; minimumSampleCount: number; bootstrapResamples:number;
+  rows: Array<{ symbol: string; horizon: '1D'|'3D'|'7D'; windows: Array<{ windowDays:number; predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; calibrationSlope:number|null; calibrationInterceptPct:number|null; sampleSufficient:boolean }>; deltas: { accuracy7dVs90dPct:number|null; confidence7dVs90dPct:number|null; ece7dVs90dPct:number|null; mce7dVs90dPct:number|null; slope7dVs90d:number|null; intercept7dVs90dPct:number|null; accuracy7dVs90d95Pct:CurrentPairTemporalBootstrapInterval|null; confidence7dVs90d95Pct:CurrentPairTemporalBootstrapInterval|null; ece7dVs90d95Pct:CurrentPairTemporalBootstrapInterval|null } }>;
 }
 
 interface CurrentPairResearchReadinessLedger {
@@ -1519,6 +1520,11 @@ export const TradingHub: React.FC<TradingHubProps> = ({
             <div className="bg-slate-900 border border-indigo-900/60 rounded-xl p-4">
               <div className="text-sm font-bold text-white font-mono">Temporal Calibration Stability</div>
               <div className="text-[10px] text-slate-500 mt-1 mb-3">AI research telemetry across rolling 7D, 14D, 30D, 60D and 90D windows. Maturity is enforced by prediction horizon; this does not control execution.</div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3 text-[10px] font-mono">
+                <div className="border border-slate-800 rounded-lg p-2"><span className="text-slate-500">Accuracy Δ 95% Bootstrap CI</span><div className="text-white mt-1">{currentPairTemporalCalibration.rows[0]?.deltas.accuracy7dVs90d95Pct == null ? 'Insufficient sample' : currentPairTemporalCalibration.rows[0].deltas.accuracy7dVs90d95Pct.lower.toFixed(2)+' to '+currentPairTemporalCalibration.rows[0].deltas.accuracy7dVs90d95Pct.upper.toFixed(2)+' pp'}</div></div>
+                <div className="border border-slate-800 rounded-lg p-2"><span className="text-slate-500">Confidence Δ 95% Bootstrap CI</span><div className="text-white mt-1">{currentPairTemporalCalibration.rows[0]?.deltas.confidence7dVs90d95Pct == null ? 'Insufficient sample' : currentPairTemporalCalibration.rows[0].deltas.confidence7dVs90d95Pct.lower.toFixed(2)+' to '+currentPairTemporalCalibration.rows[0].deltas.confidence7dVs90d95Pct.upper.toFixed(2)+' pp'}</div></div>
+                <div className="border border-slate-800 rounded-lg p-2"><span className="text-slate-500">ECE Δ 95% Bootstrap CI</span><div className="text-white mt-1">{currentPairTemporalCalibration.rows[0]?.deltas.ece7dVs90d95Pct == null ? 'Insufficient sample' : currentPairTemporalCalibration.rows[0].deltas.ece7dVs90d95Pct.lower.toFixed(2)+' to '+currentPairTemporalCalibration.rows[0].deltas.ece7dVs90d95Pct.upper.toFixed(2)+' pp'}</div></div>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[10px] font-mono">
                   <thead><tr className="text-slate-500 border-b border-slate-800"><th className="text-left p-2">Pair</th><th className="text-left p-2">Horizon</th>{currentPairTemporalCalibration.windowsDays.map(d=><th key={d} className="text-right p-2">{d}D n</th>)}<th className="text-right p-2">7D–90D Acc.</th><th className="text-right p-2">7D–90D ECE</th></tr></thead>
