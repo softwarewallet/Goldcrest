@@ -50,7 +50,7 @@ assert.ok(eur.current.calibrationSlope != null);
 assert.ok(eur.reference.calibrationSlope != null);
 assert.ok(eur.current.calibrationInterceptPct != null);
 assert.ok(eur.reference.calibrationInterceptPct != null);
-assert.ok(eur.deltas.calibrationSlope != null);
+assert.ok(eur.deltas.calibrationSlopeDelta != null);
 assert.ok(eur.deltas.calibrationInterceptDeltaPct != null);
 
 const gbp = matrix.rows.find(row => row.symbol === 'GBP/USD' && row.horizon === '3D');
