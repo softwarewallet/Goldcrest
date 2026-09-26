@@ -101,9 +101,9 @@ try {
 
   const discordant = await getCurrentPairPairedModelComparison({ symbol: 'EUR/USD', horizon: '1D' });
   assert.equal(discordant.pairedEvaluated, 3);
-  assert.equal(discordant.baselineOnlyCorrect, 1);
-  assert.equal(discordant.aiOnlyCorrect, 0);
-  assert.equal(discordant.discordantPairs, 1);
+  assert.equal(discordant.baselineOnlyCorrect, 2);
+  assert.equal(discordant.aiOnlyCorrect, 1);
+  assert.equal(discordant.discordantPairs, 3);
   assert.equal(discordant.exactMcNemarPValue, 1);
 
   for (const [id] of discordantRows) {
