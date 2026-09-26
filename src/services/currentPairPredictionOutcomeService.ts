@@ -301,8 +301,21 @@ export async function getCurrentPairPredictionWalkForwardAnalytics(params: {
     const latest = group.reduce((value, row) => Math.max(value, Number(row.predicted_at) || 0), 0);
     const cohorts: CurrentPairWalkForwardCohortMetrics[] = [];
     for (let index = 0; index < maxCohorts; index++) {
-      const toTimestamp = latest - index * cohortMs; const fromTimestamp = toTimestamp - cohortMs;
-      const cohortRows = group.filter(row => { const timestamp = Number(row.predicted_at) || 0; return timestamp >= fromTimestamp && (index === 0 ? timestamp <= toTimestamp : timestamp < toTimestamp); });
+      const toTimestamp = latest - index * cohortMs;
+      const fromTimestamp = toTimestamp - cohortMs;
+
+      // Assign observations by elapsed age from the latest observation rather than
+      // relying on adjacent timestamp range predicates. This keeps cohort membership
+      // deterministic at exact cohort boundaries and prevents boundary observations
+      // from being skipped between adjacent cohorts.
+      const cohortRows = group.filter(row => {
+        const timestamp = Number(row.predicted_at);
+        if (!Number.isFinite(timestamp)) return false;
+        const ageMs = latest - timestamp;
+        if (ageMs < 0) return false;
+        const cohortIndex = Math.floor(ageMs / cohortMs);
+        return cohortIndex === index;
+      });
       if (cohortRows.length === 0) continue;
       const directional = cohortRows.map(row => directionalScore(row, row.actual_direction as 'UP' | 'DOWN' | 'FLAT')).filter(result => result.evaluated);
       const correct = directional.filter(result => result.correct).length;
