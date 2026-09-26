@@ -185,6 +185,19 @@ interface CurrentPairModelComparison {
   generatedAt: number;
 }
 
+interface CurrentPairPairedModelComparison {
+  baselineModelVersion: string;
+  aiModelVersion: string;
+  pairedObservations: number;
+  pairedEvaluated: number;
+  pairedPending: number;
+  bothCorrect: number;
+  baselineOnlyCorrect: number;
+  aiOnlyCorrect: number;
+  bothIncorrect: number;
+  directionAgreementPct: number | null;
+}
+
 interface CurrentPairCollectionStatus {
   running: boolean;
   pollIntervalMs: number;
@@ -317,6 +330,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairPredictions, setCurrentPairPredictions] = useState<CurrentPairPrediction[]>([]);
   const [currentPairAnalytics, setCurrentPairAnalytics] = useState<CurrentPairPredictionAnalytics | null>(null);
   const [currentPairModelComparison, setCurrentPairModelComparison] = useState<CurrentPairModelComparison | null>(null);
+  const [currentPairPairedComparison, setCurrentPairPairedComparison] = useState<CurrentPairPairedModelComparison | null>(null);
   const [currentPairWalkForward, setCurrentPairWalkForward] = useState<CurrentPairWalkForwardAnalytics | null>(null);
   const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
   const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY' | 'COMPARE'>('BASELINE');
@@ -431,26 +445,30 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           : '';
       const query = `horizon=${currentPairHorizon}${modelVersion ? `&modelVersion=${modelVersion}` : ''}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
       const comparisonQuery = `horizon=${currentPairHorizon}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
-      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes] = await Promise.all([
+      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes] = await Promise.all([
         fetch(`/api/live-trade-research/current-pair/predictions?${query}&limit=100`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/analytics?${query}`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' }),
-        fetch(`/api/live-trade-research/current-pair/model-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' })
+        fetch(`/api/live-trade-research/current-pair/model-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/paired-model-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' })
       ]);
-      const [predictionData, analyticsData, walkForwardData, comparisonData] = await Promise.all([
+      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData] = await Promise.all([
         safeParseJson(predictionRes),
         safeParseJson(analyticsRes),
         safeParseJson(walkForwardRes),
-        safeParseJson(comparisonRes)
+        safeParseJson(comparisonRes),
+        safeParseJson(pairedComparisonRes)
       ]);
       if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
       if (!walkForwardRes.ok) throw new Error(walkForwardData?.message || walkForwardData?.error || 'Current pair walk-forward analytics unavailable.');
       if (!comparisonRes.ok) throw new Error(comparisonData?.message || comparisonData?.error || 'Current pair model comparison unavailable.');
+      if (!pairedComparisonRes.ok) throw new Error(pairedComparisonData?.message || pairedComparisonData?.error || 'Paired current pair model comparison unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
       setCurrentPairWalkForward(walkForwardData || null);
       setCurrentPairModelComparison(comparisonData || null);
+      setCurrentPairPairedComparison(pairedComparisonData || null);
       const discoveredSymbols = Array.from(new Set([
         ...currentPairSymbols,
         ...(Array.isArray(predictionData?.predictions) ? predictionData.predictions.map((p: CurrentPairPrediction) => p.symbol) : []),
@@ -1199,6 +1217,21 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                   </tr>
                 ))}</tbody>
               </table></div>
+            </div>
+          )}
+
+          {currentPairModel === 'COMPARE' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <div className="text-sm font-bold text-white font-mono mb-1">Paired Model Comparison</div>
+              <div className="text-[10px] text-slate-500 mb-3">Only exact symbol + horizon + prediction-time matches are paired. This prevents aggregate model metrics from mixing different observations.</div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-[10px] font-mono">
+                <div><div className="text-slate-500">Paired</div><div className="text-lg text-white">{currentPairPairedComparison?.pairedObservations ?? 0}</div></div>
+                <div><div className="text-slate-500">Evaluated</div><div className="text-lg text-white">{currentPairPairedComparison?.pairedEvaluated ?? 0}</div></div>
+                <div><div className="text-slate-500">Both Correct</div><div className="text-lg text-emerald-300">{currentPairPairedComparison?.bothCorrect ?? 0}</div></div>
+                <div><div className="text-slate-500">Baseline Only / AI Only</div><div className="text-lg text-cyan-300">{currentPairPairedComparison?.baselineOnlyCorrect ?? 0} / {currentPairPairedComparison?.aiOnlyCorrect ?? 0}</div></div>
+                <div><div className="text-slate-500">Direction Agreement</div><div className="text-lg text-white">{currentPairPairedComparison?.directionAgreementPct == null ? '—' : currentPairPairedComparison.directionAgreementPct.toFixed(1) + '%'}</div></div>
+              </div>
+              <div className="mt-3 text-[10px] text-slate-500 font-mono">Both incorrect: {currentPairPairedComparison?.bothIncorrect ?? 0} · Pending paired observations: {currentPairPairedComparison?.pairedPending ?? 0}</div>
             </div>
           )}
 

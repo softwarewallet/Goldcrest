@@ -418,6 +418,116 @@ export async function getCurrentPairPredictionModelComparison(params: {
   };
 }
 
+
+export interface CurrentPairPairedModelComparison {
+  baselineModelVersion: string;
+  aiModelVersion: string;
+  pairedObservations: number;
+  pairedEvaluated: number;
+  pairedPending: number;
+  bothCorrect: number;
+  baselineOnlyCorrect: number;
+  aiOnlyCorrect: number;
+  bothIncorrect: number;
+  directionAgreementPct: number | null;
+}
+
+export async function getCurrentPairPairedModelComparison(params: {
+  horizon?: CurrentPairPredictionHorizon;
+  symbol?: string;
+  limit?: number;
+} = {}): Promise<CurrentPairPairedModelComparison> {
+  const conditions = ["prediction_context = 'CURRENT_PAIR'"];
+  const values: unknown[] = [];
+
+  if (params.horizon) {
+    conditions.push('horizon = ?');
+    values.push(params.horizon);
+  }
+  if (params.symbol) {
+    conditions.push('symbol = ?');
+    values.push(params.symbol);
+  }
+
+  const limit = Math.max(1, Math.min(100000, Math.floor(Number(params.limit) || 50000)));
+  const rows = await executeQuery<CurrentPairPredictionRow>(
+    `SELECT prediction_id, model_version, prediction_source, symbol, predicted_at,
+            horizon, predicted_direction, confidence, actual_direction,
+            actual_return_pct, outcome_status, feature_snapshot_json
+       FROM live_trade_research_predictions
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY predicted_at ASC
+      LIMIT ?`,
+    [...values, limit]
+  );
+
+  const baselineModelVersion = 'PAIR_FEATURE_BASELINE_V2';
+  const aiModelVersion = 'LLAMA_GATEWAY_QWEN_LLAMA_V1';
+  const baseline = new Map<string, CurrentPairPredictionRow>();
+  const ai = new Map<string, CurrentPairPredictionRow>();
+
+  for (const row of rows) {
+    const key = `${row.symbol}|${row.horizon}|${Number(row.predicted_at)}`;
+    if (row.model_version === baselineModelVersion) baseline.set(key, row);
+    if (row.model_version === aiModelVersion) ai.set(key, row);
+  }
+
+  let pairedObservations = 0;
+  let pairedEvaluated = 0;
+  let pairedPending = 0;
+  let bothCorrect = 0;
+  let baselineOnlyCorrect = 0;
+  let aiOnlyCorrect = 0;
+  let bothIncorrect = 0;
+  let directionAgreement = 0;
+
+  for (const [key, baselineRow] of baseline.entries()) {
+    const aiRow = ai.get(key);
+    if (!aiRow) continue;
+
+    pairedObservations++;
+    if (baselineRow.predicted_direction === aiRow.predicted_direction) directionAgreement++;
+
+    const baselineEvaluated = baselineRow.outcome_status === 'EVALUATED' && Boolean(baselineRow.actual_direction);
+    const aiEvaluated = aiRow.outcome_status === 'EVALUATED' && Boolean(aiRow.actual_direction);
+    if (!baselineEvaluated || !aiEvaluated) {
+      pairedPending++;
+      continue;
+    }
+
+    if (baselineRow.actual_direction !== aiRow.actual_direction) {
+      pairedPending++;
+      continue;
+    }
+    const actual = baselineRow.actual_direction as 'UP' | 'DOWN' | 'FLAT';
+    const baselineScore = directionalScore(baselineRow, actual);
+    const aiScore = directionalScore(aiRow, actual);
+    if (!baselineScore.evaluated || !aiScore.evaluated) {
+      pairedPending++;
+      continue;
+    }
+
+    pairedEvaluated++;
+    if (baselineScore.correct && aiScore.correct) bothCorrect++;
+    else if (baselineScore.correct) baselineOnlyCorrect++;
+    else if (aiScore.correct) aiOnlyCorrect++;
+    else bothIncorrect++;
+  }
+
+  return {
+    baselineModelVersion,
+    aiModelVersion,
+    pairedObservations,
+    pairedEvaluated,
+    pairedPending,
+    bothCorrect,
+    baselineOnlyCorrect,
+    aiOnlyCorrect,
+    bothIncorrect,
+    directionAgreementPct: pairedObservations ? (directionAgreement / pairedObservations) * 100 : null
+  };
+}
+
 export async function getCurrentPairPredictionAnalytics(params: {
   modelVersion?: string;
   horizon?: CurrentPairPredictionHorizon;
