@@ -40,6 +40,14 @@ assert.ok(Math.abs((report.currentWindow.averageConfidencePct || 0) - 90) < 1e-9
 assert.ok(Math.abs((report.baselineWindow.averageConfidencePct || 0) - 70) < 1e-9);
 assert.equal(report.drift.accuracyDriftFlag, true);
 assert.equal(report.drift.confidenceDriftFlag, true);
+assert.ok(report.uncertainty.accuracyDelta95Pct);
+assert.ok(report.uncertainty.brierDelta95);
+assert.equal(report.uncertainty.accuracyDelta95Pct?.confidenceLevelPct, 95);
+assert.equal(report.uncertainty.brierDelta95?.confidenceLevelPct, 95);
+assert.equal(report.uncertainty.accuracyDelta95Pct?.resamples, 2000);
+assert.equal(report.uncertainty.brierDelta95?.resamples, 2000);
+assert.ok((report.uncertainty.accuracyDelta95Pct?.lower ?? 0) <= (report.uncertainty.accuracyDelta95Pct?.upper ?? 0));
+assert.ok((report.uncertainty.brierDelta95?.lower ?? 0) <= (report.uncertainty.brierDelta95?.upper ?? 0));
 assert.equal(report.checks.find(check => check.id === 'current-sample')?.status, 'PASS');
 
 console.log('CURRENT PAIR OOS DRIFT TEST PASSED');
