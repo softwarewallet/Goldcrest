@@ -59,6 +59,7 @@ import { generateCurrentPairPredictions } from './src/services/pairPredictionSer
 import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics, getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison, getCurrentPairPairedModelComparisonRolling, getCurrentPairPairedContextComparison, getCurrentPairPredictionWalkForwardAnalytics, type CurrentPairPredictionHorizon } from './src/services/currentPairPredictionOutcomeService';
 import { getCurrentPairPredictionCollectionStatus, runCurrentPairPredictionCollectionCycle, startCurrentPairPredictionCollectionScheduler, stopCurrentPairPredictionCollectionScheduler } from './src/services/currentPairPredictionCollectionService';
 import { getCurrentPairResearchValidationReport } from './src/services/currentPairResearchValidationService';
+import { getCurrentPairOosDriftReport } from './src/services/currentPairOosDriftService';
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
@@ -1935,6 +1936,30 @@ app.get('/api/live-trade-research/current-pair/validation-report', operatorAuthR
     return res.status(503).json({
       error: 'CURRENT_PAIR_VALIDATION_REPORT_UNAVAILABLE',
       message: error?.message || 'Current pair research validation report is unavailable.'
+    });
+  }
+});
+
+app.get('/api/live-trade-research/current-pair/oos-drift', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : '1D';
+    if (!['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const modelVersion = typeof req.query.modelVersion === 'string' && req.query.modelVersion.trim()
+      ? req.query.modelVersion.trim()
+      : 'LLAMA_GATEWAY_QWEN_LLAMA_V1';
+    const report = await getCurrentPairOosDriftReport({
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol.toUpperCase() : undefined,
+      horizon: horizon as CurrentPairPredictionHorizon,
+      modelVersion
+    });
+    return res.json(report);
+  } catch (error: any) {
+    console.error('[CURRENT_PAIR_OOS_DRIFT]', error);
+    return res.status(503).json({
+      error: 'CURRENT_PAIR_OOS_DRIFT_UNAVAILABLE',
+      message: error?.message || 'Current pair OOS drift report is unavailable.'
     });
   }
 });

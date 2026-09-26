@@ -195,6 +195,14 @@ interface CurrentPairResearchValidationReport {
   checks: Array<{ id: string; status: 'PASS' | 'WARN' | 'INSUFFICIENT'; title: string; detail: string }>;
 }
 
+interface CurrentPairOosDriftReport {
+  symbol: string | null; horizon: string; modelVersion: string; generatedAt: number;
+  currentWindow: { windowDays: 30; predictions: number; evaluated: number; directionalEvaluated: number; correct: number; accuracyPct: number|null; brierScore: number|null; averageConfidencePct: number|null; calibrationGapPct: number|null; sampleSufficient: boolean };
+  baselineWindow: { windowDays: 90; predictions: number; evaluated: number; directionalEvaluated: number; correct: number; accuracyPct: number|null; brierScore: number|null; averageConfidencePct: number|null; calibrationGapPct: number|null; sampleSufficient: boolean };
+  drift: { accuracyDeltaPct:number|null; brierDelta:number|null; confidenceDeltaPct:number|null; calibrationGapDeltaPct:number|null; accuracyDriftFlag:boolean; brierDriftFlag:boolean; confidenceDriftFlag:boolean; calibrationDriftFlag:boolean };
+  checks: Array<{id:string;status:'PASS'|'WARN'|'INSUFFICIENT';title:string;detail:string}>;
+}
+
 interface CurrentPairPairedContextComparison {
   symbol: string;
   horizon: string;
@@ -379,6 +387,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairPairedRolling, setCurrentPairPairedRolling] = useState<CurrentPairPairedRollingWindowMetrics[]>([]);
   const [currentPairPairedContexts, setCurrentPairPairedContexts] = useState<CurrentPairPairedContextComparison[]>([]);
   const [currentPairValidationReport, setCurrentPairValidationReport] = useState<CurrentPairResearchValidationReport | null>(null);
+  const [currentPairOosDrift, setCurrentPairOosDrift] = useState<CurrentPairOosDriftReport | null>(null);
   const [currentPairWalkForward, setCurrentPairWalkForward] = useState<CurrentPairWalkForwardAnalytics | null>(null);
   const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
   const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY' | 'COMPARE'>('BASELINE');
@@ -493,7 +502,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           : '';
       const query = `horizon=${currentPairHorizon}${modelVersion ? `&modelVersion=${modelVersion}` : ''}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
       const comparisonQuery = `horizon=${currentPairHorizon}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
-      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes] = await Promise.all([
+      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes] = await Promise.all([
         fetch(`/api/live-trade-research/current-pair/predictions?${query}&limit=100`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/analytics?${query}`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' }),
@@ -501,9 +510,10 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         fetch(`/api/live-trade-research/current-pair/paired-model-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/paired-model-comparison-rolling?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/paired-context-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
-        fetch(`/api/live-trade-research/current-pair/validation-report?${comparisonQuery}&limit=50000`, { cache: 'no-store' })
+        fetch(`/api/live-trade-research/current-pair/validation-report?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/oos-drift?${comparisonQuery}&modelVersion=LLAMA_GATEWAY_QWEN_LLAMA_V1`, { cache: 'no-store' })
       ]);
-      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData, pairedContextData, validationData] = await Promise.all([
+      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData, pairedContextData, validationData, oosDriftData] = await Promise.all([
         safeParseJson(predictionRes),
         safeParseJson(analyticsRes),
         safeParseJson(walkForwardRes),
@@ -511,7 +521,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         safeParseJson(pairedComparisonRes),
         safeParseJson(pairedRollingRes),
         safeParseJson(pairedContextRes),
-        safeParseJson(validationRes)
+        safeParseJson(validationRes),
+        safeParseJson(oosDriftRes)
       ]);
       if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
@@ -521,6 +532,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       if (!pairedRollingRes.ok) throw new Error(pairedRollingData?.message || pairedRollingData?.error || 'Paired rolling model comparison unavailable.');
       if (!pairedContextRes.ok) throw new Error(pairedContextData?.message || pairedContextData?.error || 'Context-conditioned paired comparison unavailable.');
       if (!validationRes.ok) throw new Error(validationData?.message || validationData?.error || 'Research validation report unavailable.');
+      if (!oosDriftRes.ok) throw new Error(oosDriftData?.message || oosDriftData?.error || 'OOS drift report unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
       setCurrentPairWalkForward(walkForwardData || null);
@@ -529,6 +541,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       setCurrentPairPairedRolling(Array.isArray(pairedRollingData?.rollingWindows) ? pairedRollingData.rollingWindows : []);
       setCurrentPairPairedContexts(Array.isArray(pairedContextData?.groups) ? pairedContextData.groups : []);
       setCurrentPairValidationReport(validationData || null);
+      setCurrentPairOosDrift(oosDriftData || null);
       const discoveredSymbols = Array.from(new Set([
         ...currentPairSymbols,
         ...(Array.isArray(predictionData?.predictions) ? predictionData.predictions.map((p: CurrentPairPrediction) => p.symbol) : []),
@@ -1256,6 +1269,32 @@ export const TradingHub: React.FC<TradingHubProps> = ({
             {currentPairError && <div className="mt-3 text-[11px] font-mono text-rose-300 border border-rose-900 bg-rose-950/30 rounded p-2">{currentPairError}</div>}
             {currentPairEvaluationMessage && <div className="mt-3 text-[11px] font-mono text-cyan-300 border border-cyan-900 bg-cyan-950/30 rounded p-2">{currentPairEvaluationMessage}</div>}
           </div>
+
+          {currentPairModel === 'COMPARE' && currentPairOosDrift && (
+            <div className="bg-slate-900 border border-amber-900/60 rounded-xl p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-sm font-bold text-white font-mono">Out-of-Sample Drift Monitor</div>
+                  <div className="text-[10px] text-slate-500 mt-1">Research-only comparison of the latest 30-day window against the 90-day reference window.</div>
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono">{currentPairOosDrift.modelVersion}</div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[10px] font-mono mb-3">
+                <div><div className="text-slate-500">30D Accuracy</div><div className="text-white text-lg">{currentPairOosDrift.currentWindow.accuracyPct == null ? '—' : currentPairOosDrift.currentWindow.accuracyPct.toFixed(1) + '%'}</div></div>
+                <div><div className="text-slate-500">90D Accuracy</div><div className="text-white text-lg">{currentPairOosDrift.baselineWindow.accuracyPct == null ? '—' : currentPairOosDrift.baselineWindow.accuracyPct.toFixed(1) + '%'}</div></div>
+                <div><div className="text-slate-500">Accuracy Δ</div><div className={currentPairOosDrift.drift.accuracyDriftFlag ? 'text-amber-300 text-lg' : 'text-emerald-300 text-lg'}>{currentPairOosDrift.drift.accuracyDeltaPct == null ? '—' : currentPairOosDrift.drift.accuracyDeltaPct.toFixed(1) + ' pp'}</div></div>
+                <div><div className="text-slate-500">Brier Δ</div><div className={currentPairOosDrift.drift.brierDriftFlag ? 'text-amber-300 text-lg' : 'text-emerald-300 text-lg'}>{currentPairOosDrift.drift.brierDelta == null ? '—' : currentPairOosDrift.drift.brierDelta.toFixed(4)}</div></div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {currentPairOosDrift.checks.map(check => (
+                  <div key={check.id} className="border border-slate-800 rounded-lg p-2 font-mono text-[10px]">
+                    <div className="flex justify-between gap-2"><span className="text-slate-300">{check.title}</span><span className={check.status === 'PASS' ? 'text-emerald-300' : check.status === 'WARN' ? 'text-amber-300' : 'text-cyan-300'}>{check.status}</span></div>
+                    <div className="text-slate-500 mt-1">{check.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {currentPairModel === 'COMPARE' && currentPairValidationReport && (
             <div className="bg-slate-900 border border-cyan-900/60 rounded-xl p-4">
