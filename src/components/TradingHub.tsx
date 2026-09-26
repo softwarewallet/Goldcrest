@@ -204,13 +204,13 @@ interface CurrentPairOosCalibrationBucket {
 
 interface CurrentPairOosDriftReport {
   symbol: string | null; horizon: string; modelVersion: string; generatedAt: number;
-  currentWindow: { windowDays: 30; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; sampleSufficient:boolean; calibrationBuckets:CurrentPairOosCalibrationBucket[] };
-  baselineWindow: { windowDays: 90; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; sampleSufficient:boolean; calibrationBuckets:CurrentPairOosCalibrationBucket[] };
+  currentWindow: { windowDays: 30; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; sampleSufficient:boolean; calibrationBuckets:CurrentPairOosCalibrationBucket[] };
+  baselineWindow: { windowDays: 90; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; sampleSufficient:boolean; calibrationBuckets:CurrentPairOosCalibrationBucket[] };
   uncertainty: {
     accuracyDelta95Pct:{lower:number;upper:number;confidenceLevelPct:number;resamples:number}|null;
     brierDelta95:{lower:number;upper:number;confidenceLevelPct:number;resamples:number}|null;
   };
-  drift:{accuracyDeltaPct:number|null;brierDelta:number|null;confidenceDeltaPct:number|null;calibrationGapDeltaPct:number|null;accuracyDriftFlag:boolean;brierDriftFlag:boolean;confidenceDriftFlag:boolean;calibrationDriftFlag:boolean};
+  drift:{accuracyDeltaPct:number|null;brierDelta:number|null;confidenceDeltaPct:number|null;calibrationGapDeltaPct:number|null;calibrationErrorDeltaPct:number|null;accuracyDriftFlag:boolean;brierDriftFlag:boolean;confidenceDriftFlag:boolean;calibrationDriftFlag:boolean;calibrationErrorDriftFlag:boolean};
   checks:Array<{id:string;status:'PASS'|'WARN'|'INSUFFICIENT';title:string;detail:string}>;
 }
 
@@ -1308,6 +1308,18 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                   <div className="text-slate-600 mt-1">{currentPairOosDrift.uncertainty.brierDelta95?.resamples ?? 0} deterministic bootstrap resamples</div>
                 </div>
               </div>
+              <div className="border border-slate-800 rounded-lg p-3 mb-3">
+                <div className="text-xs font-bold text-white font-mono mb-2">Aggregate Calibration Error</div>
+                <div className="text-[10px] text-slate-600 font-mono mb-2">ECE is the directional-evaluation-weighted mean calibration gap across confidence buckets. MCE is the largest gap among buckets with at least 30 directional evaluations. These are descriptive research metrics only.</div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 font-mono text-[10px]">
+                  <div><div className="text-slate-500">30D ECE</div><div className="text-white text-lg">{currentPairOosDrift.currentWindow.expectedCalibrationErrorPct == null ? '—' : currentPairOosDrift.currentWindow.expectedCalibrationErrorPct.toFixed(1) + ' pp'}</div></div>
+                  <div><div className="text-slate-500">90D ECE</div><div className="text-white text-lg">{currentPairOosDrift.baselineWindow.expectedCalibrationErrorPct == null ? '—' : currentPairOosDrift.baselineWindow.expectedCalibrationErrorPct.toFixed(1) + ' pp'}</div></div>
+                  <div><div className="text-slate-500">ECE Δ</div><div className={currentPairOosDrift.drift.calibrationErrorDriftFlag ? 'text-amber-300 text-lg' : 'text-emerald-300 text-lg'}>{currentPairOosDrift.drift.calibrationErrorDeltaPct == null ? '—' : currentPairOosDrift.drift.calibrationErrorDeltaPct.toFixed(1) + ' pp'}</div></div>
+                  <div><div className="text-slate-500">30D MCE</div><div className="text-white text-lg">{currentPairOosDrift.currentWindow.maximumCalibrationErrorPct == null ? '—' : currentPairOosDrift.currentWindow.maximumCalibrationErrorPct.toFixed(1) + ' pp'}</div></div>
+                  <div><div className="text-slate-500">90D MCE</div><div className="text-white text-lg">{currentPairOosDrift.baselineWindow.maximumCalibrationErrorPct == null ? '—' : currentPairOosDrift.baselineWindow.maximumCalibrationErrorPct.toFixed(1) + ' pp'}</div></div>
+                </div>
+              </div>
+
               <div className="border border-slate-800 rounded-lg p-3 mb-3">
                 <div className="text-xs font-bold text-white font-mono mb-1">Confidence-Bucket Calibration Stability</div>
                 <div className="text-[10px] text-slate-600 font-mono mb-2">Accuracy and calibration gap are shown separately for each confidence band. Wilson 95% intervals are descriptive; buckets below 30 directional evaluations are marked insufficient.</div>

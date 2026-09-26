@@ -24,6 +24,8 @@ export interface CurrentPairOosDriftWindow {
   brierScore: number | null;
   averageConfidencePct: number | null;
   calibrationGapPct: number | null;
+  expectedCalibrationErrorPct: number | null;
+  maximumCalibrationErrorPct: number | null;
   sampleSufficient: boolean;
   calibrationBuckets: CurrentPairCalibrationBucket[];
 }
@@ -51,10 +53,12 @@ export interface CurrentPairOosDriftReport {
     brierDelta: number | null;
     confidenceDeltaPct: number | null;
     calibrationGapDeltaPct: number | null;
+    calibrationErrorDeltaPct: number | null;
     accuracyDriftFlag: boolean;
     brierDriftFlag: boolean;
     confidenceDriftFlag: boolean;
     calibrationDriftFlag: boolean;
+    calibrationErrorDriftFlag: boolean;
   };
   checks: Array<{
     id: string;
@@ -206,6 +210,19 @@ function buildCalibrationBuckets(rows: any[], maturityCutoff: number): CurrentPa
   });
 }
 
+function aggregateCalibrationMetrics(buckets: CurrentPairCalibrationBucket[]): { expectedCalibrationErrorPct: number | null; maximumCalibrationErrorPct: number | null } {
+  const evaluatedBuckets = buckets.filter(bucket => bucket.directionalEvaluated > 0 && bucket.calibrationGapPct != null);
+  const totalDirectional = evaluatedBuckets.reduce((sum, bucket) => sum + bucket.directionalEvaluated, 0);
+  const expectedCalibrationErrorPct = totalDirectional > 0
+    ? evaluatedBuckets.reduce((sum, bucket) => sum + (bucket.calibrationGapPct as number) * (bucket.directionalEvaluated / totalDirectional), 0)
+    : null;
+  const sufficientBuckets = buckets.filter(bucket => bucket.sampleSufficient && bucket.calibrationGapPct != null);
+  const maximumCalibrationErrorPct = sufficientBuckets.length
+    ? Math.max(...sufficientBuckets.map(bucket => bucket.calibrationGapPct as number))
+    : null;
+  return { expectedCalibrationErrorPct, maximumCalibrationErrorPct };
+}
+
 function emptyWindow(windowDays: 30 | 90): CurrentPairOosDriftWindow {
   return {
     windowDays,
@@ -217,6 +234,8 @@ function emptyWindow(windowDays: 30 | 90): CurrentPairOosDriftWindow {
     brierScore: null,
     averageConfidencePct: null,
     calibrationGapPct: null,
+    expectedCalibrationErrorPct: null,
+    maximumCalibrationErrorPct: null,
     sampleSufficient: false,
     calibrationBuckets: []
   };
@@ -297,6 +316,9 @@ export async function getCurrentPairOosDriftReport(params: {
       : null;
     result.sampleSufficient = result.directionalEvaluated >= MIN_SAMPLE_COUNT;
     result.calibrationBuckets = buildCalibrationBuckets(windowRows, maturityCutoff);
+    const aggregateCalibration = aggregateCalibrationMetrics(result.calibrationBuckets);
+    result.expectedCalibrationErrorPct = aggregateCalibration.expectedCalibrationErrorPct;
+    result.maximumCalibrationErrorPct = aggregateCalibration.maximumCalibrationErrorPct;
     return result;
   };
 
@@ -330,6 +352,9 @@ export async function getCurrentPairOosDriftReport(params: {
     result.calibrationGapPct = result.accuracyPct != null && result.averageConfidencePct != null ? Math.abs(result.averageConfidencePct - result.accuracyPct) : null;
     result.sampleSufficient = result.directionalEvaluated >= MIN_SAMPLE_COUNT;
     result.calibrationBuckets = buildCalibrationBuckets(windowRows, maturityCutoff);
+    const aggregateCalibration = aggregateCalibrationMetrics(result.calibrationBuckets);
+    result.expectedCalibrationErrorPct = aggregateCalibration.expectedCalibrationErrorPct;
+    result.maximumCalibrationErrorPct = aggregateCalibration.maximumCalibrationErrorPct;
     return result;
   };
   const baselineWindow = buildPriorWindow();
@@ -341,6 +366,7 @@ export async function getCurrentPairOosDriftReport(params: {
   const brierDelta = delta(currentWindow.brierScore, baselineWindow.brierScore);
   const confidenceDeltaPct = delta(currentWindow.averageConfidencePct, baselineWindow.averageConfidencePct);
   const calibrationGapDeltaPct = delta(currentWindow.calibrationGapPct, baselineWindow.calibrationGapPct);
+  const calibrationErrorDeltaPct = delta(currentWindow.expectedCalibrationErrorPct, baselineWindow.expectedCalibrationErrorPct);
 
   const currentRows = rows.filter(row => Number(row.predicted_at) >= currentCutoff);
   const baselineRowsForBootstrap = rows.filter(row => Number(row.predicted_at) < currentCutoff);
@@ -389,6 +415,12 @@ export async function getCurrentPairOosDriftReport(params: {
       status: calibrationGapDeltaPct == null ? 'INSUFFICIENT' as const : Math.abs(calibrationGapDeltaPct) >= CALIBRATION_GAP_THRESHOLD_PCT ? 'WARN' as const : 'PASS' as const,
       title: 'Calibration-gap drift',
       detail: calibrationGapDeltaPct == null ? 'Insufficient evaluated data for comparison.' : `30-day minus 90-day confidence/accuracy gap is ${calibrationGapDeltaPct.toFixed(2)} percentage points.`
+    },
+    {
+      id: 'aggregate-calibration-error',
+      status: calibrationErrorDeltaPct == null ? 'INSUFFICIENT' as const : Math.abs(calibrationErrorDeltaPct) >= CALIBRATION_GAP_THRESHOLD_PCT ? 'WARN' as const : 'PASS' as const,
+      title: 'Expected calibration error stability',
+      detail: calibrationErrorDeltaPct == null ? 'Insufficient evaluated data for aggregate calibration comparison.' : `30-day minus 90-day expected calibration error is ${calibrationErrorDeltaPct.toFixed(2)} percentage points.`
     }
   ];
 
@@ -405,10 +437,12 @@ export async function getCurrentPairOosDriftReport(params: {
       brierDelta,
       confidenceDeltaPct,
       calibrationGapDeltaPct,
+      calibrationErrorDeltaPct,
       accuracyDriftFlag: accuracyDeltaPct != null && Math.abs(accuracyDeltaPct) >= ACCURACY_DRIFT_THRESHOLD_PCT,
       brierDriftFlag: brierDelta != null && Math.abs(brierDelta) >= BRIER_DRIFT_THRESHOLD,
       confidenceDriftFlag: confidenceDeltaPct != null && Math.abs(confidenceDeltaPct) >= CONFIDENCE_DRIFT_THRESHOLD_PCT,
-      calibrationDriftFlag: calibrationGapDeltaPct != null && Math.abs(calibrationGapDeltaPct) >= CALIBRATION_GAP_THRESHOLD_PCT
+      calibrationDriftFlag: calibrationGapDeltaPct != null && Math.abs(calibrationGapDeltaPct) >= CALIBRATION_GAP_THRESHOLD_PCT,
+      calibrationErrorDriftFlag: calibrationErrorDeltaPct != null && Math.abs(calibrationErrorDeltaPct) >= CALIBRATION_GAP_THRESHOLD_PCT
     },
     checks
   };
