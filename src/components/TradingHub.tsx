@@ -203,6 +203,14 @@ interface CurrentPairOosDriftReport {
     accuracyDelta95Pct: {lower:number; upper:number; confidenceLevelPct:number; resamples:number} | null;
     brierDelta95: {lower:number; upper:number; confidenceLevelPct:number; resamples:number} | null;
   };
+  currentWindow: {
+    windowDays: 30; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; sampleSufficient:boolean;
+    calibrationBuckets:Array<{lowerPct:number;upperPct:number;predictions:number;directionalEvaluated:number;correct:number;averageConfidencePct:number|null;accuracyPct:number|null;accuracyConfidenceInterval95Pct:{lowerPct:number;upperPct:number}|null;calibrationGapPct:number|null;sampleSufficient:boolean}>;
+  };
+  baselineWindow: {
+    windowDays: 90; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; sampleSufficient:boolean;
+    calibrationBuckets:Array<{lowerPct:number;upperPct:number;predictions:number;directionalEvaluated:number;correct:number;averageConfidencePct:number|null;accuracyPct:number|null;accuracyConfidenceInterval95Pct:{lowerPct:number;upperPct:number}|null;calibrationGapPct:number|null;sampleSufficient:boolean}>;
+  };
   drift: { accuracyDeltaPct:number|null; brierDelta:number|null; confidenceDeltaPct:number|null; calibrationGapDeltaPct:number|null; accuracyDriftFlag:boolean; brierDriftFlag:boolean; confidenceDriftFlag:boolean; calibrationDriftFlag:boolean };
   checks: Array<{id:string;status:'PASS'|'WARN'|'INSUFFICIENT';title:string;detail:string}>;
 }
@@ -1299,6 +1307,31 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                   <div className="text-slate-500">Brier Δ 95% Bootstrap CI</div>
                   <div className="text-white mt-1">{currentPairOosDrift.uncertainty.brierDelta95 == null ? 'Insufficient sample' : currentPairOosDrift.uncertainty.brierDelta95.lower.toFixed(4) + ' to ' + currentPairOosDrift.uncertainty.brierDelta95.upper.toFixed(4)}</div>
                   <div className="text-slate-600 mt-1">{currentPairOosDrift.uncertainty.brierDelta95?.resamples ?? 0} deterministic bootstrap resamples</div>
+                </div>
+              </div>
+              <div className="border border-slate-800 rounded-lg p-3 mb-3">
+                <div className="text-xs font-bold text-white font-mono mb-1">Confidence-Bucket Calibration Stability</div>
+                <div className="text-[10px] text-slate-600 font-mono mb-2">Accuracy and calibration gap are shown separately for each confidence band. Wilson 95% intervals are descriptive; buckets below 30 directional evaluations are marked insufficient.</div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[10px] font-mono">
+                    <thead><tr className="text-slate-500 border-b border-slate-800">
+                      <th className="py-2 text-left">Confidence</th><th>30D n</th><th>30D Accuracy</th><th>30D 95% CI</th><th>30D Gap</th><th>90D n</th><th>90D Accuracy</th><th>90D 95% CI</th><th>90D Gap</th>
+                    </tr></thead>
+                    <tbody>{currentPairOosDrift.currentWindow.calibrationBuckets.map((bucket, index) => {
+                      const reference = currentPairOosDrift.baselineWindow.calibrationBuckets[index];
+                      return <tr key={bucket.lowerPct} className="border-b border-slate-800/60">
+                        <td className="py-2 text-white">{bucket.lowerPct}–{bucket.upperPct}%</td>
+                        <td className="text-center">{bucket.directionalEvaluated}</td>
+                        <td className="text-center">{bucket.accuracyPct == null ? '—' : bucket.accuracyPct.toFixed(1) + '%'}</td>
+                        <td className="text-center">{bucket.accuracyConfidenceInterval95Pct == null ? '—' : bucket.accuracyConfidenceInterval95Pct.lowerPct.toFixed(1) + '–' + bucket.accuracyConfidenceInterval95Pct.upperPct.toFixed(1) + '%'}</td>
+                        <td className="text-center">{bucket.calibrationGapPct == null ? '—' : bucket.calibrationGapPct.toFixed(1) + ' pp'}</td>
+                        <td className="text-center">{reference?.directionalEvaluated ?? 0}</td>
+                        <td className="text-center">{reference?.accuracyPct == null ? '—' : reference.accuracyPct.toFixed(1) + '%'}</td>
+                        <td className="text-center">{reference?.accuracyConfidenceInterval95Pct == null ? '—' : reference.accuracyConfidenceInterval95Pct.lowerPct.toFixed(1) + '–' + reference.accuracyConfidenceInterval95Pct.upperPct.toFixed(1) + '%'}</td>
+                        <td className="text-center">{reference?.calibrationGapPct == null ? '—' : reference.calibrationGapPct.toFixed(1) + ' pp'}</td>
+                      </tr>;
+                    })}</tbody>
+                  </table>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
