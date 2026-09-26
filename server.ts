@@ -56,7 +56,7 @@ import {
 } from './src/services/liveTradeResearchPredictionService';
 import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } from './src/services/liveTradeResearchPredictionEvaluationService';
 import { generateCurrentPairPredictions } from './src/services/pairPredictionService';
-import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics, getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison, getCurrentPairPredictionWalkForwardAnalytics } from './src/services/currentPairPredictionOutcomeService';
+import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics, getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison, getCurrentPairPairedModelComparisonRolling, getCurrentPairPredictionWalkForwardAnalytics, type CurrentPairPredictionHorizon } from './src/services/currentPairPredictionOutcomeService';
 import { getCurrentPairPredictionCollectionStatus, runCurrentPairPredictionCollectionCycle, startCurrentPairPredictionCollectionScheduler, stopCurrentPairPredictionCollectionScheduler } from './src/services/currentPairPredictionCollectionService';
 import {
   getResearchAiServerConfig,
@@ -1877,7 +1877,27 @@ app.get('/api/live-trade-research/current-pair/paired-model-comparison', operato
       message: err?.message || 'Current pair paired model comparison is unavailable.'
     });
   }
+});app.get('/api/live-trade-research/current-pair/paired-model-comparison-rolling', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon) : undefined;
+    const symbol = req.query.symbol ? String(req.query.symbol) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    if (horizon && !['1D', '4H', '1H'].includes(horizon)) {
+      return res.status(400).json({ error: 'Invalid horizon' });
+    }
+    const rollingWindows = await getCurrentPairPairedModelComparisonRolling({
+      horizon: horizon as CurrentPairPredictionHorizon | undefined,
+      symbol,
+      limit
+    });
+    return res.json({ rollingWindows, generatedAt: Date.now() });
+  } catch (error) {
+    console.error('[CURRENT_PAIR_PAIRED_ROLLING]', error);
+    return res.status(500).json({ error: 'Failed to generate paired rolling comparison' });
+  }
 });
+
+
 
 app.get('/api/live-trade-research/current-pair/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
