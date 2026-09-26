@@ -6,7 +6,7 @@ await getDatabase();
 await executeRun('DELETE FROM live_trade_research_predictions');
 
 const now = Date.now();
-const insert = async (id: string, modelVersion: string, timestamp: number, direction: 'UP' | 'DOWN', snapshot: object) => {
+const insert = async (id: string, modelVersion: string, timestamp: number, direction: 'UP' | 'DOWN', actualDirection: 'UP' | 'DOWN', snapshot: object) => {
   await executeRun(
     `INSERT INTO live_trade_research_predictions (
       prediction_id, model_version, prediction_source, symbol, signal_id, predicted_at,
@@ -14,16 +14,16 @@ const insert = async (id: string, modelVersion: string, timestamp: number, direc
       reasoning, invalidation, actual_direction, actual_return_pct, outcome_status,
       evaluated_at, created_at, feature_snapshot_json, prediction_context
     ) VALUES (?, ?, 'TEST', 'EUR/USD', ?, ?, '1D', ?, 0.9, ?, 1, 'test', null, ?, 1, 'EVALUATED', ?, ?, ?, 'CURRENT_PAIR')`,
-    [id, modelVersion, id, timestamp, direction, id + '-hash', direction, now, now, JSON.stringify(snapshot)]
+    [id, modelVersion, id, timestamp, direction, id + '-hash', actualDirection, now, now, JSON.stringify(snapshot)]
   );
 };
 
 const snapshot = { marketRegime: 'TREND', session: 'LONDON' };
-await insert('validation-base-1', 'PAIR_FEATURE_BASELINE_V2', now - 2000, 'UP', snapshot);
-await insert('validation-ai-1', 'LLAMA_GATEWAY_QWEN_LLAMA_V1', now - 2000, 'DOWN', snapshot);
-await insert('validation-base-2', 'PAIR_FEATURE_BASELINE_V2', now - 1000, 'UP', snapshot);
-await insert('validation-ai-2', 'LLAMA_GATEWAY_QWEN_LLAMA_V1', now - 1000, 'UP', snapshot);
-await insert('validation-unmatched-base', 'PAIR_FEATURE_BASELINE_V2', now, 'UP', { ...snapshot, outcome: 'WIN' });
+await insert('validation-base-1', 'PAIR_FEATURE_BASELINE_V2', now - 2000, 'UP', 'UP', snapshot);
+await insert('validation-ai-1', 'LLAMA_GATEWAY_QWEN_LLAMA_V1', now - 2000, 'DOWN', 'UP', snapshot);
+await insert('validation-base-2', 'PAIR_FEATURE_BASELINE_V2', now - 1000, 'UP', 'UP', snapshot);
+await insert('validation-ai-2', 'LLAMA_GATEWAY_QWEN_LLAMA_V1', now - 1000, 'UP', 'UP', snapshot);
+await insert('validation-unmatched-base', 'PAIR_FEATURE_BASELINE_V2', now, 'UP', 'UP', { ...snapshot, outcome: 'WIN' });
 
 const report = await getCurrentPairResearchValidationReport({ symbol: 'EUR/USD', horizon: '1D' });
 
