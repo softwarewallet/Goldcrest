@@ -196,6 +196,8 @@ interface CurrentPairPairedModelComparison {
   aiOnlyCorrect: number;
   bothIncorrect: number;
   directionAgreementPct: number | null;
+  discordantPairs: number;
+  exactMcNemarPValue: number | null;
 }
 
 interface CurrentPairCollectionStatus {
@@ -1231,7 +1233,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 <div><div className="text-slate-500">Baseline Only / AI Only</div><div className="text-lg text-cyan-300">{currentPairPairedComparison?.baselineOnlyCorrect ?? 0} / {currentPairPairedComparison?.aiOnlyCorrect ?? 0}</div></div>
                 <div><div className="text-slate-500">Direction Agreement</div><div className="text-lg text-white">{currentPairPairedComparison?.directionAgreementPct == null ? '—' : currentPairPairedComparison.directionAgreementPct.toFixed(1) + '%'}</div></div>
               </div>
-              <div className="mt-3 text-[10px] text-slate-500 font-mono">Both incorrect: {currentPairPairedComparison?.bothIncorrect ?? 0} · Pending paired observations: {currentPairPairedComparison?.pairedPending ?? 0}</div>
+              <div className="mt-3 text-[10px] text-slate-500 font-mono">Both incorrect: {currentPairPairedComparison?.bothIncorrect ?? 0} · Pending paired observations: {currentPairPairedComparison?.pairedPending ?? 0} · Discordant: {currentPairPairedComparison?.discordantPairs ?? 0} · Exact McNemar p: {currentPairPairedComparison?.exactMcNemarPValue == null ? '—' : currentPairPairedComparison.exactMcNemarPValue.toFixed(4)}</div>
+              <div className="mt-2 text-[10px] text-slate-600 font-mono">McNemar p-value is descriptive research telemetry for paired directional correctness; it is not a trading decision rule.</div>
             </div>
           )}
 

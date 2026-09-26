@@ -430,6 +430,24 @@ export interface CurrentPairPairedModelComparison {
   aiOnlyCorrect: number;
   bothIncorrect: number;
   directionAgreementPct: number | null;
+  discordantPairs: number;
+  exactMcNemarPValue: number | null;
+}
+
+function exactMcNemarTwoSidedPValue(baselineOnlyCorrect: number, aiOnlyCorrect: number): number | null {
+  const n = baselineOnlyCorrect + aiOnlyCorrect;
+  if (n === 0) return null;
+
+  const k = Math.min(baselineOnlyCorrect, aiOnlyCorrect);
+  let probability = Math.pow(0.5, n);
+  let cumulative = probability;
+
+  for (let i = 0; i < k; i++) {
+    probability *= (n - i) / (i + 1);
+    cumulative += probability;
+  }
+
+  return Math.min(1, 2 * cumulative);
 }
 
 export async function getCurrentPairPairedModelComparison(params: {
@@ -524,7 +542,9 @@ export async function getCurrentPairPairedModelComparison(params: {
     baselineOnlyCorrect,
     aiOnlyCorrect,
     bothIncorrect,
-    directionAgreementPct: pairedObservations ? (directionAgreement / pairedObservations) * 100 : null
+    directionAgreementPct: pairedObservations ? (directionAgreement / pairedObservations) * 100 : null,
+    discordantPairs: baselineOnlyCorrect + aiOnlyCorrect,
+    exactMcNemarPValue: exactMcNemarTwoSidedPValue(baselineOnlyCorrect, aiOnlyCorrect)
   };
 }
 
