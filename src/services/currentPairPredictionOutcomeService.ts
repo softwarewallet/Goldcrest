@@ -269,7 +269,7 @@ export async function getCurrentPairPredictionAnalytics(params: {
   const rows = await executeQuery<CurrentPairPredictionRow>(
     `SELECT prediction_id, model_version, prediction_source, symbol, predicted_at,
             horizon, predicted_direction, confidence, actual_direction,
-            actual_return_pct, outcome_status
+            actual_return_pct, outcome_status, feature_snapshot_json
        FROM live_trade_research_predictions
       WHERE ${conditions.join(' AND ')}
       ORDER BY predicted_at ASC
