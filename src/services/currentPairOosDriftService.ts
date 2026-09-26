@@ -101,6 +101,21 @@ function percentile(sorted: number[], probability: number): number | null {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
 }
 
+function wilsonConfidenceInterval95(successes: number, trials: number): { lowerPct: number; upperPct: number } | null {
+  if (!Number.isFinite(successes) || !Number.isFinite(trials) || trials <= 0) return null;
+  const n = Math.max(0, Math.floor(trials));
+  const k = Math.max(0, Math.min(n, Math.floor(successes)));
+  const z = 1.959963984540054;
+  const p = k / n;
+  const denominator = 1 + (z * z) / n;
+  const centre = (p + (z * z) / (2 * n)) / denominator;
+  const margin = (z / denominator) * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n));
+  return {
+    lowerPct: Math.max(0, centre - margin) * 100,
+    upperPct: Math.min(1, centre + margin) * 100
+  };
+}
+
 function bootstrapDifferenceInterval(
   currentValues: number[],
   baselineValues: number[],
