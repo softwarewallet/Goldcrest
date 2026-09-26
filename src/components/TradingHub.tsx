@@ -195,6 +195,11 @@ interface CurrentPairResearchValidationReport {
   checks: Array<{ id: string; status: 'PASS' | 'WARN' | 'INSUFFICIENT'; title: string; detail: string }>;
 }
 
+interface CurrentPairTemporalCalibrationMatrix {
+  modelVersion: string; generatedAt: number; windowsDays: number[]; minimumSampleCount: number;
+  rows: Array<{ symbol: string; horizon: '1D'|'3D'|'7D'; windows: Array<{ windowDays:number; predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; calibrationSlope:number|null; calibrationInterceptPct:number|null; sampleSufficient:boolean }>; deltas: { accuracy7dVs90dPct:number|null; confidence7dVs90dPct:number|null; ece7dVs90dPct:number|null; mce7dVs90dPct:number|null; slope7dVs90d:number|null; intercept7dVs90dPct:number|null } }>;
+}
+
 interface CurrentPairResearchReadinessLedger {
   scope: { symbol: string | null; horizon: string; generatedAt: number; aiModelVersion: string };
   evidence: {
@@ -444,6 +449,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairPairedContexts, setCurrentPairPairedContexts] = useState<CurrentPairPairedContextComparison[]>([]);
   const [currentPairValidationReport, setCurrentPairValidationReport] = useState<CurrentPairResearchValidationReport | null>(null);
   const [currentPairResearchReadinessLedger, setCurrentPairResearchReadinessLedger] = useState<CurrentPairResearchReadinessLedger | null>(null);
+  const [currentPairTemporalCalibration, setCurrentPairTemporalCalibration] = useState<CurrentPairTemporalCalibrationMatrix | null>(null);
   const [currentPairOosDrift, setCurrentPairOosDrift] = useState<CurrentPairOosDriftReport | null>(null);
   const [currentPairCalibrationMatrix, setCurrentPairCalibrationMatrix] = useState<CurrentPairCalibrationMatrix | null>(null);
   const [currentPairCrossModelContextCalibration, setCurrentPairCrossModelContextCalibration] = useState<any>(null);
@@ -562,7 +568,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           : '';
       const query = `horizon=${currentPairHorizon}${modelVersion ? `&modelVersion=${modelVersion}` : ''}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
       const comparisonQuery = `horizon=${currentPairHorizon}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
-      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes, calibrationMatrixRes, crossModelCalibrationRes, readinessLedgerRes] = await Promise.all([
+      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes, calibrationMatrixRes, crossModelCalibrationRes, readinessLedgerRes, temporalCalibrationRes] = await Promise.all([
         fetch(`/api/live-trade-research/current-pair/predictions?${query}&limit=100`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/analytics?${query}`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' }),
@@ -574,9 +580,10 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         fetch(`/api/live-trade-research/current-pair/oos-drift?${comparisonQuery}&modelVersion=LLAMA_GATEWAY_QWEN_LLAMA_V1`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/calibration-matrix?${comparisonQuery}&modelVersion=LLAMA_GATEWAY_QWEN_LLAMA_V1`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/cross-model-calibration?${comparisonQuery}`, { cache: 'no-store' }),
-        fetch(`/api/live-trade-research/current-pair/research-readiness-ledger?${comparisonQuery}`, { cache: 'no-store' })
+        fetch(`/api/live-trade-research/current-pair/research-readiness-ledger?${comparisonQuery}`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/temporal-calibration?${comparisonQuery}&modelVersion=LLAMA_GATEWAY_QWEN_LLAMA_V1`, { cache: 'no-store' })
       ]);
-      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData, pairedContextData, validationData, oosDriftData, calibrationMatrixData, crossModelCalibrationData, readinessLedgerData] = await Promise.all([
+      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData, pairedContextData, validationData, oosDriftData, calibrationMatrixData, crossModelCalibrationData, readinessLedgerData, temporalCalibrationData] = await Promise.all([
         safeParseJson(predictionRes),
         safeParseJson(analyticsRes),
         safeParseJson(walkForwardRes),
@@ -588,7 +595,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         safeParseJson(oosDriftRes),
         safeParseJson(calibrationMatrixRes),
         safeParseJson(crossModelCalibrationRes),
-        safeParseJson(readinessLedgerRes)
+        safeParseJson(readinessLedgerRes),
+        safeParseJson(temporalCalibrationRes)
       ]);
       if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
@@ -602,6 +610,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       if (!calibrationMatrixRes.ok) throw new Error(calibrationMatrixData?.message || calibrationMatrixData?.error || 'Calibration matrix unavailable.');
       if (!crossModelCalibrationRes.ok) throw new Error(crossModelCalibrationData?.message || crossModelCalibrationData?.error || 'Cross-model calibration unavailable.');
       if (!readinessLedgerRes.ok) throw new Error(readinessLedgerData?.message || readinessLedgerData?.error || 'Research readiness ledger unavailable.');
+      if (!temporalCalibrationRes.ok) throw new Error(temporalCalibrationData?.message || temporalCalibrationData?.error || 'Temporal calibration report unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
       setCurrentPairWalkForward(walkForwardData || null);
@@ -611,6 +620,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       setCurrentPairPairedContexts(Array.isArray(pairedContextData?.groups) ? pairedContextData.groups : []);
       setCurrentPairValidationReport(validationData || null);
       setCurrentPairResearchReadinessLedger(readinessLedgerData || null);
+      setCurrentPairTemporalCalibration(temporalCalibrationData || null);
       setCurrentPairOosDrift(oosDriftData || null);
       setCurrentPairCalibrationMatrix(calibrationMatrixData || null);
       const contextCalibrationRes = await fetch(`/api/live-trade-research/current-pair/cross-model-context-calibration?${comparisonQuery}`, { cache: 'no-store' });
@@ -1501,6 +1511,26 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                     <div className="text-slate-500 mt-1">{check.detail}</div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {currentPairModel === 'COMPARE' && currentPairTemporalCalibration && (
+            <div className="bg-slate-900 border border-indigo-900/60 rounded-xl p-4">
+              <div className="text-sm font-bold text-white font-mono">Temporal Calibration Stability</div>
+              <div className="text-[10px] text-slate-500 mt-1 mb-3">AI research telemetry across rolling 7D, 14D, 30D, 60D and 90D windows. Maturity is enforced by prediction horizon; this does not control execution.</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[10px] font-mono">
+                  <thead><tr className="text-slate-500 border-b border-slate-800"><th className="text-left p-2">Pair</th><th className="text-left p-2">Horizon</th>{currentPairTemporalCalibration.windowsDays.map(d=><th key={d} className="text-right p-2">{d}D n</th>)}<th className="text-right p-2">7D–90D Acc.</th><th className="text-right p-2">7D–90D ECE</th></tr></thead>
+                  <tbody>{currentPairTemporalCalibration.rows.map(row=>(
+                    <tr key={row.symbol+'|'+row.horizon} className="border-b border-slate-900">
+                      <td className="p-2 text-slate-300">{row.symbol}</td><td className="p-2 text-slate-400">{row.horizon}</td>
+                      {row.windows.map(w=><td key={w.windowDays} className={`p-2 text-right ${w.sampleSufficient?'text-emerald-300':'text-cyan-300'}`}>{w.directionalEvaluated}</td>)}
+                      <td className="p-2 text-right text-slate-300">{row.deltas.accuracy7dVs90dPct == null ? '—' : row.deltas.accuracy7dVs90dPct.toFixed(2)+'%'}</td>
+                      <td className="p-2 text-right text-slate-300">{row.deltas.ece7dVs90dPct == null ? '—' : row.deltas.ece7dVs90dPct.toFixed(2)+' pp'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
               </div>
             </div>
           )}
