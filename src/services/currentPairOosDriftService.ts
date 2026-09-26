@@ -58,6 +58,7 @@ export interface CurrentPairOosDriftReport {
     brierDriftFlag: boolean;
     confidenceDriftFlag: boolean;
     calibrationDriftFlag: boolean;
+    calibrationErrorDriftFlag: boolean;
   };
   checks: Array<{
     id: string;
