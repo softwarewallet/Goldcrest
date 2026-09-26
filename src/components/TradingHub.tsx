@@ -1140,15 +1140,30 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div className="text-sm font-bold text-white font-mono mb-3">Confidence Calibration</div>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+              {(currentPairAnalytics?.groups?.find(g => g.symbol === (currentPairSymbol === 'ALL' ? currentPairAnalytics.groups[0]?.symbol : currentPairSymbol))?.calibration || []).map(bin => (
+                <div key={bin.lowerPct} className="rounded-lg border border-slate-800 bg-slate-950 p-3 font-mono text-[10px]">
+                  <div className="text-slate-400">{bin.lowerPct.toFixed(0)}–{bin.upperPct.toFixed(0)}% confidence</div>
+                  <div className="mt-1 text-white">n={bin.predictions}</div>
+                  <div className="text-cyan-300">Avg: {bin.averageConfidencePct == null ? '—' : bin.averageConfidencePct.toFixed(1) + '%'}</div>
+                  <div className="text-emerald-300">Accuracy: {bin.accuracyPct == null ? '—' : bin.accuracyPct.toFixed(1) + '%'}</div>
+                </div>
+              ))}
+            </div>
+            <div className="text-[10px] text-slate-600 font-mono mt-2">Descriptive research telemetry only; calibration does not alter prediction or Auto Live behavior.</div>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
             <div className="text-sm font-bold text-white font-mono mb-3">Grouped Performance</div>
             {(!currentPairAnalytics?.groups?.length) ? <div className="text-xs text-slate-600 font-mono">No evaluated or pending groups available.</div> : (
               <div className="overflow-x-auto"><table className="w-full text-[10px] font-mono">
                 <thead><tr className="text-slate-500 border-b border-slate-800">
-                  <th className="py-2 text-left">Pair</th><th>Model</th><th>Horizon</th><th>Total</th><th>Evaluated</th><th>Pending</th><th>Correct</th><th>Directional</th><th>Accuracy</th><th>Brier</th>
+                  <th className="py-2 text-left">Pair</th><th>Model</th><th>Horizon</th><th>Total</th><th>Evaluated</th><th>Pending</th><th>Correct</th><th>Directional</th><th>Accuracy</th><th>Brier</th><th>UP / DOWN / FLAT</th>
                 </tr></thead>
                 <tbody>{currentPairAnalytics.groups.map(group => (
                   <tr key={`${group.symbol}-${group.modelVersion}-${group.horizon}`} className="border-b border-slate-800/60">
-                    <td className="py-2 text-white font-bold">{group.symbol}</td><td>{group.modelVersion}</td><td>{group.horizon}</td><td className="text-center">{group.total}</td><td className="text-center">{group.evaluated}</td><td className="text-center text-amber-300">{group.pending}</td><td className="text-center text-emerald-300">{group.correct}</td><td className="text-center">{group.directionalEvaluated}</td><td className="text-center">{group.accuracyPct == null ? '—' : group.accuracyPct.toFixed(1) + '%'}</td><td className="text-center">{group.brierScore == null ? '—' : group.brierScore.toFixed(4)}</td>
+                    <td className="py-2 text-white font-bold">{group.symbol}</td><td>{group.modelVersion}</td><td>{group.horizon}</td><td className="text-center">{group.total}</td><td className="text-center">{group.evaluated}</td><td className="text-center text-amber-300">{group.pending}</td><td className="text-center text-emerald-300">{group.correct}</td><td className="text-center">{group.directionalEvaluated}</td><td className="text-center">{group.accuracyPct == null ? '—' : group.accuracyPct.toFixed(1) + '%'}</td><td className="text-center">{group.brierScore == null ? '—' : group.brierScore.toFixed(4)}</td><td className="text-center">{group.upPredictions} / {group.downPredictions} / {group.flatPredictions}</td>
                   </tr>
                 ))}</tbody>
               </table></div>
