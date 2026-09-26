@@ -166,6 +166,25 @@ interface CurrentPairPredictionAnalytics {
   generatedAt: number;
 }
 
+interface CurrentPairModelComparison {
+  total: number;
+  evaluated: number;
+  pending: number;
+  models: Array<{
+    modelVersion: string;
+    predictions: number;
+    evaluated: number;
+    pending: number;
+    correct: number;
+    directionalEvaluated: number;
+    accuracyPct: number | null;
+    brierScore: number | null;
+    sampleSufficient: boolean;
+    minimumSampleCount: number;
+  }>;
+  generatedAt: number;
+}
+
 interface CurrentPairCollectionStatus {
   running: boolean;
   pollIntervalMs: number;
@@ -297,9 +316,10 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [executionDiagnostics, setExecutionDiagnostics] = useState<ExecutionReconciliationDiagnostic[]>([]);
   const [currentPairPredictions, setCurrentPairPredictions] = useState<CurrentPairPrediction[]>([]);
   const [currentPairAnalytics, setCurrentPairAnalytics] = useState<CurrentPairPredictionAnalytics | null>(null);
+  const [currentPairModelComparison, setCurrentPairModelComparison] = useState<CurrentPairModelComparison | null>(null);
   const [currentPairWalkForward, setCurrentPairWalkForward] = useState<CurrentPairWalkForwardAnalytics | null>(null);
   const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
-  const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY'>('BASELINE');
+  const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY' | 'COMPARE'>('BASELINE');
   const [currentPairSymbol, setCurrentPairSymbol] = useState<string>('ALL');
   const [currentPairSymbols, setCurrentPairSymbols] = useState<string[]>([]);
   const [currentPairLoading, setCurrentPairLoading] = useState(false);
@@ -404,23 +424,33 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const fetchCurrentPairResearch = useCallback(async () => {
     setCurrentPairLoading(true);
     try {
-      const query = `horizon=${currentPairHorizon}&modelVersion=${currentPairModel === 'BASELINE' ? 'PAIR_FEATURE_BASELINE_V2' : 'LLAMA_GATEWAY_QWEN_LLAMA_V1'}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
-      const [predictionRes, analyticsRes, walkForwardRes] = await Promise.all([
+      const modelVersion = currentPairModel === 'BASELINE'
+        ? 'PAIR_FEATURE_BASELINE_V2'
+        : currentPairModel === 'AI_GATEWAY'
+          ? 'LLAMA_GATEWAY_QWEN_LLAMA_V1'
+          : '';
+      const query = `horizon=${currentPairHorizon}${modelVersion ? `&modelVersion=${modelVersion}` : ''}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
+      const comparisonQuery = `horizon=${currentPairHorizon}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
+      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes] = await Promise.all([
         fetch(`/api/live-trade-research/current-pair/predictions?${query}&limit=100`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/analytics?${query}`, { cache: 'no-store' }),
-        fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' })
+        fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/model-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' })
       ]);
-      const [predictionData, analyticsData, walkForwardData] = await Promise.all([
+      const [predictionData, analyticsData, walkForwardData, comparisonData] = await Promise.all([
         safeParseJson(predictionRes),
         safeParseJson(analyticsRes),
-        safeParseJson(walkForwardRes)
+        safeParseJson(walkForwardRes),
+        safeParseJson(comparisonRes)
       ]);
       if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
       if (!walkForwardRes.ok) throw new Error(walkForwardData?.message || walkForwardData?.error || 'Current pair walk-forward analytics unavailable.');
+      if (!comparisonRes.ok) throw new Error(comparisonData?.message || comparisonData?.error || 'Current pair model comparison unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
       setCurrentPairWalkForward(walkForwardData || null);
+      setCurrentPairModelComparison(comparisonData || null);
       const discoveredSymbols = Array.from(new Set([
         ...currentPairSymbols,
         ...(Array.isArray(predictionData?.predictions) ? predictionData.predictions.map((p: CurrentPairPrediction) => p.symbol) : []),
@@ -1138,8 +1168,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 <select value={currentPairHorizon} onChange={(e) => setCurrentPairHorizon(e.target.value as '1D' | '3D' | '7D')} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-white">
                   <option value="1D">1D Horizon</option><option value="3D">3D Horizon</option><option value="7D">7D Horizon</option>
                 </select>
-                <select value={currentPairModel} onChange={(e) => setCurrentPairModel(e.target.value as 'BASELINE' | 'AI_GATEWAY')} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-white">
-                  <option value="BASELINE">Baseline</option><option value="AI_GATEWAY">AI Gateway</option>
+                <select value={currentPairModel} onChange={(e) => setCurrentPairModel(e.target.value as 'BASELINE' | 'AI_GATEWAY' | 'COMPARE')} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-white">
+                  <option value="BASELINE">Baseline</option><option value="AI_GATEWAY">AI Gateway</option><option value="COMPARE">Compare Models</option>
                 </select>
                 <button type="button" onClick={() => void fetchCurrentPairResearch()} disabled={currentPairLoading} className="px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">{currentPairLoading ? 'Loading...' : 'Refresh'}</button>
                 <button type="button" onClick={() => void evaluateCurrentPairResearch()} className="px-2.5 py-1.5 rounded-lg border border-cyan-700 bg-cyan-950/40 text-cyan-300 text-[11px] font-mono">Evaluate Matured</button>
@@ -1148,6 +1178,29 @@ export const TradingHub: React.FC<TradingHubProps> = ({
             {currentPairError && <div className="mt-3 text-[11px] font-mono text-rose-300 border border-rose-900 bg-rose-950/30 rounded p-2">{currentPairError}</div>}
             {currentPairEvaluationMessage && <div className="mt-3 text-[11px] font-mono text-cyan-300 border border-cyan-900 bg-cyan-950/30 rounded p-2">{currentPairEvaluationMessage}</div>}
           </div>
+
+          {currentPairModel === 'COMPARE' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <div className="text-sm font-bold text-white font-mono mb-1">Model Comparison</div>
+              <div className="text-[10px] text-slate-500 mb-3">Same persisted CURRENT_PAIR outcomes aggregated by model. Research-only; this does not authorize or modify trades.</div>
+              <div className="overflow-x-auto"><table className="w-full text-[10px] font-mono">
+                <thead><tr className="text-slate-500 border-b border-slate-800">
+                  <th className="py-2 text-left">Model</th><th>Predictions</th><th>Evaluated</th><th>Pending</th><th>Correct</th><th>Directional</th><th>Accuracy</th><th>Brier</th><th>Sample</th>
+                </tr></thead>
+                <tbody>{(currentPairModelComparison?.models || []).map(model => (
+                  <tr key={model.modelVersion} className="border-b border-slate-800/60">
+                    <td className="py-2 text-cyan-300">{model.modelVersion}</td>
+                    <td className="text-center">{model.predictions}</td><td className="text-center">{model.evaluated}</td>
+                    <td className="text-center text-amber-300">{model.pending}</td><td className="text-center text-emerald-300">{model.correct}</td>
+                    <td className="text-center">{model.directionalEvaluated}</td>
+                    <td className="text-center">{model.accuracyPct == null ? '—' : model.accuracyPct.toFixed(1) + '%'}</td>
+                    <td className="text-center">{model.brierScore == null ? '—' : model.brierScore.toFixed(4)}</td>
+                    <td className="text-center">{model.sampleSufficient ? 'SUFFICIENT' : `INSUFFICIENT (<${model.minimumSampleCount})`}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             {[
