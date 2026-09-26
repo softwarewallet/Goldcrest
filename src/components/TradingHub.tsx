@@ -1257,6 +1257,34 @@ export const TradingHub: React.FC<TradingHubProps> = ({
             {currentPairEvaluationMessage && <div className="mt-3 text-[11px] font-mono text-cyan-300 border border-cyan-900 bg-cyan-950/30 rounded p-2">{currentPairEvaluationMessage}</div>}
           </div>
 
+          {currentPairModel === 'COMPARE' && currentPairValidationReport && (
+            <div className="bg-slate-900 border border-cyan-900/60 rounded-xl p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-sm font-bold text-white font-mono">Model Validation & Governance Report</div>
+                  <div className="text-[10px] text-slate-500 mt-1">Unified research evidence and data-quality telemetry. Informational only; never used by Auto Live.</div>
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono">Minimum sample: 30 evaluated</div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-[10px] font-mono mb-4">
+                <div><div className="text-slate-500">Predictions</div><div className="text-white text-lg">{currentPairValidationReport.data.totalPredictions}</div></div>
+                <div><div className="text-slate-500">Paired / Evaluated</div><div className="text-white text-lg">{currentPairValidationReport.data.pairedObservations} / {currentPairValidationReport.data.pairedEvaluated}</div></div>
+                <div><div className="text-slate-500">Pending</div><div className="text-amber-300 text-lg">{currentPairValidationReport.data.pendingPct == null ? '—' : currentPairValidationReport.data.pendingPct.toFixed(1) + '%'}</div></div>
+                <div><div className="text-slate-500">Contexts</div><div className="text-white text-lg">{currentPairValidationReport.contexts.sufficient} / {currentPairValidationReport.contexts.total}</div></div>
+                <div><div className="text-slate-500">Leakage Rows</div><div className={currentPairValidationReport.data.featureSnapshotLeakageRows ? 'text-rose-300 text-lg' : 'text-emerald-300 text-lg'}>{currentPairValidationReport.data.featureSnapshotLeakageRows}</div></div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {currentPairValidationReport.checks.map(check => (
+                  <div key={check.id} className="border border-slate-800 rounded-lg p-2 font-mono text-[10px]">
+                    <div className="flex items-center justify-between gap-2"><span className="text-slate-300">{check.title}</span><span className={check.status === 'PASS' ? 'text-emerald-300' : check.status === 'WARN' ? 'text-amber-300' : 'text-cyan-300'}>{check.status}</span></div>
+                    <div className="text-slate-500 mt-1">{check.detail}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-[10px] text-slate-600 font-mono">Unmatched baseline/AI: {currentPairValidationReport.data.unmatchedBaseline} / {currentPairValidationReport.data.unmatchedAi} · Duplicate keys: {currentPairValidationReport.data.duplicatePairKeys} · Paired McNemar p: {currentPairValidationReport.paired.exactMcNemarPValue == null ? '—' : currentPairValidationReport.paired.exactMcNemarPValue.toFixed(4)}</div>
+            </div>
+          )}
+
           {currentPairModel === 'COMPARE' && (
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <div className="text-sm font-bold text-white font-mono mb-1">Model Comparison</div>
