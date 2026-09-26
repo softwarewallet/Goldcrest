@@ -61,6 +61,7 @@ import { getCurrentPairPredictionCollectionStatus, runCurrentPairPredictionColle
 import { getCurrentPairResearchValidationReport } from './src/services/currentPairResearchValidationService';
 import { getCurrentPairOosDriftReport } from './src/services/currentPairOosDriftService';
 import { getCurrentPairCalibrationMatrix } from './src/services/currentPairCalibrationMatrixService';
+import { getCurrentPairCrossModelContextCalibration } from './src/services/currentPairCrossModelContextCalibrationService';
 import { getCurrentPairCrossModelCalibration } from './src/services/currentPairCrossModelCalibrationService';
 import {
   getResearchAiServerConfig,
@@ -2005,6 +2006,15 @@ app.get('/api/live-trade-research/current-pair/cross-model-calibration', operato
     console.error('[CURRENT_PAIR_CROSS_MODEL_CALIBRATION]', error);
     return res.status(503).json({ error: 'CURRENT_PAIR_CROSS_MODEL_CALIBRATION_UNAVAILABLE', message: error?.message || 'Cross-model calibration is unavailable.' });
   }
+});
+
+app.get('/api/live-trade-research/current-pair/cross-model-context-calibration', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : undefined;
+    if (horizon && !['1D', '3D', '7D'].includes(horizon)) return res.status(400).json({ error: 'INVALID_HORIZON' });
+    const report = await getCurrentPairCrossModelContextCalibration({ symbol: typeof req.query.symbol==='string'?req.query.symbol:undefined, horizon: horizon as CurrentPairPredictionHorizon|undefined, marketRegime: typeof req.query.marketRegime==='string'?req.query.marketRegime:undefined, session: typeof req.query.session==='string'?req.query.session:undefined });
+    return res.json(report);
+  } catch (error:any) { console.error('[CURRENT_PAIR_CROSS_MODEL_CONTEXT_CALIBRATION]', error); return res.status(503).json({error:'CURRENT_PAIR_CROSS_MODEL_CONTEXT_CALIBRATION_UNAVAILABLE',message:error?.message||'Context calibration is unavailable.'}); }
 });
 
 app.get('/api/live-trade-research/current-pair/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
