@@ -351,55 +351,68 @@ export async function getCurrentPairPredictionModelComparison(params: {
   models: CurrentPairPredictionModelComparisonMetric[];
   generatedAt: number;
 }> {
-  const analytics = await getCurrentPairPredictionAnalytics({
-    horizon: params.horizon,
-    symbol: params.symbol,
-    limit: params.limit
-  });
-  const grouped = new Map<string, CurrentPairPredictionModelComparisonMetric & { brierNumerator: number }>();
+  const conditions = ["prediction_context = 'CURRENT_PAIR'"];
+  const values: unknown[] = [];
 
-  for (const group of analytics.groups) {
-    const current = grouped.get(group.modelVersion) || {
-      modelVersion: group.modelVersion,
-      predictions: 0,
-      evaluated: 0,
-      pending: 0,
-      correct: 0,
-      directionalEvaluated: 0,
-      accuracyPct: null,
-      brierScore: null,
-      sampleSufficient: false,
-      minimumSampleCount: CURRENT_PAIR_MIN_SAMPLE_COUNT,
-      accuracyConfidenceInterval95Pct: null,
-      brierNumerator: 0
-    };
-    current.predictions += group.predictions;
-    current.evaluated += group.evaluated;
-    current.pending += group.pending;
-    current.correct += group.correct;
-    current.directionalEvaluated += group.directionalEvaluated;
-    if (group.brierScore !== null && group.directionalEvaluated > 0) {
-      current.brierNumerator += group.brierScore * group.directionalEvaluated;
-    }
-    grouped.set(group.modelVersion, current);
+  if (params.horizon) {
+    conditions.push('horizon = ?');
+    values.push(params.horizon);
+  }
+  if (params.symbol) {
+    conditions.push('symbol = ?');
+    values.push(params.symbol);
   }
 
-  const models = [...grouped.values()].map(({ brierNumerator, ...metric }) => ({
-    ...metric,
-    accuracyPct: metric.directionalEvaluated > 0
-      ? (metric.correct / metric.directionalEvaluated) * 100
-      : null,
-    brierScore: metric.directionalEvaluated > 0
-      ? brierNumerator / metric.directionalEvaluated
-      : null,
-    sampleSufficient: metric.directionalEvaluated >= CURRENT_PAIR_MIN_SAMPLE_COUNT,
-    accuracyConfidenceInterval95Pct: wilsonConfidenceInterval95(metric.correct, metric.directionalEvaluated)
-  }));
+  const limit = Math.max(1, Math.min(100000, Math.floor(Number(params.limit) || 50000)));
+  const rows = await executeQuery<CurrentPairPredictionRow>(
+    `SELECT prediction_id, model_version, prediction_source, symbol, predicted_at,
+            horizon, predicted_direction, confidence, actual_direction,
+            actual_return_pct, outcome_status, feature_snapshot_json
+       FROM live_trade_research_predictions
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY predicted_at ASC
+      LIMIT ?`,
+    [...values, limit]
+  );
+
+  const grouped = new Map<string, CurrentPairPredictionRow[]>();
+  for (const row of rows) {
+    const group = grouped.get(row.model_version) || [];
+    group.push(row);
+    grouped.set(row.model_version, group);
+  }
+
+  const models = [...grouped.entries()].map(([modelVersion, modelRows]) => {
+    const evaluatedRows = modelRows.filter(row => row.outcome_status === 'EVALUATED' && row.actual_direction);
+    const directional = evaluatedRows
+      .map(row => directionalScore(row, row.actual_direction as 'UP' | 'DOWN' | 'FLAT'))
+      .filter(result => result.evaluated);
+    const correct = directional.filter(result => result.correct).length;
+    const brierValues = directional
+      .map(result => result.brier)
+      .filter((value): value is number => value !== null);
+
+    return {
+      modelVersion,
+      predictions: modelRows.length,
+      evaluated: evaluatedRows.length,
+      pending: modelRows.length - evaluatedRows.length,
+      correct,
+      directionalEvaluated: directional.length,
+      accuracyPct: directional.length ? (correct / directional.length) * 100 : null,
+      brierScore: brierValues.length ? brierValues.reduce((sum, value) => sum + value, 0) / brierValues.length : null,
+      sampleSufficient: directional.length >= CURRENT_PAIR_MIN_SAMPLE_COUNT,
+      minimumSampleCount: CURRENT_PAIR_MIN_SAMPLE_COUNT,
+      accuracyConfidenceInterval95Pct: wilsonConfidenceInterval95(correct, directional.length)
+    };
+  }).sort((a, b) => a.modelVersion.localeCompare(b.modelVersion));
+
+  const evaluated = rows.filter(row => row.outcome_status === 'EVALUATED').length;
 
   return {
-    total: analytics.total,
-    evaluated: analytics.evaluated,
-    pending: analytics.pending,
+    total: rows.length,
+    evaluated,
+    pending: rows.length - evaluated,
     models,
     generatedAt: Date.now()
   };
