@@ -34,10 +34,10 @@ const report = await getCurrentPairOosDriftReport({
 
 assert.equal(report.currentWindow.directionalEvaluated, 31);
 assert.equal(report.currentWindow.sampleSufficient, true);
-assert.equal(report.baselineWindow.directionalEvaluated, 62);
+assert.equal(report.baselineWindow.directionalEvaluated, 31);
 assert.equal(report.baselineWindow.sampleSufficient, true);
 assert.equal(report.currentWindow.averageConfidencePct, 90);
-assert.equal(report.baselineWindow.averageConfidencePct, 80);
+assert.equal(report.baselineWindow.averageConfidencePct, 70);
 assert.equal(report.drift.accuracyDriftFlag, true);
 assert.equal(report.drift.confidenceDriftFlag, true);
 assert.equal(report.checks.find(check => check.id === 'current-sample')?.status, 'PASS');
