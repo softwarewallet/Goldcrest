@@ -771,7 +771,9 @@ export async function getCurrentPairPairedContextComparison(params: {
       bothIncorrect,
       directionAgreementPct: group.pairs.length ? (directionAgreement / group.pairs.length) * 100 : null,
       discordantPairs: baselineOnlyCorrect + aiOnlyCorrect,
-      exactMcNemarPValue: exactMcNemarTwoSidedPValue(baselineOnlyCorrect, aiOnlyCorrect)
+      exactMcNemarPValue: exactMcNemarTwoSidedPValue(baselineOnlyCorrect, aiOnlyCorrect),
+      sampleSufficient: pairedEvaluated >= CURRENT_PAIR_MIN_SAMPLE_COUNT,
+      accuracyConfidenceInterval95Pct: wilsonConfidenceInterval95(baselineOnlyCorrect + bothCorrect, pairedEvaluated)
     };
   }).sort((a, b) => a.symbol.localeCompare(b.symbol) || a.horizon.localeCompare(b.horizon) || a.marketRegime.localeCompare(b.marketRegime) || a.session.localeCompare(b.session));
 
