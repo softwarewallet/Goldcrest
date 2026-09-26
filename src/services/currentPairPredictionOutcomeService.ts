@@ -390,7 +390,8 @@ export async function getCurrentPairPredictionAnalytics(params: {
         accuracyPct: binDirectional.length ? (binCorrect / binDirectional.length) * 100 : null,
         averageConfidencePct: binRows.length
           ? binRows.reduce((sum, row) => sum + Math.max(0, Math.min(1, Number(row.confidence) || 0)), 0) / binRows.length * 100
-          : null
+          : null,
+        sampleSufficient: binDirectional.length >= CURRENT_PAIR_MIN_SAMPLE_COUNT
       };
     });
 
