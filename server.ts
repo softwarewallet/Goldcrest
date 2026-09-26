@@ -56,7 +56,7 @@ import {
 } from './src/services/liveTradeResearchPredictionService';
 import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } from './src/services/liveTradeResearchPredictionEvaluationService';
 import { generateCurrentPairPredictions } from './src/services/pairPredictionService';
-import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics, getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison, getCurrentPairPairedModelComparisonRolling, getCurrentPairPredictionWalkForwardAnalytics } from './src/services/currentPairPredictionOutcomeService';
+import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics, getCurrentPairPredictionModelComparison, getCurrentPairPairedModelComparison, getCurrentPairPairedModelComparisonRolling, getCurrentPairPredictionWalkForwardAnalytics, type CurrentPairPredictionHorizon } from './src/services/currentPairPredictionOutcomeService';
 import { getCurrentPairPredictionCollectionStatus, runCurrentPairPredictionCollectionCycle, startCurrentPairPredictionCollectionScheduler, stopCurrentPairPredictionCollectionScheduler } from './src/services/currentPairPredictionCollectionService';
 import {
   getResearchAiServerConfig,
@@ -1886,7 +1886,7 @@ app.get('/api/live-trade-research/current-pair/paired-model-comparison', operato
       return res.status(400).json({ error: 'Invalid horizon' });
     }
     const rollingWindows = await getCurrentPairPairedModelComparisonRolling({
-      horizon: horizon as any,
+      horizon: horizon as CurrentPairPredictionHorizon | undefined,
       symbol,
       limit
     });
