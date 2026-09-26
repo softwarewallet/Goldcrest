@@ -1,6 +1,19 @@
 import { executeQuery } from '../database/db';
 import type { CurrentPairPredictionHorizon } from './currentPairPredictionOutcomeService';
 
+export interface CurrentPairCalibrationBucket {
+  lowerPct: number;
+  upperPct: number;
+  predictions: number;
+  directionalEvaluated: number;
+  correct: number;
+  averageConfidencePct: number | null;
+  accuracyPct: number | null;
+  accuracyConfidenceInterval95Pct: { lowerPct: number; upperPct: number } | null;
+  calibrationGapPct: number | null;
+  sampleSufficient: boolean;
+}
+
 export interface CurrentPairOosDriftWindow {
   windowDays: 30 | 90;
   predictions: number;
@@ -12,6 +25,7 @@ export interface CurrentPairOosDriftWindow {
   averageConfidencePct: number | null;
   calibrationGapPct: number | null;
   sampleSufficient: boolean;
+  calibrationBuckets: CurrentPairCalibrationBucket[];
 }
 
 export interface CurrentPairOosBootstrapInterval {
@@ -87,6 +101,21 @@ function percentile(sorted: number[], probability: number): number | null {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
 }
 
+function wilsonConfidenceInterval95(successes: number, trials: number): { lowerPct: number; upperPct: number } | null {
+  if (!Number.isFinite(successes) || !Number.isFinite(trials) || trials <= 0) return null;
+  const n = Math.max(0, Math.floor(trials));
+  const k = Math.max(0, Math.min(n, Math.floor(successes)));
+  const z = 1.959963984540054;
+  const p = k / n;
+  const denominator = 1 + (z * z) / n;
+  const centre = (p + (z * z) / (2 * n)) / denominator;
+  const margin = (z / denominator) * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n));
+  return {
+    lowerPct: Math.max(0, centre - margin) * 100,
+    upperPct: Math.min(1, centre + margin) * 100
+  };
+}
+
 function bootstrapDifferenceInterval(
   currentValues: number[],
   baselineValues: number[],
@@ -132,6 +161,51 @@ function getBrierSamples(rows: any[], maturityCutoff: number): number[] {
   return samples;
 }
 
+function emptyCalibrationBucket(lowerPct: number, upperPct: number): CurrentPairCalibrationBucket {
+  return {
+    lowerPct,
+    upperPct,
+    predictions: 0,
+    directionalEvaluated: 0,
+    correct: 0,
+    averageConfidencePct: null,
+    accuracyPct: null,
+    accuracyConfidenceInterval95Pct: null,
+    calibrationGapPct: null,
+    sampleSufficient: false
+  };
+}
+
+function buildCalibrationBuckets(rows: any[], maturityCutoff: number): CurrentPairCalibrationBucket[] {
+  return Array.from({ length: 5 }, (_, index) => {
+    const lower = index * 20;
+    const upper = index === 4 ? 100 : lower + 20;
+    const bucket = emptyCalibrationBucket(lower, upper);
+    const bucketRows = rows.filter(row => {
+      const confidencePct = clampConfidence(row.confidence) * 100;
+      return confidencePct >= lower && (index === 4 ? confidencePct <= upper : confidencePct < upper);
+    });
+    bucket.predictions = bucketRows.length;
+    let confidenceSum = 0;
+    for (const row of bucketRows) {
+      const confidence = clampConfidence(row.confidence);
+      confidenceSum += confidence;
+      if (Number(row.predicted_at) > maturityCutoff || row.outcome_status !== 'EVALUATED' || !row.actual_direction) continue;
+      if (row.predicted_direction === 'FLAT' || row.actual_direction === 'FLAT') continue;
+      bucket.directionalEvaluated++;
+      if (row.predicted_direction === row.actual_direction) bucket.correct++;
+    }
+    bucket.averageConfidencePct = bucketRows.length ? (confidenceSum / bucketRows.length) * 100 : null;
+    bucket.accuracyPct = bucket.directionalEvaluated ? (bucket.correct / bucket.directionalEvaluated) * 100 : null;
+    bucket.accuracyConfidenceInterval95Pct = wilsonConfidenceInterval95(bucket.correct, bucket.directionalEvaluated);
+    bucket.calibrationGapPct = bucket.accuracyPct != null && bucket.averageConfidencePct != null
+      ? Math.abs(bucket.averageConfidencePct - bucket.accuracyPct)
+      : null;
+    bucket.sampleSufficient = bucket.directionalEvaluated >= MIN_SAMPLE_COUNT;
+    return bucket;
+  });
+}
+
 function emptyWindow(windowDays: 30 | 90): CurrentPairOosDriftWindow {
   return {
     windowDays,
@@ -143,7 +217,8 @@ function emptyWindow(windowDays: 30 | 90): CurrentPairOosDriftWindow {
     brierScore: null,
     averageConfidencePct: null,
     calibrationGapPct: null,
-    sampleSufficient: false
+    sampleSufficient: false,
+    calibrationBuckets: []
   };
 }
 
@@ -221,6 +296,7 @@ export async function getCurrentPairOosDriftReport(params: {
       ? Math.abs(result.averageConfidencePct - result.accuracyPct)
       : null;
     result.sampleSufficient = result.directionalEvaluated >= MIN_SAMPLE_COUNT;
+    result.calibrationBuckets = buildCalibrationBuckets(windowRows, maturityCutoff);
     return result;
   };
 
@@ -253,6 +329,7 @@ export async function getCurrentPairOosDriftReport(params: {
     result.averageConfidencePct = confidenceCount ? (confidenceSum / confidenceCount) * 100 : null;
     result.calibrationGapPct = result.accuracyPct != null && result.averageConfidencePct != null ? Math.abs(result.averageConfidencePct - result.accuracyPct) : null;
     result.sampleSufficient = result.directionalEvaluated >= MIN_SAMPLE_COUNT;
+    result.calibrationBuckets = buildCalibrationBuckets(windowRows, maturityCutoff);
     return result;
   };
   const baselineWindow = buildPriorWindow();
