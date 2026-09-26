@@ -71,6 +71,13 @@ try {
   assert.equal(analytics.groups[0].symbol, 'EUR/USD');
   assert.equal(analytics.groups[0].horizon, '1D');
   assert.equal(analytics.groups[0].correct, 1);
+  assert.equal(analytics.groups[0].upPredictions, 1);
+  assert.equal(analytics.groups[0].downPredictions, 0);
+  assert.equal(analytics.groups[0].upActuals, 1);
+  assert.equal(analytics.groups[0].downActuals, 0);
+  assert.equal(analytics.groups[0].calibration.length, 5);
+  assert.equal(analytics.groups[0].calibration[4].predictions, 1);
+  assert.equal(analytics.groups[0].calibration[4].correct, 1);
 } finally {
   await executeRun("DELETE FROM live_trade_research_predictions WHERE prediction_id = ?", [predictionId]);
   LiveForexProvider.prototype.refreshPair = originalRefresh;
