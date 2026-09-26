@@ -199,6 +199,10 @@ interface CurrentPairOosDriftReport {
   symbol: string | null; horizon: string; modelVersion: string; generatedAt: number;
   currentWindow: { windowDays: 30; predictions: number; evaluated: number; directionalEvaluated: number; correct: number; accuracyPct: number|null; brierScore: number|null; averageConfidencePct: number|null; calibrationGapPct: number|null; sampleSufficient: boolean };
   baselineWindow: { windowDays: 90; predictions: number; evaluated: number; directionalEvaluated: number; correct: number; accuracyPct: number|null; brierScore: number|null; averageConfidencePct: number|null; calibrationGapPct: number|null; sampleSufficient: boolean };
+  uncertainty: {
+    accuracyDelta95Pct: {lower:number; upper:number; confidenceLevelPct:number; resamples:number} | null;
+    brierDelta95: {lower:number; upper:number; confidenceLevelPct:number; resamples:number} | null;
+  };
   drift: { accuracyDeltaPct:number|null; brierDelta:number|null; confidenceDeltaPct:number|null; calibrationGapDeltaPct:number|null; accuracyDriftFlag:boolean; brierDriftFlag:boolean; confidenceDriftFlag:boolean; calibrationDriftFlag:boolean };
   checks: Array<{id:string;status:'PASS'|'WARN'|'INSUFFICIENT';title:string;detail:string}>;
 }
@@ -1284,6 +1288,18 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 <div><div className="text-slate-500">90D Accuracy</div><div className="text-white text-lg">{currentPairOosDrift.baselineWindow.accuracyPct == null ? '—' : currentPairOosDrift.baselineWindow.accuracyPct.toFixed(1) + '%'}</div></div>
                 <div><div className="text-slate-500">Accuracy Δ</div><div className={currentPairOosDrift.drift.accuracyDriftFlag ? 'text-amber-300 text-lg' : 'text-emerald-300 text-lg'}>{currentPairOosDrift.drift.accuracyDeltaPct == null ? '—' : currentPairOosDrift.drift.accuracyDeltaPct.toFixed(1) + ' pp'}</div></div>
                 <div><div className="text-slate-500">Brier Δ</div><div className={currentPairOosDrift.drift.brierDriftFlag ? 'text-amber-300 text-lg' : 'text-emerald-300 text-lg'}>{currentPairOosDrift.drift.brierDelta == null ? '—' : currentPairOosDrift.drift.brierDelta.toFixed(4)}</div></div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3 text-[10px] font-mono">
+                <div className="border border-slate-800 rounded-lg p-3">
+                  <div className="text-slate-500">Accuracy Δ 95% Bootstrap CI</div>
+                  <div className="text-white mt-1">{currentPairOosDrift.uncertainty.accuracyDelta95Pct == null ? 'Insufficient sample' : currentPairOosDrift.uncertainty.accuracyDelta95Pct.lower.toFixed(1) + ' to ' + currentPairOosDrift.uncertainty.accuracyDelta95Pct.upper.toFixed(1) + ' pp'}</div>
+                  <div className="text-slate-600 mt-1">{currentPairOosDrift.uncertainty.accuracyDelta95Pct?.resamples ?? 0} deterministic bootstrap resamples</div>
+                </div>
+                <div className="border border-slate-800 rounded-lg p-3">
+                  <div className="text-slate-500">Brier Δ 95% Bootstrap CI</div>
+                  <div className="text-white mt-1">{currentPairOosDrift.uncertainty.brierDelta95 == null ? 'Insufficient sample' : currentPairOosDrift.uncertainty.brierDelta95.lower.toFixed(4) + ' to ' + currentPairOosDrift.uncertainty.brierDelta95.upper.toFixed(4)}</div>
+                  <div className="text-slate-600 mt-1">{currentPairOosDrift.uncertainty.brierDelta95?.resamples ?? 0} deterministic bootstrap resamples</div>
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {currentPairOosDrift.checks.map(check => (

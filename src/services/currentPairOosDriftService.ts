@@ -14,6 +14,13 @@ export interface CurrentPairOosDriftWindow {
   sampleSufficient: boolean;
 }
 
+export interface CurrentPairOosBootstrapInterval {
+  lower: number;
+  upper: number;
+  confidenceLevelPct: number;
+  resamples: number;
+}
+
 export interface CurrentPairOosDriftReport {
   symbol: string | null;
   horizon: CurrentPairPredictionHorizon;
@@ -21,6 +28,10 @@ export interface CurrentPairOosDriftReport {
   generatedAt: number;
   currentWindow: CurrentPairOosDriftWindow;
   baselineWindow: CurrentPairOosDriftWindow;
+  uncertainty: {
+    accuracyDelta95Pct: CurrentPairOosBootstrapInterval | null;
+    brierDelta95: CurrentPairOosBootstrapInterval | null;
+  };
   drift: {
     accuracyDeltaPct: number | null;
     brierDelta: number | null;
@@ -55,6 +66,70 @@ function horizonMs(horizon: CurrentPairPredictionHorizon): number {
 
 function clampConfidence(value: unknown): number {
   return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+const BOOTSTRAP_RESAMPLES = 2000;
+
+function createDeterministicRng(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (1664525 * state + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+function percentile(sorted: number[], probability: number): number | null {
+  if (!sorted.length) return null;
+  const index = (sorted.length - 1) * probability;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+}
+
+function bootstrapDifferenceInterval(
+  currentValues: number[],
+  baselineValues: number[],
+  seed: number,
+  resamples = BOOTSTRAP_RESAMPLES
+): CurrentPairOosBootstrapInterval | null {
+  if (currentValues.length < MIN_SAMPLE_COUNT || baselineValues.length < MIN_SAMPLE_COUNT) return null;
+  const rng = createDeterministicRng(seed);
+  const differences: number[] = new Array(resamples);
+  for (let sample = 0; sample < resamples; sample++) {
+    let currentSum = 0;
+    let baselineSum = 0;
+    for (let i = 0; i < currentValues.length; i++) currentSum += currentValues[Math.floor(rng() * currentValues.length)];
+    for (let i = 0; i < baselineValues.length; i++) baselineSum += baselineValues[Math.floor(rng() * baselineValues.length)];
+    differences[sample] = currentSum / currentValues.length - baselineSum / baselineValues.length;
+  }
+  differences.sort((a, b) => a - b);
+  const lower = percentile(differences, 0.025);
+  const upper = percentile(differences, 0.975);
+  return lower == null || upper == null ? null : { lower, upper, confidenceLevelPct: 95, resamples };
+}
+
+function getDirectionalAccuracySamples(rows: any[], maturityCutoff: number): number[] {
+  const samples: number[] = [];
+  for (const row of rows) {
+    if (Number(row.predicted_at) > maturityCutoff || row.outcome_status !== 'EVALUATED' || !row.actual_direction) continue;
+    if (row.predicted_direction === 'FLAT' || row.actual_direction === 'FLAT') continue;
+    samples.push(row.predicted_direction === row.actual_direction ? 1 : 0);
+  }
+  return samples;
+}
+
+function getBrierSamples(rows: any[], maturityCutoff: number): number[] {
+  const samples: number[] = [];
+  for (const row of rows) {
+    if (Number(row.predicted_at) > maturityCutoff || row.outcome_status !== 'EVALUATED' || !row.actual_direction) continue;
+    if (row.predicted_direction === 'FLAT' || row.actual_direction === 'FLAT') continue;
+    const confidence = clampConfidence(row.confidence);
+    const probabilityUp = row.predicted_direction === 'UP' ? confidence : 1 - confidence;
+    const actualUp = row.actual_direction === 'UP' ? 1 : 0;
+    samples.push(Math.pow(probabilityUp - actualUp, 2));
+  }
+  return samples;
 }
 
 function emptyWindow(windowDays: 30 | 90): CurrentPairOosDriftWindow {
@@ -190,6 +265,17 @@ export async function getCurrentPairOosDriftReport(params: {
   const confidenceDeltaPct = delta(currentWindow.averageConfidencePct, baselineWindow.averageConfidencePct);
   const calibrationGapDeltaPct = delta(currentWindow.calibrationGapPct, baselineWindow.calibrationGapPct);
 
+  const currentRows = rows.filter(row => Number(row.predicted_at) >= currentCutoff);
+  const baselineRowsForBootstrap = rows.filter(row => Number(row.predicted_at) < currentCutoff);
+  const currentAccuracySamples = getDirectionalAccuracySamples(currentRows, maturityCutoff);
+  const baselineAccuracySamples = getDirectionalAccuracySamples(baselineRowsForBootstrap, maturityCutoff);
+  const currentBrierSamples = getBrierSamples(currentRows, maturityCutoff);
+  const baselineBrierSamples = getBrierSamples(baselineRowsForBootstrap, maturityCutoff);
+  const uncertainty = {
+    accuracyDelta95Pct: bootstrapDifferenceInterval(currentAccuracySamples, baselineAccuracySamples, 0xA11CE),
+    brierDelta95: bootstrapDifferenceInterval(currentBrierSamples, baselineBrierSamples, 0xB11E7)
+  };
+
   const checks = [
     {
       id: 'current-sample',
@@ -236,6 +322,7 @@ export async function getCurrentPairOosDriftReport(params: {
     generatedAt: now,
     currentWindow,
     baselineWindow,
+    uncertainty,
     drift: {
       accuracyDeltaPct,
       brierDelta,
