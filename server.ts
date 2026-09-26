@@ -60,6 +60,7 @@ import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytic
 import { getCurrentPairPredictionCollectionStatus, runCurrentPairPredictionCollectionCycle, startCurrentPairPredictionCollectionScheduler, stopCurrentPairPredictionCollectionScheduler } from './src/services/currentPairPredictionCollectionService';
 import { getCurrentPairResearchValidationReport } from './src/services/currentPairResearchValidationService';
 import { getCurrentPairOosDriftReport } from './src/services/currentPairOosDriftService';
+import { getCurrentPairCalibrationMatrix } from './src/services/currentPairCalibrationMatrixService';
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
@@ -1960,6 +1961,31 @@ app.get('/api/live-trade-research/current-pair/oos-drift', operatorAuthRequired,
     return res.status(503).json({
       error: 'CURRENT_PAIR_OOS_DRIFT_UNAVAILABLE',
       message: error?.message || 'Current pair OOS drift report is unavailable.'
+    });
+  }
+});
+
+
+app.get('/api/live-trade-research/current-pair/calibration-matrix', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : undefined;
+    if (horizon && !['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const modelVersion = typeof req.query.modelVersion === 'string' && req.query.modelVersion.trim()
+      ? req.query.modelVersion.trim()
+      : 'LLAMA_GATEWAY_QWEN_LLAMA_V1';
+    const matrix = await getCurrentPairCalibrationMatrix({
+      modelVersion,
+      horizon: horizon as CurrentPairPredictionHorizon | undefined,
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol : undefined
+    });
+    return res.json(matrix);
+  } catch (error: any) {
+    console.error('[CURRENT_PAIR_CALIBRATION_MATRIX]', error);
+    return res.status(503).json({
+      error: 'CURRENT_PAIR_CALIBRATION_MATRIX_UNAVAILABLE',
+      message: error?.message || 'Current pair calibration matrix is unavailable.'
     });
   }
 });

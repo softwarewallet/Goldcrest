@@ -202,6 +202,23 @@ interface CurrentPairOosCalibrationBucket {
   calibrationGapPct:number|null; sampleSufficient:boolean;
 }
 
+interface CurrentPairCalibrationMatrixRow {
+  symbol: string;
+  horizon: '1D' | '3D' | '7D';
+  current: { predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; sampleSufficient:boolean };
+  reference: { predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; sampleSufficient:boolean };
+  deltas: { accuracyDeltaPct:number|null; confidenceDeltaPct:number|null; expectedCalibrationErrorDeltaPct:number|null; maximumCalibrationErrorDeltaPct:number|null };
+}
+
+interface CurrentPairCalibrationMatrix {
+  modelVersion: string;
+  generatedAt: number;
+  currentWindowDays: number;
+  referenceWindowDays: number;
+  minimumSampleCount: number;
+  rows: CurrentPairCalibrationMatrixRow[];
+}
+
 interface CurrentPairOosDriftReport {
   symbol: string | null; horizon: string; modelVersion: string; generatedAt: number;
   currentWindow: { windowDays: 30; predictions:number; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; sampleSufficient:boolean; calibrationBuckets:CurrentPairOosCalibrationBucket[] };
@@ -399,6 +416,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairPairedContexts, setCurrentPairPairedContexts] = useState<CurrentPairPairedContextComparison[]>([]);
   const [currentPairValidationReport, setCurrentPairValidationReport] = useState<CurrentPairResearchValidationReport | null>(null);
   const [currentPairOosDrift, setCurrentPairOosDrift] = useState<CurrentPairOosDriftReport | null>(null);
+  const [currentPairCalibrationMatrix, setCurrentPairCalibrationMatrix] = useState<CurrentPairCalibrationMatrix | null>(null);
   const [currentPairWalkForward, setCurrentPairWalkForward] = useState<CurrentPairWalkForwardAnalytics | null>(null);
   const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
   const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY' | 'COMPARE'>('BASELINE');
@@ -513,7 +531,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           : '';
       const query = `horizon=${currentPairHorizon}${modelVersion ? `&modelVersion=${modelVersion}` : ''}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
       const comparisonQuery = `horizon=${currentPairHorizon}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
-      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes] = await Promise.all([
+      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes, calibrationMatrixRes] = await Promise.all([
         fetch(`/api/live-trade-research/current-pair/predictions?${query}&limit=100`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/analytics?${query}`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' }),
@@ -522,9 +540,10 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         fetch(`/api/live-trade-research/current-pair/paired-model-comparison-rolling?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/paired-context-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/validation-report?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
-        fetch(`/api/live-trade-research/current-pair/oos-drift?${comparisonQuery}&modelVersion=LLAMA_GATEWAY_QWEN_LLAMA_V1`, { cache: 'no-store' })
+        fetch(`/api/live-trade-research/current-pair/oos-drift?${comparisonQuery}&modelVersion=LLAMA_GATEWAY_QWEN_LLAMA_V1`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/calibration-matrix?${comparisonQuery}&modelVersion=LLAMA_GATEWAY_QWEN_LLAMA_V1`, { cache: 'no-store' })
       ]);
-      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData, pairedContextData, validationData, oosDriftData] = await Promise.all([
+      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData, pairedContextData, validationData, oosDriftData, calibrationMatrixData] = await Promise.all([
         safeParseJson(predictionRes),
         safeParseJson(analyticsRes),
         safeParseJson(walkForwardRes),
@@ -533,7 +552,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         safeParseJson(pairedRollingRes),
         safeParseJson(pairedContextRes),
         safeParseJson(validationRes),
-        safeParseJson(oosDriftRes)
+        safeParseJson(oosDriftRes),
+        safeParseJson(calibrationMatrixRes)
       ]);
       if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
@@ -544,6 +564,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       if (!pairedContextRes.ok) throw new Error(pairedContextData?.message || pairedContextData?.error || 'Context-conditioned paired comparison unavailable.');
       if (!validationRes.ok) throw new Error(validationData?.message || validationData?.error || 'Research validation report unavailable.');
       if (!oosDriftRes.ok) throw new Error(oosDriftData?.message || oosDriftData?.error || 'OOS drift report unavailable.');
+      if (!calibrationMatrixRes.ok) throw new Error(calibrationMatrixData?.message || calibrationMatrixData?.error || 'Calibration matrix unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
       setCurrentPairWalkForward(walkForwardData || null);
@@ -553,10 +574,12 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       setCurrentPairPairedContexts(Array.isArray(pairedContextData?.groups) ? pairedContextData.groups : []);
       setCurrentPairValidationReport(validationData || null);
       setCurrentPairOosDrift(oosDriftData || null);
+      setCurrentPairCalibrationMatrix(calibrationMatrixData || null);
       const discoveredSymbols = Array.from(new Set([
         ...currentPairSymbols,
         ...(Array.isArray(predictionData?.predictions) ? predictionData.predictions.map((p: CurrentPairPrediction) => p.symbol) : []),
-        ...(Array.isArray(analyticsData?.groups) ? analyticsData.groups.map((g: CurrentPairGroupMetric) => g.symbol) : [])
+        ...(Array.isArray(analyticsData?.groups) ? analyticsData.groups.map((g: CurrentPairGroupMetric) => g.symbol) : []),
+        ...(Array.isArray(calibrationMatrixData?.rows) ? calibrationMatrixData.rows.map((row: CurrentPairCalibrationMatrixRow) => row.symbol) : [])
       ].filter(Boolean))).sort();
       if (discoveredSymbols.length !== currentPairSymbols.length || discoveredSymbols.some((symbol, index) => symbol !== currentPairSymbols[index])) {
         setCurrentPairSymbols(discoveredSymbols);
@@ -1308,6 +1331,37 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                   <div className="text-slate-600 mt-1">{currentPairOosDrift.uncertainty.brierDelta95?.resamples ?? 0} deterministic bootstrap resamples</div>
                 </div>
               </div>
+              {currentPairCalibrationMatrix && currentPairCalibrationMatrix.rows.length > 0 && (
+                <div className="border border-slate-800 rounded-lg p-3 mb-3">
+                  <div className="text-xs font-bold text-white font-mono mb-1">Symbol / Horizon Calibration Drift Matrix</div>
+                  <div className="text-[10px] text-slate-600 font-mono mb-2">Latest 30-day OOS versus the non-overlapping 90-day reference. Rows below 30 directional evaluations are marked insufficient. Research telemetry only.</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[10px] font-mono">
+                      <thead><tr className="text-slate-500 border-b border-slate-800">
+                        <th className="py-2 text-left">Pair</th><th>Horizon</th><th>30D n</th><th>90D n</th><th>30D Acc.</th><th>90D Acc.</th><th>Acc. Δ</th><th>ECE Δ</th><th>MCE Δ</th><th>Status</th>
+                      </tr></thead>
+                      <tbody>{currentPairCalibrationMatrix.rows.map(row => {
+                        const sufficient = row.current.sampleSufficient && row.reference.sampleSufficient;
+                        const drift = row.deltas.expectedCalibrationErrorDeltaPct;
+                        const status = !sufficient ? 'INSUFFICIENT' : drift != null && Math.abs(drift) >= 10 ? 'WARN' : 'PASS';
+                        return <tr key={row.symbol + row.horizon} className="border-b border-slate-800/60">
+                          <td className="py-2 text-white">{row.symbol}</td>
+                          <td className="text-center">{row.horizon}</td>
+                          <td className="text-center">{row.current.directionalEvaluated}</td>
+                          <td className="text-center">{row.reference.directionalEvaluated}</td>
+                          <td className="text-center">{row.current.accuracyPct == null ? '—' : row.current.accuracyPct.toFixed(1) + '%'}</td>
+                          <td className="text-center">{row.reference.accuracyPct == null ? '—' : row.reference.accuracyPct.toFixed(1) + '%'}</td>
+                          <td className="text-center">{row.deltas.accuracyDeltaPct == null ? '—' : row.deltas.accuracyDeltaPct.toFixed(1) + ' pp'}</td>
+                          <td className="text-center">{row.deltas.expectedCalibrationErrorDeltaPct == null ? '—' : row.deltas.expectedCalibrationErrorDeltaPct.toFixed(1) + ' pp'}</td>
+                          <td className="text-center">{row.deltas.maximumCalibrationErrorDeltaPct == null ? '—' : row.deltas.maximumCalibrationErrorDeltaPct.toFixed(1) + ' pp'}</td>
+                          <td className={status === 'WARN' ? 'text-amber-300 text-center' : status === 'PASS' ? 'text-emerald-300 text-center' : 'text-cyan-300 text-center'}>{status}</td>
+                        </tr>;
+                      })}</tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               <div className="border border-slate-800 rounded-lg p-3 mb-3">
                 <div className="text-xs font-bold text-white font-mono mb-2">Aggregate Calibration Error</div>
                 <div className="text-[10px] text-slate-600 font-mono mb-2">ECE is the directional-evaluation-weighted mean calibration gap across confidence buckets. MCE is the largest gap among buckets with at least 30 directional evaluations. These are descriptive research metrics only.</div>
