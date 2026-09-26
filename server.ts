@@ -57,7 +57,7 @@ import {
 import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } from './src/services/liveTradeResearchPredictionEvaluationService';
 import { generateCurrentPairPredictions } from './src/services/pairPredictionService';
 import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics } from './src/services/currentPairPredictionOutcomeService';
-import { getCurrentPairPredictionCollectionStatus, startCurrentPairPredictionCollectionScheduler, stopCurrentPairPredictionCollectionScheduler } from './src/services/currentPairPredictionCollectionService';
+import { getCurrentPairPredictionCollectionStatus, runCurrentPairPredictionCollectionCycle, startCurrentPairPredictionCollectionScheduler, stopCurrentPairPredictionCollectionScheduler } from './src/services/currentPairPredictionCollectionService';
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
@@ -1792,6 +1792,15 @@ app.get('/api/live-trade-research/current-pair/predictions', operatorAuthRequire
 
 app.get('/api/live-trade-research/current-pair/collection-status', operatorAuthRequired, (_req: Request, res: Response) => {
   res.json(getCurrentPairPredictionCollectionStatus());
+});
+
+app.post('/api/live-trade-research/current-pair/collect-now', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    res.json(await runCurrentPairPredictionCollectionCycle());
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Current pair prediction collection failed.' });
+  }
 });
 
 app.get('/api/live-trade-research/current-pair/analytics', operatorAuthRequired, async (req: Request, res: Response) => {
