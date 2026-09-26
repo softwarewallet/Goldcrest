@@ -200,6 +200,8 @@ interface CurrentPairPairedContextComparison {
   directionAgreementPct: number | null;
   discordantPairs: number;
   exactMcNemarPValue: number | null;
+  sampleSufficient: boolean;
+  accuracyConfidenceInterval95Pct: { lowerPct: number; upperPct: number } | null;
 }
 
 interface CurrentPairPairedRollingWindowMetrics {
@@ -1285,10 +1287,10 @@ export const TradingHub: React.FC<TradingHubProps> = ({
               <div className="text-[10px] text-slate-500 mb-3">Exact paired observations segmented using the same market-regime and session labels as current-pair analytics. Research-only telemetry.</div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[10px] font-mono">
-                  <thead><tr className="text-slate-500 border-b border-slate-800"><th className="text-left py-2">Regime</th><th className="text-left">Session</th><th>Paired</th><th>Evaluated</th><th>Baseline / AI</th><th>Agreement</th><th>McNemar p</th></tr></thead>
+                  <thead><tr className="text-slate-500 border-b border-slate-800"><th className="text-left py-2">Regime</th><th className="text-left">Session</th><th>Paired</th><th>Evaluated</th><th>Baseline / AI</th><th>Agreement</th><th>95% CI</th><th>McNemar p</th><th>Sample</th></tr></thead>
                   <tbody>{currentPairPairedContexts.map(group => (
                     <tr key={group.symbol + group.horizon + group.marketRegime + group.session} className="border-b border-slate-900 text-slate-300">
-                      <td className="py-2">{group.marketRegime}</td><td>{group.session}</td><td className="text-center">{group.pairedObservations}</td><td className="text-center">{group.pairedEvaluated}</td><td className="text-center">{group.baselineOnlyCorrect} / {group.aiOnlyCorrect}</td><td className="text-center">{group.directionAgreementPct == null ? '—' : group.directionAgreementPct.toFixed(1) + '%'}</td><td className="text-center">{group.exactMcNemarPValue == null ? '—' : group.exactMcNemarPValue.toFixed(4)}</td>
+                      <td className="py-2">{group.marketRegime}</td><td>{group.session}</td><td className="text-center">{group.pairedObservations}</td><td className="text-center">{group.pairedEvaluated}</td><td className="text-center">{group.baselineOnlyCorrect} / {group.aiOnlyCorrect}</td><td className="text-center">{group.directionAgreementPct == null ? '—' : group.directionAgreementPct.toFixed(1) + '%'}</td><td className="text-center">{group.accuracyConfidenceInterval95Pct == null ? '—' : group.accuracyConfidenceInterval95Pct.lowerPct.toFixed(1) + '–' + group.accuracyConfidenceInterval95Pct.upperPct.toFixed(1) + '%'}</td><td className="text-center">{group.exactMcNemarPValue == null ? '—' : group.exactMcNemarPValue.toFixed(4)}</td><td className="text-center">{group.sampleSufficient ? 'SUFFICIENT' : 'INSUFFICIENT'}</td>
                     </tr>
                   ))}</tbody>
                 </table>

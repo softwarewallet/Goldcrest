@@ -463,6 +463,8 @@ export interface CurrentPairPairedContextComparison {
   directionAgreementPct: number | null;
   discordantPairs: number;
   exactMcNemarPValue: number | null;
+  sampleSufficient: boolean;
+  accuracyConfidenceInterval95Pct: { lowerPct: number; upperPct: number } | null;
 }
 
 function exactMcNemarTwoSidedPValue(baselineOnlyCorrect: number, aiOnlyCorrect: number): number | null {
@@ -669,7 +671,9 @@ export async function getCurrentPairPairedModelComparisonRolling(params: {
       bothIncorrect,
       directionAgreementPct: windowPairs.length ? (directionAgreement / windowPairs.length) * 100 : null,
       discordantPairs: baselineOnlyCorrect + aiOnlyCorrect,
-      exactMcNemarPValue: exactMcNemarTwoSidedPValue(baselineOnlyCorrect, aiOnlyCorrect)
+      exactMcNemarPValue: exactMcNemarTwoSidedPValue(baselineOnlyCorrect, aiOnlyCorrect),
+      sampleSufficient: pairedEvaluated >= CURRENT_PAIR_MIN_SAMPLE_COUNT,
+      accuracyConfidenceInterval95Pct: wilsonConfidenceInterval95(baselineOnlyCorrect + bothCorrect, pairedEvaluated)
     };
   });
 }

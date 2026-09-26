@@ -115,6 +115,8 @@ try {
   assert.ok(trendLondon);
   assert.ok(rangeNewYork);
   assert.equal(trendLondon?.pairedObservations, 1);
+  assert.equal(trendLondon?.sampleSufficient, false);
+  assert.ok(trendLondon?.accuracyConfidenceInterval95Pct !== null);
   assert.equal(rangeNewYork?.pairedObservations, 2);
   const rolling = await getCurrentPairPairedModelComparisonRolling({ symbol: 'EUR/USD', horizon: '1D' });
   assert.equal(rolling.length, 2);
