@@ -185,6 +185,23 @@ interface CurrentPairModelComparison {
   generatedAt: number;
 }
 
+interface CurrentPairPairedContextComparison {
+  symbol: string;
+  horizon: string;
+  marketRegime: string;
+  session: string;
+  pairedObservations: number;
+  pairedEvaluated: number;
+  pairedPending: number;
+  bothCorrect: number;
+  baselineOnlyCorrect: number;
+  aiOnlyCorrect: number;
+  bothIncorrect: number;
+  directionAgreementPct: number | null;
+  discordantPairs: number;
+  exactMcNemarPValue: number | null;
+}
+
 interface CurrentPairPairedRollingWindowMetrics {
   windowDays: 30 | 90;
   pairedObservations: number;
@@ -348,6 +365,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairModelComparison, setCurrentPairModelComparison] = useState<CurrentPairModelComparison | null>(null);
   const [currentPairPairedComparison, setCurrentPairPairedComparison] = useState<CurrentPairPairedModelComparison | null>(null);
   const [currentPairPairedRolling, setCurrentPairPairedRolling] = useState<CurrentPairPairedRollingWindowMetrics[]>([]);
+  const [currentPairPairedContexts, setCurrentPairPairedContexts] = useState<CurrentPairPairedContextComparison[]>([]);
   const [currentPairWalkForward, setCurrentPairWalkForward] = useState<CurrentPairWalkForwardAnalytics | null>(null);
   const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
   const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY' | 'COMPARE'>('BASELINE');
@@ -462,21 +480,23 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           : '';
       const query = `horizon=${currentPairHorizon}${modelVersion ? `&modelVersion=${modelVersion}` : ''}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
       const comparisonQuery = `horizon=${currentPairHorizon}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
-      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes] = await Promise.all([
+      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes] = await Promise.all([
         fetch(`/api/live-trade-research/current-pair/predictions?${query}&limit=100`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/analytics?${query}`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/model-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/paired-model-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
-        fetch(`/api/live-trade-research/current-pair/paired-model-comparison-rolling?${comparisonQuery}&limit=50000`, { cache: 'no-store' })
+        fetch(`/api/live-trade-research/current-pair/paired-model-comparison-rolling?${comparisonQuery}&limit=50000`, { cache: 'no-store' }),
+        fetch(`/api/live-trade-research/current-pair/paired-context-comparison?${comparisonQuery}&limit=50000`, { cache: 'no-store' })
       ]);
-      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData] = await Promise.all([
+      const [predictionData, analyticsData, walkForwardData, comparisonData, pairedComparisonData, pairedRollingData, pairedContextData] = await Promise.all([
         safeParseJson(predictionRes),
         safeParseJson(analyticsRes),
         safeParseJson(walkForwardRes),
         safeParseJson(comparisonRes),
         safeParseJson(pairedComparisonRes),
-        safeParseJson(pairedRollingRes)
+        safeParseJson(pairedRollingRes),
+        safeParseJson(pairedContextRes)
       ]);
       if (!predictionRes.ok) throw new Error(predictionData?.message || predictionData?.error || 'Current pair predictions unavailable.');
       if (!analyticsRes.ok) throw new Error(analyticsData?.message || analyticsData?.error || 'Current pair analytics unavailable.');
@@ -484,12 +504,14 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       if (!comparisonRes.ok) throw new Error(comparisonData?.message || comparisonData?.error || 'Current pair model comparison unavailable.');
       if (!pairedComparisonRes.ok) throw new Error(pairedComparisonData?.message || pairedComparisonData?.error || 'Paired current pair model comparison unavailable.');
       if (!pairedRollingRes.ok) throw new Error(pairedRollingData?.message || pairedRollingData?.error || 'Paired rolling model comparison unavailable.');
+      if (!pairedContextRes.ok) throw new Error(pairedContextData?.message || pairedContextData?.error || 'Context-conditioned paired comparison unavailable.');
       setCurrentPairPredictions(Array.isArray(predictionData?.predictions) ? predictionData.predictions : []);
       setCurrentPairAnalytics(analyticsData || null);
       setCurrentPairWalkForward(walkForwardData || null);
       setCurrentPairModelComparison(comparisonData || null);
       setCurrentPairPairedComparison(pairedComparisonData || null);
       setCurrentPairPairedRolling(Array.isArray(pairedRollingData?.rollingWindows) ? pairedRollingData.rollingWindows : []);
+      setCurrentPairPairedContexts(Array.isArray(pairedContextData?.groups) ? pairedContextData.groups : []);
       const discoveredSymbols = Array.from(new Set([
         ...currentPairSymbols,
         ...(Array.isArray(predictionData?.predictions) ? predictionData.predictions.map((p: CurrentPairPrediction) => p.symbol) : []),
@@ -1254,6 +1276,23 @@ export const TradingHub: React.FC<TradingHubProps> = ({
               </div>
               <div className="mt-3 text-[10px] text-slate-500 font-mono">Both incorrect: {currentPairPairedComparison?.bothIncorrect ?? 0} · Pending paired observations: {currentPairPairedComparison?.pairedPending ?? 0} · Discordant: {currentPairPairedComparison?.discordantPairs ?? 0} · Exact McNemar p: {currentPairPairedComparison?.exactMcNemarPValue == null ? '—' : currentPairPairedComparison.exactMcNemarPValue.toFixed(4)}</div>
               <div className="mt-2 text-[10px] text-slate-600 font-mono">McNemar p-value is descriptive research telemetry for paired directional correctness; it is not a trading decision rule.</div>
+            </div>
+          )}
+
+          {currentPairModel === 'COMPARE' && currentPairPairedContexts.length > 0 && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <div className="text-sm font-bold text-white font-mono mb-1">Paired Regime / Session Breakdown</div>
+              <div className="text-[10px] text-slate-500 mb-3">Exact paired observations segmented using the same market-regime and session labels as current-pair analytics. Research-only telemetry.</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[10px] font-mono">
+                  <thead><tr className="text-slate-500 border-b border-slate-800"><th className="text-left py-2">Regime</th><th className="text-left">Session</th><th>Paired</th><th>Evaluated</th><th>Baseline / AI</th><th>Agreement</th><th>McNemar p</th></tr></thead>
+                  <tbody>{currentPairPairedContexts.map(group => (
+                    <tr key={group.symbol + group.horizon + group.marketRegime + group.session} className="border-b border-slate-900 text-slate-300">
+                      <td className="py-2">{group.marketRegime}</td><td>{group.session}</td><td className="text-center">{group.pairedObservations}</td><td className="text-center">{group.pairedEvaluated}</td><td className="text-center">{group.baselineOnlyCorrect} / {group.aiOnlyCorrect}</td><td className="text-center">{group.directionAgreementPct == null ? '—' : group.directionAgreementPct.toFixed(1) + '%'}</td><td className="text-center">{group.exactMcNemarPValue == null ? '—' : group.exactMcNemarPValue.toFixed(4)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
             </div>
           )}
 
