@@ -434,6 +434,20 @@ export interface CurrentPairPairedModelComparison {
   exactMcNemarPValue: number | null;
 }
 
+export interface CurrentPairPairedRollingWindowMetrics {
+  windowDays: 30 | 90;
+  pairedObservations: number;
+  pairedEvaluated: number;
+  pairedPending: number;
+  bothCorrect: number;
+  baselineOnlyCorrect: number;
+  aiOnlyCorrect: number;
+  bothIncorrect: number;
+  directionAgreementPct: number | null;
+  discordantPairs: number;
+  exactMcNemarPValue: number | null;
+}
+
 function exactMcNemarTwoSidedPValue(baselineOnlyCorrect: number, aiOnlyCorrect: number): number | null {
   const n = baselineOnlyCorrect + aiOnlyCorrect;
   if (n === 0) return null;
@@ -546,6 +560,101 @@ export async function getCurrentPairPairedModelComparison(params: {
     discordantPairs: baselineOnlyCorrect + aiOnlyCorrect,
     exactMcNemarPValue: exactMcNemarTwoSidedPValue(baselineOnlyCorrect, aiOnlyCorrect)
   };
+}
+
+export async function getCurrentPairPairedModelComparisonRolling(params: {
+  horizon?: CurrentPairPredictionHorizon;
+  symbol?: string;
+  limit?: number;
+} = {}): Promise<CurrentPairPairedRollingWindowMetrics[]> {
+  const conditions = ["prediction_context = 'CURRENT_PAIR'"];
+  const values: unknown[] = [];
+
+  if (params.horizon) {
+    conditions.push('horizon = ?');
+    values.push(params.horizon);
+  }
+  if (params.symbol) {
+    conditions.push('symbol = ?');
+    values.push(params.symbol);
+  }
+
+  const limit = Math.max(1, Math.min(100000, Math.floor(Number(params.limit) || 50000)));
+  const rows = await executeQuery<CurrentPairPredictionRow>(
+    `SELECT prediction_id, model_version, prediction_source, symbol, predicted_at,
+            horizon, predicted_direction, confidence, actual_direction,
+            actual_return_pct, outcome_status, feature_snapshot_json
+       FROM live_trade_research_predictions
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY predicted_at ASC
+      LIMIT ?`,
+    [...values, limit]
+  );
+
+  const paired = new Map<string, { baseline: CurrentPairPredictionRow; ai: CurrentPairPredictionRow }>();
+  for (const row of rows) {
+    const key = `${row.symbol}|${row.horizon}|${Number(row.predicted_at)}`;
+    const existing = paired.get(key);
+    if (row.model_version === 'PAIR_FEATURE_BASELINE_V2') {
+      paired.set(key, { baseline: row, ai: existing?.ai as CurrentPairPredictionRow });
+    } else if (row.model_version === 'LLAMA_GATEWAY_QWEN_LLAMA_V1') {
+      paired.set(key, { baseline: existing?.baseline as CurrentPairPredictionRow, ai: row });
+    }
+  }
+
+  const validPairs = [...paired.values()].filter(pair => pair.baseline && pair.ai);
+  const latest = validPairs.reduce((value, pair) => Math.max(value, Number(pair.baseline.predicted_at) || 0), 0);
+
+  return ([30, 90] as const).map(windowDays => {
+    const cutoff = latest - windowDays * 24 * 60 * 60 * 1000;
+    const windowPairs = validPairs.filter(pair => Number(pair.baseline.predicted_at) >= cutoff && Number(pair.baseline.predicted_at) <= latest);
+
+    let pairedEvaluated = 0;
+    let pairedPending = 0;
+    let bothCorrect = 0;
+    let baselineOnlyCorrect = 0;
+    let aiOnlyCorrect = 0;
+    let bothIncorrect = 0;
+    let directionAgreement = 0;
+
+    for (const pair of windowPairs) {
+      if (pair.baseline.predicted_direction === pair.ai.predicted_direction) directionAgreement++;
+      const baselineEvaluated = pair.baseline.outcome_status === 'EVALUATED' && Boolean(pair.baseline.actual_direction);
+      const aiEvaluated = pair.ai.outcome_status === 'EVALUATED' && Boolean(pair.ai.actual_direction);
+      if (!baselineEvaluated || !aiEvaluated || pair.baseline.actual_direction !== pair.ai.actual_direction) {
+        pairedPending++;
+        continue;
+      }
+
+      const actual = pair.baseline.actual_direction as 'UP' | 'DOWN' | 'FLAT';
+      const baselineScore = directionalScore(pair.baseline, actual);
+      const aiScore = directionalScore(pair.ai, actual);
+      if (!baselineScore.evaluated || !aiScore.evaluated) {
+        pairedPending++;
+        continue;
+      }
+
+      pairedEvaluated++;
+      if (baselineScore.correct && aiScore.correct) bothCorrect++;
+      else if (baselineScore.correct) baselineOnlyCorrect++;
+      else if (aiScore.correct) aiOnlyCorrect++;
+      else bothIncorrect++;
+    }
+
+    return {
+      windowDays,
+      pairedObservations: windowPairs.length,
+      pairedEvaluated,
+      pairedPending,
+      bothCorrect,
+      baselineOnlyCorrect,
+      aiOnlyCorrect,
+      bothIncorrect,
+      directionAgreementPct: windowPairs.length ? (directionAgreement / windowPairs.length) * 100 : null,
+      discordantPairs: baselineOnlyCorrect + aiOnlyCorrect,
+      exactMcNemarPValue: exactMcNemarTwoSidedPValue(baselineOnlyCorrect, aiOnlyCorrect)
+    };
+  });
 }
 
 export async function getCurrentPairPredictionAnalytics(params: {
