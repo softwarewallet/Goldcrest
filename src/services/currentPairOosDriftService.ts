@@ -82,7 +82,7 @@ export async function getCurrentPairOosDriftReport(params: {
   const horizon = params.horizon || '1D';
   const now = Number(params.now) || Date.now();
   const currentCutoff = now - CURRENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-  const baselineCutoff = now - BASELINE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const baselineStart = now - (CURRENT_WINDOW_DAYS + BASELINE_WINDOW_DAYS) * 24 * 60 * 60 * 1000;
   const maturityCutoff = now - horizonMs(horizon);
 
   const conditions = [
@@ -92,7 +92,7 @@ export async function getCurrentPairOosDriftReport(params: {
     'predicted_at >= ?',
     'predicted_at <= ?'
   ];
-  const values: unknown[] = [params.modelVersion, horizon, baselineCutoff, now];
+  const values: unknown[] = [params.modelVersion, horizon, baselineStart, now];
   if (symbol) {
     conditions.push('symbol = ?');
     values.push(symbol);
@@ -150,7 +150,37 @@ export async function getCurrentPairOosDriftReport(params: {
   };
 
   const currentWindow = buildWindow(30, currentCutoff);
-  const baselineWindow = buildWindow(90, baselineCutoff);
+  const baselineRows = rows.filter(row => Number(row.predicted_at) < currentCutoff);
+  const buildPriorWindow = (): CurrentPairOosDriftWindow => {
+    const result = emptyWindow(90);
+    const windowRows = baselineRows;
+    result.predictions = windowRows.length;
+    let confidenceSum = 0;
+    let confidenceCount = 0;
+    let brierSum = 0;
+    let brierCount = 0;
+    for (const row of windowRows) {
+      const confidence = clampConfidence(row.confidence);
+      confidenceSum += confidence;
+      confidenceCount++;
+      if (Number(row.predicted_at) > maturityCutoff || row.outcome_status !== 'EVALUATED' || !row.actual_direction) continue;
+      result.evaluated++;
+      if (row.predicted_direction === 'FLAT' || row.actual_direction === 'FLAT') continue;
+      result.directionalEvaluated++;
+      if (row.predicted_direction === row.actual_direction) result.correct++;
+      const probabilityUp = row.predicted_direction === 'UP' ? confidence : 1 - confidence;
+      const actualUp = row.actual_direction === 'UP' ? 1 : 0;
+      brierSum += Math.pow(probabilityUp - actualUp, 2);
+      brierCount++;
+    }
+    result.accuracyPct = result.directionalEvaluated ? (result.correct / result.directionalEvaluated) * 100 : null;
+    result.brierScore = brierCount ? brierSum / brierCount : null;
+    result.averageConfidencePct = confidenceCount ? (confidenceSum / confidenceCount) * 100 : null;
+    result.calibrationGapPct = result.accuracyPct != null && result.averageConfidencePct != null ? Math.abs(result.averageConfidencePct - result.accuracyPct) : null;
+    result.sampleSufficient = result.directionalEvaluated >= MIN_SAMPLE_COUNT;
+    return result;
+  };
+  const baselineWindow = buildPriorWindow();
 
   const delta = (current: number | null, baseline: number | null) =>
     current == null || baseline == null ? null : current - baseline;
