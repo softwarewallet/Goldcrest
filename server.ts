@@ -63,6 +63,7 @@ import { getCurrentPairOosDriftReport } from './src/services/currentPairOosDrift
 import { getCurrentPairCalibrationMatrix } from './src/services/currentPairCalibrationMatrixService';
 import { getCurrentPairCrossModelContextCalibration } from './src/services/currentPairCrossModelContextCalibrationService';
 import { getCurrentPairCrossModelCalibration } from './src/services/currentPairCrossModelCalibrationService';
+import { getCurrentPairResearchReadinessLedger } from './src/services/currentPairResearchReadinessLedgerService';
 import {
   getResearchAiServerConfig,
   saveResearchAiServerConfig,
@@ -1939,6 +1940,26 @@ app.get('/api/live-trade-research/current-pair/validation-report', operatorAuthR
     return res.status(503).json({
       error: 'CURRENT_PAIR_VALIDATION_REPORT_UNAVAILABLE',
       message: error?.message || 'Current pair research validation report is unavailable.'
+    });
+  }
+});
+
+app.get('/api/live-trade-research/current-pair/research-readiness-ledger', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : '1D';
+    if (!['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const report = await getCurrentPairResearchReadinessLedger({
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol.toUpperCase() : undefined,
+      horizon: horizon as CurrentPairPredictionHorizon
+    });
+    return res.json(report);
+  } catch (error: any) {
+    console.error('[CURRENT_PAIR_RESEARCH_READINESS_LEDGER]', error);
+    return res.status(503).json({
+      error: 'CURRENT_PAIR_RESEARCH_READINESS_LEDGER_UNAVAILABLE',
+      message: error?.message || 'Current pair research readiness ledger is unavailable.'
     });
   }
 });
