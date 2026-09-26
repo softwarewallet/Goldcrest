@@ -83,6 +83,13 @@ try {
   assert.equal(analytics.groups[0].sampleSufficient, false);
   assert.equal(analytics.groups[0].minimumSampleCount, 30);
   assert.ok(analytics.groups[0].accuracyConfidenceInterval95Pct !== null);
+  assert.equal(analytics.groups[0].rollingWindows.length, 2);
+  assert.equal(analytics.groups[0].rollingWindows[0].windowDays, 30);
+  assert.equal(analytics.groups[0].rollingWindows[0].directionalEvaluated, 1);
+  assert.equal(analytics.groups[0].rollingWindows[0].sampleSufficient, false);
+  assert.equal(analytics.groups[0].sampleSufficient, false);
+  assert.equal(analytics.groups[0].minimumSampleCount, 30);
+  assert.ok(analytics.groups[0].accuracyConfidenceInterval95Pct !== null);
   assert.ok((analytics.groups[0].accuracyConfidenceInterval95Pct?.lowerPct || 0) < 100);
   assert.equal(analytics.groups[0].accuracyConfidenceInterval95Pct?.upperPct, 100);
   assert.equal(analytics.groups[0].calibration[4].sampleSufficient, false);

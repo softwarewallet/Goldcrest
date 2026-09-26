@@ -42,6 +42,17 @@ export interface CurrentPairPredictionCalibrationBin {
   sampleSufficient: boolean;
 }
 
+export interface CurrentPairRollingWindowMetrics {
+  windowDays: 30 | 90;
+  evaluated: number;
+  directionalEvaluated: number;
+  correct: number;
+  accuracyPct: number | null;
+  brierScore: number | null;
+  sampleSufficient: boolean;
+  accuracyConfidenceInterval95Pct: { lowerPct: number; upperPct: number } | null;
+}
+
 export interface CurrentPairPredictionGroupMetrics {
   symbol: string;
   modelVersion: string;
@@ -319,6 +330,29 @@ export async function getCurrentPairPredictionAnalytics(params: {
       };
     });
 
+    const latestEvaluatedAt = evaluatedRows.reduce((latest, row) => Math.max(latest, Number(row.predicted_at) || 0), 0);
+    const rollingWindows = ([30, 90] as const).map(windowDays => {
+      const cutoff = latestEvaluatedAt - windowDays * 24 * 60 * 60 * 1000;
+      const windowRows = evaluatedRows.filter(row => Number(row.predicted_at) >= cutoff);
+      const windowDirectional = windowRows
+        .map(row => directionalScore(row, row.actual_direction as 'UP' | 'DOWN' | 'FLAT'))
+        .filter(result => result.evaluated);
+      const windowCorrect = windowDirectional.filter(result => result.correct).length;
+      const windowBrier = windowDirectional
+        .map(result => result.brier)
+        .filter((value): value is number => value !== null);
+      return {
+        windowDays,
+        evaluated: windowRows.length,
+        directionalEvaluated: windowDirectional.length,
+        correct: windowCorrect,
+        accuracyPct: windowDirectional.length ? (windowCorrect / windowDirectional.length) * 100 : null,
+        brierScore: windowBrier.length ? windowBrier.reduce((sum, value) => sum + value, 0) / windowBrier.length : null,
+        sampleSufficient: windowDirectional.length >= CURRENT_PAIR_MIN_SAMPLE_COUNT,
+        accuracyConfidenceInterval95Pct: wilsonConfidenceInterval95(windowCorrect, windowDirectional.length)
+      };
+    });
+
     return {
       symbol: group[0].symbol,
       modelVersion: group[0].model_version,
@@ -340,7 +374,11 @@ export async function getCurrentPairPredictionAnalytics(params: {
       flatActuals: evaluatedRows.filter(row => row.actual_direction === 'FLAT').length,
       calibration,
       marketRegime: predictionContextValue(group[0], 'marketRegime'),
-      session: predictionContextValue(group[0], 'session')
+      session: predictionContextValue(group[0], 'session'),
+      sampleSufficient: directional.length >= CURRENT_PAIR_MIN_SAMPLE_COUNT,
+      minimumSampleCount: CURRENT_PAIR_MIN_SAMPLE_COUNT,
+      accuracyConfidenceInterval95Pct: wilsonConfidenceInterval95(correct, directional.length),
+      rollingWindows
     };
   }).sort((a, b) =>
     a.symbol.localeCompare(b.symbol) ||

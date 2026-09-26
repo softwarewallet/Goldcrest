@@ -117,6 +117,10 @@ interface CurrentPairGroupMetric {
   calibration: Array<{ lowerPct:number; upperPct:number; predictions:number; evaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; sampleSufficient:boolean }>;
   marketRegime: string;
   session: string;
+  sampleSufficient: boolean;
+  minimumSampleCount: number;
+  accuracyConfidenceInterval95Pct: { lowerPct:number; upperPct:number } | null;
+  rollingWindows: Array<{windowDays:30|90; evaluated:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; brierScore:number|null; sampleSufficient:boolean; accuracyConfidenceInterval95Pct:{lowerPct:number; upperPct:number}|null}>;
 }
 
 interface CurrentPairPredictionAnalytics {
@@ -1160,6 +1164,18 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                   <div className="mt-1 text-white">n={bin.predictions}</div>
                   <div className="text-cyan-300">Avg: {bin.averageConfidencePct == null ? '—' : bin.averageConfidencePct.toFixed(1) + '%'}</div>
                   <div className="text-emerald-300">Accuracy: {bin.accuracyPct == null ? '—' : bin.accuracyPct.toFixed(1) + '%'}</div>
+                </div>
+              ))}
+            </div>
+            <div className="text-sm font-bold text-white font-mono mb-3">Rolling Research Stability</div>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {(currentPairAnalytics?.groups?.find(g => g.symbol === (currentPairSymbol === 'ALL' ? currentPairAnalytics.groups[0]?.symbol : currentPairSymbol))?.rollingWindows || []).map(window => (
+                <div key={window.windowDays} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                  <div className="text-[11px] text-slate-400 font-mono mb-2">{window.windowDays}D WINDOW</div>
+                  <div className="text-xs text-slate-300">Directional: <span className="text-white">{window.directionalEvaluated}</span></div>
+                  <div className="text-xs text-slate-300">Accuracy: <span className="text-white">{window.accuracyPct == null ? '—' : window.accuracyPct.toFixed(1) + '%'}</span></div>
+                  <div className="text-xs text-slate-300">95% CI: <span className="text-white">{window.accuracyConfidenceInterval95Pct == null ? '—' : window.accuracyConfidenceInterval95Pct.lowerPct.toFixed(1) + '–' + window.accuracyConfidenceInterval95Pct.upperPct.toFixed(1) + '%'}</span></div>
+                  <div className={window.sampleSufficient ? 'text-emerald-300 text-[11px] mt-1' : 'text-amber-300 text-[11px] mt-1'}>{window.sampleSufficient ? 'SAMPLE SUFFICIENT' : 'INSUFFICIENT SAMPLE'}</div>
                 </div>
               ))}
             </div>
