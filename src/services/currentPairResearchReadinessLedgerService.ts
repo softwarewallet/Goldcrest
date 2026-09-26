@@ -61,10 +61,7 @@ export async function getCurrentPairResearchReadinessLedger(params: {
   const validationInsufficient = validation.checks.filter(check => check.status === 'INSUFFICIENT').length;
   const sufficientCalibrationRows = calibrationMatrix.rows.filter(row => row.current.sampleSufficient && row.reference.sampleSufficient).length;
   const sufficientContextRows = contextCalibration.rows.filter(row =>
-    row.baseline.current.sampleSufficient &&
-    row.ai.current.sampleSufficient &&
-    row.baseline.reference.sampleSufficient &&
-    row.ai.reference.sampleSufficient
+    row.baseline.metrics.sampleSufficient && row.ai.metrics.sampleSufficient
   ).length;
 
   const bootstrapAvailable = Boolean(
@@ -89,7 +86,7 @@ export async function getCurrentPairResearchReadinessLedger(params: {
     },
     {
       id: 'paired-sample',
-      status: validation.paired.pairedEvaluated >= MIN_SAMPLE_COUNT ? 'PASS' : 'INSUFFICIENT',
+      status: validation.data.pairedEvaluated >= MIN_SAMPLE_COUNT ? 'PASS' : 'INSUFFICIENT',
       title: 'Paired evaluation sample',
       detail: `${validation.paired.pairedEvaluated} jointly evaluated pairs; minimum is ${MIN_SAMPLE_COUNT}.`
     },
