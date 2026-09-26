@@ -437,18 +437,17 @@ export interface CurrentPairPairedModelComparison {
 function exactMcNemarTwoSidedPValue(baselineOnlyCorrect: number, aiOnlyCorrect: number): number | null {
   const n = baselineOnlyCorrect + aiOnlyCorrect;
   if (n === 0) return null;
-  const k = Math.min(baselineOnlyCorrect, aiOnlyCorrect);
-  let probability = 0;
-  for (let i = 0; i <= k; i++) {
-    probability += (Math.pow(0.5, n) * factorial(n)) / (factorial(i) * factorial(n - i));
-  }
-  return Math.min(1, 2 * probability);
-}
 
-function factorial(n: number): number {
-  let result = 1;
-  for (let i = 2; i <= n; i++) result *= i;
-  return result;
+  const k = Math.min(baselineOnlyCorrect, aiOnlyCorrect);
+  let probability = Math.pow(0.5, n);
+  let cumulative = probability;
+
+  for (let i = 0; i < k; i++) {
+    probability *= (n - i) / (i + 1);
+    cumulative += probability;
+  }
+
+  return Math.min(1, 2 * cumulative);
 }
 
 export async function getCurrentPairPairedModelComparison(params: {
