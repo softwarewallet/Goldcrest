@@ -205,9 +205,9 @@ interface CurrentPairOosCalibrationBucket {
 interface CurrentPairCalibrationMatrixRow {
   symbol: string;
   horizon: '1D' | '3D' | '7D';
-  current: { predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; sampleSufficient:boolean };
+  current: { predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; calibrationSlope:number|null; calibrationInterceptPct:number|null; sampleSufficient:boolean };
   reference: { predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; sampleSufficient:boolean };
-  deltas: { accuracyDeltaPct:number|null; confidenceDeltaPct:number|null; expectedCalibrationErrorDeltaPct:number|null; maximumCalibrationErrorDeltaPct:number|null };
+  deltas: { accuracyDeltaPct:number|null; confidenceDeltaPct:number|null; expectedCalibrationErrorDeltaPct:number|null; maximumCalibrationErrorDeltaPct:number|null; calibrationSlopeDelta:number|null; calibrationInterceptDeltaPct:number|null };
 }
 
 interface CurrentPairCalibrationMatrix {
@@ -1336,11 +1336,11 @@ export const TradingHub: React.FC<TradingHubProps> = ({
               {currentPairCalibrationMatrix && currentPairCalibrationMatrix.rows.length > 0 && (
                 <div className="border border-slate-800 rounded-lg p-3 mb-3">
                   <div className="text-xs font-bold text-white font-mono mb-1">Symbol / Horizon Calibration Drift Matrix</div>
-                  <div className="text-[10px] text-slate-600 font-mono mb-2">Latest 30-day OOS versus the non-overlapping 90-day reference. Rows below 30 directional evaluations are marked insufficient. Research telemetry only.</div>
+                  <div className="text-[10px] text-slate-600 font-mono mb-2">Latest 30-day OOS versus the non-overlapping 90-day reference. Slope is the OLS calibration slope of correctness on confidence; intercept is expressed in percentage points. Rows below 30 directional evaluations are marked insufficient. Research telemetry only.</div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-[10px] font-mono">
                       <thead><tr className="text-slate-500 border-b border-slate-800">
-                        <th className="py-2 text-left">Pair</th><th>Horizon</th><th>30D n</th><th>90D n</th><th>30D Acc.</th><th>90D Acc.</th><th>Acc. Δ</th><th>ECE Δ</th><th>MCE Δ</th><th>Status</th>
+                        <th className="py-2 text-left">Pair</th><th>Horizon</th><th>30D n</th><th>90D n</th><th>30D Acc.</th><th>90D Acc.</th><th>Acc. Δ</th><th>ECE Δ</th><th>MCE Δ</th><th>Slope Δ</th><th>Int. Δ</th><th>Status</th>
                       </tr></thead>
                       <tbody>{currentPairCalibrationMatrix.rows.map(row => {
                         const sufficient = row.current.sampleSufficient && row.reference.sampleSufficient;
@@ -1356,6 +1356,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                           <td className="text-center">{row.deltas.accuracyDeltaPct == null ? '—' : row.deltas.accuracyDeltaPct.toFixed(1) + ' pp'}</td>
                           <td className="text-center">{row.deltas.expectedCalibrationErrorDeltaPct == null ? '—' : row.deltas.expectedCalibrationErrorDeltaPct.toFixed(1) + ' pp'}</td>
                           <td className="text-center">{row.deltas.maximumCalibrationErrorDeltaPct == null ? '—' : row.deltas.maximumCalibrationErrorDeltaPct.toFixed(1) + ' pp'}</td>
+                          <td className="text-center">{row.deltas.calibrationSlope == null ? '—' : row.deltas.calibrationSlope.toFixed(3)}</td>
+                          <td className="text-center">{row.deltas.calibrationInterceptDeltaPct == null ? '—' : row.deltas.calibrationInterceptDeltaPct.toFixed(1) + ' pp'}</td>
                           <td className={status === 'WARN' ? 'text-amber-300 text-center' : status === 'PASS' ? 'text-emerald-300 text-center' : 'text-cyan-300 text-center'}>{status}</td>
                         </tr>;
                       })}</tbody>
