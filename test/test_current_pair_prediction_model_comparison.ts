@@ -72,9 +72,9 @@ try {
   assert.equal(paired.pairedObservations, 2);
   assert.equal(paired.pairedEvaluated, 2);
   assert.equal(paired.pairedPending, 0);
-  assert.equal(paired.bothCorrect, 1);
-  assert.equal(paired.baselineOnlyCorrect, 0);
-  assert.equal(paired.aiOnlyCorrect, 0);
+  assert.equal(paired.bothCorrect, 0);
+  assert.equal(paired.baselineOnlyCorrect, 1);
+  assert.equal(paired.aiOnlyCorrect, 1);
   assert.equal(paired.bothIncorrect, 0);
   assert.equal(paired.directionAgreementPct, 0);
   assert.equal(paired.discordantPairs, 2);
