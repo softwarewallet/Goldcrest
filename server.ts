@@ -56,7 +56,7 @@ import {
 } from './src/services/liveTradeResearchPredictionService';
 import { evaluatePendingResearchPredictions, getResearchPredictionAnalytics } from './src/services/liveTradeResearchPredictionEvaluationService';
 import { generateCurrentPairPredictions } from './src/services/pairPredictionService';
-import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics } from './src/services/currentPairPredictionOutcomeService';
+import { evaluatePendingCurrentPairPredictions, getCurrentPairPredictionAnalytics, getCurrentPairPredictionWalkForwardAnalytics } from './src/services/currentPairPredictionOutcomeService';
 import { getCurrentPairPredictionCollectionStatus, runCurrentPairPredictionCollectionCycle, startCurrentPairPredictionCollectionScheduler, stopCurrentPairPredictionCollectionScheduler } from './src/services/currentPairPredictionCollectionService';
 import {
   getResearchAiServerConfig,
@@ -1800,6 +1800,33 @@ app.post('/api/live-trade-research/current-pair/collect-now', operatorAuthRequir
     res.json(await runCurrentPairPredictionCollectionCycle());
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Current pair prediction collection failed.' });
+  }
+});
+
+app.get('/api/live-trade-research/current-pair/walk-forward', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() : undefined;
+    if (horizon && !['1D', '3D', '7D'].includes(horizon)) {
+      return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    }
+    const parsePositive = (value: unknown) => {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : undefined;
+    };
+    const analytics = await getCurrentPairPredictionWalkForwardAnalytics({
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol.toUpperCase() : undefined,
+      modelVersion: typeof req.query.modelVersion === 'string' ? req.query.modelVersion : undefined,
+      horizon: horizon as '1D' | '3D' | '7D' | undefined,
+      limit: parsePositive(req.query.limit),
+      cohortDays: parsePositive(req.query.cohortDays),
+      maxCohorts: parsePositive(req.query.maxCohorts)
+    });
+    res.json(analytics);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'CURRENT_PAIR_WALK_FORWARD_ANALYTICS_UNAVAILABLE',
+      message: err?.message || 'Current pair walk-forward analytics are unavailable.'
+    });
   }
 });
 
