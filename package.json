@@ -39,7 +39,7 @@
     "test:live_position_price": "tsx test/test_live_position_price.ts",
     "test:ctrader_autonomous_order": "tsx test/test_cTrader_autonomous_order.ts",
     "test:pair_prediction": "tsx test/test_pair_prediction.ts",
-    "test:current_pair_outcome": "tsx test/test_current_pair_prediction_outcome.ts"
+    "test:current_pair_outcome": "tsx test/test_current_pair_prediction_outcome.ts && tsx test/test_current_pair_prediction_collection.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
