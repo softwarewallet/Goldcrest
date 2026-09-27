@@ -86,6 +86,7 @@ import {
 import { governanceRouter } from './src/governance/governanceRoutes';
 import { reconciliationService } from './src/services/reconciliationService';
 import { reconcileInFlightExecutionIntents } from './src/services/executionReconciliationService';
+import { captureAccountBalanceSnapshots, getAccountBalanceSnapshots, startAccountBalanceSnapshotScheduler, stopAccountBalanceSnapshotScheduler } from './src/services/accountBalanceSnapshotService';
 
 // Legacy demo execution is retired; LIVE_ONLY production mode is enforced by the server safety layer.
 import { brokerRegistry } from './src/brokers/registry';
@@ -646,6 +647,7 @@ const DATABASE_EXPLORER_TABLES = [
   { name: 'positions', label: 'Positions', category: 'Trading', description: 'Persisted position state.' },
   { name: 'broker_accounts', label: 'Broker Accounts', category: 'Trading', description: 'Broker account snapshots and permissions.' },
   { name: 'broker_reconciliation_snapshots', label: 'Reconciliation Snapshots', category: 'Trading', description: 'Broker account, position and order snapshots.' },
+  { name: 'account_balance_snapshots', label: 'Account Balance History', category: 'Trading', description: 'Three-hour LIVE account balance, equity, used-margin and free-margin snapshots.' },
   { name: 'market_data', label: 'Market Data', category: 'Market Data', description: 'Persisted market observations.' },
   { name: 'candles', label: 'Candles', category: 'Market Data', description: 'OHLCV candle series.' },
   { name: 'market_history_sync', label: 'Market History Sync', category: 'Market Data', description: 'Per-pair historical market-data synchronization state.' },
@@ -770,6 +772,37 @@ app.get('/api/database/table', operatorAuthRequired, async (req: Request, res: R
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Database table unavailable.' });
+  }
+});
+
+app.get('/api/reports/account-balance-history', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    const broker = typeof req.query.broker === 'string'
+      ? String(req.query.broker).toUpperCase()
+      : undefined;
+    if (broker && broker !== 'CTRADER' && broker !== 'FIVE_PAISA') {
+      return res.status(400).json({ error: 'BROKER_INVALID', message: 'broker must be CTRADER or FIVE_PAISA.' });
+    }
+
+    const from = req.query.from !== undefined ? Number(req.query.from) : undefined;
+    const to = req.query.to !== undefined ? Number(req.query.to) : undefined;
+    const limit = req.query.limit !== undefined ? Number(req.query.limit) : 500;
+    const rows = await getAccountBalanceSnapshots({
+      from: Number.isFinite(from) ? from : undefined,
+      to: Number.isFinite(to) ? to : undefined,
+      broker: broker as 'CTRADER' | 'FIVE_PAISA' | undefined,
+      limit: Number.isFinite(limit) ? limit : 500
+    });
+
+    res.json({
+      rows,
+      intervalHours: 3,
+      schedule: 'Every 3 hours at 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00 and 21:00 server-local time.',
+      timestamp: Date.now()
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Account balance history unavailable.' });
   }
 });
 
@@ -2387,6 +2420,7 @@ async function startServer() {
     });
     void captureLiveBrokerReconciliation();
     void reconcileInFlightExecutionIntents();
+    startAccountBalanceSnapshotScheduler();
 
     // Phase 1: durable Forex historical market-data collection. The initial
     // synchronization backfills daily history (plus broker-native weekly and
@@ -2422,6 +2456,7 @@ async function startServer() {
   const shutdown = (signal: string) => {
     stopLiveTradeResearchOutcomeTracker();
     stopCurrentPairPredictionCollectionScheduler();
+    stopAccountBalanceSnapshotScheduler();
     liveRuntimeLog('SYSTEM', 'SERVER_SHUTDOWN_REQUESTED', { signal });
     console.log(`Goldcrest received ${signal}; closing HTTP server gracefully.`);
     server.close(() => {
