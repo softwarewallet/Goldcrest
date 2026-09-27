@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { FOREX_PAIRS } from '../markets/forex/instruments';
+import { evaluateSystemConfigIntegrity } from './configIntegrityService';
 
 export interface SystemConfig {
   tradingMode: 'LIVE_ONLY';
@@ -210,7 +211,7 @@ export function applyPersistedSystemConfig(updates: Partial<SystemConfig>): Syst
   return { ...activeConfig };
 }
 
-export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig {
+export function prepareSystemConfigUpdate(updates: Partial<SystemConfig>): SystemConfig {
   loadPersistedSystemConfig();
 
   // Goldcrest's broker routing remains explicit, while cTrader Open API
@@ -222,12 +223,21 @@ export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig
     throw new Error('cTrader API mode must be LIVE or DEMO.');
   }
 
-  activeConfig = {
+  const candidate: SystemConfig = {
     ...activeConfig,
     ...updates,
     tradingMode: 'LIVE_ONLY'
   };
+  const integrity = evaluateSystemConfigIntegrity(candidate);
+  if (!integrity.ok) {
+    throw new Error(`Configuration integrity rejected: ${integrity.failures.join(', ') || 'invalid configuration'}`);
+  }
+  return { ...candidate };
+}
 
+export function updateSystemConfig(updates: Partial<SystemConfig>): SystemConfig {
+  const candidate = prepareSystemConfigUpdate(updates);
+  activeConfig = candidate;
   persistSystemConfig(activeConfig);
   return { ...activeConfig };
 }
