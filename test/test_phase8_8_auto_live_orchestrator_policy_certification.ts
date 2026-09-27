@@ -196,10 +196,11 @@ await scenario(37, 'Maximum system-wide trade policy remains configuration-drive
   assert.equal(getSystemConfig().maxOpenPositions, 7);
   assert.equal(hasSystemPositionCapacity(6, getSystemConfig().maxOpenPositions), true);
 });
-await scenario(38, 'Maximum per-pair trade policy remains score-driven', () => {
+await scenario(38, 'Configured maximum per-pair setting caps the score tier', () => {
   updateSystemConfig({ autoLiveMaxTradesPerPair: 2 });
   assert.equal(getSystemConfig().autoLiveMaxTradesPerPair, 2);
   assert.equal(getAutoLiveParallelTradePolicy(79).maxTradesPerPair, 5);
+  assert.equal(Math.min(getAutoLiveParallelTradePolicy(79).maxTradesPerPair, getSystemConfig().autoLiveMaxTradesPerPair), 2);
 });
 await scenario(39, 'Orchestration policy keeps execution paused when global capacity is full', () => {
   assert.equal(hasSystemPositionCapacity(7, 7), false);
