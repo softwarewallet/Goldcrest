@@ -196,9 +196,10 @@ interface CurrentPairResearchValidationReport {
 }
 
 interface CurrentPairTemporalBootstrapInterval { lower:number; upper:number; confidenceLevelPct:number; resamples:number }
+interface CurrentPairTemporalCalibrationBucket { lowerPct:number; upperPct:number; predictions:number; directionalEvaluated:number; correct:number; averageConfidencePct:number|null; accuracyPct:number|null; calibrationGapPct:number|null; accuracyConfidenceInterval95Pct:{lowerPct:number;upperPct:number}|null; sampleSufficient:boolean }
 interface CurrentPairTemporalCalibrationMatrix {
   modelVersion: string; generatedAt: number; windowsDays: number[]; minimumSampleCount: number; bootstrapResamples:number;
-  rows: Array<{ symbol: string; horizon: '1D'|'3D'|'7D'; windows: Array<{ windowDays:number; predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; calibrationSlope:number|null; calibrationInterceptPct:number|null; sampleSufficient:boolean }>; deltas: { accuracy7dVs90dPct:number|null; confidence7dVs90dPct:number|null; ece7dVs90dPct:number|null; mce7dVs90dPct:number|null; slope7dVs90d:number|null; intercept7dVs90dPct:number|null; accuracy7dVs90d95Pct:CurrentPairTemporalBootstrapInterval|null; confidence7dVs90d95Pct:CurrentPairTemporalBootstrapInterval|null; ece7dVs90d95Pct:CurrentPairTemporalBootstrapInterval|null } }>;
+  rows: Array<{ symbol: string; horizon: '1D'|'3D'|'7D'; windows: Array<{ windowDays:number; predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null; averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null; maximumCalibrationErrorPct:number|null; calibrationSlope:number|null; calibrationInterceptPct:number|null; calibrationBuckets:CurrentPairTemporalCalibrationBucket[]; sampleSufficient:boolean }>; deltas: { accuracy7dVs90dPct:number|null; confidence7dVs90dPct:number|null; ece7dVs90dPct:number|null; mce7dVs90dPct:number|null; slope7dVs90d:number|null; intercept7dVs90dPct:number|null; accuracy7dVs90d95Pct:CurrentPairTemporalBootstrapInterval|null; confidence7dVs90d95Pct:CurrentPairTemporalBootstrapInterval|null; ece7dVs90d95Pct:CurrentPairTemporalBootstrapInterval|null } }>;
 }
 
 interface CurrentPairResearchReadinessLedger {
@@ -1768,6 +1769,26 @@ export const TradingHub: React.FC<TradingHubProps> = ({
               })()}
             </div>
             <div className="text-[10px] text-slate-600 font-mono mt-2">Descriptive research telemetry only. Accuracy is accompanied by a Wilson 95% confidence interval; groups with fewer than 30 directional evaluations are explicitly marked insufficient-sample. These controls do not alter prediction or Auto Live behavior.</div>
+            <div className="text-sm font-bold text-white font-mono mt-5 mb-3">Temporal Confidence-Bucket Stability</div>
+            <div className="text-[10px] text-slate-500 mb-3">Confidence calibration is tracked independently inside each rolling window. Bucket accuracy uses directional evaluated observations; Wilson intervals and sample sufficiency are descriptive research telemetry only.</div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[10px] font-mono">
+                <thead><tr className="text-slate-500 border-b border-slate-800"><th className="text-left p-2">Pair / Horizon</th><th>Window</th><th>Confidence</th><th>Evaluated</th><th>Accuracy</th><th>Avg. Confidence</th><th>Gap</th><th>95% CI</th><th>Sample</th></tr></thead>
+                <tbody>{currentPairTemporalCalibration.rows.flatMap(row => row.windows.flatMap(window => window.calibrationBuckets.filter(bucket => bucket.predictions > 0).map(bucket =>
+                  <tr key={row.symbol+'|'+row.horizon+'|'+window.windowDays+'|'+bucket.lowerPct} className="border-b border-slate-900">
+                    <td className="p-2 text-slate-300">{row.symbol} / {row.horizon}</td>
+                    <td className="text-center">{window.windowDays}D</td>
+                    <td className="text-center">{bucket.lowerPct}–{bucket.upperPct}%</td>
+                    <td className="text-center">{bucket.directionalEvaluated}</td>
+                    <td className="text-center">{bucket.accuracyPct == null ? '—' : bucket.accuracyPct.toFixed(1)+'%'}</td>
+                    <td className="text-center">{bucket.averageConfidencePct == null ? '—' : bucket.averageConfidencePct.toFixed(1)+'%'}</td>
+                    <td className="text-center">{bucket.calibrationGapPct == null ? '—' : bucket.calibrationGapPct.toFixed(1)+' pp'}</td>
+                    <td className="text-center">{bucket.accuracyConfidenceInterval95Pct == null ? '—' : bucket.accuracyConfidenceInterval95Pct.lowerPct.toFixed(1)+'–'+bucket.accuracyConfidenceInterval95Pct.upperPct.toFixed(1)+'%'}</td>
+                    <td className={bucket.sampleSufficient ? 'text-center text-emerald-300' : 'text-center text-amber-300'}>{bucket.sampleSufficient ? 'SUFFICIENT' : 'INSUFFICIENT'}</td>
+                  </tr>
+                )))}</tbody>
+              </table>
+            </div>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
