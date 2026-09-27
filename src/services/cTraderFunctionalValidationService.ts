@@ -103,8 +103,7 @@ export function evaluateCTraderFunctionalValidation(
     orderSubmission: gate(!input.validationSubmittedOrder, 'Functional validation submitted no broker order.', 'Functional validation must never submit a broker order.')
   };
 
-  const blockingCheckNames = new Set(Object.keys(checks).filter(name => name !== 'quoteFreshness'));
-  failures.push(...Object.entries(checks).filter(([name, value]) => blockingCheckNames.has(name) && value.status === 'FAIL').map(([name]) => name));
+  failures.push(...Object.entries(checks).filter(([, value]) => value.status === 'FAIL').map(([name]) => name));
   const ready = failures.length === 0;
   return {
     ready,
