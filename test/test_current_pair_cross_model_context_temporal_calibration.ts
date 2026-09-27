@@ -13,7 +13,7 @@ for(let i=0;i<45;i++){
   const ts=now-(i+2)*2*60*60*1000+60000;
   const actual=i<30?'UP':'DOWN';
   const regime=i<35?'TREND':'RANGE';
-  const session=i%2===0?'LONDON':'NEW_YORK';
+  const session=i<35?'LONDON':'NEW_YORK';
   await insert('b-'+i,'PAIR_FEATURE_BASELINE_V2',ts,actual,.65,regime,session);
   await insert('a-'+i,'LLAMA_GATEWAY_QWEN_LLAMA_V1',ts,actual,i<30?.70:.85,regime,session);
 }
