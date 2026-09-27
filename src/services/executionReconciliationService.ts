@@ -10,7 +10,7 @@ import {
 } from './executionIntentService';
 
 const TERMINAL_STATES: OrderStatus[] = ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'];
-const MAX_AGE_MS = 15 * 60_000;
+export const EXECUTION_RECONCILIATION_MAX_AGE_MS = 15 * 60_000;
 
 function parseResult(raw: any): any {
   if (!raw) return {};
@@ -69,7 +69,7 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
     // Once the reconciliation age policy is reached, persist the timeout rather
     // than leaving the row in PENDING forever.
     if (!brokerOrderId) {
-      if (intentAgeMs >= MAX_AGE_MS) {
+      if (intentAgeMs >= EXECUTION_RECONCILIATION_MAX_AGE_MS) {
         const timedOut = {
           ...stored,
           reconciliationTimedOutAt: stored.reconciliationTimedOutAt || Date.now(),
@@ -203,7 +203,7 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
       merged.operatorActionRequired = false;
       merged.resolvedAfterTimeoutAt = Date.now();
     }
-    if (age >= MAX_AGE_MS && !TERMINAL_STATES.includes(status.status)) {
+    if (age >= EXECUTION_RECONCILIATION_MAX_AGE_MS && !TERMINAL_STATES.includes(status.status)) {
       const timedOut = {
         ...merged,
         reconciliationTimedOutAt: merged.reconciliationTimedOutAt || Date.now(),
@@ -258,7 +258,7 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
       reconciliationLastAttemptAt: attemptStartedAt
     };
 
-    if (age >= MAX_AGE_MS) {
+    if (age >= EXECUTION_RECONCILIATION_MAX_AGE_MS) {
       merged.reconciliationTimedOutAt = merged.reconciliationTimedOutAt || Date.now();
       merged.reconciliationTimeoutAgeMs = age;
       merged.reconciliationState = 'RECONCILIATION_TIMEOUT';
