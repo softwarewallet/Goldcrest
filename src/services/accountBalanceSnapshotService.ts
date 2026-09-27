@@ -17,7 +17,6 @@ export interface AccountBalanceSnapshot {
   errorMessage?: string;
 }
 
-const SNAPSHOT_INTERVAL_MS = 3 * 60 * 60 * 1000;
 let schedulerTimer: ReturnType<typeof setTimeout> | null = null;
 let schedulerStarted = false;
 
