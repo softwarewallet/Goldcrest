@@ -1462,6 +1462,39 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 </div>
               )}
 
+              {currentPairCrossModelTemporalCalibration?.rows?.length > 0 && (
+                <div className="border border-indigo-900/50 rounded-lg p-3 mb-3">
+                  <div className="text-xs font-bold text-white font-mono mb-1">Cross-Model Temporal Confidence-Bucket Stability</div>
+                  <div className="text-[10px] text-slate-600 font-mono mb-2">AI minus baseline confidence-bucket calibration telemetry across rolling windows. Bucket accuracy uses mature directional evaluations; Wilson 95% intervals and the 30-observation threshold are descriptive research controls only.</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[10px] font-mono">
+                      <thead><tr className="text-slate-500 border-b border-slate-800"><th className="py-2 text-left">Pair</th><th>Horizon</th><th>Window</th><th>Confidence</th><th>Eval.</th><th>Base Acc.</th><th>AI Acc.</th><th>Acc Δ</th><th>Gap Δ</th><th>AI 95% CI</th><th>Status</th></tr></thead>
+                      <tbody>{currentPairCrossModelTemporalCalibration.rows.flatMap((row:any) => row.windows.flatMap((window:any) => window.baseline.calibrationBuckets.map((bucket:any,index:number) => {
+                        const ai=window.ai.calibrationBuckets[index];
+                        const delta=window.deltas.calibrationBuckets[index];
+                        const sufficient=bucket.sampleSufficient && ai.sampleSufficient;
+                        if (bucket.predictions===0 && ai.predictions===0) return null;
+                        return (
+                          <tr key={row.symbol+row.horizon+window.windowDays+bucket.lowerPct} className="border-b border-slate-800/60">
+                            <td className="py-2 text-white">{row.symbol}</td>
+                            <td className="text-center">{row.horizon}</td>
+                            <td className="text-center">{window.windowDays}D</td>
+                            <td className="text-center">{bucket.lowerPct}–{bucket.upperPct}%</td>
+                            <td className="text-center">{Math.min(bucket.directionalEvaluated,ai.directionalEvaluated)}</td>
+                            <td className="text-center">{bucket.accuracyPct==null?'—':bucket.accuracyPct.toFixed(1)+'%'}</td>
+                            <td className="text-center">{ai.accuracyPct==null?'—':ai.accuracyPct.toFixed(1)+'%'}</td>
+                            <td className="text-center">{delta.accuracyPct==null?'—':delta.accuracyPct.toFixed(1)+' pp'}</td>
+                            <td className="text-center">{delta.calibrationGapPct==null?'—':delta.calibrationGapPct.toFixed(1)+' pp'}</td>
+                            <td className="text-center">{ai.accuracyConfidenceInterval95Pct==null?'—':ai.accuracyConfidenceInterval95Pct.lowerPct.toFixed(1)+'–'+ai.accuracyConfidenceInterval95Pct.upperPct.toFixed(1)+'%'}</td>
+                            <td className={sufficient?'text-emerald-300 text-center':'text-cyan-300 text-center'}>{sufficient?'SUFFICIENT':'INSUFFICIENT'}</td>
+                          </tr>
+                        );
+                      })))}</tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {currentPairCrossModelContextCalibration?.rows?.length > 0 && (
                 <div className="border border-slate-800 rounded-lg p-3 mb-3">
                   <div className="text-xs font-bold text-white font-mono mb-1">Paired Context Calibration Matrix</div>
