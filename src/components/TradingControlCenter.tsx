@@ -64,6 +64,7 @@ export type FreshnessStatus = 'LIVE' | 'RECENT' | 'STALE' | 'ERROR' | 'UNAVAILAB
 
 interface AccountCardData {
   broker: BrokerType;
+  accountType?: 'LIVE' | 'DEMO';
   accountId: string;
   accountStatus: 'ACTIVE' | 'DISCONNECTED' | 'ERROR' | 'ACCOUNT_NOT_FOUND';
   connectionStatus: 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED' | 'ERROR';
@@ -318,6 +319,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             const currency = String(account.currency || 'USD').toUpperCase();
             return {
               broker: item.broker,
+              accountType: account.accountType === 'DEMO' ? 'DEMO' : 'LIVE',
               accountId: String(account.accountId || '****'),
               accountStatus: connected ? 'ACTIVE' : 'ERROR',
               connectionStatus: connected ? 'CONNECTED' : 'ERROR',
@@ -331,7 +333,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               realizedPnl: Number(account.realizedPnL ?? account.realizedPnl ?? 0),
               lastSyncTimestamp: Number(account.lastUpdate || Date.now()),
               freshness: 'LIVE',
-              source: item.broker === 'CTRADER' ? 'cTrader LIVE API' : '5paisa LIVE API',
+              source: item.broker === 'CTRADER' ? `cTrader ${account.accountType === 'DEMO' ? 'DEMO' : 'LIVE'} API` : '5paisa LIVE API',
               errorMessage: item.error || undefined
             };
           })
