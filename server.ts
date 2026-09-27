@@ -319,7 +319,17 @@ app.get('/api/operations/readiness', operatorAuthRequired, async (_req: Request,
       runtimeLifecycleRunning: snapshot.lifecycle.state === 'RUNNING',
       auditLogReady: snapshot.auditLog.enabled && snapshot.auditLog.exists,
       operatorAuthConfigured: operatorAuthConfigured(),
-      liveBrokerConfigured: snapshot.brokers.length > 0,
+      liveBrokerConfigured: Boolean(
+        process.env.CTRADER_LIVE_CLIENT_ID?.trim() &&
+        process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
+        process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
+        process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
+      ) || Boolean(
+        process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
+        process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
+        process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
+        process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
+      ),
       liveBrokerConnected: snapshot.brokers.some(item => item.isLive && item.reportedStatus === 'CONNECTED'),
       autonomousExecutionAllowed: LIVE_AUTO_EXECUTION_ALLOWED
     });
