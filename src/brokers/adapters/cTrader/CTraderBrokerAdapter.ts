@@ -294,7 +294,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
 
           results.push({
             accountId: String(details.traderLogin),
-            accountType: 'LIVE',
+            accountType: details.isLive ? 'LIVE' : 'DEMO',
             balance: details.balance,
             equity: details.equity,
             availableMargin: details.availableMargin,
