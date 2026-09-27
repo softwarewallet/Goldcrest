@@ -43,6 +43,13 @@ async function ensureTable(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_account_balance_snapshots_broker_time
       ON account_balance_snapshots(broker, captured_at DESC);
   `);
+
+  // Never expose synthetic certification fixtures through the operator-facing
+  // LIVE balance history. Older test runs wrote TEST-* accounts into the shared
+  // SQLite database; remove those records before any history query or snapshot.
+  await executeRun(
+    "DELETE FROM account_balance_snapshots WHERE environment = 'LIVE' AND account_id LIKE 'TEST-%'"
+  );
 }
 
 function snapshotId(broker: BrokerType, capturedAt: number): string {
