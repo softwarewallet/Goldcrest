@@ -14,6 +14,8 @@ import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments
 import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
 import { ScannerService } from './src/services/scannerService';
 import { getSystemConfig, updateSystemConfig, applyPersistedSystemConfig, prepareSystemConfigUpdate, persistSystemConfig } from './src/services/configService';
+import { getCTraderApiMode } from './src/services/configService';
+import { evaluateBrokerVerification } from './src/services/brokerVerificationService';
 import { loadPersistedSystemConfigFromDatabase, persistSystemConfigToDatabase } from './src/services/configPersistenceService';
 import { calculateStrategyPayoff } from './src/markets/india_options/strategySkeleton';
 
@@ -282,6 +284,60 @@ app.get('/api/runtime', (_req: Request, res: Response) => {
     releaseIntegrity,
     timestamp: Date.now()
   });
+});
+
+app.get('/api/operations/brokers/verify', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    const credentialStatuses = brokerRegistry.getCredentialStatuses();
+
+    const results = await Promise.all(
+      (['CTRADER', 'FIVE_PAISA'] as const).map(async (broker) => {
+        const credentials = credentialStatuses.find(item => item.broker === broker && item.environment === 'LIVE');
+        if (!credentials?.configured) {
+          return evaluateBrokerVerification({
+            broker,
+            configured: false
+          });
+        }
+
+        try {
+          const connection = await brokerRegistry.testBrokerConnection(broker, 'LIVE');
+          return evaluateBrokerVerification({
+            broker,
+            configured: true,
+            connection,
+            expectedCTraderApiMode: broker === 'CTRADER' ? getCTraderApiMode() : undefined
+          });
+        } catch {
+          return evaluateBrokerVerification({
+            broker,
+            configured: true
+          });
+        }
+      })
+    );
+
+    const anyConfigured = results.some(result => result.status !== 'NOT_CONFIGURED');
+    const anyConnected = results.some(result => result.connected);
+
+    res.status(anyConfigured ? (anyConnected ? 200 : 503) : 503).json({
+      generatedAt: Date.now(),
+      environment: 'LIVE',
+      tradingMode: 'LIVE_ONLY',
+      cTraderApiMode: getCTraderApiMode(),
+      anyConfigured,
+      anyConnected,
+      brokers: results
+    });
+  } catch (error: any) {
+    liveRuntimeLog('ERROR', 'BROKER_VERIFICATION_FAILED', {
+      error: error?.message || String(error)
+    });
+    res.status(503).json({
+      error: 'BROKER_VERIFICATION_UNAVAILABLE',
+      message: error?.message || 'LIVE broker verification is unavailable.'
+    });
+  }
 });
 
 app.get('/api/operations/readiness', operatorAuthRequired, async (_req: Request, res: Response) => {
