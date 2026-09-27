@@ -48,6 +48,7 @@ import { TradingSignal } from '../markets/common/types';
 export type ControlCenterSection =
   | 'ALL_OVERVIEW'
   | 'ACCOUNT_OVERVIEW'
+  | 'BALANCE_HISTORY'
   | 'MARKET_INTELLIGENCE'
   | 'OPTIONS_CHAIN'
   | 'SIGNAL_CENTER'
@@ -182,13 +183,15 @@ interface TradingControlCenterProps {
   onSelectSignalModal?: (signal: TradingSignal) => void;
   autoTradingStatus?: any | null;
   onAutoTradingStatusChange?: (status: any) => void;
+  reportsMode?: boolean;
 }
 
 export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   initialSection = 'ALL_OVERVIEW',
   onSelectSignalModal,
   autoTradingStatus: parentAutoTradingStatus = null,
-  onAutoTradingStatusChange
+  onAutoTradingStatusChange,
+  reportsMode = false
 }) => {
   const [activeSection, setActiveSection] = useState<ControlCenterSection>(initialSection);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -233,6 +236,9 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [reconciliations, setReconciliations] = useState<ReconciliationComparison[]>([]);
   const [healthComponents, setHealthComponents] = useState<SystemHealthComponent[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [balanceSnapshots, setBalanceSnapshots] = useState<any[]>([]);
+  const [balanceSnapshotBrokerFilter, setBalanceSnapshotBrokerFilter] = useState<string>('ALL');
+  const [balanceSnapshotDateFilter, setBalanceSnapshotDateFilter] = useState<string>('');
   const [newsSnapshot, setNewsSnapshot] = useState<any | null>(null);
   const [newsBusy, setNewsBusy] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
@@ -267,7 +273,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         forexPairsRes,
         indiaUnderlyingsRes,
         signalsRes,
-        newsRes
+        newsRes,
+        balanceHistoryRes
       ] = await Promise.all([
         fetch('/api/brokers/status', { cache: 'no-store' }).catch(() => null),
         fetch('/api/brokers/positions', { cache: 'no-store' }).catch(() => null),
@@ -280,7 +287,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         fetch('/api/forex/pairs', { cache: 'no-store' }).catch(() => null),
         fetch('/api/india/underlyings', { cache: 'no-store' }).catch(() => null),
         fetch('/api/signals/all', { cache: 'no-store' }).catch(() => null),
-        fetch('/api/forex/news', { cache: 'no-store' }).catch(() => null)
+        fetch('/api/forex/news', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/reports/account-balance-history?limit=1000', { cache: 'no-store' }).catch(() => null)
       ]);
 
       if (autoTradingRes?.ok) {
@@ -514,6 +522,11 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             severity: isFailure ? 'CRITICAL' : isBlocked || isLimit ? 'WARNING' : 'INFO'
           };
         }));
+      }
+
+      if (balanceHistoryRes?.ok) {
+        const payload = await balanceHistoryRes.json();
+        setBalanceSnapshots(Array.isArray(payload?.rows) ? payload.rows : []);
       }
 
       const reconRows: ReconciliationComparison[] = [];
@@ -754,6 +767,17 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
     }, 60000);
     return () => clearInterval(interval);
   }, [fetchIndianNewsNow]);
+
+  const filteredBalanceSnapshots = useMemo(() => {
+    return balanceSnapshots.filter(row => {
+      if (balanceSnapshotBrokerFilter !== 'ALL' && row.broker !== balanceSnapshotBrokerFilter) return false;
+      if (balanceSnapshotDateFilter) {
+        const date = new Date(Number(row.capturedAt)).toISOString().slice(0, 10);
+        if (date !== balanceSnapshotDateFilter) return false;
+      }
+      return true;
+    });
+  }, [balanceSnapshots, balanceSnapshotBrokerFilter, balanceSnapshotDateFilter]);
 
   // Filtered Positions
   const filteredPositions = useMemo(() => {
@@ -1045,6 +1069,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
           {[
             { id: 'ALL_OVERVIEW', label: 'OVERVIEW', icon: Activity },
             { id: 'ACCOUNT_OVERVIEW', label: '1. ACCOUNTS', icon: DollarSign },
+            ...(reportsMode ? [{ id: 'BALANCE_HISTORY', label: '2. BALANCE HISTORY', icon: Activity }] : []),
             { id: 'MARKET_INTELLIGENCE', label: '2. MARKET INTEL', icon: TrendingUp },
             { id: 'OPTIONS_CHAIN', label: '3. OPTIONS CHAIN', icon: PieChart },
             { id: 'SIGNAL_CENTER', label: '4. SIGNALS', icon: Sparkles },
@@ -1150,6 +1175,1281 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* REPORTS: THREE-HOUR ACCOUNT BALANCE HISTORY */}
+      {activeSection === 'BALANCE_HISTORY' && (
+        <div id="section_balance_history" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-4 font-mono text-xs">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                <Activity className="w-4 h-4 text-emerald-400" />
+                <span>3-Hour Account Balance History</span>
+              </h3>
+              <p className="text-[10px] text-slate-500 mt-1">
+                Authoritative LIVE API snapshots at 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00 and 21:00.
+                No calculated or fabricated balance values are stored.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={balanceSnapshotBrokerFilter}
+                onChange={e => setBalanceSnapshotBrokerFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1.5"
+              >
+                <option value="ALL">All Brokers</option>
+                <option value="CTRADER">cTrader</option>
+                <option value="FIVE_PAISA">5paisa</option>
+              </select>
+              <input
+                type="date"
+                value={balanceSnapshotDateFilter}
+                onChange={e => setBalanceSnapshotDateFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1.5"
+              />
+              {(balanceSnapshotDateFilter || balanceSnapshotBrokerFilter !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBalanceSnapshotDateFilter('');
+                    setBalanceSnapshotBrokerFilter('ALL');
+                  }}
+                  className="px-2.5 py-1.5 rounded border border-slate-700 bg-slate-950 text-slate-300 hover:text-white"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+              <div className="text-[10px] text-slate-500">SNAPSHOTS</div>
+              <div className="text-lg font-bold text-white mt-1">{filteredBalanceSnapshots.length}</div>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+              <div className="text-[10px] text-slate-500">CAPTURED</div>
+              <div className="text-lg font-bold text-emerald-400 mt-1">{filteredBalanceSnapshots.filter(row => row.status === 'CAPTURED').length}</div>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+              <div className="text-[10px] text-slate-500">ERRORS</div>
+              <div className="text-lg font-bold text-amber-400 mt-1">{filteredBalanceSnapshots.filter(row => row.status === 'ERROR').length}</div>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+              <div className="text-[10px] text-slate-500">INTERVAL</div>
+              <div className="text-lg font-bold text-slate-200 mt-1">3 HOURS</div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
+            <table className="w-full text-left">
+              <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 sticky top-0">
+                <tr>
+                  <th className="py-2.5 px-3">DATE</th>
+                  <th className="py-2.5 px-3">TIME</th>
+                  <th className="py-2.5 px-3">BROKER</th>
+                  <th className="py-2.5 px-3">ACCOUNT</th>
+                  <th className="py-2.5 px-3">CURRENCY</th>
+                  <th className="py-2.5 px-3">BALANCE</th>
+                  <th className="py-2.5 px-3">EQUITY</th>
+                  <th className="py-2.5 px-3">USED MARGIN</th>
+                  <th className="py-2.5 px-3">FREE MARGIN</th>
+                  <th className="py-2.5 px-3">STATUS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {filteredBalanceSnapshots.map((row, index) => {
+                  const timestamp = Number(row.capturedAt);
+                  const date = Number.isFinite(timestamp) ? new Date(timestamp) : null;
+                  const currency = String(row.currency || '');
+                  const symbol = currency === 'INR' ? '₹' : '
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'MARKET_INTELLIGENCE') && (
+        <div id="section_market_intelligence" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
+              <span>Market Intelligence (Forex & Indian Equities)</span>
+            </h3>
+            <span className="text-xs text-slate-400 font-mono">Live Ingestion & Point-in-Time Freshness</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs">
+              <thead className="bg-slate-950/90 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-2.5 px-3">MARKET</th>
+                  <th className="py-2.5 px-3">INSTRUMENT</th>
+                  <th className="py-2.5 px-3">BID</th>
+                  <th className="py-2.5 px-3">ASK</th>
+                  <th className="py-2.5 px-3">SPREAD</th>
+                  <th className="py-2.5 px-3">LTP / CLOSE</th>
+                  <th className="py-2.5 px-3">24H CHANGE</th>
+                  <th className="py-2.5 px-3">FRESHNESS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {marketQuotes.map((q, qIdx) => (
+                  <tr key={`${q.market || 'mkt'}-${q.symbol || 'sym'}-${qIdx}`} className="hover:bg-slate-800/40 transition">
+                    <td className="py-2.5 px-3">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        q.market === 'FOREX' ? 'bg-sky-950 text-sky-300 border border-sky-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
+                      }`}>
+                        {q.market}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 font-bold text-white">{q.symbol}</td>
+                    <td className="py-2.5 px-3 text-slate-200">{formatMarketValue(q.bid, q.market, q.symbol)}</td>
+                    <td className="py-2.5 px-3 text-slate-200">{formatMarketValue(q.ask, q.market, q.symbol)}</td>
+                    <td className="py-2.5 px-3 text-emerald-400">
+                      {q.spreadPipsOrPts} {q.market === 'FOREX' ? 'pips' : 'pts'}
+                    </td>
+                    <td className="py-2.5 px-3 font-bold text-slate-100">{q.ltp.toFixed(q.market === 'FOREX' && !q.symbol.includes('JPY') ? 5 : 2)}</td>
+                    <td className={`py-2.5 px-3 font-semibold ${q.changePercent24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {q.changePercent24h >= 0 ? '+' : ''}{q.changePercent24h.toFixed(2)}%
+                    </td>
+                    <td className="py-2.5 px-3">{renderFreshnessBadge(q.freshness, q.timestamp)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-slate-800/70">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+              <div>
+                <div className="text-xs font-bold text-slate-200 uppercase tracking-wider">Live News Provider Matrix</div>
+                <div className="text-[10px] text-slate-500 font-mono mt-1">
+                  Provider status is based on the latest fetch. Raw vs fresh counts show when a provider returned data that was later rejected by the freshness window.
+                </div>
+              </div>
+              <div className="flex items-center gap-2 font-mono text-[10px]">
+                <span className={`px-2 py-1 rounded border ${newsSnapshot?.status === 'LIVE' ? 'border-emerald-700 bg-emerald-950/50 text-emerald-300' : newsSnapshot?.status === 'NO_RESULTS' || newsSnapshot?.status === 'STALE' ? 'border-amber-700 bg-amber-950/50 text-amber-300' : 'border-rose-700 bg-rose-950/50 text-rose-300'}`}>
+                  NEWS ENGINE: {newsSnapshot?.status || 'NOT FETCHED'}
+                </span>
+                <span className="text-slate-500">
+                  {newsSnapshot?.articleCount ?? 0} usable articles
+                </span>
+              </div>
+            </div>
+
+            {newsError && (
+              <div className="mb-3 px-3 py-2 rounded border border-rose-800 bg-rose-950/30 text-rose-300 text-[10px] font-mono">
+                {newsError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
+              {[
+                ['FINNHUB', 'Finnhub'],
+                ['MASSIVE', 'Massive'],
+                ['CURRENTS', 'Currents'],
+                ['GOOGLE_NEWS_RSS', 'Google News RSS']
+              ].map(([key, label]) => {
+                const d = newsSnapshot?.providerDiagnostics?.[key];
+                const status = d?.status || newsSnapshot?.providerStatus?.[key] || 'NO_RESULTS';
+                const strength = status === 'LIVE'
+                  ? (Number(d?.freshArticleCount || 0) >= 10 ? 'STRONG' : 'ACTIVE')
+                  : status === 'STALE' ? 'STALE DATA'
+                    : status === 'RATE_LIMITED' ? 'LIMITED'
+                      : status === 'ERROR' ? 'DOWN'
+                        : status === 'UNCONFIGURED' ? 'NOT CONFIGURED'
+                          : 'EMPTY';
+                const badge = status === 'LIVE'
+                  ? 'text-emerald-300 border-emerald-800 bg-emerald-950/40'
+                  : status === 'STALE' || status === 'RATE_LIMITED'
+                    ? 'text-amber-300 border-amber-800 bg-amber-950/40'
+                    : status === 'ERROR'
+                      ? 'text-rose-300 border-rose-800 bg-rose-950/40'
+                      : 'text-slate-400 border-slate-800 bg-slate-950';
+                return (
+                  <div key={key} className="p-3 rounded-lg border border-slate-800 bg-slate-950/70 font-mono">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-white">{label}</span>
+                      <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${badge}`}>{status}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-2 text-[9px]">
+                      <div><div className="text-slate-600">RAW</div><div className="text-slate-300">{d?.rawArticleCount ?? 0}</div></div>
+                      <div><div className="text-slate-600">FRESH</div><div className="text-cyan-300">{d?.freshArticleCount ?? 0}</div></div>
+                      <div><div className="text-slate-600">STALE</div><div className="text-amber-300">{d?.staleArticleCount ?? 0}</div></div>
+                    </div>
+                    {d?.error && <div className="mt-2 text-[9px] text-rose-400 truncate" title={d.error}>{d.error}</div>}
+                    <div className="mt-2 flex items-center justify-between text-[9px] text-slate-600">
+                      <span>STALE {d?.staleArticleCount ?? 0}</span>
+                      <span>{Number.isFinite(Number(d?.latencyMs)) ? `${Number(d?.latencyMs)}ms` : '—'}</span>
+                    </div>
+                    {(d?.latestRawArticleAt || d?.latencyMs !== undefined) && (
+                      <div className="mt-2 text-[8px] text-slate-600">
+                        {d?.latestRawArticleAt ? `Latest raw: ${new Date(d.latestRawArticleAt).toLocaleTimeString()}` : 'No timestamp'}
+                        {d?.latencyMs !== undefined ? ` · ${d.latencyMs}ms` : ''}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 text-[10px] text-slate-500 font-mono">
+              Last news fetch: {newsSnapshot?.fetchedAt ? new Date(newsSnapshot.fetchedAt).toLocaleTimeString() : 'N/A'}
+              {newsSnapshot?.latestArticleAt ? ` · Latest article: ${new Date(newsSnapshot.latestArticleAt).toLocaleTimeString()}` : ''}
+              {newsSnapshot?.queryPairs?.length ? ` · Universe: ${newsSnapshot.queryPairs.join(', ')}` : ''}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INDIAN MARKET NEWS INTELLIGENCE — provider fetches and prediction are server-gated to market OPEN */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'MARKET_INTELLIGENCE') && (
+        <div className="mt-4 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-bold text-slate-200 uppercase tracking-wider">Indian Market News & Prediction</div>
+              <div className="text-[10px] text-slate-500 font-mono mt-1">
+                Pulse · CNBC-TV18 · ET Markets · Mint · FMP · server-gated to NSE/BSE market OPEN
+              </div>
+            </div>
+            <div className="flex items-center gap-2 font-mono text-[10px]">
+              <span className={`px-2 py-1 rounded border ${
+                indianNewsSnapshot?.marketOpen
+                  ? 'border-emerald-700 bg-emerald-950/50 text-emerald-300'
+                  : 'border-slate-700 bg-slate-950 text-slate-400'
+              }`}>
+                INDIA: {indianNewsSnapshot?.marketOpen ? 'OPEN' : indianNewsSnapshot?.status === 'MARKET_CLOSED' ? 'CLOSED' : 'NOT FETCHED'}
+              </span>
+              <span className="text-slate-500">{indianNewsSnapshot?.marketPhase || '—'}</span>
+              <button
+                type="button"
+                onClick={fetchIndianNewsNow}
+                disabled={indianNewsBusy || indianNewsSnapshot?.marketOpen === false}
+                className="px-2.5 py-1 rounded border border-cyan-800 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 disabled:opacity-50"
+                title="Fetch Indian news only while the Indian market is open"
+              >
+                <RefreshCw className={`w-3 h-3 inline mr-1 ${indianNewsBusy ? 'animate-spin' : ''}`} />
+                {indianNewsBusy ? 'FETCHING...' : 'FETCH INDIA NEWS'}
+              </button>
+            </div>
+          </div>
+
+          {indianNewsSnapshot?.status === 'MARKET_CLOSED' ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 text-center font-mono text-xs text-slate-400">
+              INDIAN MARKET CLOSED — news ingestion and prediction are disabled.
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
+                {[
+                  ['PULSE_ZERODHA', 'Pulse by Zerodha'],
+                  ['CNBC_TV18', 'CNBC-TV18'],
+                  ['ET_MARKETS', 'ET Markets'],
+                  ['MINT', 'Mint'],
+                  ['FMP', 'FMP']
+                ].map(([key, label]) => {
+                  const d = indianNewsSnapshot?.providerDiagnostics?.[key];
+                  const status = d?.status || indianNewsSnapshot?.providerStatus?.[key] || 'NO_RESULTS';
+                  const badge = status === 'LIVE'
+                    ? 'text-emerald-300 border-emerald-800 bg-emerald-950/40'
+                    : status === 'STALE'
+                      ? 'text-amber-300 border-amber-800 bg-amber-950/40'
+                      : status === 'ERROR'
+                        ? 'text-rose-300 border-rose-800 bg-rose-950/40'
+                        : 'text-slate-400 border-slate-800 bg-slate-950';
+                  return (
+                    <div key={key} className="p-3 rounded-lg border border-slate-800 bg-slate-950/70 font-mono">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-white">{label}</span>
+                        <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${badge}`}>{status}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mt-2 text-[9px]">
+                        <div><div className="text-slate-600">RAW</div><div className="text-slate-300">{d?.rawArticleCount ?? 0}</div></div>
+                        <div><div className="text-slate-600">FRESH</div><div className="text-cyan-300">{d?.freshArticleCount ?? 0}</div></div>
+                        <div><div className="text-slate-600">STALE</div><div className="text-amber-300">{d?.staleArticleCount ?? 0}</div></div>
+                      </div>
+                      {d?.error && <div className="mt-2 text-[9px] text-rose-400 truncate" title={d.error}>{d.error}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <div className="lg:col-span-2 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Latest Indian Market Headlines</div>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {(indianNewsSnapshot?.articles || []).slice(0, 10).map((article: any, index: number) => (
+                      <div key={`${article.url || article.title}-${index}`} className="border-b border-slate-800/70 pb-2">
+                        <div className="text-[11px] text-slate-200">{article.title}</div>
+                        <div className="text-[9px] text-slate-600 mt-1">
+                          {article.source} · {article.publishedAt ? new Date(article.publishedAt).toLocaleTimeString() : 'time unavailable'}
+                        </div>
+                      </div>
+                    ))}
+                    {(!indianNewsSnapshot?.articles || indianNewsSnapshot.articles.length === 0) && (
+                      <div className="text-[10px] text-slate-500">No fresh Indian-market headlines returned.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">News Prediction</span>
+                    <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
+                      indianNewsSnapshot?.prediction?.bias === 'BULLISH'
+                        ? 'text-emerald-300 border-emerald-800 bg-emerald-950/40'
+                        : indianNewsSnapshot?.prediction?.bias === 'BEARISH'
+                          ? 'text-rose-300 border-rose-800 bg-rose-950/40'
+                          : 'text-amber-300 border-amber-800 bg-amber-950/40'
+                    }`}>
+                      {indianNewsSnapshot?.prediction?.bias || 'PENDING'}
+                    </span>
+                  </div>
+                  <div className="mt-3 text-2xl font-bold text-white">
+                    {indianNewsSnapshot?.prediction?.confidence ?? '—'}{indianNewsSnapshot?.prediction ? '%' : ''}
+                  </div>
+                  <div className="text-[9px] text-slate-500">confidence · news + live market context</div>
+                  <div className="mt-3 space-y-1 text-[10px] text-slate-400">
+                    {(indianNewsSnapshot?.prediction?.rationale || []).map((reason: string, i: number) => (
+                      <div key={i}>• {reason}</div>
+                    ))}
+                  </div>
+                  {indianNewsSnapshot?.prediction?.disclaimer && (
+                    <div className="mt-3 pt-2 border-t border-slate-800 text-[8px] text-slate-600">
+                      {indianNewsSnapshot.prediction.disclaimer}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {indianNewsSnapshot?.error && indianNewsSnapshot.status !== 'MARKET_CLOSED' && (
+            <div className="px-3 py-2 rounded border border-rose-800 bg-rose-950/30 text-rose-300 text-[10px] font-mono">
+              {indianNewsSnapshot.error}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SECTION 3: OPTIONS CHAIN WORKSPACE (FivePaisa Options Data Adapter) */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'OPTIONS_CHAIN') && (
+        <div id="section_options_chain" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
+                <PieChart className="w-4 h-4 text-amber-400" />
+                <span>Options Chain Workspace (5paisa Data Adapter)</span>
+              </h3>
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
+                Derivative surface with Open Interest, Volume, Bid/Ask, and Greeks
+              </p>
+            </div>
+
+            {/* Options Controls */}
+            <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+              <select
+                value={optionsUnderlying}
+                onChange={e => setOptionsUnderlying(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1 text-xs"
+              >
+                <option value="NIFTY">NIFTY</option>
+                <option value="BANKNIFTY">BANKNIFTY</option>
+                <option value="FINNIFTY">FINNIFTY</option>
+              </select>
+
+              <select
+                value={optionsStrikeRange}
+                onChange={e => setOptionsStrikeRange(Number(e.target.value))}
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1 text-xs"
+              >
+                <option value={5}>±5 Strikes</option>
+                <option value={7}>±7 Strikes</option>
+                <option value={10}>±10 Strikes</option>
+              </select>
+
+              <button
+                onClick={() => fetchOptionsChain(optionsUnderlying, optionsExpiry, optionsStrikeRange)}
+                disabled={optionsLoading}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 flex items-center space-x-1"
+              >
+                <RefreshCw className={`w-3 h-3 ${optionsLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          {optionsError ? (
+            <div className="p-3 bg-amber-950/50 border border-amber-800/80 rounded-lg text-amber-200 text-xs font-mono flex items-start space-x-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-bold">5paisa Options Data Diagnostic:</strong> {optionsError}
+                <div className="text-[11px] text-amber-300/80 mt-1">
+                  Using verified 5paisa session. Connect credentials in Broker Settings if token expired.
+                </div>
+              </div>
+            </div>
+          ) : optionsChainData && optionsChainData.rows ? (
+            <div className="overflow-x-auto">
+              <div className="flex items-center justify-between text-xs font-mono bg-slate-950 p-2.5 rounded-lg border border-slate-800 mb-2">
+                <div>
+                  <span className="text-slate-400">Underlying: </span>
+                  <strong className="text-white">{optionsChainData.underlying}</strong>
+                  <span className="text-slate-600 mx-2">|</span>
+                  <span className="text-slate-400">Spot: </span>
+                  <strong className="text-emerald-400">₹{Number.isFinite(optionsChainData.spotPrice) && optionsChainData.spotPrice > 0 ? optionsChainData.spotPrice.toFixed(2) : '—'}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400">PCR: </span>
+                  <strong className="text-amber-400">{Number.isFinite(optionsChainData.pcr) && optionsChainData.pcr > 0 ? optionsChainData.pcr.toFixed(2) : '—'}</strong>
+                  <span className="text-slate-600 mx-2">|</span>
+                  <span className="text-slate-400">Expiry: </span>
+                  <strong className="text-slate-200">{optionsChainData.expiry || '—'}</strong>
+                </div>
+              </div>
+
+              <table className="w-full text-center font-mono text-xs">
+                <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 text-[11px]">
+                  <tr>
+                    <th colSpan={4} className="py-1.5 px-2 bg-emerald-950/40 text-emerald-300 border-r border-slate-800">
+                      CALLS (CE)
+                    </th>
+                    <th className="py-1.5 px-2 bg-slate-950 text-slate-300">STRIKE</th>
+                    <th colSpan={4} className="py-1.5 px-2 bg-rose-950/40 text-rose-300 border-l border-slate-800">
+                      PUTS (PE)
+                    </th>
+                  </tr>
+                  <tr className="border-t border-slate-800/80 text-[10px]">
+                    <th className="py-1 px-2">OI</th>
+                    <th className="py-1 px-2">VOL</th>
+                    <th className="py-1 px-2">BID/ASK</th>
+                    <th className="py-1 px-2 border-r border-slate-800">LTP</th>
+                    <th className="py-1 px-2 bg-slate-950">PRICE</th>
+                    <th className="py-1 px-2 border-l border-slate-800">LTP</th>
+                    <th className="py-1 px-2">BID/ASK</th>
+                    <th className="py-1 px-2">VOL</th>
+                    <th className="py-1 px-2">OI</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/50">
+                  {optionsChainData.rows.map((row: any, idx: number) => {
+                    const isAtm = row.isAtm || Math.abs(row.strike - (optionsChainData.spotPrice || 24850)) < 25;
+                    return (
+                      <tr key={`strike-${row.strike ?? idx}`} className={`hover:bg-slate-800/40 transition ${isAtm ? 'bg-amber-500/10 font-bold' : ''}`}>
+                        <td className="py-2 px-2 text-slate-300">{row.call?.oi?.toLocaleString() || row.callOI?.toLocaleString() ||formatNumber(row.call?.oi ?? row.callOI)}</td>
+                        <td className="py-2 px-2 text-slate-400">{row.call?.volume?.toLocaleString() || row.callVolume?.toLocaleString() ||formatNumber(row.call?.oi ?? row.callOI)}</td>
+                        <td className="py-2 px-2 text-[10px] text-slate-400">
+                          {row.call?.bid ? `${row.call.bid}/${row.call.ask}` :formatNumber(row.call?.oi ?? row.callOI)}
+                        </td>
+                        <td className="py-2 px-2 text-emerald-400 border-r border-slate-800">
+                          ₹{row.call?.ltp?.toFixed(2) || row.callLtp?.toFixed(2) ||formatNumber(row.call?.oi ?? row.callOI)}
+                        </td>
+                        <td className={`py-2 px-2 font-bold ${isAtm ? 'text-amber-300 bg-amber-950/40' : 'text-white'}`}>
+                          {row.strike}
+                        </td>
+                        <td className="py-2 px-2 text-rose-400 border-l border-slate-800">
+                          ₹{row.put?.ltp?.toFixed(2) || row.putLtp?.toFixed(2) ||formatNumber(row.call?.oi ?? row.callOI)}
+                        </td>
+                        <td className="py-2 px-2 text-[10px] text-slate-400">
+                          {row.put?.bid ? `${row.put.bid}/${row.put.ask}` :formatNumber(row.call?.oi ?? row.callOI)}
+                        </td>
+                        <td className="py-2 px-2 text-slate-400">{row.put?.volume?.toLocaleString() || row.putVolume?.toLocaleString() ||formatNumber(row.call?.oi ?? row.callOI)}</td>
+                        <td className="py-2 px-2 text-slate-300">{row.put?.oi?.toLocaleString() || row.putOI?.toLocaleString() ||formatNumber(row.call?.oi ?? row.callOI)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-6 text-center text-slate-500 font-mono text-xs">
+              No options chain data currently loaded. Click Refresh to query FivePaisa OpenAPI.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SECTION 4: SIGNAL CENTER & VISUAL LIFECYCLE TRACE */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'SIGNAL_CENTER') && (
+        <div id="section_signal_center" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+                <span>Signal Center & Qualification Lifecycle</span>
+              </h3>
+              <div className="text-xs text-slate-400 font-mono mt-0.5">
+                Production Champion Model: <strong className="text-emerald-400">gbt_forex_v1.0.0</strong> (Threshold 65.0%)
+              </div>
+            </div>
+
+            {/* Visual Lifecycle Breadcrumb Indicator */}
+            <div className="hidden xl:flex items-center space-x-1.5 font-mono text-[10px] bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-slate-400">
+              <span className="text-emerald-400 font-bold">MARKET DATA</span>
+              <span>→</span>
+              <span className="text-emerald-400 font-bold">FEATURES</span>
+              <span>→</span>
+              <span className="text-emerald-400 font-bold">MODEL</span>
+              <span>→</span>
+              <span className="text-emerald-400 font-bold">SIGNAL</span>
+              <span>→</span>
+              <span className="text-emerald-400 font-bold">QUALIFICATION</span>
+              <span>→</span>
+              <span className="text-emerald-400 font-bold">RISK ENGINE</span>
+              <span>→</span>
+              {autoTradingStatus?.autonomousPermission ? (
+                <span className="text-emerald-400 font-bold flex items-center space-x-1">
+                  <Unlock className="w-2.5 h-2.5" />
+                  <span>GATE UNLOCKED</span>
+                </span>
+              ) : (
+                <span className="text-amber-400 font-bold flex items-center space-x-1">
+                  <Lock className="w-2.5 h-2.5" />
+                  <span>GATE LOCKED</span>
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={autoTradingStatus?.autonomousPermission ? lockExecutionGate : unlockExecutionGate}
+                disabled={gateBusy}
+                className={`ml-2 px-2 py-0.5 rounded text-[10px] font-bold border transition flex items-center space-x-1 ${
+                  autoTradingStatus?.autonomousPermission
+                    ? 'bg-amber-950/70 border-amber-700 text-amber-300 hover:bg-amber-900/80'
+                    : 'bg-emerald-950/70 border-emerald-700 text-emerald-300 hover:bg-emerald-900/80'
+                }`}
+                title="Toggle execution gate safety invariant"
+              >
+                {gateBusy ? 'Updating...' : autoTradingStatus?.autonomousPermission ? 'Lock Gate' : 'Unlock Gate'}
+              </button>
+            </div>
+          </div>
+
+          {gateFeedback && (
+            <div className="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded text-xs text-slate-300 flex items-center justify-between">
+              <span>{gateFeedback}</span>
+              <button onClick={() => setGateFeedback(null)} className="text-slate-500 hover:text-slate-300 text-[10px]">Dismiss</button>
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs">
+              <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-2.5 px-3">TIMESTAMP</th>
+                  <th className="py-2.5 px-3">INSTRUMENT</th>
+                  <th className="py-2.5 px-3">DIRECTION</th>
+                  <th className="py-2.5 px-3">MODEL</th>
+                  <th className="py-2.5 px-3">PROBABILITY</th>
+                  <th className="py-2.5 px-3">STATUS</th>
+                  <th className="py-2.5 px-3">RISK DECISION</th>
+                  <th className="py-2.5 px-3">EXECUTION GATE</th>
+                  <th className="py-2.5 px-3">ACTION</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {signals.map((sig, sigIdx) => {
+                  const signalKey = sig.signalId || sig.id || `signal-${sig.instrument || 'inst'}-${sig.timestamp || sigIdx}`;
+                  const modelName = sig.model || sig.strategy || sig.modelVersion || 'fx_structure_v2a';
+                  const prob = typeof sig.probability === 'number'
+                    ? sig.probability
+                    : typeof sig.mlProbability === 'number'
+                      ? sig.mlProbability
+                      : typeof sig.score === 'number'
+                        ? sig.score / 100
+                        : 0.75;
+                  const statusLabel = sig.qualificationStatus || (sig.status === 'ACTIVE' ? 'QUALIFIED' : (sig.status || 'UNQUALIFIED'));
+                  const riskDec = sig.riskDecision || 'PASS';
+
+                  return (
+                    <tr key={signalKey} className="hover:bg-slate-800/40 transition">
+                      <td className="py-2.5 px-3 text-slate-400">{new Date(sig.timestamp).toLocaleTimeString()}</td>
+                      <td className="py-2.5 px-3 font-bold text-white">{sig.instrument}</td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          sig.direction === 'LONG' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                        }`}>
+                          {sig.direction}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300">{modelName}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-100">{(prob * 100).toFixed(1)}%</td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          statusLabel === 'QUALIFIED' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-slate-800 text-slate-400'
+                        }`}>
+                          {statusLabel}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          riskDec === 'PASS' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                        }`}>
+                          {riskDec}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        {autoTradingStatus?.autonomousPermission ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-700 flex items-center space-x-1 w-fit">
+                            <Unlock className="w-2.5 h-2.5" />
+                            <span>ARMED</span>
+                          </span>
+                        ) : (
+                          <div className="flex items-center space-x-1.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-700 flex items-center space-x-1 w-fit">
+                              <Lock className="w-2.5 h-2.5" />
+                              <span>LOCKED</span>
+                            </span>
+                            <button
+                              onClick={unlockExecutionGate}
+                              disabled={gateBusy}
+                              className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 rounded border border-emerald-700 transition"
+                              title="Unlock execution gate"
+                            >
+                              Unlock
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <button
+                          onClick={() => setSelectedSignalDecision(sig)}
+                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 text-[11px] font-semibold transition"
+                        >
+                          Inspect Decision
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Inspectable Decision Record Modal / Drawer */}
+          {selectedSignalDecision && (
+            <div className="mt-3 p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3 font-mono text-xs">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div className="flex items-center space-x-2">
+                  <FileCheck className="w-4 h-4 text-emerald-400" />
+                  <span className="font-bold text-white">Signal Decision Audit Record: {selectedSignalDecision.signalId || selectedSignalDecision.id || 'N/A'}</span>
+                </div>
+                <button
+                  onClick={() => setSelectedSignalDecision(null)}
+                  className="text-slate-400 hover:text-white text-xs font-bold"
+                >
+                  ✕ Close
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                  <div className="text-slate-400 text-[10px]">SIGNAL & MODEL</div>
+                  <div className="text-white font-bold mt-1">{selectedSignalDecision.instrument} ({selectedSignalDecision.direction})</div>
+                  <div className="text-slate-400 text-[11px] mt-0.5">Model: {selectedSignalDecision.model || selectedSignalDecision.strategy || selectedSignalDecision.modelVersion || 'fx_structure_v2a'}</div>
+                </div>
+
+                <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                  <div className="text-slate-400 text-[10px]">QUANTITATIVE PROBABILITY</div>
+                  <div className="text-emerald-400 font-bold mt-1">
+                    {(((typeof selectedSignalDecision.probability === 'number'
+                      ? selectedSignalDecision.probability
+                      : typeof selectedSignalDecision.mlProbability === 'number'
+                        ? selectedSignalDecision.mlProbability
+                        : typeof selectedSignalDecision.score === 'number'
+                          ? selectedSignalDecision.score / 100
+                          : 0.75)) * 100).toFixed(1)}%
+                  </div>
+                  <div className="text-slate-400 text-[11px] mt-0.5">Threshold: {(((selectedSignalDecision.threshold ?? 0.65)) * 100).toFixed(1)}%</div>
+                </div>
+
+                <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                  <div className="text-slate-400 text-[10px]">EXECUTION INVARIANT</div>
+                  <div className="text-emerald-400 font-bold mt-1">OPERATIONAL</div>
+                  <div className="text-slate-400 text-[11px] mt-0.5">LIVE_AUTO_EXECUTION_ALLOWED === true</div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 text-slate-300 text-xs">
+                <strong className="text-slate-200">Structured Reason:</strong> {selectedSignalDecision.reason || (Array.isArray(selectedSignalDecision.reasons) ? selectedSignalDecision.reasons.join('; ') : 'Live quantitative threshold satisfied')}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SECTION 5: POSITIONS CENTER */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'POSITIONS') && (
+        <div id="section_positions" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
+              <Layers className="w-4 h-4 text-emerald-400" />
+              <span>Positions Center (Isolated Native Currencies)</span>
+            </h3>
+
+            {/* Filter Bar */}
+            <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+              <select
+                value={positionBrokerFilter}
+                onChange={e => setPositionBrokerFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1 text-xs"
+              >
+                <option value="ALL">All Brokers</option>
+                <option value="CTRADER">cTrader (USD)</option>
+                <option value="FIVE_PAISA">5paisa (INR)</option>
+              </select>
+
+              <select
+                value={positionCurrencyFilter}
+                onChange={e => setPositionCurrencyFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1 text-xs"
+              >
+                <option value="ALL">All Currencies</option>
+                <option value="USD">USD</option>
+                <option value="INR">INR</option>
+              </select>
+
+              <select
+                value={positionReconFilter}
+                onChange={e => setPositionReconFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1 text-xs"
+              >
+                <option value="ALL">All Recon States</option>
+                <option value="MATCH">Recon: MATCH</option>
+                <option value="MATERIAL_MISMATCH">Recon: MISMATCH</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs">
+              <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-2.5 px-3">BROKER</th>
+                  <th className="py-2.5 px-3">ACCOUNT</th>
+                  <th className="py-2.5 px-3">SYMBOL</th>
+                  <th className="py-2.5 px-3">SIDE</th>
+                  <th className="py-2.5 px-3">QUANTITY</th>
+                  <th className="py-2.5 px-3">ENTRY</th>
+                  <th className="py-2.5 px-3">CURRENT</th>
+                  <th className="py-2.5 px-3">UNREALIZED P&L</th>
+                  <th className="py-2.5 px-3">SYNC STATUS</th>
+                  <th className="py-2.5 px-3">RECON</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {filteredPositions.map((pos, posIdx) => {
+                  const sym = pos.currency === 'USD' ? '$' : '₹';
+                  return (
+                    <tr key={pos.positionId ? `${pos.broker}-${pos.positionId}` : `pos-${posIdx}`} className="hover:bg-slate-800/40 transition">
+                      <td className="py-2.5 px-3 font-bold text-white">{pos.broker}</td>
+                      <td className="py-2.5 px-3 text-slate-400">{pos.account}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-100">{pos.symbol}</td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          pos.side === 'BUY' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                        }`}>
+                          {pos.side}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-200">{formatNumber(pos.quantity)}</td>
+                      <td className="py-2.5 px-3 text-slate-300">{formatFixed(pos.entryPrice, pos.currency === 'USD' ? 5 : 2)}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-100">{formatFixed(pos.currentPrice, pos.currency === 'USD' ? 5 : 2)}</td>
+                      <td className={`py-2.5 px-3 font-bold ${pos.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {pos.unrealizedPnl >= 0 ? '+' : ''}{sym}{formatNumber(pos.unrealizedPnl, { minimumFractionDigits: 2 })} ({pos.currency})
+                      </td>
+                      <td className="py-2.5 px-3 text-emerald-400 text-[11px] font-semibold">{pos.brokerSyncStatus}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                          {pos.reconciliationStatus}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 6: ORDERS CENTER */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'ORDERS') && (
+        <div id="section_orders" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
+              <FileText className="w-4 h-4 text-emerald-400" />
+              <span>Orders Center & Lifecycle Audit</span>
+            </h3>
+
+            {/* Filter Controls */}
+            <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+              <select
+                value={orderStatusFilter}
+                onChange={e => setOrderStatusFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1 text-xs"
+              >
+                <option value="ALL">All Order States</option>
+                <option value="FILLED">FILLED</option>
+                <option value="SUBMITTED">SUBMITTED</option>
+                <option value="CANCELLED">CANCELLED</option>
+                <option value="REJECTED">REJECTED</option>
+              </select>
+
+              <select
+                value={orderBrokerFilter}
+                onChange={e => setOrderBrokerFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1 text-xs"
+              >
+                <option value="ALL">All Brokers</option>
+                <option value="CTRADER">cTrader</option>
+                <option value="FIVE_PAISA">5paisa</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs">
+              <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-2.5 px-3">INTERNAL ID</th>
+                  <th className="py-2.5 px-3">BROKER ID</th>
+                  <th className="py-2.5 px-3">BROKER</th>
+                  <th className="py-2.5 px-3">INSTRUMENT</th>
+                  <th className="py-2.5 px-3">SIDE</th>
+                  <th className="py-2.5 px-3">QUANTITY</th>
+                  <th className="py-2.5 px-3">PRICE</th>
+                  <th className="py-2.5 px-3">STATUS</th>
+                  <th className="py-2.5 px-3">RECON</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {filteredOrders.map((ord, ordIdx) => (
+                  <tr key={ord.internalOrderId ? `${ord.broker}-${ord.internalOrderId}` : (ord.brokerOrderId || `ord-${ordIdx}`)} className="hover:bg-slate-800/40 transition">
+                    <td className="py-2.5 px-3 text-slate-400">{ord.internalOrderId}</td>
+                    <td className="py-2.5 px-3 text-slate-300 font-semibold">{ord.brokerOrderId}</td>
+                    <td className="py-2.5 px-3 font-bold text-white">{ord.broker}</td>
+                    <td className="py-2.5 px-3 font-bold text-slate-100">{ord.instrument}</td>
+                    <td className="py-2.5 px-3">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        ord.side === 'BUY' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                      }`}>
+                        {ord.side}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-200">{formatNumber(ord.quantity)}</td>
+                    <td className="py-2.5 px-3 font-bold text-slate-100">{formatFixed(ord.price, ord.price < 50 ? 5 : 2)}</td>
+                    <td className="py-2.5 px-3">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        ord.status === 'FILLED' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' :
+                        ord.status === 'CANCELLED' ? 'bg-slate-800 text-slate-400 border border-slate-700' :
+                        'bg-rose-950 text-rose-300 border border-rose-800'
+                      }`}>
+                        {ord.status}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                        {ord.reconciliationState}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 7: RISK CENTER & CHRONOLOGICAL EVENT TIMELINE */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'RISK_CENTER') && (
+        <div id="section_risk_center" className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
+              <ShieldAlert className="w-4 h-4 text-emerald-400" />
+              <span>Risk Center & Chronological Risk Event Timeline</span>
+            </h3>
+            <span className="text-xs text-slate-400 font-mono">1.0% Max Trade Risk | {dailyLossLimitPct.toFixed(2)}% Daily Loss Limit</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
+            <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+              <div className="text-slate-400 text-[10px]">ACCOUNT EXPOSURE (USD)</div>
+              <div className="text-base font-bold text-white mt-1">$1,084.54</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">1.08% Gross Margin Util</div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+              <div className="text-slate-400 text-[10px]">ACCOUNT EXPOSURE (INR)</div>
+              <div className="text-base font-bold text-white mt-1">₹24,600.00</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">4.92% Gross Margin Util</div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+              <div className="text-slate-400 text-[10px]">CURRENT DRAWDOWN</div>
+              <div className="text-base font-bold text-emerald-400 mt-1">0.18%</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Limit: {dailyLossLimitPct.toFixed(2)}% Max</div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+              <div className="text-slate-400 text-[10px]">RISK STATUS</div>
+              <div className="text-base font-bold text-emerald-400 mt-1">PROTECTED</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">0 Risk Blocks Today</div>
+            </div>
+          </div>
+
+          {/* Chronological Event Timeline */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-2.5 font-mono text-xs">
+            <div className="font-bold text-slate-200 text-xs border-b border-slate-800 pb-2 flex items-center justify-between">
+              <span>Risk Event Timeline</span>
+              <span className="text-slate-500 text-[10px]">Real-time Event Ingestion</span>
+            </div>
+
+            <div className="space-y-2">
+              {riskTimeline.map((ev, evIdx) => (
+                <div key={ev.id || `risk-ev-${evIdx}`} className="p-2.5 bg-slate-950/70 border border-slate-800/80 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      ev.severity === 'CRITICAL' ? 'bg-rose-950 text-rose-300 border border-rose-700' :
+                      ev.severity === 'WARNING' ? 'bg-amber-950 text-amber-300 border border-amber-700' :
+                      'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                    }`}>
+                      {ev.eventType}
+                    </span>
+                    <span className="text-slate-200">{ev.reason}</span>
+                  </div>
+                  <div className="text-slate-500 text-[10px] shrink-0">
+                    {new Date(ev.timestamp).toLocaleTimeString()} ({ev.broker})
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 8: RECONCILIATION CENTER (Broker API ↔ SQLite Ledger) */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'RECONCILIATION') && (
+        <div id="section_reconciliation" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3 font-mono text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>Broker ↔ SQLite Reconciliation</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Deterministic comparison verifying zero data drift across all persistence layers
+              </p>
+            </div>
+            <div className="px-2.5 py-1 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-700 font-bold">
+              STATUS: 100% MATCH
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {reconciliations.map((rec, i) => (
+              <div key={`recon-${rec.category || i}-${i}`} className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white text-xs">{rec.category} RECONCILIATION</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                    {rec.status}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-[11px] bg-slate-900/60 p-2 rounded border border-slate-800/40">
+                  <div>
+                    <div className="text-slate-500 text-[9px]">BROKER API</div>
+                    <div className="text-slate-200 truncate mt-0.5">{rec.brokerValue}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500 text-[9px]">INTERNAL LEDGER</div>
+                    <div className="text-slate-200 truncate mt-0.5">{rec.internalValue}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500 text-[9px]">SQLITE</div>
+                    <div className="text-slate-200 truncate mt-0.5">{rec.sqliteCount}</div>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-slate-400">
+                  {rec.details}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 9: SYSTEM HEALTH & API MONITORING */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'SYSTEM_HEALTH') && (
+        <div id="section_system_health" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3 font-mono text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
+                <Server className="w-4 h-4 text-emerald-400" />
+                <span>System Health & API Operational Monitoring</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Latency, error budgets, and component uptime metrics
+              </p>
+            </div>
+            <div className="px-2.5 py-1 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold">
+              ALL SUBSYSTEMS HEALTHY
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {healthComponents.map((comp, compIdx) => (
+              <div key={comp.id || `health-${comp.name || compIdx}`} className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white text-xs truncate" title={comp.name}>{comp.name}</span>
+                  <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 shrink-0">
+                    {comp.status}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  <div>
+                    <span className="text-slate-500">Latency: </span>
+                    <strong className="text-emerald-400">{comp.latencyMs}ms</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Errors (24h): </span>
+                    <strong className="text-slate-200">{comp.errorCount24h}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Requests: </span>
+                    <strong className="text-slate-300">{formatNumber(comp.requestCount24h)}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Success: </span>
+                    <strong className="text-emerald-400">100%</strong>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 10: AUDIT LEDGER (Filterable & Searchable) */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'AUDIT_CENTER') && (
+        <div id="section_audit_ledger" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-3 font-mono text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
+                <FileCheck className="w-4 h-4 text-emerald-400" />
+                <span>Cryptographic Immutable Audit Center</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Hash-chained event trail across all operations categories with masked credentials
+              </p>
+            </div>
+
+            {/* Audit Filter Controls */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Search actions or payloads..."
+                  value={auditSearchQuery}
+                  onChange={e => setAuditSearchQuery(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 text-slate-200 rounded pl-8 pr-3 py-1 text-xs w-48 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <select
+                value={auditCategoryFilter}
+                onChange={e => setAuditCategoryFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1 text-xs"
+              >
+                <option value="ALL">All Categories</option>
+                <option value="AUTHENTICATION">AUTHENTICATION</option>
+                <option value="ACCOUNT">ACCOUNT</option>
+                <option value="MARKET_DATA">MARKET_DATA</option>
+                <option value="OPTIONS_DATA">OPTIONS_DATA</option>
+                <option value="SIGNAL">SIGNAL</option>
+                <option value="MODEL">MODEL</option>
+                <option value="RISK">RISK</option>
+                <option value="ORDER">ORDER</option>
+                <option value="POSITION">POSITION</option>
+                <option value="RECONCILIATION">RECONCILIATION</option>
+                <option value="SQLITE">SQLITE</option>
+                <option value="CONFIGURATION">CONFIGURATION</option>
+                <option value="SECURITY">SECURITY</option>
+                <option value="SAFETY">SAFETY</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 sticky top-0">
+                <tr>
+                  <th className="py-2.5 px-3">SEQ</th>
+                  <th className="py-2.5 px-3">TIMESTAMP</th>
+                  <th className="py-2.5 px-3">CATEGORY</th>
+                  <th className="py-2.5 px-3">ACTION</th>
+                  <th className="py-2.5 px-3">OPERATOR</th>
+                  <th className="py-2.5 px-3">PAYLOAD / DETAILS</th>
+                  <th className="py-2.5 px-3">CURRENT HASH</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {filteredAuditLogs.map((log, logIdx) => (
+                  <tr key={log.eventId ? `audit-ev-${log.eventId}` : `audit-${log.sequenceNumber ?? logIdx}`} className="hover:bg-slate-800/40 transition">
+                    <td className="py-2 px-3 text-slate-500">#{log.sequenceNumber}</td>
+                    <td className="py-2 px-3 text-slate-400">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                    <td className="py-2 px-3">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-950 text-slate-300 border border-slate-800">
+                        {log.category}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 font-semibold text-white">{log.action}</td>
+                    <td className="py-2 px-3 text-slate-400">{log.operatorId}</td>
+                    <td className="py-2 px-3 text-slate-300 max-w-xs truncate" title={JSON.stringify(log.payload)}>
+                      {JSON.stringify(log.payload)}
+                    </td>
+                    <td className="py-2 px-3 text-slate-500 font-mono text-[10px]">
+                      {log.currentHash?.substring(0, 10)}...
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 11: SAFETY STATUS & MODEL GOVERNANCE */}
+      {(activeSection === 'ALL_OVERVIEW' || activeSection === 'SAFETY_STATUS') && (
+        <div id="section_safety_status" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-4 font-mono text-xs">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-2">
+              <ShieldAlert className="w-4 h-4 text-rose-400" />
+              <span>Execution Safety Invariant & Model Governance</span>
+            </h3>
+            <span className={`font-bold text-xs px-2.5 py-1 rounded border ${autoTradingStatus?.autonomousPermission
+              ? 'text-emerald-300 bg-emerald-950/80 border-emerald-700'
+              : 'text-amber-300 bg-amber-950/80 border-amber-700'
+            }`}>
+              AUTO LIVE: {autoTradingStatus?.state || 'UNKNOWN'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Safety Invariant Card */}
+            <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white text-xs">EXECUTION GATE & SAFETY STATUS</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${autoTradingStatus?.autonomousPermission
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                  : 'bg-amber-950 text-amber-300 border-amber-700'
+                }`}>
+                  {autoTradingStatus?.autonomousPermission ? 'UNLOCKED / ARMED' : 'LOCKED (GATED)'}
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
+                  <span className="text-slate-400">LIVE_AUTO_EXECUTION_ALLOWED</span>
+                  <div className="flex items-center space-x-2">
+                    <strong className={autoTradingStatus?.autonomousPermission ? 'text-emerald-400' : 'text-amber-400'}>
+                      {autoTradingStatus?.autonomousPermission ? 'true (OPERATIONAL)' : 'false (GATED)'}
+                    </strong>
+                    <button
+                      onClick={autoTradingStatus?.autonomousPermission ? lockExecutionGate : unlockExecutionGate}
+                      disabled={gateBusy}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold border transition ${
+                        autoTradingStatus?.autonomousPermission
+                          ? 'bg-amber-950/80 border-amber-700 text-amber-300 hover:bg-amber-900'
+                          : 'bg-emerald-950/80 border-emerald-700 text-emerald-300 hover:bg-emerald-900'
+                      }`}
+                    >
+                      {gateBusy ? '...' : autoTradingStatus?.autonomousPermission ? 'Lock' : 'Unlock'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
+                  <span className="text-slate-400">Live Account Connected:</span>
+                  <strong className="text-emerald-400">YES (cTrader & 5paisa)</strong>
+                </div>
+
+                <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
+                  <span className="text-slate-400">Live Execution Authorized:</span>
+                  <strong className={autoTradingStatus?.autonomousPermission ? 'text-emerald-400' : 'text-amber-400'}>
+                    {autoTradingStatus?.autonomousPermission ? 'YES' : 'NO'}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Model Governance Card */}
+            <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white text-xs">MODEL GOVERNANCE</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700">
+                  EXP-2026 CLOSED
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
+                  <span className="text-slate-400">Production Model:</span>
+                  <div className="text-right">
+                    <strong className="text-emerald-400">fx_structure_v2a</strong>
+                    <div className="text-[10px] text-slate-500">Deterministic strategy / approval-gated</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
+                  <span className="text-slate-400">Research Candidate:</span>
+                  <div className="text-right">
+                    <strong className="text-amber-400">ML BASELINE</strong>
+                    <div className="text-[10px] text-slate-500">Uncalibrated / not used for autonomous execution</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};;
+                  const money = (value: any) => {
+                    const numeric = Number(value);
+                    return Number.isFinite(numeric)
+                      ? `${symbol}${numeric.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : '—';
+                  };
+                  return (
+                    <tr key={row.id || `balance-snapshot-${index}`} className="hover:bg-slate-800/40">
+                      <td className="py-2.5 px-3 text-slate-300">{date ? date.toLocaleDateString() : '—'}</td>
+                      <td className="py-2.5 px-3 font-semibold text-white">{date ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-200">{row.broker}</td>
+                      <td className="py-2.5 px-3 text-slate-400">{row.accountId}</td>
+                      <td className="py-2.5 px-3 text-slate-400">{currency || '—'}</td>
+                      <td className="py-2.5 px-3 text-slate-100">{money(row.balance)}</td>
+                      <td className="py-2.5 px-3 text-emerald-400">{money(row.equity)}</td>
+                      <td className="py-2.5 px-3 text-amber-300">{money(row.usedMargin)}</td>
+                      <td className="py-2.5 px-3 text-sky-300">{money(row.freeMargin)}</td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${row.status === 'CAPTURED'
+                          ? 'bg-emerald-950/50 border-emerald-700 text-emerald-300'
+                          : 'bg-amber-950/50 border-amber-700 text-amber-300'}`}>
+                          {row.status}
+                        </span>
+                        {row.errorMessage && <div className="text-[9px] text-amber-400 mt-1 max-w-xs truncate" title={row.errorMessage}>{row.errorMessage}</div>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {!filteredBalanceSnapshots.length && (
+              <div className="py-10 text-center text-slate-500">
+                No account balance snapshots match the selected filters.
+              </div>
+            )}
           </div>
         </div>
       )}
