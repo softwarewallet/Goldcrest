@@ -56,7 +56,7 @@ await reconcileExecutionIntent(staleKey);
 const staleIntent = await getExecutionIntent(staleKey);
 assert.equal(staleIntent?.state, 'RECONCILIATION_TIMEOUT', 'Stale unresolved native broker lookup must time out.');
 assert.equal((staleIntent?.result as any)?.operatorActionRequired, true, 'Timed-out ambiguous intent must require operator action.');
-assert.equal((staleIntent?.result as any)?.reconciliationErrorCode, 'BROKER_ERROR', 'Transport failure should preserve normalized broker error code.');
+assert.equal((staleIntent?.result as any)?.reconciliationErrorCode, 'TIMEOUT', 'Transport timeout should preserve normalized broker error code.');
 
 await executeRun(
   'DELETE FROM execution_intents WHERE idempotency_key IN (?, ?)',
