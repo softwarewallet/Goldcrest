@@ -1786,7 +1786,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                     <td className="text-center">{bucket.accuracyConfidenceInterval95Pct == null ? '—' : bucket.accuracyConfidenceInterval95Pct.lowerPct.toFixed(1)+'–'+bucket.accuracyConfidenceInterval95Pct.upperPct.toFixed(1)+'%'}</td>
                     <td className={bucket.sampleSufficient ? 'text-center text-emerald-300' : 'text-center text-amber-300'}>{bucket.sampleSufficient ? 'SUFFICIENT' : 'INSUFFICIENT'}</td>
                   </tr>
-                )))}</tbody>
+                }))))))}</tbody>
               </table>
             </div>
           </div>
