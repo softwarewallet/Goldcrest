@@ -44,11 +44,11 @@ console.log('40 deterministic scenarios; broker submission is prohibited by test
 await scenario(1, 'Score below 65 receives no parallel-trade allowance', () => {
   assert.deepEqual(getAutoLiveParallelTradePolicy(64.99), { maxTradesPerPair: 0, tier: 'BELOW_65' });
 });
-await scenario(2, 'Score 65 receives exactly one trade allowance', () => {
-  assert.deepEqual(getAutoLiveParallelTradePolicy(65), { maxTradesPerPair: 1, tier: '1_TRADE' });
+await scenario(2, 'Score 65 remains below the strict one-trade threshold', () => {
+  assert.deepEqual(getAutoLiveParallelTradePolicy(65), { maxTradesPerPair: 0, tier: 'BELOW_65' });
 });
-await scenario(3, 'Score 70 remains in the one-trade tier', () => {
-  assert.deepEqual(getAutoLiveParallelTradePolicy(70), { maxTradesPerPair: 1, tier: '1_TRADE' });
+await scenario(3, 'Score 65.01 enters exactly one trade allowance', () => {
+  assert.deepEqual(getAutoLiveParallelTradePolicy(65.01), { maxTradesPerPair: 1, tier: '1_TRADE' });
 });
 await scenario(4, 'Score above 70 enters the two-trade tier', () => {
   assert.deepEqual(getAutoLiveParallelTradePolicy(70.01), { maxTradesPerPair: 2, tier: '2_TRADES' });
