@@ -129,6 +129,9 @@ function sameOrigin(req: Request): boolean {
   const expectedOrigin = `${proto}://${host}`.toLowerCase();
   const alternateOrigin = `${proto === 'https' ? 'http' : 'https'}://${host}`.toLowerCase();
   const normalizedOrigin = origin.replace(/\/$/, '').toLowerCase();
+  if (process.env.NODE_ENV === 'production') {
+    return normalizedOrigin === expectedOrigin;
+  }
   return normalizedOrigin === expectedOrigin || normalizedOrigin === alternateOrigin;
 }
 
