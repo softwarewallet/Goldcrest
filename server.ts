@@ -250,6 +250,7 @@ app.get('/api/runtime', (_req: Request, res: Response) => {
     nodeEnv: process.env.NODE_ENV || 'development',
     port: PORT,
     tradingMode: 'LIVE_ONLY',
+    lifecycle: runtimeLifecycle.getStatus(),
     timestamp: Date.now()
   });
 });
@@ -531,6 +532,7 @@ app.get('/api/health/ready', (req: Request, res: Response) => {
     tradingMode: getSystemConfig().tradingMode,
     autonomousLiveExecutionAllowed: LIVE_AUTO_EXECUTION_ALLOWED,
     autoTrading: autoTradingService.getStatus(),
+    lifecycle: runtimeLifecycle.getStatus(),
     productionChecks: preflight.checks,
     timestamp: Date.now()
   });
