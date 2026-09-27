@@ -44,9 +44,8 @@ async function ensureTable(): Promise<void> {
       ON account_balance_snapshots(broker, captured_at DESC);
   `);
 
-  // Never expose synthetic certification fixtures through the operator-facing
-  // LIVE balance history. Older test runs wrote TEST-* accounts into the shared
-  // SQLite database; remove those records before any history query or snapshot.
+  // Remove legacy certification records before any operator-facing LIVE
+  // balance-history query or snapshot.
   await executeRun(
     "DELETE FROM account_balance_snapshots WHERE environment = 'LIVE' AND account_id LIKE 'TEST-%'"
   );
