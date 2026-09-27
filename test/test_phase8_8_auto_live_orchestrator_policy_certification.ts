@@ -28,6 +28,7 @@ const { sizeForexOrderToMaxTradeValue, normalizePriceToThreeDigits } = await imp
 const { autoTradingService } = await import('../src/services/autoTradingService');
 const tradingHubSource = fs.readFileSync(path.resolve(process.cwd(), 'src/components/TradingHub.tsx'), 'utf8');
 const ctraderSource = fs.readFileSync(path.resolve(process.cwd(), 'src/brokers/adapters/cTrader/CTraderLiveAdapter.ts'), 'utf8');
+const autoTradingSource = fs.readFileSync(path.resolve(process.cwd(), 'src/services/autoTradingService.ts'), 'utf8');
 
 let passed = 0;
 
@@ -201,6 +202,8 @@ await scenario(38, 'Configured maximum per-pair setting caps the score tier', ()
   assert.equal(getSystemConfig().autoLiveMaxTradesPerPair, 2);
   assert.equal(getAutoLiveParallelTradePolicy(79).maxTradesPerPair, 5);
   assert.equal(Math.min(getAutoLiveParallelTradePolicy(79).maxTradesPerPair, getSystemConfig().autoLiveMaxTradesPerPair), 2);
+  assert.match(autoTradingSource, /const configuredPairLimit = Math\.max\(/);
+  assert.match(autoTradingSource, /Math\.min\(scorePolicy\.maxTradesPerPair, configuredPairLimit\)/);
 });
 await scenario(39, 'Orchestration policy keeps execution paused when global capacity is full', () => {
   assert.equal(hasSystemPositionCapacity(7, 7), false);
