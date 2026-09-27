@@ -236,6 +236,18 @@ export function startAccountBalanceSnapshotScheduler(): void {
     });
 }
 
+export function getAccountBalanceSnapshotSchedulerStatus(): {
+  running: boolean;
+  intervalHours: number;
+  nextRunAt: number | null;
+} {
+  return {
+    running: schedulerStarted,
+    intervalHours: ACCOUNT_BALANCE_SNAPSHOT_INTERVAL_HOURS,
+    nextRunAt: schedulerTimer ? nextThreeHourBoundary().getTime() : null
+  };
+}
+
 export function stopAccountBalanceSnapshotScheduler(): void {
   schedulerStarted = false;
   if (schedulerTimer) {
