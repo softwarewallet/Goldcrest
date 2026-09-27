@@ -26,7 +26,7 @@ export interface AutoLiveParallelTradePolicy {
 /**
  * Score ladder used by Auto Live:
  *   score < 65  -> no parallel-trade allowance
- *   65 <= score <= 70 -> 1
+ *   65 < score <= 70 -> 1
  *   70 < score <= 78  -> 2
  *   score > 78 -> 5
  *
@@ -36,7 +36,7 @@ export interface AutoLiveParallelTradePolicy {
 export function getAutoLiveParallelTradePolicy(scoreInput: number): AutoLiveParallelTradePolicy {
   const score = Number(scoreInput);
 
-  if (!Number.isFinite(score) || score < AUTO_LIVE_SCORE_THRESHOLDS.ONE_TRADE_MIN_SCORE) {
+  if (!Number.isFinite(score) || score <= AUTO_LIVE_SCORE_THRESHOLDS.ONE_TRADE_MIN_SCORE) {
     return { maxTradesPerPair: 0, tier: 'BELOW_65' };
   }
 
