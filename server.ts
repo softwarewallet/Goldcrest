@@ -39,6 +39,7 @@ import {
   getMarketHistorySummary,
   getMarketHistorySyncStatus,
   startMarketHistoryScheduler,
+  stopMarketHistoryScheduler,
   syncMarketHistory
 } from './src/services/marketHistoryService';
 import {
@@ -91,6 +92,7 @@ import { captureAccountBalanceSnapshots, getAccountBalanceSnapshots, startAccoun
 
 // Legacy demo execution is retired; LIVE_ONLY production mode is enforced by the server safety layer.
 import { brokerRegistry } from './src/brokers/registry';
+import { runtimeLifecycle } from './src/services/runtimeLifecycle';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
 // npm run dev is an explicit local development command. Do not let a stale
@@ -148,6 +150,8 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const GOLDCREST_RUNTIME_ID = `goldcrest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let databaseReady = false;
+let reconciliationTimer: ReturnType<typeof setInterval> | null = null;
+let executionLifecycleTimer: ReturnType<typeof setInterval> | null = null;
 
 function productionPreflight(enforce = false): { ok: boolean; checks: Record<string, string> } {
   const checks: Record<string, string> = {};
@@ -2444,8 +2448,8 @@ async function startServer() {
         startMarketHistoryScheduler();
       });
 
-    const reconciliationTimer = setInterval(() => void captureLiveBrokerReconciliation(), 5 * 60_000);
-    const executionLifecycleTimer = setInterval(() => void reconcileInFlightExecutionIntents(), 15_000);
+    reconciliationTimer = setInterval(() => void captureLiveBrokerReconciliation(), 5 * 60_000);
+    executionLifecycleTimer = setInterval(() => void reconcileInFlightExecutionIntents(), 15_000);
     if (process.env.GOLDCREST_AUTO_TRADING_START_ON_BOOT === 'true') {
       const autoStatus = autoTradingService.start();
       console.log(`Goldcrest auto-trading startup: ${autoStatus.state} - ${autoStatus.lastCycleResult || ''}`);
@@ -2454,21 +2458,50 @@ async function startServer() {
     executionLifecycleTimer.unref?.();
   });
 
+  runtimeLifecycle.registerCleanup('AUTO_LIVE', () => {
+    autoTradingService.stop('Server shutdown requested.');
+  });
+  runtimeLifecycle.registerCleanup('CURRENT_PAIR_PREDICTION_COLLECTION', stopCurrentPairPredictionCollectionScheduler);
+  runtimeLifecycle.registerCleanup('LIVE_TRADE_RESEARCH_OUTCOME_TRACKER', stopLiveTradeResearchOutcomeTracker);
+  runtimeLifecycle.registerCleanup('ACCOUNT_BALANCE_SNAPSHOT', stopAccountBalanceSnapshotScheduler);
+  runtimeLifecycle.registerCleanup('MARKET_HISTORY', stopMarketHistoryScheduler);
+  runtimeLifecycle.registerCleanup('EXECUTION_RECONCILIATION_TIMER', () => {
+    if (executionLifecycleTimer) {
+      clearInterval(executionLifecycleTimer);
+      executionLifecycleTimer = null;
+    }
+  });
+  runtimeLifecycle.registerCleanup('BROKER_RECONCILIATION_TIMER', () => {
+    if (reconciliationTimer) {
+      clearInterval(reconciliationTimer);
+      reconciliationTimer = null;
+    }
+  });
+
+  runtimeLifecycle.transition('RUNNING');
+
+  let shutdownPromise: Promise<void> | null = null;
   const shutdown = (signal: string) => {
-    stopLiveTradeResearchOutcomeTracker();
-    stopCurrentPairPredictionCollectionScheduler();
-    stopAccountBalanceSnapshotScheduler();
+    if (shutdownPromise) return;
     liveRuntimeLog('SYSTEM', 'SERVER_SHUTDOWN_REQUESTED', { signal });
     console.log(`Goldcrest received ${signal}; closing HTTP server gracefully.`);
-    server.close(() => {
+
+    shutdownPromise = (async () => {
+      await runtimeLifecycle.shutdown(signal);
+
+      await new Promise<void>(resolve => {
+        server.close(() => resolve());
+      });
+
       try {
-        // Persist the authoritative SQLite state before process exit.
+        // Persist the authoritative SQLite state only after all schedulers and
+        // Auto Live have been stopped, so no background writer can race shutdown.
         persistDatabase();
       } catch (err: any) {
         console.error('SQLite shutdown persistence failed:', err?.message || err);
       }
       process.exit(0);
-    });
+    })();
 
     setTimeout(() => {
       console.error('Goldcrest graceful shutdown timed out; forcing exit.');
