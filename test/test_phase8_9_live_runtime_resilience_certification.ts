@@ -125,7 +125,7 @@ await scenario(31, 'Auto Live has an explicit stop control', () => {
   assert.match(autoTradingSource, /stop\(/);
 });
 await scenario(32, 'Auto Live exposes a stopped state', () => {
-  assert.match(autoTradingSource, /state: 'STOPPED'/);
+  assert.match(autoTradingSource, /private state: AutoTradingState = 'STOPPED'/);
 });
 await scenario(33, 'Auto Live closed-market confirmation is explicit', () => {
   assert.match(autoTradingSource, /confirmWhenClosed/);
