@@ -2,7 +2,7 @@
 
 ## Objective
 
-Provide a read-only, server-side operational readiness contract for the current Goldcrest production architecture.
+Provide a read-only, pre-activation server-side operational readiness contract for the current Goldcrest production architecture.
 
 Phase 9.1 does not:
 - arm autonomous execution;
@@ -43,5 +43,6 @@ The endpoint is operator-authenticated and returns only operational state. It do
 The Phase 8 safety contract remains intact:
 - LIVE_ONLY runtime mode.
 - cTrader LIVE/DEMO API selector retained.
-- Autonomous live execution remains locked by default.
+- Autonomous live execution is locked by default.
+- Phase 9.4 provides the separate authenticated activation preflight before the gate can be unlocked.
 - No broker order is submitted by the Phase 9.1 certification.
