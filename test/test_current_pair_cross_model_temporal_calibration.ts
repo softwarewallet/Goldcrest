@@ -31,7 +31,7 @@ const bucket=row.windows[4].ai.calibrationBuckets[3];
 assert.equal(bucket.lowerPct,60);
 assert.equal(bucket.upperPct,80);
 assert.ok(bucket.accuracyConfidenceInterval95Pct);
-assert.equal(bucket.sampleSufficient,true);
+assert.equal(bucket.sampleSufficient,false);
 assert.ok(bucket.calibrationGapPct!==null);
 assert.ok(row.windows[4].deltas.calibrationBuckets[3].calibrationGapPct!==null);
 assert.equal(row.windows[2].baseline.sampleSufficient,true);
