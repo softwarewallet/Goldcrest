@@ -345,7 +345,7 @@ class AutoTradingService {
     }
   }
 
-  private async checkRuntimeRecoveryAndResume(): Promise<void> {
+  private async checkRuntimeRecoveryAndResume(runCycleAfterRecovery = true): Promise<void> {
     if (this.state !== 'PAUSED_RUNTIME' || this.cycleInFlight) return;
     try {
       const capacity = await this.getAuthoritativePositionCapacity();
@@ -384,7 +384,7 @@ class AutoTradingService {
         maxOpenPositions: capacity.max,
         availableSlots: capacity.available
       });
-      void this.runCycle();
+      if (runCycleAfterRecovery) void this.runCycle();
     } catch (error: any) {
       liveRuntimeLog('WARN', 'AUTO_TRADING_RUNTIME_RECOVERY_CHECK_FAILED', {
         error: error?.message || String(error)
