@@ -2522,7 +2522,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
-                  <span className="text-slate-400">Live Broker Connectivity:</span>
+                  <span className="text-slate-400">Broker Connectivity:</span>
                   <strong className={accounts.length > 0 ? 'text-emerald-400' : 'text-amber-400'}>
                     {accounts.length > 0 ? accounts.map(account => account.broker + ' CONNECTED').join(' / ') : 'NO AUTHORITATIVE LIVE ACCOUNT DATA'}
                   </strong>
