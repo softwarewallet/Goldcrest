@@ -1,4 +1,4 @@
-import { executeQuery, getDatabaseInitializationState } from '../database/db';
+import { executeQuery, getDatabaseInitializationState, getDatabasePersistenceStatus } from '../database/db';
 import { brokerRegistry } from '../brokers/registry';
 import { getLiveRuntimeLogStatus } from './liveRuntimeLog';
 import { runtimeLifecycle, RuntimeLifecycleStatus } from './runtimeLifecycle';
@@ -45,6 +45,7 @@ export interface RuntimeObservabilitySnapshot {
     accountBalanceSnapshot: ReturnType<typeof getAccountBalanceSnapshotSchedulerStatus>;
   };
   database: ReturnType<typeof getDatabaseInitializationState>;
+  databasePersistence: ReturnType<typeof getDatabasePersistenceStatus>;
 }
 
 export function combineObservabilityHealth(values: ObservabilityHealth[]): ObservabilityHealth {
@@ -86,6 +87,7 @@ export async function getRuntimeObservabilitySnapshot(options: {
   const generatedAt = Number(options.now || Date.now());
   const lifecycle = runtimeLifecycle.getStatus();
   const database = getDatabaseInitializationState();
+  const databasePersistence = getDatabasePersistenceStatus();
   const auditLog = getLiveRuntimeLogStatus();
   const autoTrading = autoTradingService.getStatus();
   const marketHistory = getMarketHistorySchedulerStatus();
@@ -167,7 +169,8 @@ export async function getRuntimeObservabilitySnapshot(options: {
     autoTrading,
     auditLog,
     schedulers: { marketHistory, currentPairPrediction, liveTradeResearchOutcome, accountBalanceSnapshot },
-    database
+    database,
+    databasePersistence
   };
 }
 
