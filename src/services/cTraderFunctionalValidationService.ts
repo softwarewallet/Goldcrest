@@ -94,7 +94,8 @@ export function evaluateCTraderFunctionalValidation(
     equity: gate(equityValid, 'Authoritative cTrader equity is valid.', 'Authoritative cTrader equity is invalid.'),
     tradingPermission: gate(tradingPermission, 'cTrader account exposes a confirmed trading permission.', 'cTrader account does not expose a confirmed trading permission.'),
     instrument: gate(input.instrumentAvailable, 'Broker instrument metadata is available.', 'Broker instrument metadata is unavailable.'),
-    quote: gate(input.quoteFresh && input.quoteBidAskValid, 'Fresh authoritative bid/ask quote is available.', 'Fresh authoritative bid/ask quote is unavailable.'),
+    quote: gate(input.quoteBidAskValid, 'Authoritative bid/ask quote data is available.', 'Authoritative bid/ask quote data is unavailable.'),
+    quoteFreshness: gate(input.quoteFresh, 'A fresh executable quote is available now.', 'The quote source returned data but no fresh executable spot quote is available now; Auto Live execution remains blocked until freshness passes.'),
     historicalData: gate(input.historicalDataAvailable, 'Authoritative historical candle data is available.', 'Authoritative historical candle data is unavailable.'),
     positionsRead: gate(input.positionsReadSuccessful, 'Authoritative open-position read succeeded.', 'Authoritative open-position read failed.'),
     openOrdersRead: gate(input.openOrdersReadSuccessful, 'Authoritative open-order read succeeded.', 'Authoritative open-order read failed.'),
@@ -102,7 +103,8 @@ export function evaluateCTraderFunctionalValidation(
     orderSubmission: gate(!input.validationSubmittedOrder, 'Functional validation submitted no broker order.', 'Functional validation must never submit a broker order.')
   };
 
-  failures.push(...Object.entries(checks).filter(([, value]) => value.status === 'FAIL').map(([name]) => name));
+  const blockingCheckNames = new Set(Object.keys(checks).filter(name => name !== 'quoteFreshness'));
+  failures.push(...Object.entries(checks).filter(([name, value]) => blockingCheckNames.has(name) && value.status === 'FAIL').map(([name]) => name));
   const ready = failures.length === 0;
   return {
     ready,
