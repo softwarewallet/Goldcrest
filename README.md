@@ -21,6 +21,12 @@ The absolute safety invariant:
 
 is the startup/locked-state invariant. Autonomous live-money execution can be enabled only through the authenticated operator activation gate after the production activation preflight passes. Goldcrest still requires all per-signal live safety, readiness, position, loss, spread, quote, instrument, and execution-reconciliation gates before an autonomous order can reach a broker.
 
+### cTrader LIVE/DEMO Functional Validation
+
+The cTrader Open API mode selector supports both `LIVE` and `DEMO`. The application remains `LIVE_ONLY` as a trading-environment contract, but the authoritative broker account/data path is validated in whichever cTrader API mode is selected. DEMO accounts are treated as authoritative functional test accounts: account identity, permissions, instruments, quotes, historical candles, positions, open orders, and the shared Auto Live order-packet validation are exercised without submitting a broker order. Production autonomous activation still requires the cTrader API mode to be `LIVE`.
+
+Use the Control Center `VALIDATE cTRADER` control after selecting the desired cTrader API mode. A successful DEMO validation certifies the common broker/data/order-construction path; it does not certify the external LIVE account, credentials, endpoint availability, or production activation state.
+
 ## Account Selection
 
 cTrader account selection must use an explicitly selected/validated account when multiple accounts are available. The system must never silently fall back to the first account or fabricate financial values when authoritative account details cannot be retrieved.
