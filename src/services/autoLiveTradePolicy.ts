@@ -12,6 +12,8 @@ export const AUTO_LIVE_SCORE_THRESHOLDS = Object.freeze({
 });
 
 export const AUTO_LIVE_POSITION_CAPACITY_POLL_MS = 10_000;
+export const AUTO_LIVE_XAU_VOLUME_DIVISOR = 1_000;
+export const AUTO_LIVE_TRAILING_STOP_LOSS_REQUIRED = true;
 
 export type AutoLiveScoreTier = 'BELOW_65' | '1_TRADE' | '2_TRADES' | '5_TRADES';
 
