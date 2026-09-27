@@ -447,40 +447,52 @@ class AutoTradingService {
       };
     }
 
-    // STOP intentionally disarms the autonomous execution flags. A fresh
-    // process still requires those flags to be configured before START.
-    // After one successful operator START, a later STOP -> START sequence is
-    // explicitly allowed to re-arm the same gate.
-    if (!this.isRequested() && !this.hasCompletedExplicitStart) {
-      this.state = 'BLOCKED';
-      this.lastCycleResult = 'Autonomous execution is not enabled. Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION must be true.';
-      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
-        stage: 'REQUEST_FLAGS',
-        reason: this.lastCycleResult
-      });
-      return this.getStatus();
-    }
+    // Production Auto Live must be unlocked through the dedicated execution
+    // gate first. The unlock endpoint performs the complete production
+    // activation preflight. Local development retains the existing explicit
+    // START -> arm behavior for broker-integrated testing.
+    if (process.env.NODE_ENV === 'production') {
+      if (!LIVE_AUTO_EXECUTION_ALLOWED) {
+        this.state = 'BLOCKED';
+        this.lastCycleResult = 'Execution gate is locked. Complete the Auto Live activation preflight and unlock the execution gate before starting Auto Live.';
+        liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+          stage: 'EXECUTION_GATE',
+          reason: this.lastCycleResult
+        });
+        return this.getStatus();
+      }
+    } else {
+      if (!this.isRequested() && !this.hasCompletedExplicitStart) {
+        this.state = 'BLOCKED';
+        this.lastCycleResult = 'Autonomous execution is not enabled. Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION must be true.';
+        liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+          stage: 'REQUEST_FLAGS',
+          reason: this.lastCycleResult
+        });
+        return this.getStatus();
+      }
 
-    const gateArm = armAutonomousExecutionGate();
-    if (!gateArm.success) {
-      this.state = 'BLOCKED';
-      this.lastCycleResult = gateArm.message;
-      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
-        stage: 'REQUEST_FLAGS',
-        code: gateArm.code,
-        reason: gateArm.message
-      });
-      return this.getStatus();
-    }
+      const gateArm = armAutonomousExecutionGate();
+      if (!gateArm.success) {
+        this.state = 'BLOCKED';
+        this.lastCycleResult = gateArm.message;
+        liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+          stage: 'REQUEST_FLAGS',
+          code: gateArm.code,
+          reason: gateArm.message
+        });
+        return this.getStatus();
+      }
 
-    if (!this.isRequested()) {
-      this.state = 'BLOCKED';
-      this.lastCycleResult = 'Autonomous execution is not enabled. Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION must be true.';
-      liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
-        stage: 'REQUEST_FLAGS',
-        reason: this.lastCycleResult
-      });
-      return this.getStatus();
+      if (!this.isRequested()) {
+        this.state = 'BLOCKED';
+        this.lastCycleResult = 'Autonomous execution is not enabled. Both GOLDCREST_AUTO_TRADING_ENABLED and GOLDCREST_AUTONOMOUS_LIVE_EXECUTION must be true.';
+        liveRuntimeLog('WARN', 'AUTO_TRADING_START_BLOCKED', {
+          stage: 'REQUEST_FLAGS',
+          reason: this.lastCycleResult
+        });
+        return this.getStatus();
+      }
     }
 
     const activation = autoExecutionEngine.enableAutomaticExecution();
