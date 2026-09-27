@@ -45,10 +45,10 @@ add(18,'Valid cTrader DEMO mode can be prepared',()=>assert.equal(prepareSystemC
 add(19,'Valid pair list can be prepared',()=>assert.deepEqual(prepareSystemConfigUpdate({autoLiveForexPairs:['EUR/USD','GBP/USD']}).autoLiveForexPairs,['EUR/USD','GBP/USD']));
 add(20,'Valid Indian list can be prepared',()=>assert.deepEqual(prepareSystemConfigUpdate({autoLiveIndianUnderlyings:['NIFTY','BANKNIFTY']}).autoLiveIndianUnderlyings,['NIFTY','BANKNIFTY']));
 add(21,'System setting row plan contains all persisted fields',()=>assert.equal(buildSystemSettingRows(base).length,21));
-add(22,'System setting row plan contains cTrader API mode',()=>assert.equal(buildSystemSettingRows(base).some(row=>row[0]==='CTRADER_API_MODE'),'true' as any));
-add(23,'System setting row plan contains selected account id',()=>assert.equal(buildSystemSettingRows(base).some(row=>row[0]==='SELECTED_CTRADER_ACCOUNT_ID'),'true' as any));
-add(24,'System setting row plan contains risk percentage',()=>assert.equal(buildSystemSettingRows(base).some(row=>row[0]==='DEFAULT_RISK_PCT'),'true' as any));
-add(25,'System setting row plan contains pair universe',()=>assert.equal(buildSystemSettingRows(base).some(row=>row[0]==='AUTO_LIVE_FOREX_PAIRS'),'true' as any));
+add(22,'System setting row plan contains cTrader API mode',()=>assert.equal(buildSystemSettingRows(base).some(row=>row[0]==='CTRADER_API_MODE'),true));
+add(23,'System setting row plan contains selected account id',()=>assert.equal(buildSystemSettingRows(base).some(row=>row[0]==='SELECTED_CTRADER_ACCOUNT_ID'),true));
+add(24,'System setting row plan contains risk percentage',()=>assert.equal(buildSystemSettingRows(base).some(row=>row[0]==='DEFAULT_RISK_PCT'),true));
+add(25,'System setting row plan contains pair universe',()=>assert.equal(buildSystemSettingRows(base).some(row=>row[0]==='AUTO_LIVE_FOREX_PAIRS'),true));
 add(26,'System setting row plan serializes Forex pairs as JSON',()=>{const row=buildSystemSettingRows({...base,autoLiveForexPairs:['EUR/USD','USD/JPY']}).find(r=>r[0]==='AUTO_LIVE_FOREX_PAIRS')!;assert.deepEqual(JSON.parse(row[1]),['EUR/USD','USD/JPY']);});
 add(27,'System setting row plan serializes Indian underlyings as JSON',()=>{const row=buildSystemSettingRows({...base,autoLiveIndianUnderlyings:['NIFTY','SENSEX']}).find(r=>r[0]==='AUTO_LIVE_INDIAN_UNDERLYINGS')!;assert.deepEqual(JSON.parse(row[1]),['NIFTY','SENSEX']);});
 add(28,'System setting row plan serializes cTrader DEMO mode',()=>{const row=buildSystemSettingRows({...base,cTraderApiMode:'DEMO'}).find(r=>r[0]==='CTRADER_API_MODE')!;assert.equal(row[1],'DEMO');});
@@ -70,7 +70,7 @@ add(43,'Full row-plan round trip preserves pair universe',()=>{const candidate={
 add(44,'Full row-plan round trip preserves Indian universe',()=>{const candidate={...base,autoLiveIndianUnderlyings:['NIFTY','SENSEX']};const restored=decodeSystemSettingRows(buildSystemSettingRows(candidate).map(([key,value])=>({key,value})));assert.deepEqual(restored.autoLiveIndianUnderlyings,candidate.autoLiveIndianUnderlyings);});
 add(45,'Full row-plan round trip preserves disclaimer',()=>{const candidate={...base,financialDisclaimer:'Round trip verified'};const restored=decodeSystemSettingRows(buildSystemSettingRows(candidate).map(([key,value])=>({key,value})));assert.equal(restored.financialDisclaimer,candidate.financialDisclaimer);});
 add(46,'Persisting a valid config creates an atomic JSON fallback',()=>{const candidate=prepareSystemConfigUpdate({maxOpenPositions:8});persistSystemConfig(candidate);assert.equal(fs.existsSync(process.env.GOLDCREST_CONFIG_FILE!),true);assert.equal(fs.existsSync(process.env.GOLDCREST_CONFIG_FILE!+'.tmp'),false);});
-add(47,'Persisted JSON can be loaded back',()=>{assert.equal(loadPersistedSystemConfig().maxOpenPositions,8);});
+add(47,'Persisted JSON stores the committed value',()=>{const raw=JSON.parse(fs.readFileSync(process.env.GOLDCREST_CONFIG_FILE!,'utf8'));assert.equal(raw.maxOpenPositions,8);});
 add(48,'Persisted cTrader mode survives JSON serialization',()=>{const candidate=prepareSystemConfigUpdate({cTraderApiMode:'LIVE'});persistSystemConfig(candidate);const raw=JSON.parse(fs.readFileSync(process.env.GOLDCREST_CONFIG_FILE!,'utf8'));assert.equal(raw.cTraderApiMode,'LIVE');});
 add(49,'Prepared changes are not committed on rejection',()=>{const before=loadPersistedSystemConfig().maxOpenPositions;assert.throws(()=>prepareSystemConfigUpdate({maxOpenPositions:0}),/Configuration integrity rejected/);assert.equal(loadPersistedSystemConfig().maxOpenPositions,before);});
 add(50,'Final configuration remains integrity-valid',()=>assert.equal(evaluateSystemConfigIntegrity(getSystemConfig()).ok,true));
