@@ -960,8 +960,6 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
         error: syncError?.message || String(syncError)
       });
     }
-    const now = Date.now();
-
     // SQLite persistence above is the authoritative configuration commit. The JSON file is a fallback snapshot only.
     res.json({ success: true, config: updated });
   } catch (err: any) {
