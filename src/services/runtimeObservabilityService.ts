@@ -7,6 +7,7 @@ import { getMarketHistorySchedulerStatus } from './marketHistoryService';
 import { getCurrentPairPredictionCollectionStatus } from './currentPairPredictionCollectionService';
 import { getLiveTradeResearchOutcomeTrackerStatus } from './liveTradeResearchOutcomeService';
 import { getAccountBalanceSnapshotSchedulerStatus } from './accountBalanceSnapshotService';
+import { EXECUTION_RECONCILIATION_MAX_AGE_MS } from './executionReconciliationService';
 
 export type ObservabilityHealth = 'HEALTHY' | 'DEGRADED' | 'CRITICAL';
 export type RecoveryAction = 'NONE' | 'RESTART_APPLICATION' | 'CHECK_BROKER_CONNECTION' | 'REVIEW_RECONCILIATION' | 'RESTART_SCHEDULER';
@@ -32,6 +33,7 @@ export interface RuntimeObservabilitySnapshot {
     inFlight: number;
     reconciliationTimeout: number;
     operatorActionRequired: number;
+    staleUnresolved: number;
     oldestUnresolvedCreatedAt: number | null;
   };
   autoTrading: ReturnType<typeof autoTradingService.getStatus>;
@@ -57,6 +59,7 @@ export function evaluateRuntimeObservabilityHealth(input: {
   auditLogReady: boolean;
   brokerStatuses: Array<{ status: string; live: boolean }>;
   operatorActionRequired: number;
+  staleUnresolved: number;
   schedulerFailures: number;
 }): ObservabilityHealth {
   const health: ObservabilityHealth[] = [];
@@ -66,7 +69,7 @@ export function evaluateRuntimeObservabilityHealth(input: {
   if (input.brokerStatuses.some(item => item.status === 'ERROR' || item.status === 'AUTHENTICATION_FAILED')) health.push('CRITICAL');
   else if (input.brokerStatuses.some(item => !item.live || item.status !== 'CONNECTED')) health.push('DEGRADED');
   else health.push('HEALTHY');
-  health.push(input.operatorActionRequired > 0 ? 'DEGRADED' : 'HEALTHY');
+  health.push(input.operatorActionRequired > 0 || input.staleUnresolved > 0 ? 'DEGRADED' : 'HEALTHY');
   health.push(input.schedulerFailures > 0 ? 'DEGRADED' : 'HEALTHY');
   return combineObservabilityHealth(health);
 }
@@ -99,6 +102,7 @@ export async function getRuntimeObservabilitySnapshot(options: {
   let inFlight = 0;
   let reconciliationTimeout = 0;
   let operatorActionRequired = 0;
+  let staleUnresolved = 0;
   let oldestUnresolvedCreatedAt: number | null = null;
   for (const row of intentRows) {
     const state = String(row.state);
@@ -114,6 +118,7 @@ export async function getRuntimeObservabilitySnapshot(options: {
     const createdAt = Number(row.created_at);
     if (Number.isFinite(createdAt) && createdAt > 0) {
       oldestUnresolvedCreatedAt = oldestUnresolvedCreatedAt === null ? createdAt : Math.min(oldestUnresolvedCreatedAt, createdAt);
+      if (generatedAt - createdAt >= EXECUTION_RECONCILIATION_MAX_AGE_MS) staleUnresolved += 1;
     }
   }
 
@@ -133,6 +138,7 @@ export async function getRuntimeObservabilitySnapshot(options: {
     auditLogReady: auditLog.enabled && auditLog.exists,
     brokerStatuses: brokers,
     operatorActionRequired,
+    staleUnresolved,
     schedulerFailures
   });
 
@@ -145,7 +151,7 @@ export async function getRuntimeObservabilitySnapshot(options: {
     component('current-pair-prediction', currentPairPrediction.running ? 'HEALTHY' : 'DEGRADED', 'running=' + currentPairPrediction.running + ' lastError=' + (currentPairPrediction.lastError || 'none'), currentPairPrediction.lastCompletedAt),
     component('live-trade-research-outcome', liveTradeResearchOutcome.running ? 'HEALTHY' : 'DEGRADED', 'running=' + liveTradeResearchOutcome.running + ' lastError=' + (liveTradeResearchOutcome.lastError || 'none'), liveTradeResearchOutcome.lastSyncAt),
     component('account-balance-snapshot', accountBalanceSnapshot.running ? 'HEALTHY' : 'DEGRADED', 'running=' + accountBalanceSnapshot.running, accountBalanceSnapshot.nextRunAt),
-    component('execution-intents', operatorActionRequired > 0 ? 'DEGRADED' : 'HEALTHY', 'unresolved=' + intentRows.length + ' operatorActionRequired=' + operatorActionRequired, oldestUnresolvedCreatedAt),
+    component('execution-intents', operatorActionRequired > 0 || staleUnresolved > 0 ? 'DEGRADED' : 'HEALTHY', 'unresolved=' + intentRows.length + ' operatorActionRequired=' + operatorActionRequired + ' staleUnresolved=' + staleUnresolved, oldestUnresolvedCreatedAt),
   ];
 
   return {
@@ -157,7 +163,7 @@ export async function getRuntimeObservabilitySnapshot(options: {
     overallHealth,
     components,
     brokers,
-    executionIntents: { pending, inFlight, reconciliationTimeout, operatorActionRequired, oldestUnresolvedCreatedAt },
+    executionIntents: { pending, inFlight, reconciliationTimeout, operatorActionRequired, staleUnresolved, oldestUnresolvedCreatedAt },
     autoTrading,
     auditLog,
     schedulers: { marketHistory, currentPairPrediction, liveTradeResearchOutcome, accountBalanceSnapshot },
@@ -168,7 +174,7 @@ export async function getRuntimeObservabilitySnapshot(options: {
 export function getRecoveryRecommendation(snapshot: RuntimeObservabilitySnapshot): { action: RecoveryAction; reason: string } {
   if (snapshot.lifecycle.state === 'STOPPING' || snapshot.lifecycle.state === 'STOPPED') return { action: 'RESTART_APPLICATION', reason: 'Runtime lifecycle is not running.' };
   if (!snapshot.database.initialized || !(snapshot.auditLog.enabled && snapshot.auditLog.exists)) return { action: 'RESTART_APPLICATION', reason: 'A critical local runtime dependency is unavailable.' };
-  if (snapshot.executionIntents.operatorActionRequired > 0) return { action: 'REVIEW_RECONCILIATION', reason: 'One or more execution intents require operator review.' };
+  if (snapshot.executionIntents.operatorActionRequired > 0 || snapshot.executionIntents.staleUnresolved > 0 || snapshot.executionIntents.reconciliationTimeout > 0) return { action: 'REVIEW_RECONCILIATION', reason: 'One or more execution intents require reconciliation review.' };
   if (snapshot.brokers.some(item => item.reportedStatus !== 'CONNECTED')) return { action: 'CHECK_BROKER_CONNECTION', reason: 'One or more LIVE brokers report a non-connected status.' };
   const stoppedSchedulers = [snapshot.schedulers.marketHistory.running, snapshot.schedulers.currentPairPrediction.running, snapshot.schedulers.liveTradeResearchOutcome.running, snapshot.schedulers.accountBalanceSnapshot.running].filter(running => !running).length;
   if (stoppedSchedulers > 0) return { action: 'RESTART_SCHEDULER', reason: String(stoppedSchedulers) + ' runtime scheduler(s) are stopped.' };
