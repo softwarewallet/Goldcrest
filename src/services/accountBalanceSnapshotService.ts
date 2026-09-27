@@ -17,6 +17,8 @@ export interface AccountBalanceSnapshot {
   errorMessage?: string;
 }
 
+export const ACCOUNT_BALANCE_SNAPSHOT_INTERVAL_HOURS = 3;
+
 let schedulerTimer: ReturnType<typeof setTimeout> | null = null;
 let schedulerStarted = false;
 
@@ -47,11 +49,11 @@ function snapshotId(broker: BrokerType, capturedAt: number): string {
   return `BALANCE-SNAPSHOT-${broker}-${capturedAt}`;
 }
 
-function nextThreeHourBoundary(now = new Date()): Date {
+export function nextThreeHourBoundary(now = new Date()): Date {
   const next = new Date(now);
   next.setMinutes(0, 0, 0);
   const currentHour = next.getHours();
-  const nextHour = currentHour - (currentHour % 3) + 3;
+  const nextHour = currentHour - (currentHour % ACCOUNT_BALANCE_SNAPSHOT_INTERVAL_HOURS) + ACCOUNT_BALANCE_SNAPSHOT_INTERVAL_HOURS;
   next.setHours(nextHour);
   return next;
 }
