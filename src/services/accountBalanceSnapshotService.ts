@@ -217,6 +217,24 @@ export async function getAccountBalanceSnapshots(options: {
   }));
 }
 
+async function captureStartupSnapshotsIfNeeded(): Promise<void> {
+  const cutoff = Date.now() - ACCOUNT_BALANCE_SNAPSHOT_INTERVAL_HOURS * 60 * 60 * 1000;
+  const recentRows = await executeQuery<any>(
+    "SELECT broker, MAX(captured_at) AS captured_at FROM account_balance_snapshots WHERE environment = 'LIVE' AND status = 'CAPTURED' AND captured_at >= ? GROUP BY broker",
+    [cutoff]
+  );
+  const recentBrokers = new Set(
+    recentRows.map(row => String(row.broker || '').toUpperCase())
+  );
+  const missingBrokers = (['CTRADER', 'FIVE_PAISA'] as BrokerType[])
+    .filter(broker => !recentBrokers.has(broker));
+
+  if (missingBrokers.length === 0) return;
+
+  const capturedAt = Date.now();
+  await Promise.all(missingBrokers.map(broker => captureBrokerBalance(broker, capturedAt)));
+}
+
 function scheduleNextBoundary(): void {
   if (!schedulerStarted) return;
   const delay = Math.max(1000, nextThreeHourBoundary().getTime() - Date.now());
@@ -236,6 +254,7 @@ export function startAccountBalanceSnapshotScheduler(): void {
   if (schedulerStarted) return;
   schedulerStarted = true;
   void ensureTable()
+    .then(() => captureStartupSnapshotsIfNeeded())
     .then(() => scheduleNextBoundary())
     .catch((err) => {
       console.warn('[Goldcrest] account balance snapshot scheduler initialization failed:', err?.message || err);
