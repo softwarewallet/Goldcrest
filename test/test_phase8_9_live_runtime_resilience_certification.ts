@@ -51,7 +51,7 @@ await scenario(8, 'Payload mismatch is fail-closed', () => {
   assert.match(intentSource, /IDEMPOTENCY_KEY_PAYLOAD_MISMATCH/);
 });
 await scenario(9, 'Ambiguous broker submission enters reconciliation timeout', () => {
-  assert.match(intentSource, /markExecutionIntentSubmissionAmbiguous[\\s\\S]*markExecutionIntentReconciliationTimeout/);
+  assert.match(intentSource, /markExecutionIntentSubmissionAmbiguous[\s\S]*markExecutionIntentReconciliationTimeout/);
 });
 await scenario(10, 'Reconciliation can resume a timed-out intent', () => {
   assert.match(intentSource, /resumeExecutionIntentReconciliation/);
