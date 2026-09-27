@@ -93,6 +93,7 @@ import { captureAccountBalanceSnapshots, getAccountBalanceSnapshots, startAccoun
 // Legacy demo execution is retired; LIVE_ONLY production mode is enforced by the server safety layer.
 import { brokerRegistry } from './src/brokers/registry';
 import { runtimeLifecycle } from './src/services/runtimeLifecycle';
+import { getRecoveryRecommendation, getRuntimeObservabilitySnapshot } from './src/services/runtimeObservabilityService';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
 // npm run dev is an explicit local development command. Do not let a stale
@@ -253,6 +254,27 @@ app.get('/api/runtime', (_req: Request, res: Response) => {
     lifecycle: runtimeLifecycle.getStatus(),
     timestamp: Date.now()
   });
+});
+
+app.get('/api/observability/runtime', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    const snapshot = await getRuntimeObservabilitySnapshot({
+      runtimeId: GOLDCREST_RUNTIME_ID,
+      environment: process.env.NODE_ENV || 'development'
+    });
+    res.json({
+      ...snapshot,
+      recovery: getRecoveryRecommendation(snapshot)
+    });
+  } catch (error: any) {
+    liveRuntimeLog('ERROR', 'RUNTIME_OBSERVABILITY_SNAPSHOT_FAILED', {
+      error: error?.message || String(error)
+    });
+    res.status(503).json({
+      error: 'RUNTIME_OBSERVABILITY_UNAVAILABLE',
+      message: error?.message || 'Runtime observability is unavailable.'
+    });
+  }
 });
 
 // Operator authentication is a same-origin, HttpOnly session derived from the
