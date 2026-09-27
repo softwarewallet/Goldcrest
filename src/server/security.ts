@@ -187,7 +187,7 @@ export function operatorAuthRequired(req: Request, res: Response, next: NextFunc
   }
 
   const authorization = req.header('Authorization');
-  const bearer = authorization?.match(/^Bearer\\s+(.+)$/i)?.[1];
+  const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
   const suppliedKey = req.header('X-Goldcrest-Operator-Key')
     || req.header('X-Operator-API-Key')
     || bearer;
