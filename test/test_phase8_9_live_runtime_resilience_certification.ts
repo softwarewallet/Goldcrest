@@ -143,9 +143,7 @@ await scenario(36, 'Account balance snapshots are persisted', () => {
 await scenario(37, 'Balance snapshots use authoritative LIVE adapters', () => {
   assert.match(balanceSource, /brokerRegistry\.getAdapter\(broker, 'LIVE'\)/);
 });
-await scenario(38, 'Balance snapshot cadence is three hours', () => {
-  assert.match(balanceSource, /3 \* 60 \* 60 \* 1000/);
-});
+await scenario(38, 'Balance snapshot cadence is three hours', () => {\n  assert.match(balanceSource, /nextThreeHourBoundary/);\n  assert.match(balanceSource, /currentHour % 3/);\n});
 await scenario(39, 'cTrader LIVE/DEMO selector remains preserved', () => {
   assert.match(configSource, /ctraderApiMode/);
   assert.match(ctraderSource, /LIVE|DEMO/);
