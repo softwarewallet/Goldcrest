@@ -6,16 +6,20 @@ export interface ConfigIntegrityResult {
   failures: string[];
 }
 
-function positiveFinite(value: number): boolean {
-  return Number.isFinite(value) && value > 0;
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number';
 }
 
-function nonNegativeFinite(value: number): boolean {
-  return Number.isFinite(value) && value >= 0;
+function positiveFinite(value: unknown): value is number {
+  return isNumber(value) && Number.isFinite(value) && value > 0;
 }
 
-function positiveInteger(value: number): boolean {
-  return Number.isSafeInteger(value) && value > 0;
+function nonNegativeFinite(value: unknown): value is number {
+  return isNumber(value) && Number.isFinite(value) && value >= 0;
+}
+
+function positiveInteger(value: unknown): value is number {
+  return isNumber(value) && Number.isSafeInteger(value) && value > 0;
 }
 
 export function evaluateSystemConfigIntegrity(config: SystemConfig): ConfigIntegrityResult {
@@ -26,23 +30,23 @@ export function evaluateSystemConfigIntegrity(config: SystemConfig): ConfigInteg
   check('tradingMode', config.tradingMode === 'LIVE_ONLY');
   check('cTraderApiMode', config.cTraderApiMode === 'LIVE' || config.cTraderApiMode === 'DEMO');
   check('liveTradingEnabledType', typeof config.liveTradingEnabled === 'boolean');
-  check('defaultRiskPct', positiveFinite(Number(config.defaultRiskPct)) && Number(config.defaultRiskPct) <= 100);
-  check('maxDailyLossPct', positiveFinite(Number(config.maxDailyLossPct)) && Number(config.maxDailyLossPct) <= 100);
-  check('maxOpenPositions', positiveInteger(Number(config.maxOpenPositions)));
-  check('maxTradesPerDay', positiveInteger(Number(config.maxTradesPerDay)));
-  check('maxConsecutiveLosses', positiveInteger(Number(config.maxConsecutiveLosses)));
-  check('maxSpreadBps', nonNegativeFinite(Number(config.maxSpreadBps)));
-  check('signalCooldownMs', positiveFinite(Number(config.signalCooldownMs)));
-  check('eventProximityThresholdMinutes', nonNegativeFinite(Number(config.eventProximityThresholdMinutes)));
-  check('strikeDepth', positiveInteger(Number(config.strikeDepth)));
-  check('maxTradeValueForexUsd', positiveInteger(Number(config.maxTradeValueForexUsd)));
-  check('maxTradeValueIndianInr', positiveInteger(Number(config.maxTradeValueIndianInr)));
-  check('autoLiveMinSignalScore', nonNegativeFinite(Number(config.autoLiveMinSignalScore)) && Number(config.autoLiveMinSignalScore) <= 100);
-  check('autoLiveMaxTradesPerPair', positiveInteger(Number(config.autoLiveMaxTradesPerPair)));
-  check('forexStopLossPips', positiveFinite(Number(config.forexStopLossPips)));
-  check('forexTakeProfitPips', positiveFinite(Number(config.forexTakeProfitPips)));
-  check('autoLiveForexPairs', Array.isArray(config.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0 && config.autoLiveForexPairs.every(pair => /^[A-Z]{3}\/[A-Z]{3}$/.test(String(pair))));
-  check('autoLiveIndianUnderlyings', Array.isArray(config.autoLiveIndianUnderlyings) && config.autoLiveIndianUnderlyings.length > 0 && config.autoLiveIndianUnderlyings.every(symbol => /^[A-Z0-9._-]+$/.test(String(symbol))));
+  check('defaultRiskPct', positiveFinite(config.defaultRiskPct) && config.defaultRiskPct <= 100);
+  check('maxDailyLossPct', positiveFinite(config.maxDailyLossPct) && config.maxDailyLossPct <= 100);
+  check('maxOpenPositions', positiveInteger(config.maxOpenPositions));
+  check('maxTradesPerDay', positiveInteger(config.maxTradesPerDay));
+  check('maxConsecutiveLosses', positiveInteger(config.maxConsecutiveLosses));
+  check('maxSpreadBps', nonNegativeFinite(config.maxSpreadBps));
+  check('signalCooldownMs', positiveFinite(config.signalCooldownMs));
+  check('eventProximityThresholdMinutes', nonNegativeFinite(config.eventProximityThresholdMinutes));
+  check('strikeDepth', positiveInteger(config.strikeDepth));
+  check('maxTradeValueForexUsd', positiveInteger(config.maxTradeValueForexUsd));
+  check('maxTradeValueIndianInr', positiveInteger(config.maxTradeValueIndianInr));
+  check('autoLiveMinSignalScore', nonNegativeFinite(config.autoLiveMinSignalScore) && config.autoLiveMinSignalScore <= 100);
+  check('autoLiveMaxTradesPerPair', positiveInteger(config.autoLiveMaxTradesPerPair));
+  check('forexStopLossPips', positiveFinite(config.forexStopLossPips));
+  check('forexTakeProfitPips', positiveFinite(config.forexTakeProfitPips));
+  check('autoLiveForexPairs', Array.isArray(config.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0 && config.autoLiveForexPairs.every(pair => typeof pair === 'string' && /^[A-Z]{3}\/ [A-Z]{3}$/.test(pair.replace('/ ', '/'))));
+  check('autoLiveIndianUnderlyings', Array.isArray(config.autoLiveIndianUnderlyings) && config.autoLiveIndianUnderlyings.length > 0 && config.autoLiveIndianUnderlyings.every(symbol => typeof symbol === 'string' && /^[A-Z0-9._-]+$/.test(symbol)));
   check('financialDisclaimer', typeof config.financialDisclaimer === 'string' && config.financialDisclaimer.trim().length > 0);
 
   return { ok: failures.length===0, checks, failures };
