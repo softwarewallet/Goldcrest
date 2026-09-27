@@ -51,11 +51,12 @@ export async function getCurrentPairResearchReadinessLedger(params: {
   const symbol = params.symbol?.trim().toUpperCase() || null;
   const horizon = params.horizon || '1D';
 
-  const [validation, oosDrift, calibrationMatrix, contextCalibration] = await Promise.all([
+  const [validation, oosDrift, calibrationMatrix, contextCalibration, contextTemporalCalibration] = await Promise.all([
     getCurrentPairResearchValidationReport({ symbol: symbol || undefined, horizon, limit: 50000 }),
     getCurrentPairOosDriftReport({ symbol: symbol || undefined, horizon, modelVersion: AI_MODEL }),
     getCurrentPairCalibrationMatrix({ symbol: symbol || undefined, horizon, modelVersion: AI_MODEL }),
-    getCurrentPairCrossModelContextCalibration({ symbol: symbol || undefined, horizon })
+    getCurrentPairCrossModelContextCalibration({ symbol: symbol || undefined, horizon }),
+    getCurrentPairCrossModelContextTemporalCalibration({ symbol: symbol || undefined, horizon })
   ]);
 
   const aiModel = validation.models.find(model => model.modelVersion === AI_MODEL);
