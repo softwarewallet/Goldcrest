@@ -1774,7 +1774,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-[10px] font-mono">
                 <thead><tr className="text-slate-500 border-b border-slate-800"><th className="text-left p-2">Pair / Horizon</th><th>Window</th><th>Confidence</th><th>Evaluated</th><th>Accuracy</th><th>Avg. Confidence</th><th>Gap</th><th>95% CI</th><th>Sample</th></tr></thead>
-                <tbody>{currentPairTemporalCalibration.rows.flatMap(row => row.windows.flatMap(window => window.calibrationBuckets.filter(bucket => bucket.predictions > 0).map(bucket => (
+                <tbody>{currentPairTemporalCalibration.rows.flatMap(row => row.windows.flatMap(window => window.calibrationBuckets.filter(bucket => bucket.predictions > 0).map(bucket =>
                   <tr key={row.symbol+'|'+row.horizon+'|'+window.windowDays+'|'+bucket.lowerPct} className="border-b border-slate-900">
                     <td className="p-2 text-slate-300">{row.symbol} / {row.horizon}</td>
                     <td className="text-center">{window.windowDays}D</td>
@@ -1786,7 +1786,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                     <td className="text-center">{bucket.accuracyConfidenceInterval95Pct == null ? '—' : bucket.accuracyConfidenceInterval95Pct.lowerPct.toFixed(1)+'–'+bucket.accuracyConfidenceInterval95Pct.upperPct.toFixed(1)+'%'}</td>
                     <td className={bucket.sampleSufficient ? 'text-center text-emerald-300' : 'text-center text-amber-300'}>{bucket.sampleSufficient ? 'SUFFICIENT' : 'INSUFFICIENT'}</td>
                   </tr>
-                }))))}</tbody>
+                )))}</tbody>
               </table>
             </div>
           </div>
