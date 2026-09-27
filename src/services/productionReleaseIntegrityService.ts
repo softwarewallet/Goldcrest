@@ -30,9 +30,16 @@ export function getInstalledApplicationVersion(rootDirectory = process.cwd()): s
   }
 }
 
-function isMajorAtLeast(version: string, minimumMajor: number): boolean {
-  const major = Number(String(version).replace(/^v/, '').split('.')[0]);
-  return Number.isInteger(major) && major >= minimumMajor;
+function isSupportedNodeVersion(version: string): boolean {
+  const match = String(version).trim().replace(/^v/, '').match(/^(\\d+)\\.(\\d+)\\.(\\d+)(?:[-+].*)?$/);
+  if (!match) return false;
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+
+  if (major !== 24) return false;
+  return minor > 21 || (minor === 21 && patch >= 0);
 }
 
 function fileExists(file: string): boolean {
@@ -60,7 +67,7 @@ export function evaluateProductionReleaseIntegrity(input: ProductionReleaseInteg
   };
 
   check('environment', input.environment === 'production');
-  check('nodeVersion', isMajorAtLeast(input.nodeVersion, 24));
+  check('nodeVersion', isSupportedNodeVersion(input.nodeVersion));
   check('tradingMode', input.tradingMode === 'LIVE_ONLY');
   check('operatorAuth', input.operatorAuthConfigured);
   check('liveBroker', input.liveBrokerConfigured);
