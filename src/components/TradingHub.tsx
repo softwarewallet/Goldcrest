@@ -572,7 +572,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
           : '';
       const query = `horizon=${currentPairHorizon}${modelVersion ? `&modelVersion=${modelVersion}` : ''}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
       const comparisonQuery = `horizon=${currentPairHorizon}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
-      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes, calibrationMatrixRes, crossModelCalibrationRes, crossModelTemporalCalibrationRes, readinessLedgerRes, temporalCalibrationRes] = await Promise.all([
+      const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes, calibrationMatrixRes, crossModelCalibrationRes, crossModelTemporalCalibrationRes, crossModelContextTemporalCalibrationRes, readinessLedgerRes, temporalCalibrationRes] = await Promise.all([
         fetch(`/api/live-trade-research/current-pair/predictions?${query}&limit=100`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/analytics?${query}`, { cache: 'no-store' }),
         fetch(`/api/live-trade-research/current-pair/walk-forward?${query}&cohortDays=30&maxCohorts=6`, { cache: 'no-store' }),
