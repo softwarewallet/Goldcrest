@@ -10,7 +10,7 @@ for(let i=0;i<45;i++){
   const ts=now-(i+2)*2*60*60*1000+60000;
   const actual=i<30?'UP':'DOWN';
   await insert('b-'+i,'PAIR_FEATURE_BASELINE_V2',ts,actual,.65);
-  await insert('a-'+i,'LLAMA_GATEWAY_QWEN_LLAMA_V1',ts,actual,i<30?.80:.90);
+  await insert('a-'+i,'LLAMA_GATEWAY_QWEN_LLAMA_V1',ts,actual,i<30?.70:.85);
 }
 const report=await getCurrentPairCrossModelTemporalCalibration({now,horizon:'1D'});
 assert.deepEqual(report.windowsDays,[7,14,30,60,90]);
@@ -27,12 +27,13 @@ assert.ok(row.windows[0].deltas.confidencePct!==null);
 assert.equal(row.windows[0].baseline.calibrationBuckets.length,5);
 assert.equal(row.windows[0].ai.calibrationBuckets.length,5);
 assert.equal(row.windows[0].deltas.calibrationBuckets.length,5);
-const bucket=row.windows[4].ai.calibrationBuckets[4];
-assert.equal(bucket.lowerPct,80);
-assert.equal(bucket.upperPct,100);
+const bucket=row.windows[4].ai.calibrationBuckets[3];
+assert.equal(bucket.lowerPct,60);
+assert.equal(bucket.upperPct,80);
 assert.ok(bucket.accuracyConfidenceInterval95Pct);
 assert.equal(bucket.sampleSufficient,true);
-assert.ok(row.windows[4].deltas.calibrationBuckets[4].calibrationGapPct!==null);
+assert.ok(bucket.calibrationGapPct!==null);
+assert.ok(row.windows[4].deltas.calibrationBuckets[3].calibrationGapPct!==null);
 assert.equal(row.windows[2].baseline.sampleSufficient,true);
 assert.equal(row.windows[2].ai.sampleSufficient,true);
 console.log('CURRENT PAIR CROSS-MODEL TEMPORAL CALIBRATION TEST PASSED');
