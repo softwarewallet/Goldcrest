@@ -251,7 +251,7 @@ const scenarios: Scenario[] = [
     const lifecycle = new RuntimeLifecycleCoordinator();
     lifecycle.transition('RUNNING');
     await lifecycle.shutdown('REGISTER_TEST');
-    assert.throws(() => lifecycle.registerCleanup('late', () => undefined), /RUNTIME_ALREADY_STOPPING/);
+    assert.throws(() => lifecycle.registerCleanup('late', () => undefined), /RUNTIME_LIFECYCLE_STOPPED/);
   }},
   { id: 30, name: 'Stopped runtime cannot transition back to RUNNING', run: async () => {
     const lifecycle = new RuntimeLifecycleCoordinator();
