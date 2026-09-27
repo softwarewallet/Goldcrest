@@ -61,7 +61,7 @@ await scenario(11, 'Reconciliation uses a bounded maximum age', () => {
   assert.match(reconciliationSource, /const MAX_AGE_MS = 15 \* 60_000/);
 });
 await scenario(12, 'Broker-native lookup is inside the fail-closed boundary', () => {
-  assert.match(reconciliationSource, /try \{[\\s\\S]*adapter\.getOrderByClientOrderId/);
+  assert.match(reconciliationSource, /try \{[\s\S]*adapter\.getOrderByClientOrderId/);
 });
 await scenario(13, 'Transport lookup failure cannot bypass timeout handling', () => {
   assert.match(reconciliationSource, /catch \(err/);
