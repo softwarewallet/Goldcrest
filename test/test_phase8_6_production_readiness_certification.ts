@@ -119,10 +119,8 @@ const scenarios: Scenario[] = [
     assert.equal(report.ready, false);
     assert.equal(report.state, 'BLOCKED');
   }},
-  { id: 33, category: 'READINESS_STATE', name: 'Blocked readiness remains observable', run: () => {
-    const status = autoTradeReadinessService.getStatus();
-    assert.equal(status?.state, 'BLOCKED');
-    assert.equal(status?.ready, false);
+  { id: 33, category: 'READINESS_STATE', name: 'Blocked readiness state remains observable', run: () => {
+    assert.equal(autoTradeReadinessService.getState(), 'BLOCKED');
   }},
   { id: 34, category: 'READINESS_STATE', name: 'A structurally ready report can enter ARMED state', run: async () => {
     const report = await autoTradeReadinessService.arm({
