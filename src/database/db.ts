@@ -3,12 +3,11 @@ import fs from 'fs';
 import path from 'path';
 
 let dbInstance: Database | null = null;
+let dbInitializationPromise: Promise<Database> | null = null;
 const DB_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DB_DIR, 'trading_analyst.sqlite');
 
-export async function getDatabase(): Promise<Database> {
-  if (dbInstance) return dbInstance;
-
+async function initializeDatabase(): Promise<Database> {
   if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
   }
@@ -31,6 +30,27 @@ export async function getDatabase(): Promise<Database> {
   }
 
   return dbInstance;
+}
+
+export async function getDatabase(): Promise<Database> {
+  if (dbInstance) return dbInstance;
+  if (dbInitializationPromise) return dbInitializationPromise;
+
+  dbInitializationPromise = initializeDatabase().finally(() => {
+    dbInitializationPromise = null;
+  });
+
+  return dbInitializationPromise;
+}
+
+export function getDatabaseInitializationState(): {
+  initialized: boolean;
+  initializing: boolean;
+} {
+  return {
+    initialized: Boolean(dbInstance),
+    initializing: Boolean(dbInitializationPromise)
+  };
 }
 
 export function persistDatabase(): void {
