@@ -12,6 +12,7 @@ export const AUTO_LIVE_SCORE_THRESHOLDS = Object.freeze({
 });
 
 export const AUTO_LIVE_POSITION_CAPACITY_POLL_MS = 10_000;
+export const AUTO_LIVE_POSITION_REFRESH_INTERVAL_MS = 10_000;
 export const AUTO_LIVE_XAU_VOLUME_DIVISOR = 1_000;
 export const AUTO_LIVE_TRAILING_STOP_LOSS_REQUIRED = true;
 
@@ -64,4 +65,8 @@ export function hasPairPositionCapacity(activePairPositions: number, maxTradesPe
   return Number.isFinite(active) && Number.isFinite(maximum)
     && active >= 0 && maximum > 0
     && active < maximum;
+}
+
+export function isVisibleAutoLiveSignal(direction: unknown): boolean {
+  return String(direction || '').toUpperCase() !== 'NO_TRADE';
 }
