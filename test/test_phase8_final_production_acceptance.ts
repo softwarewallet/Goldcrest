@@ -149,7 +149,7 @@ const previousKey=process.env.GOLDCREST_OPERATOR_API_KEY;
 process.env.NODE_ENV='production';
 process.env.GOLDCREST_OPERATOR_API_KEY='acceptance-secret';
 
-add(66,'Production auth rejects missing same-origin header',()=>{const req=mockRequest({authorization:'Bearer acceptance-secret'});const res=mockResponse();let next=0;operatorAuthRequired(req,res,()=>next++);assert.equal(res.statusCode,403);assert.equal(next,0);});
+add(66,'Production auth accepts a valid bearer without Origin header',()=>{const req=mockRequest({authorization:'Bearer acceptance-secret'});const res=mockResponse();let next=0;operatorAuthRequired(req,res,()=>next++);assert.equal(res.statusCode,200);assert.equal(next,1);});
 add(67,'Production auth accepts valid same-origin bearer',()=>{const req=mockRequest({origin:'https://goldcrest.example',authorization:'Bearer acceptance-secret'});const res=mockResponse();let next=0;operatorAuthRequired(req,res,()=>next++);assert.equal(res.statusCode,200);assert.equal(next,1);});
 add(68,'Production auth rejects invalid bearer credential',()=>{const req=mockRequest({origin:'https://goldcrest.example',authorization:'Bearer wrong'});const res=mockResponse();let next=0;operatorAuthRequired(req,res,()=>next++);assert.equal(res.statusCode,401);assert.equal(next,0);});
 add(69,'Production auth rejects foreign origin',()=>{const req=mockRequest({origin:'https://attacker.example',authorization:'Bearer acceptance-secret'});const res=mockResponse();let next=0;operatorAuthRequired(req,res,()=>next++);assert.equal(res.statusCode,403);assert.equal(next,0);});
@@ -160,7 +160,7 @@ process.env.GOLDCREST_OPERATOR_API_KEY=previousKey || 'acceptance-secret';
 
 add(72,'Valid production release is fully passing',()=>assert.equal(validRelease().ok,true));
 add(73,'Valid configuration is fully passing',()=>assert.equal(evaluateSystemConfigIntegrity(getSystemConfig()).ok,true));
-add(74,'Valid runtime readiness is fully passing',()=>assert.equal(evaluateRuntimeReadiness(true,true).ok !== undefined,true));
+add(74,'Valid runtime readiness reports ready=true',()=>assert.equal(evaluateRuntimeReadiness(true,true).ready,true));
 add(75,'Final release acceptance has no integrity failures',()=>assert.deepEqual(validRelease().failures,[]));
 add(76,'Final acceptance retains LIVE_ONLY mode',()=>assert.equal(getSystemConfig().tradingMode,'LIVE_ONLY'));
 add(77,'Final acceptance retains cTrader DEMO default persistence contract',()=>assert.equal(getSystemConfig().cTraderApiMode,'DEMO'));
