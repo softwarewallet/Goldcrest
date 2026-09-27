@@ -77,6 +77,7 @@ add(46,'Runtime lifecycle shutdown is idempotent',async()=>{ const c=new lifecyc
 add(47,'Runtime lifecycle cleanup order is reverse registration',async()=>{ const c=new lifecycle.RuntimeLifecycleCoordinator(); c.transition('RUNNING'); const calls:string[]=[]; c.registerCleanup('first',()=>{calls.push('first')}); c.registerCleanup('second',()=>{calls.push('second')}); await c.shutdown('ORDER'); assert.deepEqual(calls,['second','first']); });
 add(48,'Stopped lifecycle rejects restart transition',async()=>{ const c=new lifecycle.RuntimeLifecycleCoordinator(); c.transition('RUNNING'); await c.shutdown('STOP'); assert.throws(()=>c.transition('RUNNING'),/INVALID_RUNTIME_LIFECYCLE_TRANSITION/); });
 add(49,'Stopped lifecycle rejects new cleanup registration',async()=>{ const c=new lifecycle.RuntimeLifecycleCoordinator(); c.transition('RUNNING'); await c.shutdown('STOP'); assert.throws(()=>c.registerCleanup('late',()=>undefined),/RUNTIME_LIFECYCLE_STOPPED/); });
+add(66,'Stopping lifecycle rejects new cleanup registration with stopping-specific error',async()=>{ const c=new lifecycle.RuntimeLifecycleCoordinator(); c.transition('RUNNING'); c.registerCleanup('hold',async()=>{ await new Promise<void>(resolve=>setTimeout(resolve,5)); }); const pending=c.shutdown('STOPPING_TEST'); await new Promise<void>(resolve=>setTimeout(resolve,0)); assert.throws(()=>c.registerCleanup('late',()=>undefined),/RUNTIME_ALREADY_STOPPING/); await pending; });
 add(50,'Runtime lifecycle retains cleanup count after shutdown',async()=>{ const c=new lifecycle.RuntimeLifecycleCoordinator(); c.transition('RUNNING'); c.registerCleanup('one',()=>undefined); await c.shutdown('COUNT'); assert.equal(c.getStatus().registeredCleanupCount,1); });
 
 add(51,'Observability marks healthy runtime healthy',()=>{ assert.equal(observability.evaluateRuntimeObservabilityHealth({lifecycleState:'RUNNING',databaseReady:true,auditLogReady:true,brokerStatuses:[{status:'CONNECTED',live:true}],operatorActionRequired:0,staleUnresolved:0,schedulerFailures:0}),'HEALTHY'); });
@@ -95,14 +96,14 @@ add(63,'Recovery helper accepts an existing backup without replacing healthy pri
 add(64,'Persistence backup survives a second complete database image',()=>{ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'goldcrest-phase8-13-')); const primary=path.join(dir,'primary'); const temp=path.join(dir,'temp'); const backup=path.join(dir,'backup'); db.persistDatabaseBuffer(Buffer.from('one'),primary,temp,backup); db.persistDatabaseBuffer(Buffer.from('two'),primary,temp,backup); assert.equal(fs.readFileSync(backup,'utf8'),'one'); fs.rmSync(dir,{recursive:true,force:true}); });
 add(65,'Database persistence paths remain inside the application data directory',()=>{ const p=db.getDatabaseFilePaths(); assert.equal(path.dirname(p.primary),path.dirname(p.backup)); assert.equal(path.dirname(p.primary),path.dirname(p.temporary)); });
 
-assert.equal(scenarios.length,65);
+assert.equal(scenarios.length,66);
 console.log('=========================================================================');
 console.log('PHASE 8.13 — PRODUCTION DISASTER RECOVERY & STATE-INTEGRITY CERTIFICATION');
-console.log('65 deterministic, broker-side-effect-free disaster-recovery scenarios');
+console.log('66 deterministic, broker-side-effect-free disaster-recovery scenarios');
 console.log('=========================================================================');
-for(const item of scenarios){ await item.run(); console.log('[PASS '+String(item.id).padStart(2,'0')+'/65] '+item.name); }
+for(const item of scenarios){ await item.run(); console.log('[PASS '+String(item.id).padStart(2,'0')+'/66] '+item.name); }
 console.log('=========================================================================');
-console.log('PHASE 8.13 CERTIFICATION: 65/65 PASSED');
+console.log('PHASE 8.13 CERTIFICATION: 66/66 PASSED');
 console.log('Crash-safe database persistence: VERIFIED');
 console.log('Primary/backup recovery: VERIFIED');
 console.log('Execution idempotency: VERIFIED');
