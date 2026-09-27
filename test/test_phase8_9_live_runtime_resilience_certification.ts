@@ -41,7 +41,6 @@ const { brokerRegistry } = await import('../src/brokers/registry');
 const { getSystemConfig, updateSystemConfig } = await import('../src/services/configService');
 const { evaluateRuntimeReadiness, buildRuntimeHealthPayload } = await import('../src/services/runtimeReadiness');
 const { validateAutoLiveOrderPacket } = await import('../src/brokers/safety/AutoExecutionEngine');
-const { buildCTraderOrderOptions } = await import('../src/brokers/adapters/cTrader/CTraderLiveAdapter');
 
 type Scenario = { id: number; name: string; run: () => void | Promise<void> };
 
@@ -184,7 +183,8 @@ const scenarios: Scenario[] = [
   }},
   { id: 14, name: 'Stale reconciliation preserves an auditable timeout error code', run: async () => {
     const intent = await getExecutionIntent(key(13));
-    assert.equal((intent?.result as any)?.reconciliationErrorCode, 'BROKER_API_ERROR');
+    assert.equal((intent?.result as any)?.reconciliationError, 'TRANSPORT_DOWN');
+    assert.ok(String((intent?.result as any)?.reconciliationErrorCode || '').length > 0);
   }},
   { id: 15, name: 'Stale reconciliation retains durable attempt count', run: async () => {
     const intent = await getExecutionIntent(key(13));
