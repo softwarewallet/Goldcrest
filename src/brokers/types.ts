@@ -60,7 +60,7 @@ export type OrderStatus =
 
 export interface BrokerAccountInfo {
   accountId: string;
-  accountType: 'LIVE';
+  accountType: 'LIVE' | 'DEMO';
   balance: number;
   equity: number;
   availableMargin: number;
