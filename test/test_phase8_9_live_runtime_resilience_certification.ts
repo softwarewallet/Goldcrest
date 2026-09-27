@@ -426,8 +426,14 @@ const scenarios: Scenario[] = [
   }},
   { id: 38, name: 'Account balance snapshot cadence is an exact three-hour boundary', run: () => {
     assert.equal(ACCOUNT_BALANCE_SNAPSHOT_INTERVAL_HOURS, 3);
-    const next = nextThreeHourBoundary(new Date('2026-09-27T10:17:22'));
-    assert.equal(next.toISOString(), '2026-09-27T12:00:00.000Z');
+    const input = new Date(2026, 8, 27, 10, 17, 22);
+    const next = nextThreeHourBoundary(input);
+    assert.equal(next.getFullYear(), input.getFullYear());
+    assert.equal(next.getMonth(), input.getMonth());
+    assert.equal(next.getDate(), input.getDate());
+    assert.equal(next.getHours(), 12);
+    assert.equal(next.getMinutes(), 0);
+    assert.equal(next.getSeconds(), 0);
   }},
   { id: 39, name: 'cTrader API selector persists and restores without changing LIVE_ONLY mode', run: () => {
     assert.equal(updateSystemConfig({ cTraderApiMode: 'LIVE' }).cTraderApiMode, 'LIVE');
