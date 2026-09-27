@@ -231,7 +231,7 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
         apiMode,
         apiEndpoint,
         account: maskIdentifier(this.config.accountId),
-        accountType: 'LIVE',
+        accountType: apiMode,
         error: err.message,
         timestamp: Date.now(),
         latency: Date.now() - start
