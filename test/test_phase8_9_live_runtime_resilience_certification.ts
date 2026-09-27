@@ -302,7 +302,8 @@ const scenarios: Scenario[] = [
     try {
       await reconcileRuntimeIntent(key(21));
       const after = await executeQuery<any>('SELECT COUNT(*) AS count FROM execution_fill_observations WHERE idempotency_key = ?', [key(21)]);
-      assert.equal(Number(before[0]?.count) + 1, Number(after[0]?.count));
+      assert.equal(Number(after[0]?.count), Number(before[0]?.count));
+      assert.equal(Number(after[0]?.count), 1);
     } finally {
       (brokerRegistry as any).getAdapter = original;
     }
