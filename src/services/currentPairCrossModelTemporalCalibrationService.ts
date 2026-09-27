@@ -6,11 +6,20 @@ const MIN_SAMPLE_COUNT=30;
 const BASELINE_MODEL='PAIR_FEATURE_BASELINE_V2';
 const AI_MODEL='LLAMA_GATEWAY_QWEN_LLAMA_V1';
 
+export interface CrossModelTemporalCalibrationBucket {
+  lowerPct:number; upperPct:number; predictions:number; directionalEvaluated:number; correct:number;
+  averageConfidencePct:number|null; accuracyPct:number|null; calibrationGapPct:number|null;
+  accuracyConfidenceInterval95Pct:{lowerPct:number;upperPct:number}|null; sampleSufficient:boolean;
+}
+export interface CrossModelTemporalBucketDelta {
+  accuracyPct:number|null; averageConfidencePct:number|null; calibrationGapPct:number|null;
+}
 export interface CrossModelTemporalMetrics {
   predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null;
   averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null;
   maximumCalibrationErrorPct:number|null; calibrationSlope:number|null;
   calibrationInterceptPct:number|null; sampleSufficient:boolean;
+  calibrationBuckets:CrossModelTemporalCalibrationBucket[];
 }
 export interface CrossModelTemporalWindow {
   windowDays:number;
@@ -24,7 +33,8 @@ export interface CurrentPairCrossModelTemporalCalibrationRow {
 }
 const conf=(v:unknown)=>Math.max(0,Math.min(1,Number(v)||0));
 const delta=(a:number|null,b:number|null)=>a==null||b==null?null:a-b;
-const empty=():CrossModelTemporalMetrics=>({predictions:0,directionalEvaluated:0,correct:0,accuracyPct:null,averageConfidencePct:null,expectedCalibrationErrorPct:null,maximumCalibrationErrorPct:null,calibrationSlope:null,calibrationInterceptPct:null,sampleSufficient:false});
+const wilson=(correct:number,total:number)=>{if(total<=0)return null;const z=1.96,p=correct/total,den=1+z*z/total,center=(p+z*z/(2*total))/den,half=z*Math.sqrt((p*(1-p)+z*z/(4*total))/total)/den;return {lowerPct:Math.max(0,center-half)*100,upperPct:Math.min(1,center+half)*100};};
+const empty=():CrossModelTemporalMetrics=>({predictions:0,directionalEvaluated:0,correct:0,accuracyPct:null,averageConfidencePct:null,expectedCalibrationErrorPct:null,maximumCalibrationErrorPct:null,calibrationSlope:null,calibrationInterceptPct:null,sampleSufficient:false,calibrationBuckets:Array.from({length:5},(_,i)=>({lowerPct:i*20,upperPct:(i+1)*20,predictions:0,directionalEvaluated:0,correct:0,averageConfidencePct:null,accuracyPct:null,calibrationGapPct:null,accuracyConfidenceInterval95Pct:null,sampleSufficient:false}))});
 
 function metrics(rows:any[],cutoff:number):CrossModelTemporalMetrics{
   const r=empty(); r.predictions=rows.length;
@@ -39,6 +49,11 @@ function metrics(rows:any[],cutoff:number):CrossModelTemporalMetrics{
   }
   r.accuracyPct=r.directionalEvaluated?r.correct/r.directionalEvaluated*100:null;
   r.averageConfidencePct=rows.length?rows.reduce((s,row)=>s+conf(row.confidence),0)/rows.length*100:null;
+  r.calibrationBuckets=buckets.map((b,i)=>{
+    const averageConfidencePct=b.predictions?b.confidenceSum/b.predictions*100:null;
+    const accuracyPct=b.evaluated?b.correct/b.evaluated*100:null;
+    return {lowerPct:i*20,upperPct:(i+1)*20,predictions:b.predictions,directionalEvaluated:b.evaluated,correct:b.correct,averageConfidencePct,accuracyPct,calibrationGapPct:averageConfidencePct==null||accuracyPct==null?null:accuracyPct-averageConfidencePct,accuracyConfidenceInterval95Pct:wilson(b.correct,b.evaluated),sampleSufficient:b.evaluated>=MIN_SAMPLE_COUNT};
+  });
   if(r.directionalEvaluated){
     const errors=buckets.filter(b=>b.evaluated>0).map(b=>({error:Math.abs(b.confidenceSum/b.predictions*100-b.correct/b.evaluated*100),weight:b.evaluated/r.directionalEvaluated,sufficient:b.evaluated>=MIN_SAMPLE_COUNT}));
     r.expectedCalibrationErrorPct=errors.reduce((s,b)=>s+b.error*b.weight,0);
@@ -81,7 +96,8 @@ export async function getCurrentPairCrossModelTemporalCalibration(params:{symbol
     const windows=WINDOWS_DAYS.map(windowDays=>{
       const selected=group.filter(p=>p.timestamp>=now-windowDays*86400000);
       const baseline=metrics(selected.map(p=>p.baseline),cutoff),ai=metrics(selected.map(p=>p.ai),cutoff);
-      return {windowDays,baseline,ai,deltas:{accuracyPct:delta(ai.accuracyPct,baseline.accuracyPct),confidencePct:delta(ai.averageConfidencePct,baseline.averageConfidencePct),expectedCalibrationErrorPct:delta(ai.expectedCalibrationErrorPct,baseline.expectedCalibrationErrorPct),maximumCalibrationErrorPct:delta(ai.maximumCalibrationErrorPct,baseline.maximumCalibrationErrorPct),calibrationSlope:delta(ai.calibrationSlope,baseline.calibrationSlope),calibrationInterceptPct:delta(ai.calibrationInterceptPct,baseline.calibrationInterceptPct)}};
+      const bucketDeltas=ai.calibrationBuckets.map((bucket,index)=>{const base=baseline.calibrationBuckets[index];return {accuracyPct:delta(bucket.accuracyPct,base.accuracyPct),averageConfidencePct:delta(bucket.averageConfidencePct,base.averageConfidencePct),calibrationGapPct:delta(bucket.calibrationGapPct,base.calibrationGapPct)};});
+      return {windowDays,baseline,ai,deltas:{accuracyPct:delta(ai.accuracyPct,baseline.accuracyPct),confidencePct:delta(ai.averageConfidencePct,baseline.averageConfidencePct),expectedCalibrationErrorPct:delta(ai.expectedCalibrationErrorPct,baseline.expectedCalibrationErrorPct),maximumCalibrationErrorPct:delta(ai.maximumCalibrationErrorPct,baseline.maximumCalibrationErrorPct),calibrationSlope:delta(ai.calibrationSlope,baseline.calibrationSlope),calibrationInterceptPct:delta(ai.calibrationInterceptPct,baseline.calibrationInterceptPct),calibrationBuckets:bucketDeltas}};
     });
     const valid=(row:any)=>row.outcome_status==='EVALUATED'&&row.actual_direction&&row.predicted_direction!=='FLAT'&&row.actual_direction!=='FLAT';
     const pairedEvaluated=group.filter(p=>p.timestamp<=cutoff&&valid(p.baseline)&&valid(p.ai)).length;
