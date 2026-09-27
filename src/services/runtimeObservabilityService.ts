@@ -62,6 +62,7 @@ export function evaluateRuntimeObservabilityHealth(input: {
   operatorActionRequired: number;
   staleUnresolved: number;
   schedulerFailures: number;
+  persistenceError?: string | null;
 }): ObservabilityHealth {
   const health: ObservabilityHealth[] = [];
   health.push(input.databaseReady ? 'HEALTHY' : 'CRITICAL');
@@ -72,6 +73,7 @@ export function evaluateRuntimeObservabilityHealth(input: {
   else health.push('HEALTHY');
   health.push(input.operatorActionRequired > 0 || input.staleUnresolved > 0 ? 'DEGRADED' : 'HEALTHY');
   health.push(input.schedulerFailures > 0 ? 'DEGRADED' : 'HEALTHY');
+  health.push(input.persistenceError ? 'CRITICAL' : 'HEALTHY');
   return combineObservabilityHealth(health);
 }
 
@@ -141,11 +143,12 @@ export async function getRuntimeObservabilitySnapshot(options: {
     brokerStatuses: brokers.map(item => ({ status: item.reportedStatus, live: item.isLive })),
     operatorActionRequired,
     staleUnresolved,
-    schedulerFailures
+    schedulerFailures,
+    persistenceError: databasePersistence.lastPersistenceError
   });
 
   const components: RuntimeComponentHealth[] = [
-    component('database', database.initialized ? 'HEALTHY' : 'CRITICAL', database.initialized ? 'initialized' : 'initialization incomplete'),
+    component('database', !database.initialized || databasePersistence.lastPersistenceError ? 'CRITICAL' : 'HEALTHY', databasePersistence.lastPersistenceError ? 'persistenceError=' + databasePersistence.lastPersistenceError : database.initialized ? 'initialized' : 'initialization incomplete'),
     component('runtime-lifecycle', lifecycle.state === 'RUNNING' ? 'HEALTHY' : lifecycle.state === 'DEGRADED' ? 'DEGRADED' : 'CRITICAL', 'state=' + lifecycle.state, lifecycle.lastTransitionAt),
     component('audit-log', auditLog.enabled && auditLog.exists ? 'HEALTHY' : 'CRITICAL', auditLog.enabled ? 'enabled' : 'disabled', auditLog.lastModifiedAt ? Date.parse(auditLog.lastModifiedAt) : null),
     ...brokers.map(item => component(item.broker, item.reportedStatus === 'CONNECTED' ? 'HEALTHY' : item.reportedStatus === 'ERROR' || item.reportedStatus === 'AUTHENTICATION_FAILED' ? 'CRITICAL' : 'DEGRADED', 'LIVE status=' + item.reportedStatus)),
