@@ -31,6 +31,10 @@ function validNumber(value: unknown): boolean {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function roundCurrencyDelta(value: number): number {
+  return Number(value.toFixed(2));
+}
+
 export function evaluateAccountStateConsistency(
   broker: BrokerType,
   liveAccount: BrokerAccountInfo | null,
@@ -89,10 +93,10 @@ export function evaluateAccountStateConsistency(
     Boolean(String(latestSnapshot.currency || '').trim()) &&
     [latestSnapshot.balance, latestSnapshot.equity, latestSnapshot.usedMargin, latestSnapshot.freeMargin].every(validNumber);
 
-  const balanceDelta = historyValid ? Number(liveAccount.balance) - Number(latestSnapshot.balance) : null;
-  const equityDelta = historyValid ? Number(liveAccount.equity) - Number(latestSnapshot.equity) : null;
-  const usedMarginDelta = historyValid ? Number(liveAccount.usedMargin) - Number(latestSnapshot.usedMargin) : null;
-  const freeMarginDelta = historyValid ? Number(liveAccount.freeMargin) - Number(latestSnapshot.freeMargin) : null;
+  const balanceDelta = historyValid ? roundCurrencyDelta(Number(liveAccount.balance) - Number(latestSnapshot.balance)) : null;
+  const equityDelta = historyValid ? roundCurrencyDelta(Number(liveAccount.equity) - Number(latestSnapshot.equity)) : null;
+  const usedMarginDelta = historyValid ? roundCurrencyDelta(Number(liveAccount.usedMargin) - Number(latestSnapshot.usedMargin)) : null;
+  const freeMarginDelta = historyValid ? roundCurrencyDelta(Number(liveAccount.freeMargin) - Number(latestSnapshot.freeMargin)) : null;
 
   let status: AccountStateConsistencyStatus = 'ALIGNED';
   const details: string[] = [];
