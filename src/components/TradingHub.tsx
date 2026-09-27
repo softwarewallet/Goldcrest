@@ -1464,6 +1464,37 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
               {currentPairCrossModelTemporalCalibration?.rows?.length > 0 && (
                 <div className="border border-indigo-900/50 rounded-lg p-3 mb-3">
+                  <div className="text-xs font-bold text-white font-mono mb-1">Cross-Model Temporal Bootstrap Uncertainty</div>
+                  <div className="text-[10px] text-slate-600 font-mono mb-2">Paired deterministic bootstrap uncertainty for AI-minus-baseline temporal calibration deltas. Intervals are percentile 95% intervals from 2,000 paired resamples and are descriptive research telemetry only.</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[10px] font-mono">
+                      <thead><tr className="text-slate-500 border-b border-slate-800">
+                        <th className="text-left py-2">Pair</th><th>Horizon</th><th>Window</th><th>Paired Eval.</th><th>Accuracy Δ 95% CI</th><th>Confidence Δ 95% CI</th><th>ECE Δ 95% CI</th><th>MCE Δ 95% CI</th>
+                      </tr></thead>
+                      <tbody>{currentPairCrossModelTemporalCalibration.rows.flatMap((row:any) => row.windows.map((window:any) => {
+                        const formatInterval = (value:any, digits:number, suffix:string = ' pp') =>
+                          value == null ? 'Insufficient sample' : value.lowerPct.toFixed(digits) + ' to ' + value.upperPct.toFixed(digits) + suffix;
+                        return (
+                          <tr key={row.symbol + row.horizon + window.windowDays + '-bootstrap'} className="border-b border-slate-800/60">
+                            <td className="py-2 text-white">{row.symbol}</td>
+                            <td className="text-center">{row.horizon}</td>
+                            <td className="text-center">{window.windowDays}D</td>
+                            <td className="text-center">{row.pairedEvaluated}</td>
+                            <td className="text-center text-slate-300">{formatInterval(window.bootstrap?.accuracyDelta95Pct, 2)}</td>
+                            <td className="text-center text-slate-300">{formatInterval(window.bootstrap?.confidenceDelta95Pct, 2)}</td>
+                            <td className="text-center text-slate-300">{formatInterval(window.bootstrap?.expectedCalibrationErrorDelta95Pct, 2)}</td>
+                            <td className="text-center text-slate-300">{formatInterval(window.bootstrap?.maximumCalibrationErrorDelta95Pct, 2)}</td>
+                          </tr>
+                        );
+                      }))}</tbody>
+                    </table>
+                  </div>
+                  <div className="text-[10px] text-slate-600 font-mono mt-2">MCE can legitimately report “Insufficient sample” when no confidence bucket reaches the 30-observation sufficiency threshold across the bootstrap replicates.</div>
+                </div>
+              )}
+
+              {currentPairCrossModelTemporalCalibration?.rows?.length > 0 && (
+                <div className="border border-indigo-900/50 rounded-lg p-3 mb-3">
                   <div className="text-xs font-bold text-white font-mono mb-1">Cross-Model Temporal Confidence-Bucket Stability</div>
                   <div className="text-[10px] text-slate-600 font-mono mb-2">AI minus baseline confidence-bucket calibration telemetry across rolling windows. Bucket accuracy uses mature directional evaluations; Wilson 95% intervals and the 30-observation threshold are descriptive research controls only.</div>
                   <div className="overflow-x-auto">
