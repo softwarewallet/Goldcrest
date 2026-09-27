@@ -103,6 +103,7 @@ import { evaluateSystemConfigIntegrity } from './src/services/configIntegritySer
 import { evaluateOperationalReadiness } from './src/services/operationalReadinessService';
 import { evaluateAccountStateConsistency } from './src/services/accountStateConsistencyService';
 import { evaluateAutoLiveActivation } from './src/services/autoLiveActivationService';
+import { evaluateProductionGoLiveValidation } from './src/services/productionGoLiveValidationService';
 import { maskIdentifier } from './src/brokers/auditLog';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
@@ -488,6 +489,180 @@ app.get('/api/operations/readiness', operatorAuthRequired, async (_req: Request,
     res.status(503).json({
       error: 'OPERATIONAL_READINESS_UNAVAILABLE',
       message: error?.message || 'Operational readiness is unavailable.'
+    });
+  }
+});
+
+app.get('/api/operations/go-live-validation', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+
+    const productionEnvironment = process.env.NODE_ENV === 'production';
+    const config = getSystemConfig();
+    const configIntegrity = evaluateSystemConfigIntegrity(config);
+    const releaseIntegrity = productionEnvironment
+      ? evaluateProductionReleaseIntegrity(buildProductionReleaseIntegrityInput({
+          tradingMode: config.tradingMode,
+          operatorAuthConfigured: operatorAuthConfigured(),
+          liveBrokerConfigured: Boolean(
+            process.env.CTRADER_LIVE_CLIENT_ID?.trim() &&
+            process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
+            process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
+            process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
+          ) || Boolean(
+            process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
+            process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
+            process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
+            process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
+          ),
+          packageVersion: process.env.GOLDCREST_RELEASE_VERSION || undefined
+        }))
+      : { ok: false, version: undefined };
+
+    const credentialStatus = brokerRegistry.getCredentialStatuses();
+    const cTraderCredentialsConfigured = credentialStatus.some(
+      item => item.broker === 'CTRADER' && item.environment === 'LIVE' && item.configured
+    );
+
+    let connection = null;
+    let account = null;
+    if (cTraderCredentialsConfigured) {
+      try {
+        connection = await brokerRegistry.testBrokerConnection('CTRADER', 'LIVE');
+        account = await brokerRegistry.getAdapter('CTRADER', 'LIVE').getAccount();
+      } catch {
+        connection = null;
+        account = null;
+      }
+    }
+
+    const brokerVerification = evaluateBrokerVerification({
+      broker: 'CTRADER',
+      configured: cTraderCredentialsConfigured,
+      connection,
+      expectedCTraderApiMode: getCTraderApiMode()
+    });
+
+    const snapshots = await getAccountBalanceSnapshots({
+      broker: 'CTRADER',
+      limit: 1
+    });
+    const accountConsistency = evaluateAccountStateConsistency(
+      'CTRADER',
+      account,
+      snapshots[0] || null
+    );
+
+    const permissions = Array.isArray(account?.permissions) ? account.permissions : [];
+    const accountIsLive = account?.accountType === 'LIVE' && account?.isLiveAccount !== false;
+    const accountIdPresent = Boolean(String(account?.accountId || '').trim());
+    const currencyPresent = Boolean(String(account?.currency || '').trim());
+    const balanceValid = typeof account?.balance === 'number'
+      && Number.isFinite(account.balance)
+      && account.balance > 0;
+    const equityValid = typeof account?.equity === 'number'
+      && Number.isFinite(account.equity)
+      && account.equity > 0;
+    const tradingPermission = permissions.includes('TRADING')
+      || permissions.includes('EQUITY')
+      || permissions.includes('DERIVATIVES')
+      || permissions.includes('NSE_FNO');
+
+    const observability = await getRuntimeObservabilitySnapshot({
+      runtimeId: GOLDCREST_RUNTIME_ID,
+      environment: process.env.NODE_ENV || 'development'
+    });
+    const noUnresolvedExecutionIntents =
+      observability.executionIntents.pending === 0
+      && observability.executionIntents.inFlight === 0
+      && observability.executionIntents.reconciliationTimeout === 0;
+
+    const validation = evaluateProductionGoLiveValidation({
+      productionEnvironment,
+      releaseIntegrityOk: releaseIntegrity.ok === true,
+      configurationIntegrityOk: configIntegrity.ok,
+      tradingModeLiveOnly: config.tradingMode === 'LIVE_ONLY',
+      databaseInitialized: observability.database.initialized,
+      databasePersistenceHealthy: !observability.databasePersistence.lastPersistenceError,
+      runtimeLifecycleRunning: observability.lifecycle.state === 'RUNNING',
+      auditLogReady: observability.auditLog.enabled && observability.auditLog.exists,
+      operatorAuthConfigured: operatorAuthConfigured(),
+      cTraderCredentialsConfigured,
+      cTraderBrokerVerified: brokerVerification.status === 'VERIFIED',
+      cTraderConnected: connection?.connected === true && account?.connectionStatus === 'CONNECTED',
+      cTraderAccountIsLive: accountIsLive,
+      cTraderAccountIdPresent: accountIdPresent,
+      cTraderCurrencyPresent: currencyPresent,
+      cTraderBalanceValid: balanceValid,
+      cTraderEquityValid: equityValid,
+      cTraderTradingPermission: tradingPermission,
+      cTraderApiMode: getCTraderApiMode(),
+      killSwitchClear: !killSwitch.isHalted(),
+      executionGateLocked: !LIVE_AUTO_EXECUTION_ALLOWED,
+      noUnresolvedExecutionIntents,
+      cTraderAccountStateConsistent: accountConsistency.consistent,
+      validationSubmittedOrder: false
+    });
+
+    liveRuntimeLog(
+      validation.ready ? 'SYSTEM' : 'WARN',
+      validation.ready ? 'PRODUCTION_GO_LIVE_VALIDATION_READY' : 'PRODUCTION_GO_LIVE_VALIDATION_BLOCKED',
+      {
+        failures: validation.failures,
+        cTraderApiMode: getCTraderApiMode(),
+        brokerVerification: brokerVerification.status,
+        accountConsistency: accountConsistency.status,
+        unresolvedExecutionIntents: observability.executionIntents
+      }
+    );
+
+    return res.status(validation.statusCode).json({
+      phase: '9.5',
+      generatedAt: Date.now(),
+      runtimeId: GOLDCREST_RUNTIME_ID,
+      environment: process.env.NODE_ENV || 'development',
+      tradingMode: 'LIVE_ONLY',
+      status: validation.status,
+      ready: validation.ready,
+      checks: validation.checks,
+      failures: validation.failures,
+      orderSubmissionPerformed: false,
+      cTrader: {
+        apiMode: getCTraderApiMode(),
+        apiEndpoint: connection?.apiEndpoint || null,
+        verificationStatus: brokerVerification.status,
+        verificationFailures: brokerVerification.failures,
+        connected: connection?.connected === true,
+        accountId: account ? maskIdentifier(String(account.accountId || '')) : null,
+        accountCurrency: account?.currency || null,
+        accountType: account?.accountType || null,
+        balance: account?.balance ?? null,
+        equity: account?.equity ?? null,
+        tradingPermission,
+        accountConsistency: {
+          status: accountConsistency.status,
+          consistent: accountConsistency.consistent,
+          snapshotAgeMs: accountConsistency.snapshotAgeMs,
+          balanceDelta: accountConsistency.balanceDelta,
+          equityDelta: accountConsistency.equityDelta
+        }
+      },
+      executionGate: {
+        locked: !LIVE_AUTO_EXECUTION_ALLOWED,
+        unlocked: LIVE_AUTO_EXECUTION_ALLOWED,
+        autoTradingState: observability.autoTrading.state
+      },
+      unresolvedExecutionIntents: observability.executionIntents
+    });
+  } catch (error: any) {
+    liveRuntimeLog('ERROR', 'PRODUCTION_GO_LIVE_VALIDATION_FAILED', {
+      error: error?.message || String(error)
+    });
+    return res.status(503).json({
+      phase: '9.5',
+      error: 'PRODUCTION_GO_LIVE_VALIDATION_UNAVAILABLE',
+      message: error?.message || 'Production go-live validation is unavailable.',
+      orderSubmissionPerformed: false
     });
   }
 });
