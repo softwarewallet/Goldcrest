@@ -101,6 +101,7 @@ import { buildProductionReleaseIntegrityInput, evaluateProductionReleaseIntegrit
 import { evaluateSystemConfigIntegrity } from './src/services/configIntegrityService';
 import { evaluateOperationalReadiness } from './src/services/operationalReadinessService';
 import { evaluateAccountStateConsistency } from './src/services/accountStateConsistencyService';
+import { maskIdentifier } from './src/brokers/auditLog';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
 // npm run dev is an explicit local development command. Do not let a stale
@@ -314,7 +315,7 @@ app.get('/api/operations/account-consistency', operatorAuthRequired, async (_req
           ...result,
           liveAccount: liveAccount
             ? {
-                accountId: String(liveAccount.accountId || '****').replace(/^.*(?=.{4}$)/, '****'),
+                accountId: maskIdentifier(String(liveAccount.accountId || '')),
                 currency: liveAccount.currency,
                 balance: liveAccount.balance,
                 equity: liveAccount.equity,
@@ -327,7 +328,7 @@ app.get('/api/operations/account-consistency', operatorAuthRequired, async (_req
           latestSnapshot: snapshots[0]
             ? {
                 capturedAt: snapshots[0].capturedAt,
-                accountId: String(snapshots[0].accountId || '****').replace(/^.*(?=.{4}$)/, '****'),
+                accountId: maskIdentifier(String(snapshots[0].accountId || '')),
                 currency: snapshots[0].currency,
                 balance: snapshots[0].balance,
                 equity: snapshots[0].equity,
@@ -340,9 +341,9 @@ app.get('/api/operations/account-consistency', operatorAuthRequired, async (_req
       })
     );
 
-    const consistent = results.every(result =>
-      result.status === 'ALIGNED' || result.status === 'STALE_HISTORY'
-    ) && results.some(result => result.liveAccountValid);
+    const consistent = results.length > 0
+      && results.every(result => result.consistent)
+      && results.some(result => result.liveAccountValid);
 
     res.status(consistent ? 200 : 503).json({
       generatedAt: Date.now(),
