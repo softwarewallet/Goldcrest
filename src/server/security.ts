@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 
 const RATE_WINDOW_MS = 60_000;
@@ -27,7 +27,7 @@ export function requestId(req: Request, res: Response, next: NextFunction): void
   const supplied = req.header('X-Request-ID');
   const id = supplied && /^[A-Za-z0-9._-]{1,100}$/.test(supplied)
     ? supplied
-    : `gc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    : `gc-${Date.now().toString(36)}-${randomBytes(8).toString('hex')}`;
   res.setHeader('X-Request-ID', id);
   next();
 }
@@ -116,15 +116,20 @@ function getCookie(req: Request, name: string): string | undefined {
 }
 
 function sameOrigin(req: Request): boolean {
-  const origin = req.header('Origin');
+  const origin = req.header('Origin')?.trim();
   if (!origin) return true;
-  const proto = req.header('x-forwarded-proto') || req.protocol;
-  const host = req.get('host');
-  if (!host) return true;
-  const expectedHttps = `https://${host}`;
-  const expectedHttp = `http://${host}`;
-  const expectedProto = `${proto}://${host}`;
-  return origin === expectedHttps || origin === expectedHttp || origin === expectedProto || origin.includes(host);
+  const host = req.get('host')?.trim();
+  if (!host) return false;
+  const forwardedProto = String(req.header('x-forwarded-proto') || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const proto = forwardedProto || req.protocol.toLowerCase();
+  if (proto !== 'http' && proto !== 'https') return false;
+  const expectedOrigin = `${proto}://${host}`.toLowerCase();
+  const alternateOrigin = `${proto === 'https' ? 'http' : 'https'}://${host}`.toLowerCase();
+  const normalizedOrigin = origin.replace(/\/$/, '').toLowerCase();
+  return normalizedOrigin === expectedOrigin || normalizedOrigin === alternateOrigin;
 }
 
 function credentialsValid(configuredKey: string, supplied: string | undefined): boolean {
@@ -165,6 +170,14 @@ export function operatorAuthRequired(req: Request, res: Response, next: NextFunc
     return;
   }
 
+  if (!sameOrigin(req)) {
+    res.status(403).json({
+      error: 'OPERATOR_ORIGIN_REJECTED',
+      message: 'Request origin is not allowed.'
+    });
+    return;
+  }
+
   if (isOperatorSessionValid(req)) {
     next();
     return;
@@ -176,7 +189,7 @@ export function operatorAuthRequired(req: Request, res: Response, next: NextFunc
     || req.header('X-Operator-API-Key')
     || bearer;
 
-  if (!sameOrigin(req) || !credentialsValid(configuredKey, suppliedKey)) {
+  if (!credentialsValid(configuredKey, suppliedKey)) {
     res.status(401).json({
       error: 'OPERATOR_AUTH_REQUIRED',
       message: 'Valid operator authentication is required.'
