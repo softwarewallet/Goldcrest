@@ -225,6 +225,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   // Execution Gate State
   const [gateBusy, setGateBusy] = useState<boolean>(false);
   const [gateFeedback, setGateFeedback] = useState<string | null>(null);
+  const [goLiveValidationBusy, setGoLiveValidationBusy] = useState<boolean>(false);
+  const [goLiveValidation, setGoLiveValidation] = useState<any | null>(null);
 
   // Live broker/account/market state only; empty until authoritative APIs return data.
   const [accounts, setAccounts] = useState<AccountCardData[]>([]);
@@ -715,6 +717,32 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       setGateBusy(false);
     }
   }, [fetchAllOperationalData]);
+
+  const runGoLiveValidation = useCallback(async () => {
+    setGoLiveValidationBusy(true);
+    try {
+      const res = await fetch('/api/operations/go-live-validation', {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' }
+      });
+      const data = await res.json().catch(() => ({}));
+      setGoLiveValidation(data);
+      if (res.ok && data.ready) {
+        setGateFeedback('Production go-live validation passed. Execution gate remains locked until operator unlock.');
+      } else {
+        setGateFeedback(
+          data?.failures?.length
+            ? 'Go-live validation blocked: ' + data.failures.join(', ')
+            : (data?.message || 'Go-live validation is unavailable.')
+        );
+      }
+    } catch (err) {
+      console.warn('Production go-live validation failed:', err);
+      setGateFeedback('Production go-live validation failed.');
+    } finally {
+      setGoLiveValidationBusy(false);
+    }
+  }, []);
   // Fetch Options Chain
   const fetchOptionsChain = useCallback(async (symbol: string, expiry?: string, depth: number = 7) => {
     setOptionsLoading(true);
@@ -2305,6 +2333,39 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                   {autoTradingStatus?.autonomousPermission ? 'UNLOCKED / ARMED' : 'LOCKED (GATED)'}
                 </span>
               </div>
+
+              <div className="flex items-center justify-between gap-2 bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-slate-400">Production Go-Live Validation:</span>
+                <button
+                  type="button"
+                  onClick={runGoLiveValidation}
+                  disabled={goLiveValidationBusy}
+                  className="px-2.5 py-1 rounded border border-cyan-700 bg-cyan-950/70 text-cyan-300 hover:bg-cyan-900/80 text-[10px] font-bold disabled:opacity-50"
+                  title="Run the production go-live validation without unlocking or submitting an order"
+                >
+                  {goLiveValidationBusy ? 'VALIDATING...' : 'VALIDATE GO-LIVE'}
+                </button>
+              </div>
+
+              {goLiveValidation && (
+                <div className="bg-slate-900/70 p-2.5 rounded border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Validation Status</span>
+                    <strong className={goLiveValidation.ready ? 'text-emerald-400' : 'text-rose-400'}>
+                      {goLiveValidation.status || 'UNKNOWN'}
+                    </strong>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Broker Order Submitted</span>
+                    <strong className="text-emerald-400">NO</strong>
+                  </div>
+                  {Array.isArray(goLiveValidation.failures) && goLiveValidation.failures.length > 0 && (
+                    <div className="text-[10px] text-rose-300">
+                      Blockers: {goLiveValidation.failures.join(', ')}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
