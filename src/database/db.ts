@@ -6,6 +6,51 @@ let dbInstance: Database | null = null;
 let dbInitializationPromise: Promise<Database> | null = null;
 const DB_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DB_DIR, 'trading_analyst.sqlite');
+const DB_TEMP_FILE = path.join(DB_DIR, 'trading_analyst.sqlite.tmp');
+const DB_BACKUP_FILE = path.join(DB_DIR, 'trading_analyst.sqlite.bak');
+
+export type DatabasePersistenceStatus = {
+  lastPersistedAt: number | null;
+  lastPersistenceError: string | null;
+  lastRecoveryAt: number | null;
+  recoveredFromBackup: boolean;
+};
+
+let persistenceStatus: DatabasePersistenceStatus = {
+  lastPersistedAt: null,
+  lastPersistenceError: null,
+  lastRecoveryAt: null,
+  recoveredFromBackup: false
+};
+
+function recoverDatabaseFileIfNeeded(): void {
+  if (fs.existsSync(DB_FILE)) return;
+  if (!fs.existsSync(DB_BACKUP_FILE)) return;
+  fs.copyFileSync(DB_BACKUP_FILE, DB_FILE);
+  persistenceStatus.lastRecoveryAt = Date.now();
+  persistenceStatus.recoveredFromBackup = true;
+}
+
+function loadDatabase(SQL: any): Database {
+  recoverDatabaseFileIfNeeded();
+  if (!fs.existsSync(DB_FILE)) return new SQL.Database();
+
+  try {
+    return new SQL.Database(fs.readFileSync(DB_FILE));
+  } catch (primaryError) {
+    if (!fs.existsSync(DB_BACKUP_FILE)) throw primaryError;
+    const corruptFile = path.join(DB_DIR, `trading_analyst.sqlite.corrupt-${Date.now()}`);
+    try {
+      fs.renameSync(DB_FILE, corruptFile);
+    } catch {
+      // Best effort: preserve the primary if another process owns the file.
+    }
+    const recovered = new SQL.Database(fs.readFileSync(DB_BACKUP_FILE));
+    persistenceStatus.lastRecoveryAt = Date.now();
+    persistenceStatus.recoveredFromBackup = true;
+    return recovered;
+  }
+}
 
 async function initializeDatabase(): Promise<Database> {
   if (!fs.existsSync(DB_DIR)) {
@@ -14,21 +59,12 @@ async function initializeDatabase(): Promise<Database> {
 
   const SQL = await initSqlJs();
 
-  if (fs.existsSync(DB_FILE)) {
-    const fileBuffer = fs.readFileSync(DB_FILE);
-    dbInstance = new SQL.Database(fileBuffer);
-    // Always run schema migrations against existing databases so newly added
-    // SQLite-only persistence tables are available without manual reset.
-    initSchema(dbInstance);
-    seedInitialData(dbInstance);
-    persistDatabase();
-  } else {
-    dbInstance = new SQL.Database();
-    initSchema(dbInstance);
-    seedInitialData(dbInstance);
-    persistDatabase();
-  }
-
+  dbInstance = loadDatabase(SQL);
+  // Always run schema migrations against existing databases so newly added
+  // SQLite-only persistence tables are available without manual reset.
+  initSchema(dbInstance);
+  seedInitialData(dbInstance);
+  persistDatabase();
   return dbInstance;
 }
 
@@ -56,12 +92,34 @@ export function getDatabaseInitializationState(): {
 export function persistDatabase(): void {
   if (!dbInstance) return;
   try {
+    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
     const data = dbInstance.export();
     const buffer = Buffer.from(data);
-    fs.writeFileSync(DB_FILE, buffer);
-  } catch (err) {
+
+    // Write a complete new image first. The previous primary is retained as a
+    // recovery snapshot so a process crash or filesystem failure cannot leave
+    // the only durable database image unreadable.
+    fs.writeFileSync(DB_TEMP_FILE, buffer);
+    if (fs.existsSync(DB_FILE)) {
+      fs.copyFileSync(DB_FILE, DB_BACKUP_FILE);
+    }
+    fs.renameSync(DB_TEMP_FILE, DB_FILE);
+
+    persistenceStatus.lastPersistedAt = Date.now();
+    persistenceStatus.lastPersistenceError = null;
+  } catch (err: any) {
+    persistenceStatus.lastPersistenceError = err?.message || String(err);
     console.error('Error persisting SQLite database to disk:', err);
+    try {
+      if (fs.existsSync(DB_TEMP_FILE)) fs.unlinkSync(DB_TEMP_FILE);
+    } catch {
+      // Best effort cleanup only.
+    }
   }
+}
+
+export function getDatabasePersistenceStatus(): DatabasePersistenceStatus {
+  return { ...persistenceStatus };
 }
 
 function initSchema(db: Database) {
