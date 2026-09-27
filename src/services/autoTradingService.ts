@@ -1184,7 +1184,11 @@ return;
       // the system-wide live-position limit has been reached.
       const score = Number(signal.score);
       const scorePolicy = getAutoLiveParallelTradePolicy(score);
-      const maxTradesPerPair = scorePolicy.maxTradesPerPair;
+      const configuredPairLimit = Math.max(
+        1,
+        Math.min(100, Math.floor(Number(config.autoLiveMaxTradesPerPair)))
+      );
+      const maxTradesPerPair = Math.min(scorePolicy.maxTradesPerPair, configuredPairLimit);
       const scoreParallelTradeTier = scorePolicy.tier;
 
       const positions = positionsBeforeExecution;
