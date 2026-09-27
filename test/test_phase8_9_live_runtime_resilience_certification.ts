@@ -46,6 +46,8 @@ type Scenario = { id: number; name: string; run: () => void | Promise<void> };
 
 const suffix = `phase8-9-${Date.now()}`;
 const key = (n: number) => `${suffix}-${n}`;
+const fillBrokerOrderId = `${suffix}-fill-21`;
+const fillBrokerFillId = `${suffix}-deal-21`;
 
 const baseOrder = {
   market: 'FOREX',
@@ -269,12 +271,12 @@ const scenarios: Scenario[] = [
   }},
   { id: 21, name: 'Duplicate broker fill events are idempotent', run: async () => {
     await createIntent(21, 'GBP/USD', 'BUY', 1000);
-    await setStoredResult(21, { requestedQuantity: 1000, filledQuantity: 0, brokerOrderId: 'phase89-fill-21' });
+    await setStoredResult(21, { requestedQuantity: 1000, filledQuantity: 0, brokerOrderId: fillBrokerOrderId });
     const adapter = {
       getOrderStatus: async () => ({
         brokerOrderId: 'phase89-fill-21', status: 'PARTIAL', requestedQuantity: 1000,
         filledQuantity: 500, quantity: 1000, timestamp: Date.now(),
-        fillEvents: [{ brokerFillId: 'deal-21', quantity: 500, price: 1.123, timestamp: Date.now() }]
+        fillEvents: [{ brokerFillId: fillBrokerFillId, quantity: 500, price: 1.123, timestamp: Date.now() }]
       })
     };
     const original = brokerRegistry.getAdapter;
