@@ -100,7 +100,8 @@ export function filterCTraderAccountsForApiMode(
 }
 
 /**
- * Resolve the cTrader WebSocket endpoint. LIVE is the only supported mode.
+ * Resolve the cTrader WebSocket endpoint from the selected LIVE or DEMO API mode.
+ * Goldcrest remains LIVE_ONLY at the application trading-environment layer.
  */
 export function getCTraderRequestHosts(_accountIsLive: boolean): string[] {
   return [getCTraderWsHost()];
