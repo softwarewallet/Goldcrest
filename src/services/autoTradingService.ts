@@ -15,6 +15,7 @@ import { BrokerAdapter, ConnectionTestResult, NormalizedQuote, OrderRequest } fr
 import { liveRuntimeLog, tradeAuditLog } from './liveRuntimeLog';
 import { calculateForexPipTargets, normalizePriceToThreeDigits, sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
 import { recordLiveTradeResearchSignal, updateLiveTradeResearchQuote, updateLiveTradeResearchExecution } from './liveTradeResearchService';
+import { AUTO_LIVE_POSITION_CAPACITY_POLL_MS, getAutoLiveParallelTradePolicy, hasPairPositionCapacity } from './autoLiveTradePolicy';
 
 const LIVE_QUOTE_MAX_AGE_MS = 30_000;
 
@@ -216,7 +217,7 @@ class AutoTradingService {
   // count until a slot becomes available.
   private executionPausedByPositionLimit = false;
   private positionCapacityTimer: NodeJS.Timeout | null = null;
-  private readonly POSITION_CAPACITY_POLL_MS = 10_000;
+  private readonly POSITION_CAPACITY_POLL_MS = AUTO_LIVE_POSITION_CAPACITY_POLL_MS;
   // Market analysis can run concurrently across the configured universe, but
   // broker-side execution is serialized so two pairs cannot race the same
   // account-position/exposure snapshot and bypass the global safety limits.
@@ -1182,22 +1183,15 @@ return;
       // Condition 13B remains authoritative and can still block the order when
       // the system-wide live-position limit has been reached.
       const score = Number(signal.score);
-      const maxTradesPerPair =
-        score > 78 ? 5 :
-        score > 70 ? 2 :
-        score >= 65 ? 1 :
-        0;
-      const scoreParallelTradeTier =
-        score > 78 ? '5_TRADES' :
-        score > 70 ? '2_TRADES' :
-        score >= 65 ? '1_TRADE' :
-        'BELOW_65';
+      const scorePolicy = getAutoLiveParallelTradePolicy(score);
+      const maxTradesPerPair = scorePolicy.maxTradesPerPair;
+      const scoreParallelTradeTier = scorePolicy.tier;
 
       const positions = positionsBeforeExecution;
       const activePairPositionsCount = positions.filter(position =>
         String(position.symbol || '').toUpperCase() === pair.toUpperCase()
       ).length;
-      if (maxTradesPerPair <= 0 || activePairPositionsCount >= maxTradesPerPair) {
+      if (maxTradesPerPair <= 0 || !hasPairPositionCapacity(activePairPositionsCount, maxTradesPerPair)) {
         const reason = maxTradesPerPair <= 0
           ? `Auto Live score ${score.toFixed(2)} is below the minimum parallel-trade threshold of 65.`
           : `Maximum simultaneous Auto Live trades for ${pair} is ${maxTradesPerPair}; ${activePairPositionsCount} position(s) are already open.`;
