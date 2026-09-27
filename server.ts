@@ -101,6 +101,7 @@ import { buildProductionReleaseIntegrityInput, evaluateProductionReleaseIntegrit
 import { evaluateSystemConfigIntegrity } from './src/services/configIntegrityService';
 import { evaluateOperationalReadiness } from './src/services/operationalReadinessService';
 import { evaluateAccountStateConsistency } from './src/services/accountStateConsistencyService';
+import { evaluateAutoLiveActivation } from './src/services/autoLiveActivationService';
 import { maskIdentifier } from './src/brokers/auditLog';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
@@ -613,16 +614,112 @@ app.get('/api/execution-gate/status', operatorAuthRequired, (_req: Request, res:
   });
 });
 
-app.post('/api/execution-gate/unlock', operatorAuthRequired, (_req: Request, res: Response) => {
-  const result = armAutonomousExecutionGate();
-  const autoStatus = autoTradingService.getStatus();
-  res.json({
-    ...result,
-    locked: !LIVE_AUTO_EXECUTION_ALLOWED,
-    unlocked: LIVE_AUTO_EXECUTION_ALLOWED,
-    autoTradingState: autoStatus.state,
-    timestamp: Date.now()
-  });
+app.post('/api/execution-gate/unlock', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    const releaseIntegrity = process.env.NODE_ENV === 'production'
+      ? evaluateProductionReleaseIntegrity(buildProductionReleaseIntegrityInput({
+          tradingMode: getSystemConfig().tradingMode,
+          operatorAuthConfigured: operatorAuthConfigured(),
+          liveBrokerConfigured: Boolean(
+            process.env.CTRADER_LIVE_CLIENT_ID?.trim() &&
+            process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
+            process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
+            process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
+          ),
+          packageVersion: process.env.GOLDCREST_RELEASE_VERSION || undefined
+        }))
+      : { ok: true };
+
+    const configIntegrity = evaluateSystemConfigIntegrity(getSystemConfig());
+    const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+    const credentialsConfigured = brokerRegistry.getCredentialStatuses()
+      .some(item => item.broker === 'CTRADER' && item.environment === 'LIVE' && item.configured);
+
+    let connection = null;
+    let account = null;
+    try {
+      connection = await adapter.testConnection();
+      account = await adapter.getAccount();
+    } catch {
+      connection = null;
+      account = null;
+    }
+
+    const permissions = Array.isArray(account?.permissions) ? account.permissions : [];
+    const accountIsLive = account?.accountType === 'LIVE' && account?.isLiveAccount !== false;
+    const accountIdPresent = Boolean(String(account?.accountId || '').trim());
+    const currencyPresent = Boolean(String(account?.currency || '').trim());
+    const balanceValid = typeof account?.balance === 'number' && Number.isFinite(account.balance) && account.balance >= 0;
+    const equityValid = typeof account?.equity === 'number' && Number.isFinite(account.equity) && account.equity >= 0;
+    const tradingPermission = permissions.includes('TRADING')
+      || permissions.includes('EQUITY')
+      || permissions.includes('DERIVATIVES')
+      || permissions.includes('NSE_FNO');
+
+    const localActivationAllowed = process.env.NODE_ENV !== 'production'
+      ? ['127.0.0.1', 'localhost', '::1', '0.0.0.0'].includes(String(process.env.HOST || '127.0.0.1').trim().toLowerCase())
+        || process.env.GOLDCREST_LOCAL_DEVELOPMENT === 'true'
+      : true;
+
+    const activation = evaluateAutoLiveActivation({
+      productionEnvironment: localActivationAllowed,
+      releaseIntegrityOk: releaseIntegrity.ok,
+      configurationIntegrityOk: configIntegrity.ok,
+      tradingModeLiveOnly: getSystemConfig().tradingMode === 'LIVE_ONLY',
+      runtimeLifecycleRunning: runtimeLifecycle.getStatus().state === 'RUNNING',
+      cTraderCredentialsConfigured: credentialsConfigured,
+      cTraderConnected: connection?.connected === true && account?.connectionStatus === 'CONNECTED',
+      cTraderAccountIsLive: accountIsLive,
+      cTraderAccountIdPresent: accountIdPresent,
+      cTraderCurrencyPresent: currencyPresent,
+      cTraderBalanceValid: balanceValid,
+      cTraderEquityValid: equityValid,
+      cTraderTradingPermission: tradingPermission,
+      cTraderApiMode: getCTraderApiMode(),
+      killSwitchClear: !killSwitch.isHalted()
+    });
+
+    if (!activation.ready) {
+      liveRuntimeLog('WARN', 'EXECUTION_GATE_UNLOCK_BLOCKED', {
+        failures: activation.failures,
+        apiMode: getCTraderApiMode(),
+        connected: connection?.connected === true
+      });
+      return res.status(activation.statusCode).json({
+        success: false,
+        code: 'AUTO_LIVE_ACTIVATION_BLOCKED',
+        message: 'Auto Live activation preflight failed.',
+        activation,
+        locked: true,
+        unlocked: false,
+        autoTradingState: autoTradingService.getStatus().state,
+        timestamp: Date.now()
+      });
+    }
+
+    const result = armAutonomousExecutionGate();
+    const autoStatus = autoTradingService.getStatus();
+    res.status(200).json({
+      ...result,
+      activation,
+      locked: !LIVE_AUTO_EXECUTION_ALLOWED,
+      unlocked: LIVE_AUTO_EXECUTION_ALLOWED,
+      autoTradingState: autoStatus.state,
+      timestamp: Date.now()
+    });
+  } catch (error: any) {
+    liveRuntimeLog('ERROR', 'EXECUTION_GATE_UNLOCK_PREFLIGHT_FAILED', {
+      error: error?.message || String(error)
+    });
+    res.status(503).json({
+      success: false,
+      code: 'AUTO_LIVE_ACTIVATION_PREFLIGHT_UNAVAILABLE',
+      message: error?.message || 'Auto Live activation preflight is unavailable.',
+      locked: true,
+      unlocked: false,
+      timestamp: Date.now()
+    });
+  }
 });
 
 app.post('/api/execution-gate/lock', operatorAuthRequired, (_req: Request, res: Response) => {
