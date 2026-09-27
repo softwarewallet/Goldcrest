@@ -1,0 +1,92 @@
+import { executeQuery } from '../database/db';
+import type { CurrentPairPredictionHorizon } from './currentPairPredictionOutcomeService';
+
+const WINDOWS_DAYS=[7,14,30,60,90] as const;
+const MIN_SAMPLE_COUNT=30;
+const BASELINE_MODEL='PAIR_FEATURE_BASELINE_V2';
+const AI_MODEL='LLAMA_GATEWAY_QWEN_LLAMA_V1';
+
+export interface CrossModelTemporalMetrics {
+  predictions:number; directionalEvaluated:number; correct:number; accuracyPct:number|null;
+  averageConfidencePct:number|null; expectedCalibrationErrorPct:number|null;
+  maximumCalibrationErrorPct:number|null; calibrationSlope:number|null;
+  calibrationInterceptPct:number|null; sampleSufficient:boolean;
+}
+export interface CrossModelTemporalWindow {
+  windowDays:number;
+  baseline:CrossModelTemporalMetrics;
+  ai:CrossModelTemporalMetrics;
+  deltas:{accuracyPct:number|null;confidencePct:number|null;expectedCalibrationErrorPct:number|null;maximumCalibrationErrorPct:number|null;calibrationSlope:number|null;calibrationInterceptPct:number|null};
+}
+export interface CurrentPairCrossModelTemporalCalibrationRow {
+  symbol:string; horizon:CurrentPairPredictionHorizon; pairedObservations:number; pairedEvaluated:number; pairedPending:number;
+  windows:CrossModelTemporalWindow[];
+}
+const conf=(v:unknown)=>Math.max(0,Math.min(1,Number(v)||0));
+const delta=(a:number|null,b:number|null)=>a==null||b==null?null:a-b;
+const empty=():CrossModelTemporalMetrics=>({predictions:0,directionalEvaluated:0,correct:0,accuracyPct:null,averageConfidencePct:null,expectedCalibrationErrorPct:null,maximumCalibrationErrorPct:null,calibrationSlope:null,calibrationInterceptPct:null,sampleSufficient:false});
+
+function metrics(rows:any[],cutoff:number):CrossModelTemporalMetrics{
+  const r=empty(); r.predictions=rows.length;
+  const buckets=Array.from({length:5},()=>({predictions:0,evaluated:0,correct:0,confidenceSum:0}));
+  const observations:Array<{confidence:number;correct:number}>=[];
+  for(const row of rows){
+    const confidence=conf(row.confidence),bucket=buckets[Math.min(4,Math.floor(confidence*100/20))];
+    bucket.predictions++; bucket.confidenceSum+=confidence;
+    if(Number(row.predicted_at)>cutoff||row.outcome_status!=='EVALUATED'||!row.actual_direction||row.predicted_direction==='FLAT'||row.actual_direction==='FLAT')continue;
+    const correct=row.predicted_direction===row.actual_direction?1:0;
+    r.directionalEvaluated++; r.correct+=correct; bucket.evaluated++; bucket.correct+=correct; observations.push({confidence,correct});
+  }
+  r.accuracyPct=r.directionalEvaluated?r.correct/r.directionalEvaluated*100:null;
+  r.averageConfidencePct=rows.length?rows.reduce((s,row)=>s+conf(row.confidence),0)/rows.length*100:null;
+  if(r.directionalEvaluated){
+    const errors=buckets.filter(b=>b.evaluated>0).map(b=>({error:Math.abs(b.confidenceSum/b.predictions*100-b.correct/b.evaluated*100),weight:b.evaluated/r.directionalEvaluated,sufficient:b.evaluated>=MIN_SAMPLE_COUNT}));
+    r.expectedCalibrationErrorPct=errors.reduce((s,b)=>s+b.error*b.weight,0);
+    const sufficient=errors.filter(b=>b.sufficient).map(b=>b.error);
+    r.maximumCalibrationErrorPct=sufficient.length?Math.max(...sufficient):null;
+  }
+  if(observations.length>=MIN_SAMPLE_COUNT){
+    const meanX=observations.reduce((s,o)=>s+o.confidence,0)/observations.length;
+    const meanY=observations.reduce((s,o)=>s+o.correct,0)/observations.length;
+    const variance=observations.reduce((s,o)=>s+(o.confidence-meanX)**2,0);
+    if(variance>Number.EPSILON){
+      const covariance=observations.reduce((s,o)=>s+(o.confidence-meanX)*(o.correct-meanY),0);
+      r.calibrationSlope=covariance/variance; r.calibrationInterceptPct=(meanY-r.calibrationSlope*meanX)*100;
+    } else r.calibrationInterceptPct=meanY*100;
+  }
+  r.sampleSufficient=r.directionalEvaluated>=MIN_SAMPLE_COUNT; return r;
+}
+
+export async function getCurrentPairCrossModelTemporalCalibration(params:{symbol?:string;horizon?:CurrentPairPredictionHorizon;now?:number;baselineModelVersion?:string;aiModelVersion?:string}={}):Promise<{baselineModelVersion:string;aiModelVersion:string;windowsDays:readonly number[];minimumSampleCount:number;generatedAt:number;rows:CurrentPairCrossModelTemporalCalibrationRow[]}>{
+  const now=Number(params.now)||Date.now(),baselineModelVersion=params.baselineModelVersion||BASELINE_MODEL,aiModelVersion=params.aiModelVersion||AI_MODEL;
+  const conditions=["prediction_context = 'CURRENT_PAIR'","model_version IN (?, ?)","predicted_at >= ?","predicted_at <= ?"];
+  const values:unknown[]=[baselineModelVersion,aiModelVersion,now-90*86400000,now];
+  if(params.symbol?.trim()){conditions.push('symbol = ?');values.push(params.symbol.trim().toUpperCase());}
+  if(params.horizon){conditions.push('horizon = ?');values.push(params.horizon);}
+  const rows=await executeQuery<any>(`SELECT model_version,symbol,horizon,predicted_at,predicted_direction,confidence,actual_direction,outcome_status FROM live_trade_research_predictions WHERE ${conditions.join(' AND ')} ORDER BY symbol,horizon,predicted_at`,values);
+  const pairs=new Map<string,{baseline?:any;ai?:any}>();
+  for(const row of rows){
+    const model=String(row.model_version),symbol=String(row.symbol||'').trim().toUpperCase(),horizon=String(row.horizon||'').toUpperCase() as CurrentPairPredictionHorizon;
+    if(!symbol||!['1D','3D','7D'].includes(horizon))continue;
+    const key=`${symbol}|${horizon}|${Number(row.predicted_at)}`,pair=pairs.get(key)||{};
+    if(model===baselineModelVersion&&!pair.baseline)pair.baseline=row;
+    if(model===aiModelVersion&&!pair.ai)pair.ai=row; pairs.set(key,pair);
+  }
+  const grouped=new Map<string,Array<{baseline:any;ai:any;timestamp:number}>>();
+  for(const [key,pair] of pairs){if(!pair.baseline||!pair.ai)continue;const [symbol,horizon,timestamp]=key.split('|'),group=grouped.get(`${symbol}|${horizon}`)||[];group.push({baseline:pair.baseline,ai:pair.ai,timestamp:Number(timestamp)});grouped.set(`${symbol}|${horizon}`,group);}
+  const maturity=new Map<CurrentPairPredictionHorizon,number>([['1D',now-86400000],['3D',now-3*86400000],['7D',now-7*86400000]]);
+  const resultRows:CurrentPairCrossModelTemporalCalibrationRow[]=[];
+  for(const [key,group] of grouped){
+    const [symbol,horizonText]=key.split('|'),horizon=horizonText as CurrentPairPredictionHorizon,cutoff=maturity.get(horizon)!;
+    const windows=WINDOWS_DAYS.map(windowDays=>{
+      const selected=group.filter(p=>p.timestamp>=now-windowDays*86400000);
+      const baseline=metrics(selected.map(p=>p.baseline),cutoff),ai=metrics(selected.map(p=>p.ai),cutoff);
+      return {windowDays,baseline,ai,deltas:{accuracyPct:delta(ai.accuracyPct,baseline.accuracyPct),confidencePct:delta(ai.averageConfidencePct,baseline.averageConfidencePct),expectedCalibrationErrorPct:delta(ai.expectedCalibrationErrorPct,baseline.expectedCalibrationErrorPct),maximumCalibrationErrorPct:delta(ai.maximumCalibrationErrorPct,baseline.maximumCalibrationErrorPct),calibrationSlope:delta(ai.calibrationSlope,baseline.calibrationSlope),calibrationInterceptPct:delta(ai.calibrationInterceptPct,baseline.calibrationInterceptPct)}};
+    });
+    const valid=(row:any)=>row.outcome_status==='EVALUATED'&&row.actual_direction&&row.predicted_direction!=='FLAT'&&row.actual_direction!=='FLAT';
+    const pairedEvaluated=group.filter(p=>p.timestamp<=cutoff&&valid(p.baseline)&&valid(p.ai)).length;
+    resultRows.push({symbol,horizon,pairedObservations:group.length,pairedEvaluated,pairedPending:group.length-pairedEvaluated,windows});
+  }
+  resultRows.sort((a,b)=>a.symbol.localeCompare(b.symbol)||a.horizon.localeCompare(b.horizon));
+  return {baselineModelVersion,aiModelVersion,windowsDays:WINDOWS_DAYS,minimumSampleCount:MIN_SAMPLE_COUNT,generatedAt:now,rows:resultRows};
+}
