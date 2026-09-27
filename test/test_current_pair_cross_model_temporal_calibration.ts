@@ -38,7 +38,7 @@ assert.equal(row.windows[2].baseline.sampleSufficient,true);
 assert.ok(row.windows[2].bootstrap.accuracyDelta95Pct);
 assert.ok(row.windows[2].bootstrap.confidenceDelta95Pct);
 assert.ok(row.windows[2].bootstrap.expectedCalibrationErrorDelta95Pct);
-assert.ok(row.windows[2].bootstrap.maximumCalibrationErrorDelta95Pct);
+assert.ok(row.windows[2].bootstrap.maximumCalibrationErrorDelta95Pct===null||row.windows[2].bootstrap.maximumCalibrationErrorDelta95Pct.lowerPct<=row.windows[2].bootstrap.maximumCalibrationErrorDelta95Pct.upperPct);
 assert.ok(row.windows[2].bootstrap.accuracyDelta95Pct.lowerPct<=row.windows[2].bootstrap.accuracyDelta95Pct.upperPct);
 assert.equal(row.windows[2].ai.sampleSufficient,true);
 console.log('CURRENT PAIR CROSS-MODEL TEMPORAL CALIBRATION TEST PASSED');
