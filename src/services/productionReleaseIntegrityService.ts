@@ -31,7 +31,7 @@ export function getInstalledApplicationVersion(rootDirectory = process.cwd()): s
 }
 
 function isSupportedNodeVersion(version: string): boolean {
-  const match = String(version).trim().replace(/^v/, '').match(/^(\\d+)\\.(\\d+)\\.(\\d+)(?:[-+].*)?$/);
+  const match = String(version).trim().replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
   if (!match) return false;
 
   const major = Number(match[1]);
