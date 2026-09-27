@@ -136,7 +136,7 @@ export async function getRuntimeObservabilitySnapshot(options: {
     lifecycleState: lifecycle.state,
     databaseReady: database.initialized,
     auditLogReady: auditLog.enabled && auditLog.exists,
-    brokerStatuses: brokers,
+    brokerStatuses: brokers.map(item => ({ status: item.reportedStatus, live: item.isLive })),
     operatorActionRequired,
     staleUnresolved,
     schedulerFailures
