@@ -7,7 +7,7 @@ import { getAutoLiveMarketGate, AutoLiveMarketGate } from './marketOpenGate';
 import { getMarketTrendContext } from './marketHistoryService';
 import { fetchLiveForexNews, LiveNewsSnapshot } from './liveNewsService';
 import { brokerRegistry } from '../brokers/registry';
-import { autoExecutionEngine, armAutonomousExecutionGate, refreshAutonomousExecutionPermission, disarmLocalAutonomousExecution } from '../brokers/safety/AutoExecutionEngine';
+import { autoExecutionEngine, LIVE_AUTO_EXECUTION_ALLOWED, armAutonomousExecutionGate, refreshAutonomousExecutionPermission, disarmLocalAutonomousExecution } from '../brokers/safety/AutoExecutionEngine';
 import { autoTradeReadinessService } from '../brokers/safety/AutoTradeReadiness';
 import { getSystemConfig } from './configService';
 import { killSwitch } from '../brokers/safety/KillSwitch';
