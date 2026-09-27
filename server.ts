@@ -33,7 +33,7 @@ import { ForexTimeframe } from './src/markets/forex/types';
 import { BrokerError } from './src/brokers/errors';
 import { brokerRouter } from './src/brokers/brokerRoutes';
 import { killSwitch } from './src/brokers/safety/KillSwitch';
-import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission, armAutonomousExecutionGate, lockAutonomousExecutionGate } from './src/brokers/safety/AutoExecutionEngine';
+import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission, armAutonomousExecutionGate, lockAutonomousExecutionGate, validateAutoLiveOrderPacket } from './src/brokers/safety/AutoExecutionEngine';
 import { autoTradingService } from './src/services/autoTradingService';
 import { initializeLiveRuntimeLog, getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile, listLiveRuntimeLogFiles, logApplicationAction, liveRuntimeLog } from './src/services/liveRuntimeLog';
 import { fetchLiveForexNews } from './src/services/liveNewsService';
@@ -105,6 +105,7 @@ import { evaluateAccountStateConsistency } from './src/services/accountStateCons
 import { evaluateAutoLiveActivation } from './src/services/autoLiveActivationService';
 import { evaluateProductionGoLiveValidation } from './src/services/productionGoLiveValidationService';
 import { evaluateActiveAutoLiveMonitor } from './src/services/activeAutoLiveMonitorService';
+import { evaluateCTraderFunctionalValidation } from './src/services/cTraderFunctionalValidationService';
 import { maskIdentifier } from './src/brokers/auditLog';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
@@ -663,6 +664,180 @@ app.get('/api/operations/go-live-validation', operatorAuthRequired, async (_req:
       phase: '9.5',
       error: 'PRODUCTION_GO_LIVE_VALIDATION_UNAVAILABLE',
       message: error?.message || 'Production go-live validation is unavailable.',
+      orderSubmissionPerformed: false
+    });
+  }
+});
+
+app.get('/api/operations/ctrader-functional-validation', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+
+    const mode = getCTraderApiMode();
+    const config = getSystemConfig();
+    const credentialsConfigured = brokerRegistry.getCredentialStatuses()
+      .some(item => item.broker === 'CTRADER' && item.environment === 'LIVE' && item.configured);
+    const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+
+    let connection: Awaited<ReturnType<typeof adapter.testConnection>> | null = null;
+    let instrumentAvailable = false;
+    let quoteFresh = false;
+    let quoteBidAskValid = false;
+    let historicalDataAvailable = false;
+    let positionsReadSuccessful = false;
+    let openOrdersReadSuccessful = false;
+    let orderPacketValid = false;
+    let testSymbol = String(config.autoLiveForexPairs[0] || 'EUR/USD').toUpperCase().trim();
+
+    try {
+      connection = await adapter.testConnection();
+    } catch {
+      connection = null;
+    }
+
+    try {
+      const instrument = await adapter.getInstrument(testSymbol);
+      instrumentAvailable = Boolean(instrument);
+      if (!instrumentAvailable) {
+        const instruments = await adapter.getInstruments();
+        const fallback = instruments.find(item => item.market === 'FOREX');
+        if (fallback?.symbol) {
+          testSymbol = String(fallback.symbol).toUpperCase();
+          instrumentAvailable = true;
+        }
+      }
+    } catch {
+      instrumentAvailable = false;
+    }
+
+    let quote: Awaited<ReturnType<typeof adapter.getQuote>> | null = null;
+    try {
+      quote = await adapter.getQuote(testSymbol);
+      quoteFresh = quote.status === 'FRESH' && Date.now() - Number(quote.timestamp) < 30_000;
+      quoteBidAskValid = Number(quote.bid) > 0 && Number(quote.ask) > 0 && Number.isFinite(quote.bid) && Number.isFinite(quote.ask);
+    } catch {
+      quote = null;
+    }
+
+    try {
+      if (typeof adapter.getHistoricalCandles !== 'function') throw new Error('HISTORICAL_DATA_CAPABILITY_UNAVAILABLE');
+      const candles = await adapter.getHistoricalCandles(testSymbol, '15M', 35);
+      historicalDataAvailable = Array.isArray(candles) && candles.length >= 35;
+    } catch {
+      historicalDataAvailable = false;
+    }
+
+    try {
+      const positions = await adapter.getPositions();
+      positionsReadSuccessful = Array.isArray(positions);
+    } catch {
+      positionsReadSuccessful = false;
+    }
+
+    try {
+      const openOrders = await adapter.getOpenOrders();
+      openOrdersReadSuccessful = Array.isArray(openOrders);
+    } catch {
+      openOrdersReadSuccessful = false;
+    }
+
+    if (quote && instrumentAvailable) {
+      const price = Number(quote.ask || quote.bid);
+      const instrument = await adapter.getInstrument(testSymbol).catch(() => null);
+      const digits = Number(instrument?.digits || 5);
+      const step = Math.pow(10, -Math.max(1, Math.min(8, digits)));
+      const stopLoss = Number((price - step * 20).toFixed(digits));
+      const takeProfit = Number((price + step * 40).toFixed(digits));
+      const packet = validateAutoLiveOrderPacket({
+        market: 'FOREX',
+        symbol: testSymbol,
+        side: 'BUY',
+        orderType: 'MARKET',
+        quantity: 1,
+        price,
+        stopLoss,
+        takeProfit,
+        trailingStopLoss: true,
+        strategyId: 'fx_structure_v2a',
+        signalId: 'FUNCTIONAL_VALIDATION'
+      });
+      orderPacketValid = packet.valid;
+    }
+
+    const validation = evaluateCTraderFunctionalValidation({
+      configured: credentialsConfigured,
+      selectedApiMode: mode,
+      connection: connection ? {
+        connected: connection.connected,
+        apiMode: connection.apiMode,
+        apiEndpoint: connection.apiEndpoint,
+        account: connection.account,
+        accountType: connection.accountType,
+        balance: connection.balance,
+        equity: connection.equity,
+        currency: connection.currency,
+        permissions: connection.permissions
+      } : null,
+      instrumentAvailable,
+      quoteFresh,
+      quoteBidAskValid,
+      historicalDataAvailable,
+      positionsReadSuccessful,
+      openOrdersReadSuccessful,
+      orderPacketValid,
+      validationSubmittedOrder: false
+    });
+
+    liveRuntimeLog(
+      validation.ready ? 'SYSTEM' : 'WARN',
+      validation.ready ? 'CTRADER_FUNCTIONAL_VALIDATION_PASSED' : 'CTRADER_FUNCTIONAL_VALIDATION_BLOCKED',
+      {
+        mode,
+        testSymbol,
+        failures: validation.failures,
+        orderSubmissionPerformed: false
+      }
+    );
+
+    return res.status(validation.statusCode).json({
+      phase: '9.7.1',
+      generatedAt: Date.now(),
+      environment: process.env.NODE_ENV || 'development',
+      tradingMode: 'LIVE_ONLY',
+      mode,
+      status: validation.status,
+      ready: validation.ready,
+      checks: validation.checks,
+      failures: validation.failures,
+      testSymbol,
+      orderSubmissionPerformed: false,
+      cTrader: {
+        apiMode: connection?.apiMode || mode,
+        apiEndpoint: connection?.apiEndpoint || (mode === 'DEMO'
+          ? 'wss://demo.ctraderapi.com:5036'
+          : 'wss://live.ctraderapi.com:5036'),
+        connected: connection?.connected === true,
+        accountId: connection?.account ? maskIdentifier(String(connection.account)) : null,
+        accountType: connection?.accountType || null,
+        accountCurrency: connection?.currency || null,
+        balance: connection?.balance ?? null,
+        equity: connection?.equity ?? null,
+        tradingPermission: Array.isArray(connection?.permissions)
+          ? connection.permissions.includes('TRADING')
+            || connection.permissions.includes('EQUITY')
+            || connection.permissions.includes('DERIVATIVES')
+            || connection.permissions.includes('NSE_FNO')
+          : false
+      }
+    });
+  } catch (error: any) {
+    liveRuntimeLog('ERROR', 'CTRADER_FUNCTIONAL_VALIDATION_FAILED', {
+      error: error?.message || String(error)
+    });
+    return res.status(503).json({
+      phase: '9.7.1',
+      error: 'CTRADER_FUNCTIONAL_VALIDATION_UNAVAILABLE',
+      message: error?.message || 'cTrader functional validation is unavailable.',
       orderSubmissionPerformed: false
     });
   }
