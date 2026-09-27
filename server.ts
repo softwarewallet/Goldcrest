@@ -677,6 +677,7 @@ app.post('/api/execution-gate/unlock', operatorAuthRequired, async (_req: Reques
       cTraderEquityValid: equityValid,
       cTraderTradingPermission: tradingPermission,
       cTraderApiMode: getCTraderApiMode(),
+      allowDemoApiMode: process.env.NODE_ENV !== 'production',
       killSwitchClear: !killSwitch.isHalted()
     });
 
