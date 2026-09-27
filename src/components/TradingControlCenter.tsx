@@ -48,6 +48,7 @@ import { TradingSignal } from '../markets/common/types';
 export type ControlCenterSection =
   | 'ALL_OVERVIEW'
   | 'ACCOUNT_OVERVIEW'
+  | 'BALANCE_HISTORY'
   | 'MARKET_INTELLIGENCE'
   | 'OPTIONS_CHAIN'
   | 'SIGNAL_CENTER'
@@ -182,13 +183,15 @@ interface TradingControlCenterProps {
   onSelectSignalModal?: (signal: TradingSignal) => void;
   autoTradingStatus?: any | null;
   onAutoTradingStatusChange?: (status: any) => void;
+  reportsMode?: boolean;
 }
 
 export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   initialSection = 'ALL_OVERVIEW',
   onSelectSignalModal,
   autoTradingStatus: parentAutoTradingStatus = null,
-  onAutoTradingStatusChange
+  onAutoTradingStatusChange,
+  reportsMode = false
 }) => {
   const [activeSection, setActiveSection] = useState<ControlCenterSection>(initialSection);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -233,6 +236,9 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [reconciliations, setReconciliations] = useState<ReconciliationComparison[]>([]);
   const [healthComponents, setHealthComponents] = useState<SystemHealthComponent[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [balanceSnapshots, setBalanceSnapshots] = useState<any[]>([]);
+  const [balanceSnapshotBrokerFilter, setBalanceSnapshotBrokerFilter] = useState<string>('ALL');
+  const [balanceSnapshotDateFilter, setBalanceSnapshotDateFilter] = useState<string>('');
   const [newsSnapshot, setNewsSnapshot] = useState<any | null>(null);
   const [newsBusy, setNewsBusy] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
@@ -267,7 +273,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         forexPairsRes,
         indiaUnderlyingsRes,
         signalsRes,
-        newsRes
+        newsRes,
+        balanceHistoryRes
       ] = await Promise.all([
         fetch('/api/brokers/status', { cache: 'no-store' }).catch(() => null),
         fetch('/api/brokers/positions', { cache: 'no-store' }).catch(() => null),
@@ -280,7 +287,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         fetch('/api/forex/pairs', { cache: 'no-store' }).catch(() => null),
         fetch('/api/india/underlyings', { cache: 'no-store' }).catch(() => null),
         fetch('/api/signals/all', { cache: 'no-store' }).catch(() => null),
-        fetch('/api/forex/news', { cache: 'no-store' }).catch(() => null)
+        fetch('/api/forex/news', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/reports/account-balance-history?limit=1000', { cache: 'no-store' }).catch(() => null)
       ]);
 
       if (autoTradingRes?.ok) {
@@ -514,6 +522,11 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             severity: isFailure ? 'CRITICAL' : isBlocked || isLimit ? 'WARNING' : 'INFO'
           };
         }));
+      }
+
+      if (balanceHistoryRes?.ok) {
+        const payload = await balanceHistoryRes.json();
+        setBalanceSnapshots(Array.isArray(payload?.rows) ? payload.rows : []);
       }
 
       const reconRows: ReconciliationComparison[] = [];
@@ -754,6 +767,17 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
     }, 60000);
     return () => clearInterval(interval);
   }, [fetchIndianNewsNow]);
+
+  const filteredBalanceSnapshots = useMemo(() => {
+    return balanceSnapshots.filter(row => {
+      if (balanceSnapshotBrokerFilter !== 'ALL' && row.broker !== balanceSnapshotBrokerFilter) return false;
+      if (balanceSnapshotDateFilter) {
+        const date = new Date(Number(row.capturedAt)).toISOString().slice(0, 10);
+        if (date !== balanceSnapshotDateFilter) return false;
+      }
+      return true;
+    });
+  }, [balanceSnapshots, balanceSnapshotBrokerFilter, balanceSnapshotDateFilter]);
 
   // Filtered Positions
   const filteredPositions = useMemo(() => {
@@ -1045,6 +1069,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
           {[
             { id: 'ALL_OVERVIEW', label: 'OVERVIEW', icon: Activity },
             { id: 'ACCOUNT_OVERVIEW', label: '1. ACCOUNTS', icon: DollarSign },
+            ...(reportsMode ? [{ id: 'BALANCE_HISTORY', label: '2. BALANCE HISTORY', icon: Activity }] : []),
             { id: 'MARKET_INTELLIGENCE', label: '2. MARKET INTEL', icon: TrendingUp },
             { id: 'OPTIONS_CHAIN', label: '3. OPTIONS CHAIN', icon: PieChart },
             { id: 'SIGNAL_CENTER', label: '4. SIGNALS', icon: Sparkles },
@@ -1150,6 +1175,50 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* REPORTS: THREE-HOUR ACCOUNT BALANCE HISTORY */}
+      {activeSection === 'BALANCE_HISTORY' && (
+        <div id="section_balance_history" className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-4 font-mono text-xs">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-400" /><span>3-Hour Account Balance History</span></h3>
+              <p className="text-[10px] text-slate-500 mt-1">Authoritative LIVE API snapshots at 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00 and 21:00. No calculated or fabricated balance values are stored.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select value={balanceSnapshotBrokerFilter} onChange={e => setBalanceSnapshotBrokerFilter(e.target.value)} className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1.5"><option value="ALL">All Brokers</option><option value="CTRADER">cTrader</option><option value="FIVE_PAISA">5paisa</option></select>
+              <input type="date" value={balanceSnapshotDateFilter} onChange={e => setBalanceSnapshotDateFilter(e.target.value)} className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1.5" />
+              {(balanceSnapshotDateFilter || balanceSnapshotBrokerFilter !== 'ALL') && <button type="button" onClick={() => { setBalanceSnapshotDateFilter(''); setBalanceSnapshotBrokerFilter('ALL'); }} className="px-2.5 py-1.5 rounded border border-slate-700 bg-slate-950 text-slate-300 hover:text-white">Clear</button>}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"><div className="text-[10px] text-slate-500">SNAPSHOTS</div><div className="text-lg font-bold text-white mt-1">{filteredBalanceSnapshots.length}</div></div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"><div className="text-[10px] text-slate-500">CAPTURED</div><div className="text-lg font-bold text-emerald-400 mt-1">{filteredBalanceSnapshots.filter(row => row.status === 'CAPTURED').length}</div></div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"><div className="text-[10px] text-slate-500">ERRORS</div><div className="text-lg font-bold text-amber-400 mt-1">{filteredBalanceSnapshots.filter(row => row.status === 'ERROR').length}</div></div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"><div className="text-[10px] text-slate-500">INTERVAL</div><div className="text-lg font-bold text-slate-200 mt-1">3 HOURS</div></div>
+          </div>
+          <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
+            <table className="w-full text-left"><thead className="bg-slate-950 text-slate-400 border-b border-slate-800 sticky top-0"><tr>
+              <th className="py-2.5 px-3">DATE</th><th className="py-2.5 px-3">TIME</th><th className="py-2.5 px-3">BROKER</th><th className="py-2.5 px-3">ACCOUNT</th><th className="py-2.5 px-3">CURRENCY</th><th className="py-2.5 px-3">BALANCE</th><th className="py-2.5 px-3">EQUITY</th><th className="py-2.5 px-3">USED MARGIN</th><th className="py-2.5 px-3">FREE MARGIN</th><th className="py-2.5 px-3">STATUS</th>
+            </tr></thead><tbody className="divide-y divide-slate-800/60">
+              {filteredBalanceSnapshots.map((row, index) => {
+                const timestamp = Number(row.capturedAt);
+                const date = Number.isFinite(timestamp) ? new Date(timestamp) : null;
+                const currency = String(row.currency || '');
+                const prefix = currency === 'INR' ? 'INR ' : 'USD ';
+                const money = (value: any) => { const numeric = Number(value); return Number.isFinite(numeric) ? prefix + numeric.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'; };
+                return <tr key={row.id || 'balance-snapshot-' + index} className="hover:bg-slate-800/40">
+                  <td className="py-2.5 px-3 text-slate-300">{date ? date.toLocaleDateString() : '—'}</td>
+                  <td className="py-2.5 px-3 font-semibold text-white">{date ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                  <td className="py-2.5 px-3 font-bold text-slate-200">{row.broker}</td><td className="py-2.5 px-3 text-slate-400">{row.accountId}</td><td className="py-2.5 px-3 text-slate-400">{currency || '—'}</td>
+                  <td className="py-2.5 px-3 text-slate-100">{money(row.balance)}</td><td className="py-2.5 px-3 text-emerald-400">{money(row.equity)}</td><td className="py-2.5 px-3 text-amber-300">{money(row.usedMargin)}</td><td className="py-2.5 px-3 text-sky-300">{money(row.freeMargin)}</td>
+                  <td className="py-2.5 px-3"><span className={'px-2 py-0.5 rounded border text-[10px] font-bold ' + (row.status === 'CAPTURED' ? 'bg-emerald-950/50 border-emerald-700 text-emerald-300' : 'bg-amber-950/50 border-amber-700 text-amber-300')}>{row.status}</span>{row.errorMessage && <div className="text-[9px] text-amber-400 mt-1 max-w-xs truncate" title={row.errorMessage}>{row.errorMessage}</div>}</td>
+                </tr>;
+              })}
+            </tbody></table>
+            {!filteredBalanceSnapshots.length && <div className="py-10 text-center text-slate-500">No account balance snapshots match the selected filters.</div>}
           </div>
         </div>
       )}

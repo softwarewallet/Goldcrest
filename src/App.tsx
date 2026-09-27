@@ -388,6 +388,7 @@ export default function App() {
               {(activeTab === 'pnl' || activeTab === 'accounting') && (
                 <TradingControlCenter
                 initialSection="ACCOUNT_OVERVIEW"
+                reportsMode={true}
                 onSelectSignalModal={(sig) => setSelectedSignal(sig)}
                 autoTradingStatus={autoTradingStatus}
                 onAutoTradingStatusChange={setAutoTradingStatus}

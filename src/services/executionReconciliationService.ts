@@ -45,22 +45,45 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
   // An ambiguous submission can lose the broker response before an order ID
   // reaches Goldcrest. Recover the authoritative broker order using the
   // stable client order identity first, then continue through the existing
-  // cumulative fill reconciliation path.
-  if (!brokerOrderId && adapter.getOrderByClientOrderId) {
-    const payload = parseResult(row.payload_json);
-    const clientOrderId = String(payload?.signalId || '').trim().replace(/[^A-Za-z0-9._-]/g, '').slice(0, 50);
-    if (clientOrderId) {
-      const nativeOrder = await adapter.getOrderByClientOrderId(clientOrderId);
-      if (nativeOrder?.brokerOrderId || nativeOrder?.id) {
-        brokerOrderId = nativeOrder.brokerOrderId || nativeOrder.id;
-        stored.brokerOrderId = brokerOrderId;
-        stored.clientOrderId = nativeOrder.clientOrderId || clientOrderId;
-      }
-    }
-  }
-  if (!brokerOrderId) return null;
+  // cumulative fill reconciliation path. The native lookup itself is a broker
+  // transport call, so it must remain inside the fail-closed reconciliation
+  // boundary. A network timeout here must never escape to the scheduler and
+  // bypass the existing 15-minute reconciliation-timeout policy.
+  const intentAgeMs = Date.now() - Number(row.created_at || Date.now());
 
   try {
+    if (!brokerOrderId && adapter.getOrderByClientOrderId) {
+      const payload = parseResult(row.payload_json);
+      const clientOrderId = String(payload?.signalId || '').trim().replace(/[^A-Za-z0-9._-]/g, '').slice(0, 50);
+      if (clientOrderId) {
+        const nativeOrder = await adapter.getOrderByClientOrderId(clientOrderId);
+        if (nativeOrder?.brokerOrderId || nativeOrder?.id) {
+          brokerOrderId = nativeOrder.brokerOrderId || nativeOrder.id;
+          stored.brokerOrderId = brokerOrderId;
+          stored.clientOrderId = nativeOrder.clientOrderId || clientOrderId;
+        }
+      }
+    }
+
+    // An old intent with no authoritative broker order ID is still ambiguous.
+    // Once the reconciliation age policy is reached, persist the timeout rather
+    // than leaving the row in PENDING forever.
+    if (!brokerOrderId) {
+      if (intentAgeMs >= MAX_AGE_MS) {
+        const timedOut = {
+          ...stored,
+          reconciliationTimedOutAt: stored.reconciliationTimedOutAt || Date.now(),
+          reconciliationTimeoutAgeMs: intentAgeMs,
+          reconciliationState: 'RECONCILIATION_TIMEOUT',
+          reconciliationErrorCode: stored.reconciliationErrorCode || 'BROKER_ORDER_NOT_RESOLVED',
+          operatorActionRequired: true,
+          reconciliationAttemptCount,
+          reconciliationLastAttemptAt: attemptStartedAt
+        };
+        await markExecutionIntentReconciliationTimeout(idempotencyKey, timedOut);
+      }
+      return null;
+    }
     const requestedQuantityHint = Number(stored?.requestedQuantity ?? stored?.quantity ?? stored?.order?.quantity ?? 0);
     const status = await adapter.getOrderStatus(
       String(brokerOrderId),
