@@ -23,12 +23,13 @@ let persistenceStatus: DatabasePersistenceStatus = {
   recoveredFromBackup: false
 };
 
-function recoverDatabaseFileIfNeeded(): void {
-  if (fs.existsSync(DB_FILE)) return;
-  if (!fs.existsSync(DB_BACKUP_FILE)) return;
-  fs.copyFileSync(DB_BACKUP_FILE, DB_FILE);
+export function recoverDatabaseFileIfNeeded(primaryFile = DB_FILE, backupFile = DB_BACKUP_FILE): boolean {
+  if (fs.existsSync(primaryFile)) return false;
+  if (!fs.existsSync(backupFile)) return false;
+  fs.copyFileSync(backupFile, primaryFile);
   persistenceStatus.lastRecoveryAt = Date.now();
   persistenceStatus.recoveredFromBackup = true;
+  return true;
 }
 
 function loadDatabase(SQL: any): Database {
@@ -89,33 +90,44 @@ export function getDatabaseInitializationState(): {
   };
 }
 
+export function persistDatabaseBuffer(
+  buffer: Buffer,
+  primaryFile = DB_FILE,
+  temporaryFile = DB_TEMP_FILE,
+  backupFile = DB_BACKUP_FILE
+): void {
+  const directory = path.dirname(primaryFile);
+  if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
+
+  fs.writeFileSync(temporaryFile, buffer);
+  if (fs.existsSync(primaryFile)) {
+    fs.copyFileSync(primaryFile, backupFile);
+    fs.rmSync(primaryFile, { force: true });
+  }
+  try {
+    fs.renameSync(temporaryFile, primaryFile);
+  } catch (renameError) {
+    // Windows may not replace an existing destination during rename. Restore
+    // the previous durable image when installing the new image fails.
+    if (!fs.existsSync(primaryFile) && fs.existsSync(backupFile)) {
+      try { fs.copyFileSync(backupFile, primaryFile); } catch {}
+    }
+    throw renameError;
+  }
+}
+
 export function persistDatabase(): void {
   if (!dbInstance) return;
   try {
-    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-    const data = dbInstance.export();
-    const buffer = Buffer.from(data);
-
     // Write a complete new image first. The previous primary is retained as a
     // recovery snapshot so a process crash or filesystem failure cannot leave
     // the only durable database image unreadable.
-    fs.writeFileSync(DB_TEMP_FILE, buffer);
-    if (fs.existsSync(DB_FILE)) {
-      fs.copyFileSync(DB_FILE, DB_BACKUP_FILE);
-      fs.rmSync(DB_FILE, { force: true });
-    }
-    try {
-      fs.renameSync(DB_TEMP_FILE, DB_FILE);
-    } catch (renameError) {
-      // Windows does not replace an existing file through rename in all
-      // filesystem configurations. The previous image is already in the
-      // backup path, so restore it when the new image cannot be installed.
-      if (!fs.existsSync(DB_FILE) && fs.existsSync(DB_BACKUP_FILE)) {
-        try { fs.copyFileSync(DB_BACKUP_FILE, DB_FILE); } catch {}
-      }
-      throw renameError;
-    }
-
+    persistDatabaseBuffer(
+      Buffer.from(dbInstance.export()),
+      DB_FILE,
+      DB_TEMP_FILE,
+      DB_BACKUP_FILE
+    );
     persistenceStatus.lastPersistedAt = Date.now();
     persistenceStatus.lastPersistenceError = null;
   } catch (err: any) {
