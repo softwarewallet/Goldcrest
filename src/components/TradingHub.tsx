@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { TradingEnvironment, BrokerType } from '../brokers/types';
 import { OptionsTradingPanel } from './OptionsTradingPanel';
+import { AUTO_LIVE_POSITION_REFRESH_INTERVAL_MS, isVisibleAutoLiveSignal } from '../services/autoLiveTradePolicy';
 
 interface TradingHubProps {
   environment: TradingEnvironment;
@@ -835,7 +836,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
     const positionsInterval = setInterval(() => {
       fetchRealPositions(true);
-    }, 10000);
+    }, AUTO_LIVE_POSITION_REFRESH_INTERVAL_MS);
 
     const signalsInterval = setInterval(() => {
       fetchRealSignals(true);
@@ -865,7 +866,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   }, [signalsAgeNow]);
 
   const visiblePlannedTrades = useMemo(
-    () => plannedTrades.filter(signal => String(signal.direction || '').toUpperCase() !== 'NO_TRADE'),
+    () => plannedTrades.filter(signal => isVisibleAutoLiveSignal(signal.direction)),
     [plannedTrades]
   );
 
