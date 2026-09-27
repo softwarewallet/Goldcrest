@@ -97,6 +97,7 @@ import { runtimeLifecycle } from './src/services/runtimeLifecycle';
 import { getRecoveryRecommendation, getRuntimeObservabilitySnapshot } from './src/services/runtimeObservabilityService';
 import { buildProductionReleaseIntegrityInput, evaluateProductionReleaseIntegrity } from './src/services/productionReleaseIntegrityService';
 import { evaluateSystemConfigIntegrity } from './src/services/configIntegrityService';
+import { evaluateOperationalReadiness } from './src/services/operationalReadinessService';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
 // npm run dev is an explicit local development command. Do not let a stale
@@ -281,6 +282,69 @@ app.get('/api/runtime', (_req: Request, res: Response) => {
     releaseIntegrity,
     timestamp: Date.now()
   });
+});
+
+app.get('/api/operations/readiness', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    const snapshot = await getRuntimeObservabilitySnapshot({
+      runtimeId: GOLDCREST_RUNTIME_ID,
+      environment: process.env.NODE_ENV || 'development'
+    });
+
+    const releaseIntegrity = process.env.NODE_ENV === 'production'
+      ? evaluateProductionReleaseIntegrity(buildProductionReleaseIntegrityInput({
+          tradingMode: getSystemConfig().tradingMode,
+          operatorAuthConfigured: operatorAuthConfigured(),
+          liveBrokerConfigured: Boolean(
+            process.env.CTRADER_LIVE_CLIENT_ID?.trim() &&
+            process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
+            process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
+            process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
+          ) || Boolean(
+            process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
+            process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
+            process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
+            process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
+          ),
+          packageVersion: process.env.GOLDCREST_RELEASE_VERSION || undefined
+        }))
+      : null;
+
+    const result = evaluateOperationalReadiness({
+      releaseIntegrityOk: releaseIntegrity?.ok === true,
+      configurationIntegrityOk: evaluateSystemConfigIntegrity(getSystemConfig()).ok,
+      tradingModeLiveOnly: getSystemConfig().tradingMode === 'LIVE_ONLY',
+      databaseInitialized: snapshot.database.initialized,
+      databasePersistenceHealthy: !snapshot.databasePersistence.lastPersistenceError,
+      runtimeLifecycleRunning: snapshot.lifecycle.state === 'RUNNING',
+      auditLogReady: snapshot.auditLog.enabled && snapshot.auditLog.exists,
+      operatorAuthConfigured: operatorAuthConfigured(),
+      liveBrokerConfigured: snapshot.brokers.length > 0,
+      liveBrokerConnected: snapshot.brokers.some(item => item.isLive && item.reportedStatus === 'CONNECTED'),
+      autonomousExecutionAllowed: LIVE_AUTO_EXECUTION_ALLOWED
+    });
+
+    res.status(result.statusCode).json({
+      ...result,
+      runtimeId: GOLDCREST_RUNTIME_ID,
+      generatedAt: Date.now(),
+      environment: process.env.NODE_ENV || 'development',
+      releaseVersion: releaseIntegrity?.version || null,
+      brokers: snapshot.brokers.map(item => ({
+        broker: item.broker,
+        status: item.reportedStatus,
+        live: item.isLive
+      }))
+    });
+  } catch (error: any) {
+    liveRuntimeLog('ERROR', 'OPERATIONAL_READINESS_EVALUATION_FAILED', {
+      error: error?.message || String(error)
+    });
+    res.status(503).json({
+      error: 'OPERATIONAL_READINESS_UNAVAILABLE',
+      message: error?.message || 'Operational readiness is unavailable.'
+    });
+  }
 });
 
 app.get('/api/observability/runtime', operatorAuthRequired, async (_req: Request, res: Response) => {
