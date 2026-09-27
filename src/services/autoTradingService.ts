@@ -15,7 +15,7 @@ import { BrokerAdapter, ConnectionTestResult, NormalizedQuote, OrderRequest } fr
 import { liveRuntimeLog, tradeAuditLog } from './liveRuntimeLog';
 import { calculateForexPipTargets, normalizePriceToThreeDigits, sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
 import { recordLiveTradeResearchSignal, updateLiveTradeResearchQuote, updateLiveTradeResearchExecution } from './liveTradeResearchService';
-import { AUTO_LIVE_POSITION_CAPACITY_POLL_MS, getAutoLiveParallelTradePolicy, hasPairPositionCapacity } from './autoLiveTradePolicy';
+import { AUTO_LIVE_POSITION_CAPACITY_POLL_MS, AUTO_LIVE_RUNTIME_RECOVERY_POLL_MS, getAutoLiveParallelTradePolicy, hasPairPositionCapacity } from './autoLiveTradePolicy';
 
 const LIVE_QUOTE_MAX_AGE_MS = 30_000;
 
@@ -152,7 +152,7 @@ class LiveForexSignalProvider implements ForexDataProvider {
   }
 }
 
-export type AutoTradingState = 'STOPPED' | 'PREPARING' | 'RUNNING' | 'PAUSED_LIMIT' | 'BLOCKED';
+export type AutoTradingState = 'STOPPED' | 'PREPARING' | 'RUNNING' | 'PAUSED_LIMIT' | 'PAUSED_RUNTIME' | 'BLOCKED';
 export type AutoTradingExecutionStage = 'IDLE' | 'SCANNING_MARKET' | 'ANALYZING_SIGNAL' | 'PREPARING_ORDER' | 'SAFETY_GATE' | 'SUBMITTING_ORDER' | 'TRADE_EXECUTED' | 'REJECTED';
 
 export interface AutoTradingExecutionStatus {
@@ -187,6 +187,7 @@ export interface AutoTradingStatus {
   currentExecution: AutoTradingExecutionStatus;
   lastExecution: AutoTradingExecutionStatus | null;
   executionPausedByPositionLimit: boolean;
+  runtimeFaultReason?: string | null;
   preOpenPreparation: {
     lastPreparedAt: number | null;
     trendPairsEvaluated: number;
@@ -217,7 +218,10 @@ class AutoTradingService {
   // count until a slot becomes available.
   private executionPausedByPositionLimit = false;
   private positionCapacityTimer: NodeJS.Timeout | null = null;
+  private runtimeRecoveryTimer: NodeJS.Timeout | null = null;
+  private runtimeFaultReason: string | null = null;
   private readonly POSITION_CAPACITY_POLL_MS = AUTO_LIVE_POSITION_CAPACITY_POLL_MS;
+  private readonly RUNTIME_RECOVERY_POLL_MS = AUTO_LIVE_RUNTIME_RECOVERY_POLL_MS;
   // Market analysis can run concurrently across the configured universe, but
   // broker-side execution is serialized so two pairs cannot race the same
   // account-position/exposure snapshot and bypass the global safety limits.
@@ -319,6 +323,75 @@ class AutoTradingService {
     }
   }
 
+  private pauseForRuntimeFault(reason: string): void {
+    if (this.state === 'STOPPED' || this.state === 'BLOCKED') return;
+    this.runtimeFaultReason = reason;
+    this.state = 'PAUSED_RUNTIME';
+    this.lastCycleResult = `Auto Live paused: live broker/runtime health is unavailable. ${reason}`;
+    this.clearPositionCapacityPause();
+    liveRuntimeLog('WARN', 'AUTO_TRADING_RUNTIME_FAULT_PAUSED', {
+      reason,
+      recoveryPollIntervalMs: this.RUNTIME_RECOVERY_POLL_MS
+    });
+    tradeAuditLog('AUTO_TRADING_RUNTIME_FAULT_PAUSED', {
+      reason,
+      recoveryPollIntervalMs: this.RUNTIME_RECOVERY_POLL_MS
+    });
+    if (!this.runtimeRecoveryTimer) {
+      this.runtimeRecoveryTimer = setInterval(() => {
+        void this.checkRuntimeRecoveryAndResume();
+      }, this.RUNTIME_RECOVERY_POLL_MS);
+      this.runtimeRecoveryTimer.unref?.();
+    }
+  }
+
+  private async checkRuntimeRecoveryAndResume(): Promise<void> {
+    if (this.state !== 'PAUSED_RUNTIME' || this.cycleInFlight) return;
+    try {
+      const capacity = await this.getAuthoritativePositionCapacity();
+      if (capacity.available <= 0) {
+        this.runtimeFaultReason = null;
+        this.state = 'PAUSED_LIMIT';
+        if (this.runtimeRecoveryTimer) {
+          clearInterval(this.runtimeRecoveryTimer);
+          this.runtimeRecoveryTimer = null;
+        }
+        this.pauseForPositionLimit(
+          capacity.current,
+          capacity.max,
+          'Broker connectivity has recovered, but the maximum system-wide live-position limit is still reached.'
+        );
+        return;
+      }
+
+      const previousReason = this.runtimeFaultReason;
+      this.runtimeFaultReason = null;
+      this.state = 'RUNNING';
+      if (this.runtimeRecoveryTimer) {
+        clearInterval(this.runtimeRecoveryTimer);
+        this.runtimeRecoveryTimer = null;
+      }
+      this.lastCycleResult = 'Auto Live resumed: live broker/runtime health has recovered and execution capacity is available.';
+      liveRuntimeLog('INFO', 'AUTO_TRADING_RUNTIME_FAULT_RECOVERED', {
+        previousReason,
+        currentOpenPositions: capacity.current,
+        maxOpenPositions: capacity.max,
+        availableSlots: capacity.available
+      });
+      tradeAuditLog('AUTO_TRADING_RUNTIME_FAULT_RECOVERED', {
+        previousReason,
+        currentOpenPositions: capacity.current,
+        maxOpenPositions: capacity.max,
+        availableSlots: capacity.available
+      });
+      void this.runCycle();
+    } catch (error: any) {
+      liveRuntimeLog('WARN', 'AUTO_TRADING_RUNTIME_RECOVERY_CHECK_FAILED', {
+        error: error?.message || String(error)
+      });
+    }
+  }
+
   getStatus(): AutoTradingStatus {
     const autonomousPermission = refreshAutonomousExecutionPermission();
     return {
@@ -338,6 +411,7 @@ class AutoTradingService {
       currentExecution: { ...this.currentExecution },
       lastExecution: this.lastExecution ? { ...this.lastExecution } : null,
       executionPausedByPositionLimit: this.executionPausedByPositionLimit,
+      runtimeFaultReason: this.runtimeFaultReason,
       preOpenPreparation: {
         lastPreparedAt: this.lastPreOpenPreparedAt,
         trendPairsEvaluated: this.preOpenTrendPairsEvaluated,
@@ -490,6 +564,11 @@ class AutoTradingService {
       this.timer = null;
     }
     this.clearPositionCapacityPause();
+    this.runtimeFaultReason = null;
+    if (this.runtimeRecoveryTimer) {
+      clearInterval(this.runtimeRecoveryTimer);
+      this.runtimeRecoveryTimer = null;
+    }
     this.state = 'STOPPED';
     this.lastCycleResult = reason;
     liveRuntimeLog('SYSTEM', 'AUTO_TRADING_STOPPED', { reason });
@@ -554,23 +633,24 @@ class AutoTradingService {
 
       return true;
     } catch (error: any) {
-      // Do not hammer the broker when the authoritative position snapshot is
-      // unavailable. Stay paused and retry on the next scheduled cycle.
-      this.state = 'PAUSED_LIMIT';
-      this.lastCycleResult =
-        'Auto Live paused: unable to verify current live-position capacity. Retrying on the next cycle.';
-      liveRuntimeLog('WARN', 'AUTO_TRADING_POSITION_LIMIT_CHECK_UNAVAILABLE', {
-        maxOpenPositions,
-        error: error?.message || String(error)
-      });
+      // A broker-position snapshot is also the authoritative runtime health
+      // signal for Auto Live. When it fails, do not label the outage as a
+      // position-limit condition; pause in a dedicated runtime-fault state and
+      // recover only after a fresh authoritative snapshot succeeds.
+      this.pauseForRuntimeFault(error?.message || String(error));
       return false;
     }
   }
 
   private async runScheduledCycle(): Promise<void> {
-    if (!['PREPARING', 'RUNNING', 'PAUSED_LIMIT'].includes(this.state) || this.cycleInFlight) return;
+    if (!['PREPARING', 'RUNNING', 'PAUSED_LIMIT', 'PAUSED_RUNTIME'].includes(this.state) || this.cycleInFlight) return;
 
     const marketGate = getAutoLiveMarketGate();
+
+    if (this.state === 'PAUSED_RUNTIME') {
+      await this.checkRuntimeRecoveryAndResume();
+      return;
+    }
 
     if (this.state === 'PAUSED_LIMIT') {
       const capacityAvailable = await this.checkSystemPositionCapacity();
@@ -1045,8 +1125,10 @@ return;
       // signal was waiting in the serialized execution queue. Do not make
       // another broker position request or run the remaining execution work
       // once the service has already entered PAUSED_LIMIT.
-      if (this.state === 'PAUSED_LIMIT') {
-        const reason = 'Auto Live execution paused because the maximum system-wide live-position limit has been reached. Waiting for a slot to become available.';
+      if (this.state === 'PAUSED_LIMIT' || this.state === 'PAUSED_RUNTIME') {
+        const reason = this.state === 'PAUSED_RUNTIME'
+          ? 'Auto Live execution paused because live broker/runtime health is unavailable. Waiting for authoritative recovery.'
+          : 'Auto Live execution paused because the maximum system-wide live-position limit has been reached. Waiting for a slot to become available.';
         this.lastActions.push({ pair, result: 'PAUSED', signalId: signal.id, reason });
         liveRuntimeLog('INFO', 'AUTO_TRADING_POSITION_LIMIT_QUEUE_PAUSED', {
           pair,
@@ -1476,13 +1558,26 @@ return;
       });
     } catch (error: any) {
       const reason = error?.message || String(error);
-            this.lastActions.push({
+      this.lastActions.push({
         pair,
         result: 'ERROR',
         reason
       });
       liveRuntimeLog('ERROR', 'PAIR_EVALUATION_ERROR', { pair, error: reason });
       tradeAuditLog('PAIR_EVALUATION_ERROR', { pair, reason });
+
+      const runtimeErrorText = String(reason).toLowerCase();
+      if (
+        runtimeErrorText.includes('timeout')
+        || runtimeErrorText.includes('network')
+        || runtimeErrorText.includes('econn')
+        || runtimeErrorText.includes('socket')
+        || runtimeErrorText.includes('unavailable')
+        || runtimeErrorText.includes('connection')
+        || runtimeErrorText.includes('broker')
+      ) {
+        this.pauseForRuntimeFault(reason);
+      }
     }
   }
 }
