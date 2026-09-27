@@ -43,6 +43,14 @@ for (const broker of ['CTRADER', 'FIVE_PAISA'] as const) {
 
 const rows = await captureAccountBalanceSnapshots(capturedAt);
 assert.equal(rows.length, 2);
+
+// Regression fixture: a prior interrupted test run must never remain visible.
+await executeRun(
+  `INSERT OR REPLACE INTO account_balance_snapshots
+   (id, broker, environment, account_id, currency, captured_at, balance, equity, used_margin, free_margin, status, error_message)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ['synthetic-balance-fixture', 'CTRADER', 'LIVE', 'TEST-CTRADER', 'USD', capturedAt - 1, 1000, 1000, 0, 1000, 'CAPTURED', null]
+);
 assert.equal(rows.every(row => row.status === 'CAPTURED'), true);
 
 const stored = await getAccountBalanceSnapshots({ from: capturedAt, to: capturedAt, limit: 10 });
@@ -62,6 +70,12 @@ assert.equal(fivePaisa?.usedMargin, 50000);
 assert.equal(fivePaisa?.freeMargin, 201500);
 assert.equal(fivePaisa?.currency, 'INR');
 
-await executeRun('DELETE FROM account_balance_snapshots WHERE captured_at = ?', [capturedAt]);
+try {
+  const visibleRows = await getAccountBalanceSnapshots({ from: capturedAt - 5, to: capturedAt + 5, limit: 20 });
+  assert.equal(visibleRows.some(row => row.accountId === 'TEST-CTRADER'), false);
+} finally {
+  await executeRun('DELETE FROM account_balance_snapshots WHERE captured_at >= ? AND captured_at <= ?', [capturedAt - 5, capturedAt + 5]);
+  await executeRun(`DELETE FROM account_balance_snapshots WHERE account_id LIKE 'TEST-%'`);
+}
 
 console.log('ACCOUNT BALANCE SNAPSHOT TESTS PASSED');
