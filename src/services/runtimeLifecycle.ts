@@ -31,8 +31,11 @@ export class RuntimeLifecycleCoordinator {
 
   registerCleanup(name: string, run: () => void | Promise<void>): void {
     if (!name.trim()) throw new Error('RUNTIME_CLEANUP_NAME_REQUIRED');
-    if (this.state === 'STOPPING' || this.state === 'STOPPED') {
+    if (this.state === 'STOPPING') {
       throw new Error('RUNTIME_ALREADY_STOPPING');
+    }
+    if (this.state === 'STOPPED') {
+      throw new Error('RUNTIME_LIFECYCLE_STOPPED');
     }
     this.cleanups.push({ name, run });
   }
