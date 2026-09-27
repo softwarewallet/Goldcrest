@@ -13,6 +13,7 @@ export interface AutoLiveActivationInput {
   cTraderEquityValid: boolean;
   cTraderTradingPermission: boolean;
   cTraderApiMode: 'LIVE' | 'DEMO';
+  allowDemoApiMode: boolean;
   killSwitchClear: boolean;
 }
 
@@ -46,7 +47,7 @@ export function evaluateAutoLiveActivation(input: AutoLiveActivationInput): Auto
   check('cTraderBalance', input.cTraderBalanceValid);
   check('cTraderEquity', input.cTraderEquityValid);
   check('cTraderTradingPermission', input.cTraderTradingPermission);
-  check('cTraderApiMode', input.cTraderApiMode === 'LIVE');
+  check('cTraderApiMode', input.cTraderApiMode === 'LIVE' || (input.allowDemoApiMode && input.cTraderApiMode === 'DEMO'));
   check('killSwitch', input.killSwitchClear);
 
   const ready = failures.length === 0;
