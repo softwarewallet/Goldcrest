@@ -165,7 +165,7 @@ await scenario(30, 'Trailing stop loss is mandatory at the Auto Live cTrader bou
 await scenario(31, 'Active running trades refresh on the required 10-second cadence', () => {
   assert.equal(AUTO_LIVE_POSITION_REFRESH_INTERVAL_MS, 10000);
   assert.equal(AUTO_LIVE_POSITION_CAPACITY_POLL_MS, 10000);
-  assert.match(tradingHubSource, /fetchRealPositions\(true\)[\\s\\S]*AUTO_LIVE_POSITION_REFRESH_INTERVAL_MS/);
+  assert.match(tradingHubSource, /fetchRealPositions\\(true\\)[\\s\\S]*AUTO_LIVE_POSITION_REFRESH_INTERVAL_MS/);
 });
 await scenario(32, 'NO_TRADE rows are excluded from the planned-trades visibility contract', () => {
   assert.equal(isVisibleAutoLiveSignal('NO_TRADE'), false);
