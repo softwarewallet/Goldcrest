@@ -21,7 +21,7 @@ add(3,'Production environment is required',()=>{assert.equal(release.evaluatePro
 function validInput():any{return {environment:'production',nodeVersion:'24.21.0',tradingMode:'LIVE_ONLY',operatorAuthConfigured:true,liveBrokerConfigured:true,distServerFile:serverFile,distIndexFile:indexFile,dataDirectory:data,packageVersion:'1.3.0-quantitative-review'};}
 add(4,'Node 24 passes minimum runtime contract',()=>{assert.equal(release.evaluateProductionReleaseIntegrity({...validInput(),nodeVersion:'24.21.0'}).checks.nodeVersion,'PASS');});
 add(5,'Node 23 fails minimum runtime contract',()=>{assert.equal(release.evaluateProductionReleaseIntegrity({...validInput(),nodeVersion:'23.11.0'}).checks.nodeVersion,'FAIL');});
-add(6,'Prefixed Node version is accepted',()=>{assert.equal(release.evaluateProductionReleaseIntegrity({...validInput(),nodeVersion:'v24.0.0'}).checks.nodeVersion,'PASS');});
+add(6,'Prefixed supported Node version is accepted',()=>{assert.equal(release.evaluateProductionReleaseIntegrity({...validInput(),nodeVersion:'v24.21.0'}).checks.nodeVersion,'PASS');});
 add(7,'Non-numeric Node version fails',()=>{assert.equal(release.evaluateProductionReleaseIntegrity({...validInput(),nodeVersion:'unknown'}).checks.nodeVersion,'FAIL');});
 add(8,'LIVE_ONLY is required',()=>{assert.equal(release.evaluateProductionReleaseIntegrity({...validInput(),tradingMode:'PAPER'}).checks.tradingMode,'FAIL');});
 add(9,'Operator authentication is required',()=>{assert.equal(release.evaluateProductionReleaseIntegrity({...validInput(),operatorAuthConfigured:false}).checks.operatorAuth,'FAIL');});
