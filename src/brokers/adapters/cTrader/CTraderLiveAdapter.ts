@@ -3,6 +3,7 @@ import { NormalizedOrder, OrderRequest, TradingEnvironment } from '../../types';
 import { BrokerError } from '../../errors';
 import { getSystemConfig } from '../../../services/configService';
 import { normalizePriceToInstrumentDigits } from '../../safety/TradeSizing';
+import { AUTO_LIVE_TRAILING_STOP_LOSS_REQUIRED, AUTO_LIVE_XAU_VOLUME_DIVISOR } from '../../../services/autoLiveTradePolicy';
 
 export class CTraderLiveAdapter extends CTraderBrokerAdapter {
   readonly environment: TradingEnvironment = 'LIVE';
@@ -90,7 +91,7 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
    * Forex trade value limit to the desired cTrader volume.
    */
   private async enforceMaxTradeValueSizing(order: OrderRequest): Promise<void> {
-    order.trailingStopLoss = true;
+    order.trailingStopLoss = AUTO_LIVE_TRAILING_STOP_LOSS_REQUIRED;
 
     if (order.market !== 'FOREX') return;
 
@@ -120,7 +121,7 @@ export class CTraderLiveAdapter extends CTraderBrokerAdapter {
     // of the configured volume, matching the shared Goldcrest sizing contract.
     const normalizedSymbol = String(order.symbol || '').toUpperCase().trim();
     const isXauPair = normalizedSymbol.split('/').some(part => part === 'XAU');
-    const xauVolumeDivisor = 1000;
+    const xauVolumeDivisor = AUTO_LIVE_XAU_VOLUME_DIVISOR;
     const configuredProtocolVolume = isXauPair
       ? Math.floor(maxTradeValueForexUsd / xauVolumeDivisor)
       : Math.floor(maxTradeValueForexUsd);
