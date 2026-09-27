@@ -13,7 +13,8 @@ import { getForexSessionState, getIndianSessionState } from './src/markets/commo
 import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments';
 import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
 import { ScannerService } from './src/services/scannerService';
-import { getSystemConfig, updateSystemConfig, applyPersistedSystemConfig } from './src/services/configService';
+import { getSystemConfig, updateSystemConfig, applyPersistedSystemConfig, prepareSystemConfigUpdate, persistSystemConfig } from './src/services/configService';
+import { loadPersistedSystemConfigFromDatabase, persistSystemConfigToDatabase } from './src/services/configPersistenceService';
 import { calculateStrategyPayoff } from './src/markets/india_options/strategySkeleton';
 
 // Phase 2A Forex Engines
@@ -471,72 +472,14 @@ function extractForexPair(req: Request): string {
 }
 
 async function hydratePersistedTradeLimits(): Promise<void> {
-  // SQLite remains the migration/source-of-record for settings already stored
-  // by older Goldcrest builds. The config service also maintains an atomic
-  // file-backed copy so settings survive a full server/process restart.
-  // Read all settings and filter known durable keys below. Avoid positional
-  // placeholder counts here because sql.js throws "column index out of range"
-  // when the query and bind list ever drift during schema evolution.
-  const rows = await executeQuery<any>('SELECT key, value FROM system_settings');
-
-  const values = rows.reduce<Record<string, string>>((acc, row) => {
-    acc[String(row.key)] = String(row.value ?? '');
-    return acc;
-  }, {});
-
-  const persistedUpdates: Record<string, any> = {};
-
-  const numericKeys: Array<[string, string]> = [
-    ['DEFAULT_RISK_PCT', 'defaultRiskPct'],
-    ['MAX_DAILY_LOSS_PCT', 'maxDailyLossPct'],
-    ['MAX_OPEN_POSITIONS', 'maxOpenPositions'],
-    ['MAX_TRADES_PER_DAY', 'maxTradesPerDay'],
-    ['MAX_CONSECUTIVE_LOSSES', 'maxConsecutiveLosses'],
-    ['MAX_SPREAD_BPS', 'maxSpreadBps'],
-    ['SIGNAL_COOLDOWN_MS', 'signalCooldownMs'],
-    ['EVENT_PROXIMITY_THRESHOLD_MINUTES', 'eventProximityThresholdMinutes'],
-    ['STRIKE_DEPTH', 'strikeDepth'],
-    ['MAX_TRADE_VALUE_FOREX_USD', 'maxTradeValueForexUsd'],
-    ['MAX_TRADE_VALUE_INDIAN_INR', 'maxTradeValueIndianInr'],
-    ['AUTO_LIVE_MIN_SIGNAL_SCORE', 'autoLiveMinSignalScore'],
-    ['AUTO_LIVE_MAX_TRADES_PER_PAIR', 'autoLiveMaxTradesPerPair'],
-    ['FOREX_STOP_LOSS_PIPS', 'forexStopLossPips'],
-    ['FOREX_TAKE_PROFIT_PIPS', 'forexTakeProfitPips']
-  ];
-
-  for (const [dbKey, configKey] of numericKeys) {
-    if (values[dbKey] === undefined) continue;
-    const numberValue = Number(values[dbKey]);
-    if (Number.isFinite(numberValue)) persistedUpdates[configKey] = numberValue;
-  }
-
-  const stringKeys: Array<[string, string]> = [
-    ['SELECTED_CTRADER_ACCOUNT_ID', 'selectedCtraderAccountId'],
-    ['SELECTED_CTRADER_ACCOUNT_CURRENCY', 'selectedCtraderAccountCurrency'],
-    ['SELECTED_CTRADER_ACCOUNT_LABEL', 'selectedCtraderAccountLabel'],
-    ['FINANCIAL_DISCLAIMER', 'financialDisclaimer']
-  ];
-
-  for (const [dbKey, configKey] of stringKeys) {
-    if (values[dbKey] !== undefined && values[dbKey].trim() !== '') {
-      persistedUpdates[configKey] = values[dbKey];
-    }
-  }
-
-  for (const [dbKey, configKey] of [
-    ['AUTO_LIVE_FOREX_PAIRS', 'autoLiveForexPairs'],
-    ['AUTO_LIVE_INDIAN_UNDERLYINGS', 'autoLiveIndianUnderlyings']
-  ] as Array<[string, string]>) {
-    try {
-      const parsed = JSON.parse(values[dbKey] || 'null');
-      if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
-        persistedUpdates[configKey] = parsed;
-      }
-    } catch {}
-  }
+  // SQLite is authoritative. Rehydrate the complete known configuration set,
+  // including the cTrader LIVE/DEMO selector, then refresh the JSON fallback
+  // snapshot so a future SQLite recovery path is not left with stale settings.
+  const persistedUpdates = await loadPersistedSystemConfigFromDatabase();
 
   if (Object.keys(persistedUpdates).length > 0) {
     applyPersistedSystemConfig(persistedUpdates);
+    persistSystemConfig(getSystemConfig());
   }
 }
 
@@ -589,7 +532,7 @@ app.get('/api/health/ready', (req: Request, res: Response) => {
           process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
           process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
         ),
-        packageVersion: process.env.GOLDCREST_RELEASE_VERSION || '1.3.0-quantitative-review'
+        packageVersion: process.env.GOLDCREST_RELEASE_VERSION || undefined
       }))
     : null;
   const readiness = evaluateRuntimeReadiness(databaseReady, preflight.ok && (releaseIntegrity?.ok ?? true));
@@ -1004,38 +947,22 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
       updates.autoLiveIndianUnderlyings = normalized;
     }
 
-    const updated = updateSystemConfig(updates);
+    const updated = prepareSystemConfigUpdate(updates);
+
+    // Commit SQLite first. The in-memory configuration and JSON fallback are
+    // only updated after the authoritative durable transaction succeeds.
+    await persistSystemConfigToDatabase(updated);
+    applyPersistedSystemConfig(updated);
+    try {
+      persistSystemConfig(updated);
+    } catch (syncError: any) {
+      liveRuntimeLog('ERROR', 'SYSTEM_CONFIG_FALLBACK_SYNC_FAILED', {
+        error: syncError?.message || String(syncError)
+      });
+    }
     const now = Date.now();
 
-    // Write every durable system setting after the merge so a partial save
-    // cannot reset a different setting. configService has already written the
-    // same merged configuration to an atomic JSON file.
-    await executeRun(
-      'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)',
-      [
-        'SELECTED_CTRADER_ACCOUNT_ID', String(updated.selectedCtraderAccountId || ''), now,
-        'SELECTED_CTRADER_ACCOUNT_CURRENCY', String(updated.selectedCtraderAccountCurrency || ''), now,
-        'SELECTED_CTRADER_ACCOUNT_LABEL', String(updated.selectedCtraderAccountLabel || ''), now,
-        'DEFAULT_RISK_PCT', String(updated.defaultRiskPct), now,
-        'MAX_DAILY_LOSS_PCT', String(updated.maxDailyLossPct), now,
-        'MAX_OPEN_POSITIONS', String(updated.maxOpenPositions), now,
-        'MAX_TRADES_PER_DAY', String(updated.maxTradesPerDay), now,
-        'MAX_CONSECUTIVE_LOSSES', String(updated.maxConsecutiveLosses), now,
-        'MAX_SPREAD_BPS', String(updated.maxSpreadBps), now,
-        'SIGNAL_COOLDOWN_MS', String(updated.signalCooldownMs), now,
-        'EVENT_PROXIMITY_THRESHOLD_MINUTES', String(updated.eventProximityThresholdMinutes), now,
-        'STRIKE_DEPTH', String(updated.strikeDepth), now,
-        'MAX_TRADE_VALUE_FOREX_USD', String(updated.maxTradeValueForexUsd), now,
-        'MAX_TRADE_VALUE_INDIAN_INR', String(updated.maxTradeValueIndianInr), now,
-        'AUTO_LIVE_MIN_SIGNAL_SCORE', String(updated.autoLiveMinSignalScore), now,
-        'AUTO_LIVE_MAX_TRADES_PER_PAIR', String(updated.autoLiveMaxTradesPerPair), now,
-        'FOREX_STOP_LOSS_PIPS', String(updated.forexStopLossPips), now,
-        'FOREX_TAKE_PROFIT_PIPS', String(updated.forexTakeProfitPips), now,
-        'AUTO_LIVE_FOREX_PAIRS', JSON.stringify(updated.autoLiveForexPairs || []), now,
-        'AUTO_LIVE_INDIAN_UNDERLYINGS', JSON.stringify(updated.autoLiveIndianUnderlyings || []), now,
-        'FINANCIAL_DISCLAIMER', String(updated.financialDisclaimer || ''), now
-      ]
-    );
+    // SQLite persistence above is the authoritative configuration commit. The JSON file is a fallback snapshot only.
     res.json({ success: true, config: updated });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
