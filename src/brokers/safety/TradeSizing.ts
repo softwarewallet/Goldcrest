@@ -1,5 +1,6 @@
 import { BrokerInstrument } from '../types';
 import { getSystemConfig } from '../../services/configService';
+import { AUTO_LIVE_XAU_VOLUME_DIVISOR } from '../../services/autoLiveTradePolicy';
 
 export interface ForexSizingResult {
   requestedQuantity: number;
@@ -161,7 +162,7 @@ export async function sizeForexOrderToMaxTradeValue(
   const isXauPair = normalizedSymbol
     .split('/')
     .some(part => part === 'XAU');
-  const xauVolumeDivisor = 1000;
+  const xauVolumeDivisor = AUTO_LIVE_XAU_VOLUME_DIVISOR;
   const configuredExecutionQuantity = isXauPair
     ? Math.floor(configuredQuantity / xauVolumeDivisor)
     : Math.floor(configuredQuantity);
