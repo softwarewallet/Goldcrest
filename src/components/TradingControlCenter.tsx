@@ -227,6 +227,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [gateFeedback, setGateFeedback] = useState<string | null>(null);
   const [goLiveValidationBusy, setGoLiveValidationBusy] = useState<boolean>(false);
   const [goLiveValidation, setGoLiveValidation] = useState<any | null>(null);
+  const [activeAutoLiveMonitorBusy, setActiveAutoLiveMonitorBusy] = useState<boolean>(false);
+  const [activeAutoLiveMonitor, setActiveAutoLiveMonitor] = useState<any | null>(null);
 
   // Live broker/account/market state only; empty until authoritative APIs return data.
   const [accounts, setAccounts] = useState<AccountCardData[]>([]);
@@ -743,6 +745,33 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       setGoLiveValidationBusy(false);
     }
   }, []);
+
+  const runActiveAutoLiveMonitor = useCallback(async () => {
+    setActiveAutoLiveMonitorBusy(true);
+    try {
+      const res = await fetch('/api/operations/active-auto-live-monitor', {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' }
+      });
+      const data = await res.json().catch(() => ({}));
+      setActiveAutoLiveMonitor(data);
+      if (res.ok && data.healthy) {
+        setGateFeedback('Active Auto Live monitor is healthy.');
+      } else {
+        setGateFeedback(
+          Array.isArray(data?.criticalFailures) && data.criticalFailures.length
+            ? 'Active Auto Live safety monitor blocked: ' + data.criticalFailures.join(', ')
+            : (data?.failures?.length ? 'Active Auto Live monitor warning: ' + data.failures.join(', ') : (data?.message || 'Active Auto Live monitor is unavailable.'))
+        );
+      }
+    } catch (err) {
+      console.warn('Active Auto Live monitor failed:', err);
+      setGateFeedback('Active Auto Live monitor failed.');
+    } finally {
+      setActiveAutoLiveMonitorBusy(false);
+    }
+  }, []);
+
   // Fetch Options Chain
   const fetchOptionsChain = useCallback(async (symbol: string, expiry?: string, depth: number = 7) => {
     setOptionsLoading(true);
@@ -2333,6 +2362,47 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                   {autoTradingStatus?.autonomousPermission ? 'UNLOCKED / ARMED' : 'LOCKED (GATED)'}
                 </span>
               </div>
+
+              <div className="flex items-center justify-between gap-2 bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-slate-400">Active Auto Live Monitor:</span>
+                <button
+                  type="button"
+                  onClick={runActiveAutoLiveMonitor}
+                  disabled={activeAutoLiveMonitorBusy}
+                  className="px-2.5 py-1 rounded border border-violet-700 bg-violet-950/70 text-violet-300 hover:bg-violet-900/80 text-[10px] font-bold disabled:opacity-50"
+                  title="Check the live Auto Live runtime without changing the execution gate"
+                >
+                  {activeAutoLiveMonitorBusy ? 'CHECKING...' : 'CHECK ACTIVE SESSION'}
+                </button>
+              </div>
+
+              {activeAutoLiveMonitor && (
+                <div className="bg-slate-900/70 p-2.5 rounded border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Active Session Status</span>
+                    <strong className={
+                      activeAutoLiveMonitor.status === 'HEALTHY'
+                        ? 'text-emerald-400'
+                        : activeAutoLiveMonitor.status === 'DEGRADED'
+                          ? 'text-amber-400'
+                          : 'text-rose-400'
+                    }>
+                      {activeAutoLiveMonitor.status || 'UNKNOWN'}
+                    </strong>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Execution Gate</span>
+                    <strong className={activeAutoLiveMonitor.executionGate?.unlocked ? 'text-emerald-400' : 'text-amber-400'}>
+                      {activeAutoLiveMonitor.executionGate?.unlocked ? 'UNLOCKED' : 'LOCKED'}
+                    </strong>
+                  </div>
+                  {Array.isArray(activeAutoLiveMonitor.failures) && activeAutoLiveMonitor.failures.length > 0 && (
+                    <div className="text-[10px] text-rose-300">
+                      Issues: {activeAutoLiveMonitor.failures.join(', ')}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center justify-between gap-2 bg-slate-900/80 p-2 rounded border border-slate-800">
                 <span className="text-slate-400">Production Go-Live Validation:</span>
