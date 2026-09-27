@@ -94,6 +94,7 @@ import { captureAccountBalanceSnapshots, getAccountBalanceSnapshots, startAccoun
 import { brokerRegistry } from './src/brokers/registry';
 import { runtimeLifecycle } from './src/services/runtimeLifecycle';
 import { getRecoveryRecommendation, getRuntimeObservabilitySnapshot } from './src/services/runtimeObservabilityService';
+import { buildProductionReleaseIntegrityInput, evaluateProductionReleaseIntegrity } from './src/services/productionReleaseIntegrityService';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
 // npm run dev is an explicit local development command. Do not let a stale
@@ -245,6 +246,26 @@ app.use('/api', (_req: Request, res: Response, next: NextFunction) => {
 });
 
 app.get('/api/runtime', (_req: Request, res: Response) => {
+  const productionRuntime = process.env.NODE_ENV === 'production';
+  const releaseIntegrity = productionRuntime
+    ? evaluateProductionReleaseIntegrity(buildProductionReleaseIntegrityInput({
+        tradingMode: getSystemConfig().tradingMode,
+        operatorAuthConfigured: operatorAuthConfigured(),
+        liveBrokerConfigured: Boolean(
+          process.env.CTRADER_LIVE_CLIENT_ID?.trim() &&
+          process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
+          process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
+          process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
+        ) || Boolean(
+          process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
+          process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
+          process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
+          process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
+        ),
+        packageVersion: process.env.GOLDCREST_RELEASE_VERSION || '1.3.0-quantitative-review'
+      }))
+    : null;
+
   res.type('application/json').json({
     service: 'goldcrest',
     runtime: GOLDCREST_RUNTIME_ID,
@@ -252,6 +273,7 @@ app.get('/api/runtime', (_req: Request, res: Response) => {
     port: PORT,
     tradingMode: 'LIVE_ONLY',
     lifecycle: runtimeLifecycle.getStatus(),
+    releaseIntegrity,
     timestamp: Date.now()
   });
 });
@@ -547,7 +569,26 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 app.get('/api/health/ready', (req: Request, res: Response) => {
   const preflight = productionPreflight();
-  const readiness = evaluateRuntimeReadiness(databaseReady, preflight.ok);
+  const productionRuntime = process.env.NODE_ENV === 'production';
+  const releaseIntegrity = productionRuntime
+    ? evaluateProductionReleaseIntegrity(buildProductionReleaseIntegrityInput({
+        tradingMode: getSystemConfig().tradingMode,
+        operatorAuthConfigured: operatorAuthConfigured(),
+        liveBrokerConfigured: Boolean(
+          process.env.CTRADER_LIVE_CLIENT_ID?.trim() &&
+          process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
+          process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
+          process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
+        ) || Boolean(
+          process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
+          process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
+          process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
+          process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
+        ),
+        packageVersion: process.env.GOLDCREST_RELEASE_VERSION || '1.3.0-quantitative-review'
+      }))
+    : null;
+  const readiness = evaluateRuntimeReadiness(databaseReady, preflight.ok && (releaseIntegrity?.ok ?? true));
   res.status(readiness.statusCode).json({
     status: readiness.status,
     database: databaseReady ? 'READY' : 'INITIALIZING',
@@ -556,6 +597,7 @@ app.get('/api/health/ready', (req: Request, res: Response) => {
     autoTrading: autoTradingService.getStatus(),
     lifecycle: runtimeLifecycle.getStatus(),
     productionChecks: preflight.checks,
+    releaseIntegrity,
     timestamp: Date.now()
   });
 });
@@ -2378,6 +2420,28 @@ async function startServer() {
   const productionRuntime = process.env.npm_lifecycle_event !== 'dev'
     && process.env.NODE_ENV === 'production';
   productionPreflight(productionRuntime);
+
+  if (productionRuntime) {
+    const releaseIntegrity = evaluateProductionReleaseIntegrity(buildProductionReleaseIntegrityInput({
+      tradingMode: getSystemConfig().tradingMode,
+      operatorAuthConfigured: operatorAuthConfigured(),
+      liveBrokerConfigured: Boolean(
+        process.env.CTRADER_LIVE_CLIENT_ID?.trim() &&
+        process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
+        process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
+        process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
+      ) || Boolean(
+        process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
+        process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
+        process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
+        process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
+      ),
+      packageVersion: process.env.GOLDCREST_RELEASE_VERSION || '1.3.0-quantitative-review'
+    }));
+    if (!releaseIntegrity.ok) {
+      throw new Error(`Production release integrity failed: ${releaseIntegrity.failures.join(', ') || 'invalid release artifacts'}`);
+    }
+  }
 
   // Global JSON error-handling middleware for API routes
   app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
