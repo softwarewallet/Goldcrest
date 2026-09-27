@@ -16,6 +16,7 @@ const valid: AutoLiveActivationInput = {
   cTraderEquityValid: true,
   cTraderTradingPermission: true,
   cTraderApiMode: 'LIVE',
+  allowDemoApiMode: false,
   killSwitchClear: true
 };
 
@@ -64,39 +65,40 @@ add(36, 'Blocked evaluation is not ready', () => assert.equal(evaluateAutoLiveAc
 add(37, 'Blocked status is BLOCKED', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderConnected: false }).status, 'BLOCKED'));
 add(38, 'Blocked status code is 409', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderConnected: false }).statusCode, 409));
 add(39, 'All valid checks pass', () => assert.ok(Object.values(evaluateAutoLiveActivation(valid).checks).every(value => value === 'PASS')));
-add(40, 'All checks expose PASS or FAIL only', () => assert.ok(Object.values(evaluateAutoLiveActivation(valid)).filter(value => value === 'PASS' || value === 'FAIL').length >= 0));
+add(40, 'All check values expose PASS or FAIL only', () => assert.ok(Object.values(evaluateAutoLiveActivation(valid).checks).every(value => value === 'PASS' || value === 'FAIL')));
 add(41, 'LIVE API mode itself is preserved in input', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderApiMode, 'PASS'));
-add(42, 'Demo API mode never passes activation', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderApiMode: 'DEMO' }).checks.cTraderApiMode, 'FAIL'));
-add(43, 'Trading permission is independent of balance validity', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderBalanceValid: false }).checks.cTraderTradingPermission, 'PASS'));
-add(44, 'Account identity is independent of connectivity', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderConnected: false }).checks.cTraderAccountId, 'PASS'));
-add(45, 'Kill switch is independent of account fields', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderBalanceValid: false }).checks.killSwitch, 'PASS'));
-add(46, 'Configuration failure does not change broker check result', () => assert.equal(evaluateAutoLiveActivation({ ...valid, configurationIntegrityOk: false }).checks.cTraderConnected, 'PASS'));
-add(47, 'Production environment failure does not alter API mode check', () => assert.equal(evaluateAutoLiveActivation({ ...valid, productionEnvironment: false }).checks.cTraderApiMode, 'PASS'));
-add(48, 'Result is deterministic', () => assert.deepEqual(evaluateAutoLiveActivation(valid), evaluateAutoLiveActivation({ ...valid })));
-add(49, 'Ready result is internally consistent', () => {
+add(42, 'Demo API mode never passes production activation', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderApiMode: 'DEMO', allowDemoApiMode: false }).checks.cTraderApiMode, 'FAIL'));
+add(43, 'Demo API mode may pass local activation', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderApiMode: 'DEMO', allowDemoApiMode: true }).checks.cTraderApiMode, 'PASS'));
+add(44, 'Trading permission is independent of balance validity', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderBalanceValid: false }).checks.cTraderTradingPermission, 'PASS'));
+add(45, 'Account identity is independent of connectivity', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderConnected: false }).checks.cTraderAccountId, 'PASS'));
+add(46, 'Kill switch is independent of account fields', () => assert.equal(evaluateAutoLiveActivation({ ...valid, cTraderBalanceValid: false }).checks.killSwitch, 'PASS'));
+add(47, 'Configuration failure does not change broker check result', () => assert.equal(evaluateAutoLiveActivation({ ...valid, configurationIntegrityOk: false }).checks.cTraderConnected, 'PASS'));
+add(48, 'Production environment failure does not alter API mode check', () => assert.equal(evaluateAutoLiveActivation({ ...valid, productionEnvironment: false }).checks.cTraderApiMode, 'PASS'));
+add(49, 'Result is deterministic', () => assert.deepEqual(evaluateAutoLiveActivation(valid), evaluateAutoLiveActivation({ ...valid })));
+add(50, 'Ready result is internally consistent', () => {
   const result = evaluateAutoLiveActivation(valid);
   assert.equal(result.ready, result.failures.length === 0);
   assert.equal(result.statusCode, 200);
 });
-add(50, 'Blocked result is internally consistent', () => {
+add(51, 'Blocked result is internally consistent', () => {
   const result = evaluateAutoLiveActivation({ ...valid, killSwitchClear: false });
   assert.equal(result.ready, false);
   assert.equal(result.statusCode, 409);
 });
-add(51, 'Complete check count is 15', () => assert.equal(Object.keys(evaluateAutoLiveActivation(valid).checks).length, 15));
-add(52, 'Production environment check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.productionEnvironment, 'PASS'));
-add(53, 'Runtime lifecycle check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.runtimeLifecycle, 'PASS'));
-add(54, 'cTrader account-live check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderAccountLive, 'PASS'));
-add(55, 'cTrader account ID check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderAccountId, 'PASS'));
-add(56, 'cTrader currency check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderCurrency, 'PASS'));
-add(57, 'cTrader balance check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderBalance, 'PASS'));
-add(58, 'cTrader equity check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderEquity, 'PASS'));
-add(59, 'cTrader trading permission check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderTradingPermission, 'PASS'));
-add(60, 'Phase 9.4 certification contains exactly 60 scenarios', () => assert.equal(scenarios.length, 60));
+add(52, 'Complete check count is 16', () => assert.equal(Object.keys(evaluateAutoLiveActivation(valid).checks).length, 15));
+add(53, 'Production environment check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.productionEnvironment, 'PASS'));
+add(54, 'Runtime lifecycle check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.runtimeLifecycle, 'PASS'));
+add(55, 'cTrader account-live check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderAccountLive, 'PASS'));
+add(56, 'cTrader account ID check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderAccountId, 'PASS'));
+add(57, 'cTrader currency check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderCurrency, 'PASS'));
+add(58, 'cTrader balance check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderBalance, 'PASS'));
+add(59, 'cTrader equity check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderEquity, 'PASS'));
+add(60, 'cTrader trading permission check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderTradingPermission, 'PASS'));
+add(61, 'Phase 9.4 certification contains exactly 61 scenarios', () => assert.equal(scenarios.length, 61));
 
 for (const item of scenarios) {
   item.run();
   console.log('[PASS ' + String(item.id).padStart(2, '0') + '/60] ' + item.name);
 }
 
-console.log('PHASE 9.4 AUTO LIVE ACTIVATION CERTIFICATION: 60/60 PASSED');
+console.log('PHASE 9.4 AUTO LIVE ACTIVATION CERTIFICATION: 61/61 PASSED');
