@@ -56,4 +56,4 @@ If the operator key is not configured, protected endpoints fail closed with `OPE
 
 Goldcrest production startup performs a fail-closed preflight. Production will not start unless GOLDCREST_OPERATOR_API_KEY is configured, at least one LIVE broker credential set is configured, the trading mode is LIVE_ONLY, and autonomous execution is disabled. The runtime exposes /api/health for liveness and /api/health/ready for readiness.
 
-Build with npm ci && npm run build and run with NODE_ENV=production npm start. Put the Node process behind a TLS reverse proxy and persist data/trading_analyst.sqlite on durable storage.
+Install dependencies with npm install, build with npm run build, and run with NODE_ENV=production npm start. Production startup also validates the compiled server bundle, SPA entry artifact, and writable data directory before accepting traffic. Put the Node process behind a TLS reverse proxy and persist data/trading_analyst.sqlite on durable storage.
