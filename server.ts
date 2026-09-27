@@ -100,6 +100,7 @@ import { getRecoveryRecommendation, getRuntimeObservabilitySnapshot } from './sr
 import { buildProductionReleaseIntegrityInput, evaluateProductionReleaseIntegrity } from './src/services/productionReleaseIntegrityService';
 import { evaluateSystemConfigIntegrity } from './src/services/configIntegrityService';
 import { evaluateOperationalReadiness } from './src/services/operationalReadinessService';
+import { evaluateAccountStateConsistency } from './src/services/accountStateConsistencyService';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
 // npm run dev is an explicit local development command. Do not let a stale
@@ -284,6 +285,81 @@ app.get('/api/runtime', (_req: Request, res: Response) => {
     releaseIntegrity,
     timestamp: Date.now()
   });
+});
+
+app.get('/api/operations/account-consistency', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+    const brokers = ['CTRADER', 'FIVE_PAISA'] as const;
+    const results = await Promise.all(
+      brokers.map(async (broker) => {
+        let liveAccount = null;
+        try {
+          liveAccount = await brokerRegistry.getAdapter(broker, 'LIVE').getAccount();
+        } catch {
+          liveAccount = null;
+        }
+
+        const snapshots = await getAccountBalanceSnapshots({
+          broker,
+          limit: 1
+        });
+        const result = evaluateAccountStateConsistency(
+          broker,
+          liveAccount,
+          snapshots[0] || null
+        );
+
+        return {
+          ...result,
+          liveAccount: liveAccount
+            ? {
+                accountId: String(liveAccount.accountId || '****').replace(/^.*(?=.{4}$)/, '****'),
+                currency: liveAccount.currency,
+                balance: liveAccount.balance,
+                equity: liveAccount.equity,
+                usedMargin: liveAccount.usedMargin,
+                freeMargin: liveAccount.freeMargin,
+                lastUpdate: liveAccount.lastUpdate,
+                connectionStatus: liveAccount.connectionStatus
+              }
+            : null,
+          latestSnapshot: snapshots[0]
+            ? {
+                capturedAt: snapshots[0].capturedAt,
+                accountId: String(snapshots[0].accountId || '****').replace(/^.*(?=.{4}$)/, '****'),
+                currency: snapshots[0].currency,
+                balance: snapshots[0].balance,
+                equity: snapshots[0].equity,
+                usedMargin: snapshots[0].usedMargin,
+                freeMargin: snapshots[0].freeMargin,
+                status: snapshots[0].status
+              }
+            : null
+        };
+      })
+    );
+
+    const consistent = results.every(result =>
+      result.status === 'ALIGNED' || result.status === 'STALE_HISTORY'
+    ) && results.some(result => result.liveAccountValid);
+
+    res.status(consistent ? 200 : 503).json({
+      generatedAt: Date.now(),
+      environment: 'LIVE',
+      tradingMode: 'LIVE_ONLY',
+      consistent,
+      brokers: results
+    });
+  } catch (error: any) {
+    liveRuntimeLog('ERROR', 'ACCOUNT_STATE_CONSISTENCY_FAILED', {
+      error: error?.message || String(error)
+    });
+    res.status(503).json({
+      error: 'ACCOUNT_STATE_CONSISTENCY_UNAVAILABLE',
+      message: error?.message || 'LIVE account state consistency is unavailable.'
+    });
+  }
 });
 
 app.get('/api/operations/brokers/verify', operatorAuthRequired, async (_req: Request, res: Response) => {
