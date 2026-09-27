@@ -23,17 +23,34 @@ let persistenceStatus: DatabasePersistenceStatus = {
   recoveredFromBackup: false
 };
 
-export function recoverDatabaseFileIfNeeded(primaryFile = DB_FILE, backupFile = DB_BACKUP_FILE): boolean {
+export function recoverDatabaseFileIfNeeded(
+  primaryFile = DB_FILE,
+  backupFile = DB_BACKUP_FILE,
+  temporaryFile = DB_TEMP_FILE
+): boolean {
   if (fs.existsSync(primaryFile)) return false;
-  if (!fs.existsSync(backupFile)) return false;
-  fs.copyFileSync(backupFile, primaryFile);
-  persistenceStatus.lastRecoveryAt = Date.now();
-  persistenceStatus.recoveredFromBackup = true;
-  return true;
+  if (fs.existsSync(backupFile)) {
+    fs.copyFileSync(backupFile, primaryFile);
+    persistenceStatus.lastRecoveryAt = Date.now();
+    persistenceStatus.recoveredFromBackup = true;
+    return true;
+  }
+  return false;
 }
 
 function loadDatabase(SQL: any): Database {
   recoverDatabaseFileIfNeeded();
+  if (!fs.existsSync(DB_FILE) && fs.existsSync(DB_TEMP_FILE)) {
+    try {
+      const recovered = new SQL.Database(fs.readFileSync(DB_TEMP_FILE));
+      fs.renameSync(DB_TEMP_FILE, DB_FILE);
+      persistenceStatus.lastRecoveryAt = Date.now();
+      persistenceStatus.recoveredFromBackup = true;
+      return recovered;
+    } catch {
+      try { fs.unlinkSync(DB_TEMP_FILE); } catch {}
+    }
+  }
   if (!fs.existsSync(DB_FILE)) return new SQL.Database();
 
   try {
