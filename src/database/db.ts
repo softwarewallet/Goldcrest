@@ -102,8 +102,19 @@ export function persistDatabase(): void {
     fs.writeFileSync(DB_TEMP_FILE, buffer);
     if (fs.existsSync(DB_FILE)) {
       fs.copyFileSync(DB_FILE, DB_BACKUP_FILE);
+      fs.rmSync(DB_FILE, { force: true });
     }
-    fs.renameSync(DB_TEMP_FILE, DB_FILE);
+    try {
+      fs.renameSync(DB_TEMP_FILE, DB_FILE);
+    } catch (renameError) {
+      // Windows does not replace an existing file through rename in all
+      // filesystem configurations. The previous image is already in the
+      // backup path, so restore it when the new image cannot be installed.
+      if (!fs.existsSync(DB_FILE) && fs.existsSync(DB_BACKUP_FILE)) {
+        try { fs.copyFileSync(DB_BACKUP_FILE, DB_FILE); } catch {}
+      }
+      throw renameError;
+    }
 
     persistenceStatus.lastPersistedAt = Date.now();
     persistenceStatus.lastPersistenceError = null;
@@ -116,6 +127,18 @@ export function persistDatabase(): void {
       // Best effort cleanup only.
     }
   }
+}
+
+export function getDatabaseFilePaths(): {
+  primary: string;
+  temporary: string;
+  backup: string;
+} {
+  return {
+    primary: DB_FILE,
+    temporary: DB_TEMP_FILE,
+    backup: DB_BACKUP_FILE
+  };
 }
 
 export function getDatabasePersistenceStatus(): DatabasePersistenceStatus {
