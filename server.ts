@@ -104,6 +104,7 @@ import { evaluateOperationalReadiness } from './src/services/operationalReadines
 import { evaluateAccountStateConsistency } from './src/services/accountStateConsistencyService';
 import { evaluateAutoLiveActivation } from './src/services/autoLiveActivationService';
 import { evaluateProductionGoLiveValidation } from './src/services/productionGoLiveValidationService';
+import { evaluateActiveAutoLiveMonitor } from './src/services/activeAutoLiveMonitorService';
 import { maskIdentifier } from './src/brokers/auditLog';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
@@ -663,6 +664,144 @@ app.get('/api/operations/go-live-validation', operatorAuthRequired, async (_req:
       error: 'PRODUCTION_GO_LIVE_VALIDATION_UNAVAILABLE',
       message: error?.message || 'Production go-live validation is unavailable.',
       orderSubmissionPerformed: false
+    });
+  }
+});
+
+app.get('/api/operations/active-auto-live-monitor', operatorAuthRequired, async (_req: Request, res: Response) => {
+  try {
+    await databaseInitPromise;
+
+    const config = getSystemConfig();
+    const configIntegrity = evaluateSystemConfigIntegrity(config);
+    const observability = await getRuntimeObservabilitySnapshot({
+      runtimeId: GOLDCREST_RUNTIME_ID,
+      environment: process.env.NODE_ENV || 'development'
+    });
+
+    const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+    let account = null;
+    let connection = null;
+    try {
+      connection = await adapter.testConnection();
+      account = await adapter.getAccount();
+    } catch {
+      connection = null;
+      account = null;
+    }
+
+    const permissions = Array.isArray(account?.permissions) ? account.permissions : [];
+    const accountIsLive = account?.accountType === 'LIVE' && account?.isLiveAccount !== false;
+    const accountIdPresent = Boolean(String(account?.accountId || '').trim());
+    const currencyPresent = Boolean(String(account?.currency || '').trim());
+    const balanceValid = typeof account?.balance === 'number' && Number.isFinite(account.balance) && account.balance > 0;
+    const equityValid = typeof account?.equity === 'number' && Number.isFinite(account.equity) && account.equity > 0;
+    const tradingPermission = permissions.includes('TRADING')
+      || permissions.includes('EQUITY')
+      || permissions.includes('DERIVATIVES')
+      || permissions.includes('NSE_FNO');
+
+    const snapshots = await getAccountBalanceSnapshots({
+      broker: 'CTRADER',
+      limit: 1
+    });
+    const accountConsistency = evaluateAccountStateConsistency(
+      'CTRADER',
+      account,
+      snapshots[0] || null
+    );
+
+    const noUnresolvedExecutionIntents =
+      observability.executionIntents.pending === 0
+      && observability.executionIntents.inFlight === 0
+      && observability.executionIntents.reconciliationTimeout === 0;
+
+    const autoTradingStateOperational = ['RUNNING', 'PREPARING', 'PAUSED_LIMIT'].includes(
+      observability.autoTrading.state
+    );
+    const executionGateUnlocked = LIVE_AUTO_EXECUTION_ALLOWED === true;
+
+    const monitor = evaluateActiveAutoLiveMonitor({
+      configurationIntegrityOk: configIntegrity.ok,
+      tradingModeLiveOnly: config.tradingMode === 'LIVE_ONLY',
+      databasePersistenceHealthy: !observability.databasePersistence.lastPersistenceError,
+      runtimeLifecycleRunning: observability.lifecycle.state === 'RUNNING',
+      auditLogReady: observability.auditLog.enabled && observability.auditLog.exists,
+      cTraderConnected: connection?.connected === true && account?.connectionStatus === 'CONNECTED',
+      cTraderAccountIsLive: accountIsLive,
+      cTraderAccountIdPresent: accountIdPresent,
+      cTraderCurrencyPresent: currencyPresent,
+      cTraderBalanceValid: balanceValid,
+      cTraderEquityValid: equityValid,
+      cTraderTradingPermission: tradingPermission,
+      cTraderApiModeLive: getCTraderApiMode() === 'LIVE',
+      killSwitchClear: !killSwitch.isHalted(),
+      executionGateUnlocked,
+      autoTradingStateOperational,
+      noUnresolvedExecutionIntents,
+      cTraderAccountStateConsistent: accountConsistency.consistent
+    });
+
+    liveRuntimeLog(
+      monitor.healthy ? 'SYSTEM' : monitor.status === 'BLOCKED' ? 'ERROR' : 'WARN',
+      monitor.healthy ? 'ACTIVE_AUTO_LIVE_MONITOR_HEALTHY' : 'ACTIVE_AUTO_LIVE_MONITOR_BLOCKED',
+      {
+        failures: monitor.failures,
+        criticalFailures: monitor.criticalFailures,
+        cTraderApiMode: getCTraderApiMode(),
+        autoTradingState: observability.autoTrading.state,
+        accountConsistency: accountConsistency.status
+      }
+    );
+
+    return res.status(monitor.statusCode).json({
+      phase: '9.6',
+      generatedAt: Date.now(),
+      runtimeId: GOLDCREST_RUNTIME_ID,
+      environment: process.env.NODE_ENV || 'development',
+      tradingMode: 'LIVE_ONLY',
+      status: monitor.status,
+      healthy: monitor.healthy,
+      checks: monitor.checks,
+      failures: monitor.failures,
+      criticalFailures: monitor.criticalFailures,
+      cTrader: {
+        apiMode: getCTraderApiMode(),
+        apiEndpoint: connection?.apiEndpoint || null,
+        connected: connection?.connected === true,
+        accountId: account ? maskIdentifier(String(account.accountId || '')) : null,
+        accountCurrency: account?.currency || null,
+        accountType: account?.accountType || null,
+        balance: account?.balance ?? null,
+        equity: account?.equity ?? null,
+        tradingPermission,
+        accountConsistency: {
+          status: accountConsistency.status,
+          consistent: accountConsistency.consistent,
+          snapshotAgeMs: accountConsistency.snapshotAgeMs,
+          balanceDelta: accountConsistency.balanceDelta,
+          equityDelta: accountConsistency.equityDelta
+        }
+      },
+      executionGate: {
+        unlocked: executionGateUnlocked,
+        locked: !executionGateUnlocked
+      },
+      autoTrading: {
+        state: observability.autoTrading.state,
+        currentExecution: observability.autoTrading.currentExecution,
+        lastExecution: observability.autoTrading.lastExecution
+      },
+      unresolvedExecutionIntents: observability.executionIntents
+    });
+  } catch (error: any) {
+    liveRuntimeLog('ERROR', 'ACTIVE_AUTO_LIVE_MONITOR_FAILED', {
+      error: error?.message || String(error)
+    });
+    return res.status(503).json({
+      phase: '9.6',
+      error: 'ACTIVE_AUTO_LIVE_MONITOR_UNAVAILABLE',
+      message: error?.message || 'Active Auto Live monitoring is unavailable.'
     });
   }
 });
