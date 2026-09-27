@@ -6,7 +6,7 @@ Goldcrest is an AI-assisted trading analysis platform with broker connectivity, 
 
 - **Trading mode:** `LIVE_ONLY`
 - **LIVE broker connectivity:** supported for account, balance, positions, orders, and market-data observation where authoritative broker data is available.
-- **Autonomous live-money execution:** permanently disabled.
+- **Autonomous live-money execution:** disabled by default and enabled only through the operator-controlled activation gate after the production activation preflight passes.
 - **Authoritative data only:** fabricated balances, quotes, OHLC, volume, and synthetic `FRESH` market-data fallbacks are not permitted.
 - **Research program:** active and observational. The research pipeline captures live-trade outcomes, builds features/training labels, and evaluates directional baselines; research outputs do not modify live execution.
 - **Persistence:** SQLite is the sole application persistence layer. Firestore/Firebase application storage has been removed.
@@ -19,7 +19,7 @@ The absolute safety invariant:
 
 `LIVE_AUTO_EXECUTION_ALLOWED === false`
 
-is permanently enforced. Goldcrest may validate and execute explicit operator-controlled LIVE orders through the broker routes after the server-side safety gates pass, but it must not autonomously submit live-money orders.
+is the startup/locked-state invariant. Autonomous live-money execution can be enabled only through the authenticated operator activation gate after the production activation preflight passes. Goldcrest still requires all per-signal live safety, readiness, position, loss, spread, quote, instrument, and execution-reconciliation gates before an autonomous order can reach a broker.
 
 ## Account Selection
 
@@ -54,6 +54,6 @@ If the operator key is not configured, protected endpoints fail closed with `OPE
 
 ## Production deployment
 
-Goldcrest production startup performs a fail-closed preflight. Production will not start unless GOLDCREST_OPERATOR_API_KEY is configured, at least one LIVE broker credential set is configured, the trading mode is LIVE_ONLY, and autonomous execution is disabled. The runtime exposes /api/health for liveness and /api/health/ready for readiness.
+Goldcrest production startup performs a fail-closed preflight. Production will not start unless GOLDCREST_OPERATOR_API_KEY is configured, at least one LIVE broker credential set is configured, the trading mode is LIVE_ONLY, and autonomous execution is locked at startup. The authenticated operator can use the execution-gate unlock flow only after the production Auto Live activation preflight passes. The runtime exposes /api/health for liveness and /api/health/ready for readiness.
 
 Install dependencies with npm install, build with npm run build, and run with NODE_ENV=production npm start. Production startup also validates the compiled server bundle, SPA entry artifact, and writable data directory before accepting traffic. Put the Node process behind a TLS reverse proxy and persist data/trading_analyst.sqlite on durable storage.
