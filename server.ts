@@ -8,6 +8,7 @@ import { GoogleGenAI } from '@google/genai';
 import { apiRateLimit, blockLegacyTradingModes, operatorAuthConfigured, operatorAuthRequired, requestId, securityHeaders, issueOperatorSession, setOperatorSessionCookie, clearOperatorSessionCookie, isOperatorSessionValid } from './src/server/security';
 
 import { getDatabase, getDatabaseStats, executeQuery, executeRun, persistDatabase } from './src/database/db';
+import { buildRuntimeHealthPayload, evaluateRuntimeReadiness } from './src/services/runtimeReadiness';
 import { getForexSessionState, getIndianSessionState } from './src/markets/common/session';
 import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments';
 import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
@@ -514,14 +515,14 @@ function getGenAI(): GoogleGenAI | null {
 
 // 1. System Status & Health
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'goldcrest', environment: process.env.NODE_ENV || 'development', timestamp: Date.now() });
+  res.json({ ...buildRuntimeHealthPayload(process.env.NODE_ENV), timestamp: Date.now() });
 });
 
 app.get('/api/health/ready', (req: Request, res: Response) => {
   const preflight = productionPreflight();
-  const ready = databaseReady && preflight.ok;
-  res.status(ready ? 200 : 503).json({
-    status: ready ? 'ready' : 'not_ready',
+  const readiness = evaluateRuntimeReadiness(databaseReady, preflight.ok);
+  res.status(readiness.statusCode).json({
+    status: readiness.status,
     database: databaseReady ? 'READY' : 'INITIALIZING',
     tradingMode: getSystemConfig().tradingMode,
     autonomousLiveExecutionAllowed: LIVE_AUTO_EXECUTION_ALLOWED,
