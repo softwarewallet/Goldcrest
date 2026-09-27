@@ -25,7 +25,7 @@ export interface CrossModelTemporalWindow {
   windowDays:number;
   baseline:CrossModelTemporalMetrics;
   ai:CrossModelTemporalMetrics;
-  deltas:{accuracyPct:number|null;confidencePct:number|null;expectedCalibrationErrorPct:number|null;maximumCalibrationErrorPct:number|null;calibrationSlope:number|null;calibrationInterceptPct:number|null};
+  deltas:{accuracyPct:number|null;confidencePct:number|null;expectedCalibrationErrorPct:number|null;maximumCalibrationErrorPct:number|null;calibrationSlope:number|null;calibrationInterceptPct:number|null;calibrationBuckets:CrossModelTemporalBucketDelta[]};
 }
 export interface CurrentPairCrossModelTemporalCalibrationRow {
   symbol:string; horizon:CurrentPairPredictionHorizon; pairedObservations:number; pairedEvaluated:number; pairedPending:number;
