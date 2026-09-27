@@ -2366,7 +2366,7 @@ async function startServer() {
         process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
         process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
       ),
-      packageVersion: process.env.GOLDCREST_RELEASE_VERSION || '1.3.0-quantitative-review'
+      packageVersion: process.env.GOLDCREST_RELEASE_VERSION || undefined
     }));
     if (!releaseIntegrity.ok) {
       throw new Error(`Production release integrity failed: ${releaseIntegrity.failures.join(', ') || 'invalid release artifacts'}`);
