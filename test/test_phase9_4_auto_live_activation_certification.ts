@@ -85,7 +85,7 @@ add(51, 'Blocked result is internally consistent', () => {
   assert.equal(result.ready, false);
   assert.equal(result.statusCode, 409);
 });
-add(52, 'Complete check count is 16', () => assert.equal(Object.keys(evaluateAutoLiveActivation(valid).checks).length, 15));
+add(52, 'Complete check count is 15', () => assert.equal(Object.keys(evaluateAutoLiveActivation(valid).checks).length, 15));
 add(53, 'Production environment check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.productionEnvironment, 'PASS'));
 add(54, 'Runtime lifecycle check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.runtimeLifecycle, 'PASS'));
 add(55, 'cTrader account-live check is present', () => assert.equal(evaluateAutoLiveActivation(valid).checks.cTraderAccountLive, 'PASS'));
