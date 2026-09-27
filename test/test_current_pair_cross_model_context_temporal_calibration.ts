@@ -10,7 +10,7 @@ const insert=async(id:string,model:string,timestamp:number,actual:'UP'|'DOWN',co
   [id,model,id,timestamp,'1D','UP',confidence,id+'-hash',actual,now,now,JSON.stringify({marketRegime:regime,session})]
 );
 for(let i=0;i<45;i++){
-  const ts=now-(i+2)*2*60*60*1000+60000;
+  const ts=now-(i+2)*8*60*60*1000+60000;
   const actual=i<30?'UP':'DOWN';
   const regime=i<35?'TREND':'RANGE';
   const session=i<35?'LONDON':'NEW_YORK';
