@@ -89,15 +89,20 @@ add(57,'Observability snapshot cannot enable autonomous execution',async()=>{ au
 add(58,'LIVE_ONLY broker registry remains authoritative',()=>{ assert.equal(brokerRegistry.getEnvironment(),'LIVE'); });
 add(59,'Active adapters are live adapters only',()=>{ assert.ok(brokerRegistry.getActiveLiveAdapters().every(a=>a.environment==='LIVE'&&a.isLive===true)); });
 add(60,'cTrader LIVE/DEMO transport selector contract remains registered',()=>{ const statuses=brokerRegistry.getCredentialStatuses(); const ctrader=statuses.find(s=>s.broker==='CTRADER'&&s.environment==='LIVE'); assert.ok(ctrader); });
+add(61,'Persistence failure is classified as critical runtime health',()=>{ assert.equal(observability.evaluateRuntimeObservabilityHealth({lifecycleState:'RUNNING',databaseReady:true,auditLogReady:true,brokerStatuses:[],operatorActionRequired:0,staleUnresolved:0,schedulerFailures:0,persistenceError:'EIO'}),'CRITICAL'); });
+add(62,'Clean persistence state remains healthy',()=>{ assert.equal(observability.evaluateRuntimeObservabilityHealth({lifecycleState:'RUNNING',databaseReady:true,auditLogReady:true,brokerStatuses:[],operatorActionRequired:0,staleUnresolved:0,schedulerFailures:0,persistenceError:null}),'HEALTHY'); });
+add(63,'Recovery helper accepts an existing backup without replacing healthy primary',()=>{ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'goldcrest-phase8-13-')); const primary=path.join(dir,'primary'); const backup=path.join(dir,'backup'); fs.writeFileSync(primary,'primary'); fs.writeFileSync(backup,'backup'); assert.equal(db.recoverDatabaseFileIfNeeded(primary,backup),false); assert.equal(fs.readFileSync(primary,'utf8'),'primary'); fs.rmSync(dir,{recursive:true,force:true}); });
+add(64,'Persistence backup survives a second complete database image',()=>{ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'goldcrest-phase8-13-')); const primary=path.join(dir,'primary'); const temp=path.join(dir,'temp'); const backup=path.join(dir,'backup'); db.persistDatabaseBuffer(Buffer.from('one'),primary,temp,backup); db.persistDatabaseBuffer(Buffer.from('two'),primary,temp,backup); assert.equal(fs.readFileSync(backup,'utf8'),'one'); fs.rmSync(dir,{recursive:true,force:true}); });
+add(65,'Database persistence paths remain inside the application data directory',()=>{ const p=db.getDatabaseFilePaths(); assert.equal(path.dirname(p.primary),path.dirname(p.backup)); assert.equal(path.dirname(p.primary),path.dirname(p.temporary)); });
 
-assert.equal(scenarios.length,60);
+assert.equal(scenarios.length,65);
 console.log('=========================================================================');
 console.log('PHASE 8.13 — PRODUCTION DISASTER RECOVERY & STATE-INTEGRITY CERTIFICATION');
-console.log('60 deterministic, broker-side-effect-free disaster-recovery scenarios');
+console.log('65 deterministic, broker-side-effect-free disaster-recovery scenarios');
 console.log('=========================================================================');
-for(const item of scenarios){ await item.run(); console.log('[PASS '+String(item.id).padStart(2,'0')+'/60] '+item.name); }
+for(const item of scenarios){ await item.run(); console.log('[PASS '+String(item.id).padStart(2,'0')+'/65] '+item.name); }
 console.log('=========================================================================');
-console.log('PHASE 8.13 CERTIFICATION: 60/60 PASSED');
+console.log('PHASE 8.13 CERTIFICATION: 65/65 PASSED');
 console.log('Crash-safe database persistence: VERIFIED');
 console.log('Primary/backup recovery: VERIFIED');
 console.log('Execution idempotency: VERIFIED');
