@@ -70,7 +70,10 @@ export function evaluateBrokerVerification(input: BrokerVerificationInput): Brok
   }
 
   const authoritativeAccountState = connection.connected
-    && failures.every(failure => !failure.includes('ACCOUNT_') && failure !== 'BALANCE_UNAVAILABLE' && failure !== 'EQUITY_UNAVAILABLE');
+    && !failures.includes('ACCOUNT_ID_UNAVAILABLE')
+    && !failures.includes('ACCOUNT_CURRENCY_UNAVAILABLE')
+    && !failures.includes('BALANCE_UNAVAILABLE')
+    && !failures.includes('EQUITY_UNAVAILABLE');
 
   return {
     broker: input.broker,
