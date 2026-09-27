@@ -17,7 +17,7 @@
     "test:quant_review": "tsx test/test_quantitative_performance_review.ts",
     "test:exp_2026_research_004": "tsx test/test_exp_2026_research_004.ts",
     "test:exp_2026_research_008": "tsx test/test_exp_2026_research_008.ts",
-    "test": "tsx test/test_live_runtime_log.ts && tsx test/test_config_persistence.ts && tsx test/test_trade_sizing.ts && tsx test/test_live_news_service.ts && tsx test/test_indian_market_news_service.ts && tsx test/test_auto_live_market_gate.ts && tsx test/test_live_only_audit.ts && tsx test/test_local_operator_bypass.ts && tsx test/test_auto_trade_readiness.ts && tsx test/test_auto_trading_orchestrator.ts && tsx test/test_local_auto_live_arm.ts && tsx test/test_cTrader_transport_selection.ts && npm run test:phase8_6 && npm run test:phase8_7 && npm run test:phase8_8 && npm run test:phase8_9 && npm run test:phase8_10 && npm run test:phase8_11",
+    "test": "tsx test/test_live_runtime_log.ts && tsx test/test_config_persistence.ts && tsx test/test_trade_sizing.ts && tsx test/test_live_news_service.ts && tsx test/test_indian_market_news_service.ts && tsx test/test_auto_live_market_gate.ts && tsx test/test_live_only_audit.ts && tsx test/test_local_operator_bypass.ts && tsx test/test_auto_trade_readiness.ts && tsx test/test_auto_trading_orchestrator.ts && tsx test/test_local_auto_live_arm.ts && tsx test/test_cTrader_transport_selection.ts && npm run test:phase8_6 && npm run test:phase8_7 && npm run test:phase8_8 && npm run test:phase8_9 && npm run test:phase8_10 && npm run test:phase8_11 && npm run test:phase8_12",
     "start:prod": "cross-env NODE_ENV=production node dist/server.cjs",
     "prestart:prod": "npm run build",
     "test:auto_trading_orchestrator": "tsx test/test_auto_trading_orchestrator.ts",
@@ -31,7 +31,8 @@
     "test:phase8_8": "tsx test/test_phase8_8_auto_live_orchestrator_policy_certification.ts",
     "test:phase8_9": "tsx test/test_phase8_9_live_runtime_resilience_certification.ts",
     "test:phase8_10": "tsx test/test_phase8_10_production_operations_recovery_certification.ts",
-    "test:phase8_11": "tsx test/test_phase8_11_production_observability_certification.ts"
+    "test:phase8_11": "tsx test/test_phase8_11_production_observability_certification.ts",
+    "test:phase8_12": "tsx test/test_phase8_12_production_security_certification.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
