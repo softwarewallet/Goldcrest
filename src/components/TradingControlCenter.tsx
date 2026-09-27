@@ -229,6 +229,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [goLiveValidation, setGoLiveValidation] = useState<any | null>(null);
   const [activeAutoLiveMonitorBusy, setActiveAutoLiveMonitorBusy] = useState<boolean>(false);
   const [activeAutoLiveMonitor, setActiveAutoLiveMonitor] = useState<any | null>(null);
+  const [ctraderFunctionalValidationBusy, setCtraderFunctionalValidationBusy] = useState<boolean>(false);
+  const [ctraderFunctionalValidation, setCtraderFunctionalValidation] = useState<any | null>(null);
 
   // Live broker/account/market state only; empty until authoritative APIs return data.
   const [accounts, setAccounts] = useState<AccountCardData[]>([]);
@@ -769,6 +771,32 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       setGateFeedback('Active Auto Live monitor failed.');
     } finally {
       setActiveAutoLiveMonitorBusy(false);
+    }
+  }, []);
+
+  const runCTraderFunctionalValidation = useCallback(async () => {
+    setCtraderFunctionalValidationBusy(true);
+    try {
+      const res = await fetch('/api/operations/ctrader-functional-validation', {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' }
+      });
+      const data = await res.json().catch(() => ({}));
+      setCtraderFunctionalValidation(data);
+      if (res.ok && data.ready) {
+        setGateFeedback('cTrader ' + (data.mode || 'API') + ' functional validation passed. No broker order was submitted.');
+      } else {
+        setGateFeedback(
+          Array.isArray(data?.failures) && data.failures.length
+            ? 'cTrader functional validation blocked: ' + data.failures.join(', ')
+            : (data?.message || 'cTrader functional validation is unavailable.')
+        );
+      }
+    } catch (err) {
+      console.warn('cTrader functional validation failed:', err);
+      setGateFeedback('cTrader functional validation failed.');
+    } finally {
+      setCtraderFunctionalValidationBusy(false);
     }
   }, []);
 
@@ -2364,6 +2392,39 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               </div>
 
               <div className="flex items-center justify-between gap-2 bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-slate-400">cTrader Functional Validation:</span>
+                <button
+                  type="button"
+                  onClick={runCTraderFunctionalValidation}
+                  disabled={ctraderFunctionalValidationBusy}
+                  className="px-2.5 py-1 rounded border border-fuchsia-700 bg-fuchsia-950/70 text-fuchsia-300 hover:bg-fuchsia-900/80 text-[10px] font-bold disabled:opacity-50"
+                  title="Validate cTrader account, market data, positions, orders, history and shared order packet logic using the currently selected LIVE or DEMO API mode. No broker order is submitted."
+                >
+                  {ctraderFunctionalValidationBusy ? 'TESTING...' : 'VALIDATE cTRADER'}
+                </button>
+              </div>
+
+              {ctraderFunctionalValidation && (
+                <div className="bg-slate-900/70 p-2.5 rounded border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">cTrader Test Status</span>
+                    <strong className={ctraderFunctionalValidation.ready ? 'text-emerald-400' : 'text-rose-400'}>
+                      {(ctraderFunctionalValidation.mode || 'UNKNOWN') + ' / ' + (ctraderFunctionalValidation.status || 'UNKNOWN')}
+                    </strong>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Broker Order Submitted</span>
+                    <strong className="text-emerald-400">NO</strong>
+                  </div>
+                  {Array.isArray(ctraderFunctionalValidation.failures) && ctraderFunctionalValidation.failures.length > 0 && (
+                    <div className="text-[10px] text-rose-300">
+                      Blockers: {ctraderFunctionalValidation.failures.join(', ')}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-2 bg-slate-900/80 p-2 rounded border border-slate-800">
                 <span className="text-slate-400">Active Auto Live Monitor:</span>
                 <button
                   type="button"
@@ -2459,8 +2520,10 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
-                  <span className="text-slate-400">Live Account Connected:</span>
-                  <strong className="text-emerald-400">YES (cTrader & 5paisa)</strong>
+                  <span className="text-slate-400">Live Broker Connectivity:</span>
+                  <strong className={accounts.length > 0 ? 'text-emerald-400' : 'text-amber-400'}>
+                    {accounts.length > 0 ? accounts.map(account => account.broker + ' CONNECTED').join(' / ') : 'NO AUTHORITATIVE LIVE ACCOUNT DATA'}
+                  </strong>
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
