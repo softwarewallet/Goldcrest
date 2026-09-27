@@ -95,6 +95,7 @@ import { brokerRegistry } from './src/brokers/registry';
 import { runtimeLifecycle } from './src/services/runtimeLifecycle';
 import { getRecoveryRecommendation, getRuntimeObservabilitySnapshot } from './src/services/runtimeObservabilityService';
 import { buildProductionReleaseIntegrityInput, evaluateProductionReleaseIntegrity } from './src/services/productionReleaseIntegrityService';
+import { evaluateSystemConfigIntegrity } from './src/services/configIntegrityService';
 
 const invokedByNpmDev = process.env.npm_lifecycle_event === 'dev';
 // npm run dev is an explicit local development command. Do not let a stale
@@ -158,6 +159,7 @@ let executionLifecycleTimer: ReturnType<typeof setInterval> | null = null;
 function productionPreflight(enforce = false): { ok: boolean; checks: Record<string, string> } {
   const checks: Record<string, string> = {};
   refreshAutonomousExecutionPermission();
+  const configIntegrity = evaluateSystemConfigIntegrity(getSystemConfig());
   const autoTradingRequested = process.env.GOLDCREST_AUTO_TRADING_ENABLED === 'true';
   const autonomousRequested = process.env.GOLDCREST_AUTONOMOUS_LIVE_EXECUTION === 'true';
   const operatorKey = process.env.GOLDCREST_OPERATOR_API_KEY?.trim();
@@ -185,13 +187,15 @@ function productionPreflight(enforce = false): { ok: boolean; checks: Record<str
     : 'NOT_REQUESTED';
   checks.productionStrategy = productionStrategyApproved ? 'APPROVED' : 'NOT_APPROVED';
   checks.tradingMode = getSystemConfig().tradingMode;
+  checks.configIntegrity = configIntegrity.ok ? 'VALID' : 'INVALID';
   const autoConfigValid = !autoTradingRequested && !autonomousRequested
     ? true
     : LIVE_AUTO_EXECUTION_ALLOWED;
   const ok = Boolean(operatorKey)
     && (ctraderConfigured || fivePaisaConfigured)
     && autoConfigValid
-    && getSystemConfig().tradingMode === 'LIVE_ONLY';
+    && getSystemConfig().tradingMode === 'LIVE_ONLY'
+    && configIntegrity.ok;
   if (!ok && enforce && process.env.NODE_ENV === 'production') {
     throw new Error(`Production preflight failed: ${Object.entries(checks).filter(([, value]) => value !== 'CONFIGURED' && value !== 'DISABLED' && value !== 'LIVE_ONLY').map(([key]) => key).join(', ') || 'invalid safety configuration'}`);
   }
@@ -597,6 +601,7 @@ app.get('/api/health/ready', (req: Request, res: Response) => {
     autoTrading: autoTradingService.getStatus(),
     lifecycle: runtimeLifecycle.getStatus(),
     productionChecks: preflight.checks,
+    configIntegrity: evaluateSystemConfigIntegrity(getSystemConfig()),
     releaseIntegrity,
     timestamp: Date.now()
   });
@@ -2440,6 +2445,10 @@ async function startServer() {
     }));
     if (!releaseIntegrity.ok) {
       throw new Error(`Production release integrity failed: ${releaseIntegrity.failures.join(', ') || 'invalid release artifacts'}`);
+    }
+    const configIntegrity = evaluateSystemConfigIntegrity(getSystemConfig());
+    if (!configIntegrity.ok) {
+      throw new Error(`Production configuration integrity failed: ${configIntegrity.failures.join(', ') || 'invalid configuration'}`);
     }
   }
 
