@@ -20,6 +20,16 @@ export interface ProductionReleaseIntegrityResult {
   version: string;
 }
 
+export function getInstalledApplicationVersion(rootDirectory = process.cwd()): string {
+  try {
+    const packageFile = path.join(rootDirectory, 'package.json');
+    const parsed = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
+    return typeof parsed.version === 'string' ? parsed.version.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 function isMajorAtLeast(version: string, minimumMajor: number): boolean {
   const major = Number(String(version).replace(/^v/, '').split('.')[0]);
   return Number.isInteger(major) && major >= minimumMajor;
@@ -81,6 +91,6 @@ export function buildProductionReleaseIntegrityInput(options: {
     distServerFile: path.join(root, 'dist', 'server.cjs'),
     distIndexFile: path.join(root, 'dist', 'index.html'),
     dataDirectory: path.join(root, 'data'),
-    packageVersion: options.packageVersion || process.env.GOLDCREST_RELEASE_VERSION || ''
+    packageVersion: options.packageVersion || process.env.GOLDCREST_RELEASE_VERSION || getInstalledApplicationVersion(root)
   };
 }
