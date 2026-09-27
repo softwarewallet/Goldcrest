@@ -64,6 +64,7 @@ import { getCurrentPairCalibrationMatrix } from './src/services/currentPairCalib
 import { getCurrentPairCrossModelContextCalibration } from './src/services/currentPairCrossModelContextCalibrationService';
 import { getCurrentPairCrossModelCalibration } from './src/services/currentPairCrossModelCalibrationService';
 import { getCurrentPairCrossModelTemporalCalibration } from './src/services/currentPairCrossModelTemporalCalibrationService';
+import { getCurrentPairCrossModelContextTemporalCalibration } from './src/services/currentPairCrossModelContextTemporalCalibrationService';
 import { getCurrentPairResearchReadinessLedger } from './src/services/currentPairResearchReadinessLedgerService';
 import { getCurrentPairTemporalCalibrationMatrix } from './src/services/currentPairTemporalCalibrationService';
 import {
@@ -1965,6 +1966,23 @@ app.get('/api/live-trade-research/current-pair/research-readiness-ledger', opera
     });
   }
 });
+app.get('/api/live-trade-research/current-pair/cross-model-context-temporal-calibration', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() as CurrentPairPredictionHorizon : undefined;
+    if (horizon && !['1D','3D','7D'].includes(horizon)) return res.status(400).json({ error: 'INVALID_HORIZON', message: 'horizon must be 1D, 3D, or 7D.' });
+    const report = await getCurrentPairCrossModelContextTemporalCalibration({
+      horizon,
+      symbol: typeof req.query.symbol === 'string' ? req.query.symbol.toUpperCase() : undefined,
+      marketRegime: typeof req.query.marketRegime === 'string' ? req.query.marketRegime : undefined,
+      session: typeof req.query.session === 'string' ? req.query.session : undefined
+    });
+    return res.json(report);
+  } catch (error: any) {
+    console.error('[CURRENT_PAIR_CROSS_MODEL_CONTEXT_TEMPORAL_CALIBRATION]', error);
+    return res.status(503).json({ error: 'CURRENT_PAIR_CROSS_MODEL_CONTEXT_TEMPORAL_CALIBRATION_UNAVAILABLE', message: error?.message || 'Context temporal calibration report is unavailable.' });
+  }
+});
+
 app.get('/api/live-trade-research/current-pair/temporal-calibration', operatorAuthRequired, async (req: Request, res: Response) => {
   try {
     const horizon = req.query.horizon ? String(req.query.horizon).toUpperCase() as CurrentPairPredictionHorizon : undefined;

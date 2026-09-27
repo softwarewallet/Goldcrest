@@ -3,6 +3,7 @@ import { getCurrentPairResearchValidationReport } from './currentPairResearchVal
 import { getCurrentPairOosDriftReport } from './currentPairOosDriftService';
 import { getCurrentPairCalibrationMatrix } from './currentPairCalibrationMatrixService';
 import { getCurrentPairCrossModelContextCalibration } from './currentPairCrossModelContextCalibrationService';
+import { getCurrentPairCrossModelContextTemporalCalibration } from './currentPairCrossModelContextTemporalCalibrationService';
 
 export type CurrentPairResearchLedgerStatus = 'PASS' | 'WARN' | 'INSUFFICIENT';
 
@@ -33,6 +34,8 @@ export interface CurrentPairResearchReadinessLedger {
     sufficientCalibrationRows: number;
     contextRows: number;
     sufficientContextRows: number;
+    contextTemporalWindows: number;
+    sufficientContextTemporalWindows: number;
   };
   checks: CurrentPairResearchLedgerCheck[];
 }
@@ -48,11 +51,12 @@ export async function getCurrentPairResearchReadinessLedger(params: {
   const symbol = params.symbol?.trim().toUpperCase() || null;
   const horizon = params.horizon || '1D';
 
-  const [validation, oosDrift, calibrationMatrix, contextCalibration] = await Promise.all([
+  const [validation, oosDrift, calibrationMatrix, contextCalibration, contextTemporalCalibration] = await Promise.all([
     getCurrentPairResearchValidationReport({ symbol: symbol || undefined, horizon, limit: 50000 }),
     getCurrentPairOosDriftReport({ symbol: symbol || undefined, horizon, modelVersion: AI_MODEL }),
     getCurrentPairCalibrationMatrix({ symbol: symbol || undefined, horizon, modelVersion: AI_MODEL }),
-    getCurrentPairCrossModelContextCalibration({ symbol: symbol || undefined, horizon })
+    getCurrentPairCrossModelContextCalibration({ symbol: symbol || undefined, horizon }),
+    getCurrentPairCrossModelContextTemporalCalibration({ symbol: symbol || undefined, horizon })
   ]);
 
   const aiModel = validation.models.find(model => model.modelVersion === AI_MODEL);
@@ -63,6 +67,8 @@ export async function getCurrentPairResearchReadinessLedger(params: {
   const sufficientContextRows = contextCalibration.rows.filter(row =>
     row.baseline.metrics.sampleSufficient && row.ai.metrics.sampleSufficient
   ).length;
+  const contextTemporalWindows = contextTemporalCalibration.rows.reduce((sum, row) => sum + row.windows.length, 0);
+  const sufficientContextTemporalWindows = contextTemporalCalibration.rows.reduce((sum, row) => sum + row.windows.filter(window => window.baseline.sampleSufficient && window.ai.sampleSufficient).length, 0);
 
   const bootstrapAvailable = Boolean(
     oosDrift.uncertainty.accuracyDelta95Pct &&
@@ -115,6 +121,12 @@ export async function getCurrentPairResearchReadinessLedger(params: {
       detail: `${sufficientContextRows} of ${contextCalibration.rows.length} regime/session rows have sufficient samples for both models in both windows.`
     },
     {
+      id: 'context-temporal-calibration',
+      status: contextTemporalWindows === 0 ? 'INSUFFICIENT' : sufficientContextTemporalWindows > 0 ? 'PASS' : 'WARN',
+      title: 'Context temporal calibration coverage',
+      detail: `${sufficientContextTemporalWindows} of ${contextTemporalWindows} regime/session temporal windows have sufficient samples for both models.`
+    },
+    {
       id: 'validation-quality',
       status: validationInsufficient > 0 ? 'INSUFFICIENT' : validationWarnings > 0 ? 'WARN' : 'PASS',
       title: 'Data-quality governance checks',
@@ -140,7 +152,9 @@ export async function getCurrentPairResearchReadinessLedger(params: {
       calibrationRows: calibrationMatrix.rows.length,
       sufficientCalibrationRows,
       contextRows: contextCalibration.rows.length,
-      sufficientContextRows
+      sufficientContextRows,
+      contextTemporalWindows,
+      sufficientContextTemporalWindows
     },
     checks
   };
