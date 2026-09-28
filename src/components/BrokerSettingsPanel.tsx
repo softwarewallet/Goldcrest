@@ -33,6 +33,8 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
   const [ack, setAck] = useState(false);
   const [cTraderApiMode, setCTraderApiMode] = useState<'LIVE' | 'DEMO'>('DEMO');
   const [maxForexUsd, setMaxForexUsd] = useState(100000);
+  const [forexStopLossPips, setForexStopLossPips] = useState(20);
+  const [forexTakeProfitPips, setForexTakeProfitPips] = useState(40);
   const [autoLiveMinSignalScore, setAutoLiveMinSignalScore] = useState(75);
   const [autoLiveMaxTradesPerPair, setAutoLiveMaxTradesPerPair] = useState(4);
   const [maxOpenPositions, setMaxOpenPositions] = useState(5);
@@ -66,6 +68,8 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         const config = await configRes.json();
         if (config.cTraderApiMode === 'LIVE' || config.cTraderApiMode === 'DEMO') setCTraderApiMode(config.cTraderApiMode);
         if (Number.isFinite(Number(config.maxTradeValueForexUsd))) setMaxForexUsd(Number(config.maxTradeValueForexUsd));
+        if (Number.isFinite(Number(config.forexStopLossPips))) setForexStopLossPips(Number(config.forexStopLossPips));
+        if (Number.isFinite(Number(config.forexTakeProfitPips))) setForexTakeProfitPips(Number(config.forexTakeProfitPips));
         if (Number.isFinite(Number(config.autoLiveMinSignalScore))) setAutoLiveMinSignalScore(Number(config.autoLiveMinSignalScore));
         if (Number.isFinite(Number(config.autoLiveMaxTradesPerPair))) setAutoLiveMaxTradesPerPair(Number(config.autoLiveMaxTradesPerPair));
         if (Number.isFinite(Number(config.maxOpenPositions))) setMaxOpenPositions(Number(config.maxOpenPositions));
@@ -158,6 +162,8 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
     const pairLimit = Number(autoLiveMaxTradesPerPair);
     const systemLimit = Number(maxOpenPositions);
     const tradeValue = Number(maxForexUsd);
+    const stopLossPips = Number(forexStopLossPips);
+    const takeProfitPips = Number(forexTakeProfitPips);
     if (!Number.isInteger(score) || score < 0 || score > 100) {
       setMessage('Minimum signal score must be an integer from 0 to 100.');
       return;
@@ -174,6 +180,14 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
       setMessage('Maximum Forex trade value must be positive.');
       return;
     }
+    if (!Number.isFinite(stopLossPips) || stopLossPips <= 0) {
+      setMessage('Forex Stop Loss must be greater than 0 pips.');
+      return;
+    }
+    if (!Number.isFinite(takeProfitPips) || takeProfitPips <= 0) {
+      setMessage('Forex Take Profit must be greater than 0 pips.');
+      return;
+    }
     setSavingControls(true);
     setMessage('');
     try {
@@ -182,6 +196,8 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           maxTradeValueForexUsd: tradeValue,
+          forexStopLossPips: stopLossPips,
+          forexTakeProfitPips: takeProfitPips,
           autoLiveMinSignalScore: score,
           autoLiveMaxTradesPerPair: pairLimit,
           maxOpenPositions: systemLimit
@@ -299,12 +315,15 @@ export const BrokerSettingsPanel: React.FC<BrokerSettingsPanelProps> = ({
           <div className="flex-1">
             <div className="text-sm font-bold text-white">Forex Auto Live Controls</div>
             <p className="text-xs text-slate-400 mt-1">These are the server-side controls used by the autonomous Forex execution loop.</p>
-            <div className="grid md:grid-cols-4 gap-3 mt-4">
+            <div className="grid md:grid-cols-2 lg:grid-cols-6 gap-3 mt-4">
               <label><span className="text-[10px] uppercase text-slate-500 font-mono">Max Forex Trade Value / Volume</span><input type="number" min="1" step="1" value={maxForexUsd} onChange={e => setMaxForexUsd(Number(e.target.value))} className={inputClass} /><span className="text-[10px] text-slate-600 font-mono">cTrader protocol contract</span></label>
+              <label><span className="text-[10px] uppercase text-slate-500 font-mono">Stop Loss (pips)</span><input type="number" min="0.1" step="0.1" value={forexStopLossPips} onChange={e => setForexStopLossPips(Number(e.target.value))} className={inputClass} /></label>
+              <label><span className="text-[10px] uppercase text-slate-500 font-mono">Take Profit (pips)</span><input type="number" min="0.1" step="0.1" value={forexTakeProfitPips} onChange={e => setForexTakeProfitPips(Number(e.target.value))} className={inputClass} /></label>
               <label><span className="text-[10px] uppercase text-slate-500 font-mono">Minimum Signal Score</span><input type="number" min="0" max="100" step="1" value={autoLiveMinSignalScore} onChange={e => setAutoLiveMinSignalScore(Number(e.target.value))} className={inputClass} /></label>
               <label><span className="text-[10px] uppercase text-slate-500 font-mono">Max Trades / Pair</span><input type="number" min="1" max="20" step="1" value={autoLiveMaxTradesPerPair} onChange={e => setAutoLiveMaxTradesPerPair(Number(e.target.value))} className={inputClass} /></label>
               <label><span className="text-[10px] uppercase text-slate-500 font-mono">Max Trades / System</span><input type="number" min="1" max="100" step="1" value={maxOpenPositions} onChange={e => setMaxOpenPositions(Number(e.target.value))} className={inputClass} /></label>
             </div>
+            <div className="mt-2 text-[10px] text-slate-500 font-mono">Stop Loss and Take Profit are configured in pips and applied when each Forex order is prepared. Defaults: SL 20 pips · TP 40 pips.</div>
             <button type="button" onClick={saveControls} disabled={savingControls} className="mt-3 px-4 py-2 rounded bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold">{savingControls ? 'SAVING...' : 'SAVE FOREX AUTO LIVE CONTROLS'}</button>
           </div>
         </div>
