@@ -1,7 +1,7 @@
 import { BrokerAdapter, OrderRequest, NormalizedQuote } from '../types';
 import { brokerRegistry } from '../registry';
 import { killSwitch } from './KillSwitch';
-import { getForexSessionState, getIndianSessionState } from '../../markets/common/session';
+import { getForexSessionState } from '../../markets/common/session';
 import { getSystemConfig } from '../../services/configService';
 import { executeQuery } from '../../database/db';
 import { reconciliationService } from '../../services/reconciliationService';
@@ -96,7 +96,7 @@ class AutoTradeReadinessService {
       checks.tradingPermission = permissions.includes('TRADING') ||
         permissions.includes('EQUITY') ||
         permissions.includes('DERIVATIVES') ||
-        permissions.includes('NSE_FNO');
+        false;
     } catch {
       account = null;
     }
@@ -130,8 +130,7 @@ class AutoTradeReadinessService {
     checks.signalFresh = signalAgeMs <= signalMaxAgeMs;
 
     checks.marketOpen = order.market === 'FOREX'
-      ? !getForexSessionState().activeSessions.includes('CLOSED (WEEKEND)')
-      : getIndianSessionState().isOpen;
+      && !getForexSessionState().activeSessions.includes('CLOSED (WEEKEND)');
 
     try {
       positions = await adapter.getPositions();
@@ -150,7 +149,7 @@ class AutoTradeReadinessService {
     try {
       dailyLoss = typeof adapter.getDailyRealizedPnL === 'function'
         ? Math.max(0, -Number(await adapter.getDailyRealizedPnL()))
-        : await reconciliationService.getDailyLoss(adapter.broker as 'CTRADER' | 'FIVE_PAISA', balance);
+        : await reconciliationService.getDailyLoss('CTRADER', balance);
       if (!Number.isFinite(dailyLoss)) dailyLoss = 0;
     } catch {
       dailyLoss = 0;
