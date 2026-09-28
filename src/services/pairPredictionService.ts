@@ -19,6 +19,7 @@ import {
   type ResearchPredictionOutput
 } from './liveTradeResearchPredictionService';
 import type { ResearchFeatureRow } from './liveTradeResearchFeatureService';
+import { fetchLiveForexNews, type LiveNewsSnapshot } from './liveNewsService';
 
 export interface CurrentPairPrediction {
   predictionId: string;
@@ -74,7 +75,23 @@ function pipsBetween(a: number | null, b: number | null, pipSize: number): numbe
   return Math.abs(a - b) / pipSize;
 }
 
-async function buildFeatureRow(item: any): Promise<ResearchFeatureRow> {
+function pairNewsContext(snapshot: LiveNewsSnapshot, symbol: string): {
+  riskLevel: string;
+  highImpactCount: number;
+  activeHighImpactCount: number;
+  sentiment: number | null;
+} {
+  const pair = snapshot.pairRisk?.[symbol];
+  const sentiment = snapshot.sentimentSummary?.averageScore;
+  return {
+    riskLevel: pair?.riskLevel || snapshot.riskLevel || 'UNAVAILABLE',
+    highImpactCount: Number(pair?.highImpactCount ?? snapshot.highImpactCount ?? 0),
+    activeHighImpactCount: Number(pair?.highImpactEvents?.length ?? 0),
+    sentiment: Number.isFinite(Number(sentiment)) ? Number(sentiment) : null
+  };
+}
+
+async function buildFeatureRow(item: any, newsSnapshot: LiveNewsSnapshot): Promise<ResearchFeatureRow> {
   const signal = item.signal || {};
   const direction = String(signal.direction || 'NO_TRADE');
   const signalDirection = direction.toUpperCase();
@@ -93,6 +110,7 @@ async function buildFeatureRow(item: any): Promise<ResearchFeatureRow> {
   const entry = finite(analysis.tradePlan?.entryMin);
   const stop = finite(analysis.tradePlan?.stopLoss);
   const target = finite(analysis.tradePlan?.takeProfit1);
+  const news = pairNewsContext(newsSnapshot, String(item.symbol));
 
   const trendDirection =
     analysis.trend.direction === 'bullish' ? 'BULLISH' :
@@ -122,10 +140,10 @@ async function buildFeatureRow(item: any): Promise<ResearchFeatureRow> {
     trend30dVolatilityPct: null,
     trend90dVolatilityPct: null,
     trend365dVolatilityPct: null,
-    newsRiskLevel: 'UNKNOWN',
-    newsHighImpactCount: 0,
-    newsActiveHighImpactCount: 0,
-    newsSentiment: null,
+    newsRiskLevel: news.riskLevel,
+    newsHighImpactCount: news.highImpactCount,
+    newsActiveHighImpactCount: news.activeHighImpactCount,
+    newsSentiment: news.sentiment,
     quoteSpread: finite(item.spreadPips),
     riskReward: finite(analysis.tradePlan?.riskReward),
     stopDistance: entry !== null && stop !== null ? Math.abs(entry - stop) : null,
@@ -201,12 +219,13 @@ export async function generateCurrentPairPredictions(params: {
         : new SignalDirectionBaselineModel();
 
   const scan = await scannerService.getForexScanner(configuredPairs);
+  const newsSnapshot = await fetchLiveForexNews({ pairs: configuredPairs });
   const generatedAt = Date.now();
 
   return Promise.all(scan.map(async item => {
     let row: ResearchFeatureRow;
     try {
-      row = await buildFeatureRow(item);
+      row = await buildFeatureRow(item, newsSnapshot);
     } catch (error: any) {
       row = buildFallbackFeatureRow(item, error);
     }
