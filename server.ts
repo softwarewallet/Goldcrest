@@ -424,11 +424,6 @@ app.get('/api/operations/readiness', operatorAuthRequired, async (_req: Request,
             process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
             process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
             process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
-          ) || Boolean(
-            process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
-            process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
-            process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
-            process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
           ),
           packageVersion: process.env.GOLDCREST_RELEASE_VERSION || undefined
         }))
@@ -492,11 +487,6 @@ app.get('/api/operations/go-live-validation', operatorAuthRequired, async (_req:
             process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
             process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
             process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
-          ) || Boolean(
-            process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
-            process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
-            process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
-            process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
           ),
           packageVersion: process.env.GOLDCREST_RELEASE_VERSION || undefined
         }))
