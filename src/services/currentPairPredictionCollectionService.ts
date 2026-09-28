@@ -54,11 +54,12 @@ export async function runCurrentPairPredictionCollectionCycle(
     const evaluate = deps.evaluate || evaluatePendingCurrentPairPredictions;
     const pairs = getSystemConfig().autoLiveForexPairs || [];
 
-    const predictions = await generate({
-      pairs,
-      horizon: '1D',
-      model: 'BASELINE'
-    });
+    const [baselinePredictions, historicalEdgePredictions] = await Promise.all([
+      generate({ pairs, horizon: '1D', models: ['BASELINE', 'HISTORICAL_EDGE'] }),
+      generate({ pairs, horizon: '1D', model: 'HISTORICAL_EDGE' })
+    ]);
+
+    const predictions = [...baselinePredictions, ...historicalEdgePredictions];
 
     const outcome = await evaluate({
       horizon: '1D',

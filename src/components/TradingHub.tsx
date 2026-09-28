@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { TradingEnvironment, BrokerType } from '../brokers/types';
 import { AUTO_LIVE_POSITION_REFRESH_INTERVAL_MS, isVisibleAutoLiveSignal } from '../services/autoLiveTradePolicy';
+import PairPredictionAccuracyAuditPanel from './PairPredictionAccuracyAuditPanel';
 
 interface TradingHubProps {
   environment: TradingEnvironment;
@@ -460,7 +461,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   const [currentPairCrossModelContextTemporalCalibration, setCurrentPairCrossModelContextTemporalCalibration] = useState<any>(null);
   const [currentPairWalkForward, setCurrentPairWalkForward] = useState<CurrentPairWalkForwardAnalytics | null>(null);
   const [currentPairHorizon, setCurrentPairHorizon] = useState<'1D' | '3D' | '7D'>('1D');
-  const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY' | 'COMPARE'>('BASELINE');
+  const [currentPairModel, setCurrentPairModel] = useState<'BASELINE' | 'AI_GATEWAY' | 'HISTORICAL_EDGE' | 'COMPARE'>('BASELINE');
   const [currentPairSymbol, setCurrentPairSymbol] = useState<string>('ALL');
   const [currentPairSymbols, setCurrentPairSymbols] = useState<string[]>([]);
   const [currentPairLoading, setCurrentPairLoading] = useState(false);
@@ -569,7 +570,9 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         ? 'PAIR_FEATURE_BASELINE_V2'
         : currentPairModel === 'AI_GATEWAY'
           ? 'LLAMA_GATEWAY_QWEN_LLAMA_V1'
-          : '';
+          : currentPairModel === 'HISTORICAL_EDGE'
+            ? 'HISTORICAL_EDGE_V1'
+            : '';
       const query = `horizon=${currentPairHorizon}${modelVersion ? `&modelVersion=${modelVersion}` : ''}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
       const comparisonQuery = `horizon=${currentPairHorizon}${currentPairSymbol !== 'ALL' ? `&symbol=${encodeURIComponent(currentPairSymbol)}` : ''}`;
       const [predictionRes, analyticsRes, walkForwardRes, comparisonRes, pairedComparisonRes, pairedRollingRes, pairedContextRes, validationRes, oosDriftRes, calibrationMatrixRes, crossModelCalibrationRes, crossModelTemporalCalibrationRes, crossModelContextTemporalCalibrationRes, readinessLedgerRes, temporalCalibrationRes] = await Promise.all([
@@ -1299,6 +1302,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
       {activeTab === 'research' && (
         <div className="space-y-4">
+          <PairPredictionAccuracyAuditPanel />
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1335,8 +1339,8 @@ export const TradingHub: React.FC<TradingHubProps> = ({
                 <select value={currentPairHorizon} onChange={(e) => setCurrentPairHorizon(e.target.value as '1D' | '3D' | '7D')} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-white">
                   <option value="1D">1D Horizon</option><option value="3D">3D Horizon</option><option value="7D">7D Horizon</option>
                 </select>
-                <select value={currentPairModel} onChange={(e) => setCurrentPairModel(e.target.value as 'BASELINE' | 'AI_GATEWAY' | 'COMPARE')} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-white">
-                  <option value="BASELINE">Baseline</option><option value="AI_GATEWAY">AI Gateway</option><option value="COMPARE">Compare Models</option>
+                <select value={currentPairModel} onChange={(e) => setCurrentPairModel(e.target.value as 'BASELINE' | 'AI_GATEWAY' | 'HISTORICAL_EDGE' | 'COMPARE')} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-white">
+                  <option value="BASELINE">Baseline</option><option value="HISTORICAL_EDGE">Historical Edge</option><option value="AI_GATEWAY">AI Gateway</option><option value="COMPARE">Compare Models</option>
                 </select>
                 <button type="button" onClick={() => void fetchCurrentPairResearch()} disabled={currentPairLoading} className="px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">{currentPairLoading ? 'Loading...' : 'Refresh'}</button>
                 <button type="button" onClick={() => void evaluateCurrentPairResearch()} className="px-2.5 py-1.5 rounded-lg border border-cyan-700 bg-cyan-950/40 text-cyan-300 text-[11px] font-mono">Evaluate Matured</button>

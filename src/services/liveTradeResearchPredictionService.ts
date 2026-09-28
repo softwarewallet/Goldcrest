@@ -177,6 +177,112 @@ export class LlamaGatewayPredictionModel implements PredictionModel {
   }
 }
 
+type HistoricalOutcomeRow = {
+  symbol: string; signal_timestamp: number; direction: string; score: number;
+  market_regime: string; session: string; news_status: string | null; news_json: string | null;
+  strategy_version: string; realized_pnl: number | null; outcome: string | null;
+};
+
+function historicalOutcome(row: HistoricalOutcomeRow): 'WIN' | 'LOSS' | 'BREAKEVEN' | null {
+  const explicit = String(row.outcome || '').trim().toUpperCase();
+  if (['WIN', 'WON', 'PROFIT', 'PROFITABLE'].includes(explicit)) return 'WIN';
+  if (['LOSS', 'LOST', 'LOSING'].includes(explicit)) return 'LOSS';
+  if (['BREAKEVEN', 'BREAK_EVEN', 'BE'].includes(explicit)) return 'BREAKEVEN';
+  const pnl = Number(row.realized_pnl);
+  if (!Number.isFinite(pnl)) return null;
+  return pnl > 0 ? 'WIN' : pnl < 0 ? 'LOSS' : 'BREAKEVEN';
+}
+
+function predictionNewsRisk(row: HistoricalOutcomeRow): string {
+  try {
+    const parsed = row.news_json ? JSON.parse(row.news_json) : null;
+    return String(parsed?.pairRisk?.riskLevel || parsed?.riskLevel || row.news_status || 'UNKNOWN').toUpperCase();
+  } catch {
+    return String(row.news_status || 'UNKNOWN').toUpperCase();
+  }
+}
+
+function predictionScoreBand(score: number): string {
+  if (!Number.isFinite(score)) return 'UNKNOWN';
+  if (score < 60) return '<60'; if (score < 65) return '60-64'; if (score < 70) return '65-69';
+  if (score < 75) return '70-74'; if (score < 80) return '75-79'; if (score < 85) return '80-84';
+  if (score < 90) return '85-89'; return '90+';
+}
+
+let historicalEdgeCache: { loadedAt: number; rows: HistoricalOutcomeRow[] } | null = null;
+
+async function loadHistoricalEdgeRows(signalTimestamp: number): Promise<HistoricalOutcomeRow[]> {
+  const now = Date.now();
+  if (!historicalEdgeCache || now - historicalEdgeCache.loadedAt > 60_000) {
+    const rows = await executeQuery<HistoricalOutcomeRow>(
+      `SELECT symbol, signal_timestamp, direction, score, market_regime, session,
+              news_status, news_json, strategy_version, realized_pnl, outcome
+         FROM live_trade_research
+        WHERE lifecycle_status = 'CLOSED'
+          AND (realized_pnl IS NOT NULL OR outcome IS NOT NULL)
+        ORDER BY signal_timestamp ASC LIMIT 200000`,
+      []
+    );
+    historicalEdgeCache = { loadedAt: now, rows };
+  }
+  return historicalEdgeCache.rows.filter(row => Number(row.signal_timestamp) < signalTimestamp);
+}
+
+export class HistoricalEdgePredictionModel implements PredictionModel {
+  readonly modelVersion = 'HISTORICAL_EDGE_V1';
+  readonly predictionSource = 'CLOSED_TRADE_HISTORY';
+
+  async predict(row: ResearchFeatureRow): Promise<ResearchPredictionOutput> {
+    const history = await loadHistoricalEdgeRows(row.signalTimestamp);
+    const candidate = normalizeDirection(row.direction);
+    const base = new SignalDirectionBaselineModel().predict(row);
+    if (!history.length || candidate === 'FLAT') {
+      return { ...base, reasoning: base.reasoning + ' Historical edge model had insufficient directional trade history and fell back to the deterministic baseline.' };
+    }
+
+    const targetDirection = candidate === 'UP' ? 'BUY' : 'SELL';
+    const targetNews = String(row.newsRiskLevel || 'UNKNOWN').toUpperCase();
+    const targetScoreBand = predictionScoreBand(row.score);
+    const targetRegime = String(row.marketRegime || 'UNKNOWN').toUpperCase();
+    const targetSession = String(row.session || 'UNKNOWN').toUpperCase();
+    const targetSymbol = String(row.symbol).toUpperCase();
+
+    let weightedWins = 0; let weightedLosses = 0; let matched = 0;
+    for (const historical of history) {
+      const outcome = historicalOutcome(historical);
+      if (!outcome || outcome === 'BREAKEVEN') continue;
+      if (String(historical.direction || '').toUpperCase() !== targetDirection) continue;
+      let weight = 1;
+      if (String(historical.symbol || '').toUpperCase() === targetSymbol) weight += 4;
+      if (String(historical.market_regime || 'UNKNOWN').toUpperCase() === targetRegime) weight += 2;
+      if (String(historical.session || 'UNKNOWN').toUpperCase() === targetSession) weight += 1;
+      if (predictionNewsRisk(historical) === targetNews) weight += 1;
+      if (predictionScoreBand(Number(historical.score)) === targetScoreBand) weight += 1;
+      matched++;
+      if (outcome === 'WIN') weightedWins += weight; else weightedLosses += weight;
+    }
+
+    if (matched < 20 || weightedWins + weightedLosses < 20) {
+      return { ...base, reasoning: base.reasoning + ` Historical edge sample=${matched}; minimum 20 directional outcomes not reached, so no historical override was applied.` };
+    }
+
+    const historicalProbability = (weightedWins + 1) / (weightedWins + weightedLosses + 2);
+    const signalProbability = candidate === 'UP' ? historicalProbability : 1 - historicalProbability;
+    let direction: ResearchPredictionDirection = candidate;
+    if (signalProbability < 0.45) direction = candidate === 'UP' ? 'DOWN' : 'UP';
+    else if (signalProbability < 0.55) direction = 'FLAT';
+
+    const confidence = clamp(Math.max(0.5, Math.min(0.9, Math.max(signalProbability, 1 - signalProbability))), 0.5, 0.9);
+    return {
+      direction,
+      confidence,
+      modelAgreement: Math.max(0, Math.min(1, 1 - Math.abs(signalProbability - historicalProbability))),
+      reasoning: `Historical closed-trade edge model: ${matched} directional outcomes, weighted wins=${weightedWins.toFixed(1)}, weighted losses=${weightedLosses.toFixed(1)}, candidate=${candidate}, historical candidate success=${(signalProbability * 100).toFixed(1)}%. Context weights emphasize pair, regime, session, news risk and score band.`,
+      invalidation: 'Research-only model. Recompute after material feature/context changes; historical win rate is not a guarantee.'
+    };
+  }
+}
+
 export class SignalDirectionBaselineModel implements PredictionModel {
   readonly modelVersion = 'PAIR_FEATURE_BASELINE_V2';
   readonly predictionSource = 'LIVE_PAIR_FEATURES';

@@ -69,6 +69,7 @@ import { getCurrentPairCrossModelCalibration } from './src/services/currentPairC
 import { getCurrentPairCrossModelTemporalCalibration } from './src/services/currentPairCrossModelTemporalCalibrationService';
 import { getCurrentPairCrossModelContextTemporalCalibration } from './src/services/currentPairCrossModelContextTemporalCalibrationService';
 import { getCurrentPairResearchReadinessLedger } from './src/services/currentPairResearchReadinessLedgerService';
+import { getPairPredictionAccuracyAudit } from './src/services/pairPredictionAccuracyAuditService';
 import { getCurrentPairTemporalCalibrationMatrix } from './src/services/currentPairTemporalCalibrationService';
 import {
   getResearchAiServerConfig,
@@ -2287,6 +2288,27 @@ app.post('/api/live-trade-research/current-pair/evaluate', operatorAuthRequired,
     res.status(503).json({
       error: 'CURRENT_PAIR_OUTCOME_EVALUATION_FAILED',
       message: err?.message || 'Current pair outcome evaluation failed.'
+    });
+  }
+});
+
+app.get('/api/live-trade-research/pair-accuracy-audit', operatorAuthRequired, async (req: Request, res: Response) => {
+  try {
+    const parseNumber = (value: unknown) => {
+      if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : undefined;
+    };
+    const audit = await getPairPredictionAccuracyAudit({
+      fromTimestamp: parseNumber(req.query.from),
+      toTimestamp: parseNumber(req.query.to),
+      minimumSampleCount: parseNumber(req.query.minimumSampleCount)
+    });
+    res.json(audit);
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'PAIR_PREDICTION_ACCURACY_AUDIT_UNAVAILABLE',
+      message: err?.message || 'Pair prediction accuracy audit is unavailable.'
     });
   }
 });

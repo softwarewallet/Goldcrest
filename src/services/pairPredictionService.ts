@@ -11,6 +11,7 @@ import { getSystemConfig } from './configService';
 import {
   LlamaGatewayPredictionModel,
   SignalDirectionBaselineModel,
+  HistoricalEdgePredictionModel,
   createCurrentResearchPrediction,
   type PredictionModel,
   type ResearchPredictionDirection,
@@ -188,14 +189,16 @@ function normalizeOutput(output: ResearchPredictionOutput) {
 export async function generateCurrentPairPredictions(params: {
   pairs?: string[];
   horizon?: ResearchPredictionHorizon;
-  model?: 'BASELINE' | 'AI_GATEWAY';
+  model?: 'BASELINE' | 'AI_GATEWAY' | 'HISTORICAL_EDGE';
 } = {}): Promise<CurrentPairPrediction[]> {
   const configuredPairs = params.pairs?.length ? params.pairs : getSystemConfig().autoLiveForexPairs;
   const horizon = params.horizon || '1D';
   const model: PredictionModel =
     params.model === 'AI_GATEWAY'
       ? new LlamaGatewayPredictionModel()
-      : new SignalDirectionBaselineModel();
+      : params.model === 'HISTORICAL_EDGE'
+        ? new HistoricalEdgePredictionModel()
+        : new SignalDirectionBaselineModel();
 
   const scan = await scannerService.getForexScanner(configuredPairs);
   const generatedAt = Date.now();
