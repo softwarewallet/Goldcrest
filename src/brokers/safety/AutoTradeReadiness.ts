@@ -47,7 +47,8 @@ class AutoTradeReadinessService {
     order: OrderRequest,
     signalTimestamp: number,
     currentQuote?: NormalizedQuote,
-    authoritativeSnapshot?: LiveGateAuthoritativeSnapshot
+    authoritativeSnapshot?: LiveGateAuthoritativeSnapshot,
+    dailyRealizedLossOverride?: number
   ): Promise<AutoTradeReadinessReport> {
     const config = getSystemConfig();
     const failedReasons: string[] = [];
@@ -121,6 +122,10 @@ class AutoTradeReadinessService {
 
     checks.brokerConnected = brokerStatus === 'CONNECTED';
     account = brokerAccount;
+    const permissions = account?.permissions || [];
+    checks.tradingPermission = permissions.includes('TRADING') ||
+      permissions.includes('EQUITY') ||
+      permissions.includes('DERIVATIVES');
     const instrument = brokerInstrument;
     checks.instrumentValidated = Boolean(instrument);
 
@@ -155,9 +160,11 @@ class AutoTradeReadinessService {
     const dailyLossLimit = Math.max(balance * (Number(config.maxDailyLossPct) / 100), 1);
 
     // These two risk-history reads are independent and can run concurrently.
-    const dailyLossPromise = typeof adapter.getDailyRealizedPnL === 'function'
-      ? adapter.getDailyRealizedPnL().then(value => Math.max(0, -Number(value)))
-      : reconciliationService.getDailyLoss('CTRADER', balance);
+    const dailyLossPromise = dailyRealizedLossOverride !== undefined
+      ? Promise.resolve(Math.max(0, Number(dailyRealizedLossOverride)))
+      : (typeof adapter.getDailyRealizedPnL === 'function'
+        ? adapter.getDailyRealizedPnL().then(value => Math.max(0, -Number(value)))
+        : reconciliationService.getDailyLoss('CTRADER', balance));
 
     const consecutiveLossPromise = executeQuery<any>(
       'SELECT pnl FROM trades WHERE exit_time IS NOT NULL AND pnl IS NOT NULL ORDER BY exit_time DESC LIMIT ?',
