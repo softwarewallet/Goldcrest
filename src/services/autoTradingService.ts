@@ -1213,8 +1213,9 @@ return;
       }
       const entryPrice = signalSide === 'BUY' ? quote.ask : quote.bid;
 
-      try {
-      await updateLiveTradeResearchQuote({
+      // Research telemetry is non-authoritative. Never block the live
+      // execution path on this database write after obtaining a fresh quote.
+      void updateLiveTradeResearchQuote({
         signalId: signal.id,
         quote: {
           bid: quote.bid,
@@ -1228,15 +1229,14 @@ return;
           selectedEntrySide: signalSide,
           selectedEntryPrice: entryPrice
         }
-      });
-      } catch (researchError: any) {
+      }).catch((researchError: any) => {
         liveRuntimeLog('WARN', 'LIVE_TRADE_RESEARCH_TELEMETRY_FAILED', {
           signalId: signal.id,
           pair,
           operation: 'QUOTE',
           error: researchError?.message || String(researchError)
         });
-      }
+      });
 
       // Auto Live submits a MARKET order using the authoritative broker quote
       // available at the dispatch boundary. The signal entry zone is an
