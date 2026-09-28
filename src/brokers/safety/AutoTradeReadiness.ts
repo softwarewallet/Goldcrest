@@ -122,6 +122,7 @@ class AutoTradeReadinessService {
 
     checks.brokerConnected = brokerStatus === 'CONNECTED';
     account = brokerAccount;
+    checks.accountValidated = Boolean(account?.accountId && Number(account.balance) > 0);
     const permissions = account?.permissions || [];
     checks.tradingPermission = permissions.includes('TRADING') ||
       permissions.includes('EQUITY') ||
@@ -161,7 +162,7 @@ class AutoTradeReadinessService {
 
     // These two risk-history reads are independent and can run concurrently.
     const dailyLossPromise = dailyRealizedLossOverride !== undefined
-      ? Promise.resolve(Math.max(0, Number(dailyRealizedLossOverride)))
+      ? Promise.resolve(Math.max(0, -Number(dailyRealizedLossOverride)))
       : (typeof adapter.getDailyRealizedPnL === 'function'
         ? adapter.getDailyRealizedPnL().then(value => Math.max(0, -Number(value)))
         : reconciliationService.getDailyLoss('CTRADER', balance));
