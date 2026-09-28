@@ -805,7 +805,7 @@ function seedInitialData(db: Database) {
   // Enforce Forex-only LIVE persistence and remove obsolete market settings.
   db.run(`UPDATE system_settings SET value = 'LIVE_ONLY', updated_at = ${now} WHERE key = 'TRADING_MODE';
     UPDATE system_settings SET value = 'UNAVAILABLE', updated_at = ${now} WHERE key = 'DATA_STATUS';
-    DELETE FROM system_settings WHERE key IN ('STRIKE_DEPTH', 'MAX_TRADE_VALUE_INDIAN_INR', 'AUTO_LIVE_INDIAN_UNDERLYINGS');
+    DELETE FROM system_settings WHERE key IN ('STRIKE_DEPTH', 'MAX_TRADE_VALUE_LEGACY', 'AUTO_LIVE_LEGACY_UNDERLYINGS');
     DELETE FROM economic_events WHERE currency = 'INR';
     DELETE FROM broker_accounts WHERE broker <> 'CTRADER';
     DELETE FROM broker_reconciliation_snapshots WHERE broker <> 'CTRADER';

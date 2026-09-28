@@ -37,7 +37,7 @@ export async function reconcileExecutionIntent(idempotencyKey: string): Promise<
     [JSON.stringify({ ...stored, reconciliationAttemptCount, reconciliationLastAttemptAt: attemptStartedAt }), attemptStartedAt, idempotencyKey, 'PENDING', 'IN_FLIGHT', 'RECONCILIATION_TIMEOUT']
   );
   const broker = String(row.broker) as BrokerType;
-  if (broker !== 'CTRADER' && broker !== 'FIVE_PAISA') return null;
+  if (broker !== 'CTRADER') return null;
 
   const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
   let brokerOrderId = brokerOrderIdFromResult(stored);

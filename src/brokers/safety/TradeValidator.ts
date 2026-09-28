@@ -39,20 +39,17 @@ export interface TradeValidationResult {
 export class TradeValidator {
   // Configurable maximum signal age (Requirement 27)
   private maxSignalAgeForexMs: number = 5 * 60 * 1000; // 5 minutes default
-  private maxSignalAgeOptionsMs: number = 2 * 60 * 1000; // 2 minutes default
 
   // Active positions tracker for duplicate protection (Requirement 28)
   private activeStrategyPositions: Map<string, { symbol: string; side: string; strategyId?: string; signalId?: string }> = new Map();
 
   setMaxSignalAge(forexMinutes: number, optionsMinutes: number): void {
     this.maxSignalAgeForexMs = forexMinutes * 60 * 1000;
-    this.maxSignalAgeOptionsMs = optionsMinutes * 60 * 1000;
   }
 
   getMaxSignalAgeConfig() {
     return {
       forexMinutes: this.maxSignalAgeForexMs / 60000,
-      optionsMinutes: this.maxSignalAgeOptionsMs / 60000
     };
   }
 
@@ -126,7 +123,7 @@ export class TradeValidator {
     // 3. Signal Age Check (Requirement 27)
     const now = Date.now();
     const ageMs = now - input.signalTimestamp;
-    const maxAge = input.market === 'FOREX' ? this.maxSignalAgeForexMs : this.maxSignalAgeOptionsMs;
+    const maxAge = this.maxSignalAgeForexMs;
 
     if (ageMs > maxAge) {
       checks.signalAgePassed = false;
@@ -206,13 +203,13 @@ export class TradeValidator {
     // pipeline must enforce the same limit even when it does not invoke the
     // HTTP broker route /api/brokers/order.
     const isForex = input.market === 'FOREX';
-    const maxTradeValue = isForex ? config.maxTradeValueForexUsd : config.maxTradeValueIndianInr;
+    const maxTradeValue = config.maxTradeValueForexUsd;
     const referencePrice = order.price && order.price > 0 ? order.price : input.currentPrice;
-    const quoteCurrency = isForex ? input.symbol.replace(/[^A-Z]/g, '').slice(-3) : 'INR';
+    const quoteCurrency = input.symbol.replace(/[^A-Z]/g, '').slice(-3);
     const tradeValue = Number(order.quantity) * Number(referencePrice);
     let maximumTradeValuePassed = Number.isFinite(maxTradeValue) && maxTradeValue > 0 && Number.isFinite(tradeValue) && tradeValue > 0;
 
-    if (maximumTradeValuePassed && isForex && quoteCurrency !== 'USD') {
+    if (maximumTradeValuePassed && quoteCurrency !== 'USD') {
       maximumTradeValuePassed = false;
       return {
         valid: false,
@@ -225,7 +222,7 @@ export class TradeValidator {
       maximumTradeValuePassed = false;
       return {
         valid: false,
-        rejectionReason: `MAX_TRADE_VALUE_EXCEEDED: Trade value ${tradeValue.toFixed(2)} ${isForex ? 'USD' : 'INR'} exceeds the configured maximum of ${maxTradeValue.toFixed(2)} ${isForex ? 'USD' : 'INR'} for ${isForex ? 'cTrader' : '5paisa'}.`,
+        rejectionReason: `MAX_TRADE_VALUE_EXCEEDED: Trade value ${tradeValue.toFixed(2)} USD exceeds the configured maximum of ${maxTradeValue.toFixed(2)} USD for cTrader.`,
         checks: { ...checks, maximumTradeValuePassed }
       };
     }
