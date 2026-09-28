@@ -194,7 +194,7 @@ function productionPreflight(enforce = false): { ok: boolean; checks: Record<str
     ? true
     : LIVE_AUTO_EXECUTION_ALLOWED;
   const ok = Boolean(operatorKey)
-    && (ctraderConfigured || fivePaisaConfigured)
+    && ctraderConfigured
     && autoConfigValid
     && getSystemConfig().tradingMode === 'LIVE_ONLY'
     && configIntegrity.ok;
@@ -282,7 +282,7 @@ app.get('/api/runtime', (_req: Request, res: Response) => {
 app.get('/api/operations/account-consistency', operatorAuthRequired, async (_req: Request, res: Response) => {
   try {
     await databaseInitPromise;
-    const brokers = ['CTRADER', 'FIVE_PAISA'] as const;
+    const brokers = ['CTRADER'] as const;
     const results = await Promise.all(
       brokers.map(async (broker) => {
         let liveAccount = null;
@@ -359,7 +359,7 @@ app.get('/api/operations/brokers/verify', operatorAuthRequired, async (_req: Req
     const credentialStatuses = brokerRegistry.getCredentialStatuses();
 
     const results = await Promise.all(
-      (['CTRADER', 'FIVE_PAISA'] as const).map(async (broker) => {
+      (['CTRADER'] as const).map(async (broker) => {
         const credentials = credentialStatuses.find(item => item.broker === broker && item.environment === 'LIVE');
         if (!credentials?.configured) {
           return evaluateBrokerVerification({
@@ -1302,11 +1302,6 @@ app.get('/api/health/ready', (req: Request, res: Response) => {
           process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
           process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
           process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
-        ) || Boolean(
-          process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
-          process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
-          process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
-          process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
         ),
         packageVersion: process.env.GOLDCREST_RELEASE_VERSION || undefined
       }))
@@ -1570,7 +1565,7 @@ app.get('/api/reports/account-balance-history', operatorAuthRequired, async (req
       ? String(req.query.broker).toUpperCase()
       : undefined;
     if (broker && broker !== 'CTRADER') {
-      return res.status(400).json({ error: 'BROKER_INVALID', message: 'broker must be CTRADER or FIVE_PAISA.' });
+      return res.status(400).json({ error: 'BROKER_INVALID', message: 'broker must be CTRADER.' });
     }
 
     const from = req.query.from !== undefined ? Number(req.query.from) : undefined;
@@ -2854,11 +2849,6 @@ async function startServer() {
         process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
         process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
         process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
-      ) || Boolean(
-        process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
-        process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
-        process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
-        process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
       ),
       packageVersion: process.env.GOLDCREST_RELEASE_VERSION || undefined
     }));
