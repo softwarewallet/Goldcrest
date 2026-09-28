@@ -384,7 +384,8 @@ class AutoExecutionEngine {
       order,
       signalInput.signalTimestamp,
       gateParams.currentQuote,
-      gateResult.authoritativeSnapshot
+      gateResult.authoritativeSnapshot,
+      gateParams.dailyRealizedLoss
     );
     if (!readiness.ready) {
       logBrokerAction({
