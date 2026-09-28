@@ -47,7 +47,7 @@ async function ensureTable(): Promise<void> {
   // Remove legacy certification records before any operator-facing LIVE
   // balance-history query or snapshot.
   await executeRun(
-    "DELETE FROM account_balance_snapshots WHERE environment = 'LIVE' AND account_id LIKE 'TEST-%'"
+    "DELETE FROM account_balance_snapshots WHERE environment = 'LIVE' AND (account_id LIKE 'TEST-%' OR broker <> 'CTRADER')"
   );
 }
 
