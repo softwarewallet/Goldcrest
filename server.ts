@@ -9,15 +9,13 @@ import { apiRateLimit, blockLegacyTradingModes, operatorAuthConfigured, operator
 
 import { getDatabase, getDatabaseStats, executeQuery, executeRun, persistDatabase } from './src/database/db';
 import { buildRuntimeHealthPayload, evaluateRuntimeReadiness } from './src/services/runtimeReadiness';
-import { getForexSessionState, getIndianSessionState } from './src/markets/common/session';
+import { getForexSessionState } from './src/markets/common/session';
 import { FOREX_PAIRS, getForexPairConfig } from './src/markets/forex/instruments';
-import { INDIAN_UNDERLYINGS } from './src/markets/india_equity/underlyings';
 import { ScannerService } from './src/services/scannerService';
 import { getSystemConfig, updateSystemConfig, applyPersistedSystemConfig, prepareSystemConfigUpdate, persistSystemConfig } from './src/services/configService';
 import { getCTraderApiMode } from './src/services/configService';
 import { evaluateBrokerVerification } from './src/services/brokerVerificationService';
 import { loadPersistedSystemConfigFromDatabase, persistSystemConfigToDatabase } from './src/services/configPersistenceService';
-import { calculateStrategyPayoff } from './src/markets/india_options/strategySkeleton';
 
 // Phase 2A Forex Engines
 import { LiveForexProvider } from './src/markets/forex/provider';
@@ -37,7 +35,6 @@ import { LIVE_AUTO_EXECUTION_ALLOWED, refreshAutonomousExecutionPermission, armA
 import { autoTradingService } from './src/services/autoTradingService';
 import { initializeLiveRuntimeLog, getLiveRuntimeLogStatus, startLiveRuntimeLog, stopLiveRuntimeLog, getLiveRuntimeLogFile, listLiveRuntimeLogFiles, logApplicationAction, liveRuntimeLog } from './src/services/liveRuntimeLog';
 import { fetchLiveForexNews } from './src/services/liveNewsService';
-import { fetchIndianMarketNews } from './src/services/indianMarketNewsService';
 import {
   getMarketHistorySchedulerStatus,
   getMarketHistorySummary,
@@ -180,14 +177,8 @@ function productionPreflight(enforce = false): { ok: boolean; checks: Record<str
     process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
     process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
   );
-  const fivePaisaConfigured = Boolean(
-    process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
-    process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
-    process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
-    process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
-  );
   checks.operatorAuth = operatorKey ? 'CONFIGURED' : 'MISSING';
-  checks.liveBroker = ctraderConfigured || fivePaisaConfigured ? 'CONFIGURED' : 'MISSING';
+  checks.liveBroker = ctraderConfigured ? 'CONFIGURED' : 'MISSING';
   checks.autonomousExecution = LIVE_AUTO_EXECUTION_ALLOWED
     ? 'ENABLED'
     : (autoTradingRequested || autonomousRequested ? 'BLOCKED' : 'DISABLED');
@@ -271,11 +262,6 @@ app.get('/api/runtime', (_req: Request, res: Response) => {
           process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
           process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
           process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
-        ) || Boolean(
-          process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
-          process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
-          process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
-          process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
         ),
         packageVersion: process.env.GOLDCREST_RELEASE_VERSION || undefined
       }))
@@ -462,11 +448,6 @@ app.get('/api/operations/readiness', operatorAuthRequired, async (_req: Request,
         process.env.CTRADER_LIVE_CLIENT_SECRET?.trim() &&
         process.env.CTRADER_LIVE_ACCESS_TOKEN?.trim() &&
         process.env.CTRADER_LIVE_ACCOUNT_ID?.trim()
-      ) || Boolean(
-        process.env.FIVEPAISA_LIVE_APP_NAME?.trim() &&
-        process.env.FIVEPAISA_LIVE_USER_ID?.trim() &&
-        process.env.FIVEPAISA_LIVE_USER_KEY?.trim() &&
-        process.env.FIVEPAISA_LIVE_CLIENT_CODE?.trim()
       ),
       liveBrokerConnected: snapshot.brokers.some(item => item.isLive && item.reportedStatus === 'CONNECTED'),
       autonomousExecutionAllowed: LIVE_AUTO_EXECUTION_ALLOWED
@@ -1347,14 +1328,12 @@ app.get('/api/health/ready', (req: Request, res: Response) => {
 
 app.get('/api/status', (req: Request, res: Response) => {
   const forexSessions = getForexSessionState();
-  const indianSession = getIndianSessionState();
   const config = getSystemConfig();
 
   res.json({
     status: 'ONLINE',
     marketStatus: {
-      forex: forexSessions,
-      indianEquity: indianSession
+      forex: forexSessions
     },
     dataStatus: config.dataStatus,
     modelStatus: config.modelStatus,
@@ -1466,9 +1445,6 @@ const DATABASE_EXPLORER_TABLES = [
   { name: 'candles', label: 'Candles', category: 'Market Data', description: 'OHLCV candle series.' },
   { name: 'market_history_sync', label: 'Market History Sync', category: 'Market Data', description: 'Per-pair historical market-data synchronization state.' },
   { name: 'market_period_stats', label: 'Market Period Statistics', category: 'Market Data', description: 'Daily, weekly, monthly and rolling 7D/30D/90D/365D market statistics.' },
-  { name: 'options_chain', label: 'Options Chains', category: 'Market Data', description: 'Persisted options-chain snapshots.' },
-  { name: 'option_contracts', label: 'Option Contracts', category: 'Market Data', description: 'Strike-level option observations.' },
-  { name: 'greeks', label: 'Greeks', category: 'Market Data', description: 'Option Greeks and IV records.' },
   { name: 'signals', label: 'Signals', category: 'Strategy', description: 'Generated strategy signals and trade levels.' },
   { name: 'signal_events', label: 'Signal Events', category: 'Strategy', description: 'Signal lifecycle and status events.' },
   { name: 'live_trade_research', label: 'Live Trade Research', category: 'ML & Research', description: 'Decision-time Auto Live signals, market/news context, execution results and future outcome fields.' },
@@ -1484,8 +1460,6 @@ const DATABASE_EXPLORER_TABLES = [
   { name: 'markets', label: 'Markets', category: 'Reference', description: 'Market definitions.' },
   { name: 'instruments', label: 'Instruments', category: 'Reference', description: 'Instrument metadata.' },
   { name: 'currency_pairs', label: 'Currency Pairs', category: 'Reference', description: 'Forex pair reference metadata.' },
-  { name: 'underlyings', label: 'Underlyings', category: 'Reference', description: 'Indian market underlying metadata.' },
-  { name: 'contracts', label: 'Contracts', category: 'Reference', description: 'Derivative contract reference records.' },
   { name: 'model_versions', label: 'Model Versions', category: 'ML & Research', description: 'Registered model versions.' },
   { name: 'model_predictions', label: 'Model Predictions', category: 'ML & Research', description: 'Persisted model prediction records.' },
   { name: 'backtest_runs', label: 'Backtest Runs', category: 'ML & Research', description: 'Historical backtest run summaries.' },
@@ -1595,7 +1569,7 @@ app.get('/api/reports/account-balance-history', operatorAuthRequired, async (req
     const broker = typeof req.query.broker === 'string'
       ? String(req.query.broker).toUpperCase()
       : undefined;
-    if (broker && broker !== 'CTRADER' && broker !== 'FIVE_PAISA') {
+    if (broker && broker !== 'CTRADER') {
       return res.status(400).json({ error: 'BROKER_INVALID', message: 'broker must be CTRADER or FIVE_PAISA.' });
     }
 
@@ -1605,7 +1579,7 @@ app.get('/api/reports/account-balance-history', operatorAuthRequired, async (req
     const rows = await getAccountBalanceSnapshots({
       from: Number.isFinite(from) ? from : undefined,
       to: Number.isFinite(to) ? to : undefined,
-      broker: broker as 'CTRADER' | 'FIVE_PAISA' | undefined,
+      broker: broker as 'CTRADER' | undefined,
       limit: Number.isFinite(limit) ? limit : 500
     });
 
@@ -1645,7 +1619,6 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
     await hydratePersistedTradeLimits();
 
     const requestedForex = req.body?.maxTradeValueForexUsd;
-    const requestedIndian = req.body?.maxTradeValueIndianInr;
     const requestedAutoLiveMinSignalScore = req.body?.autoLiveMinSignalScore;
     const requestedAutoLiveMaxTradesPerPair = req.body?.autoLiveMaxTradesPerPair;
     const requestedMaxOpenPositions = req.body?.maxOpenPositions;
@@ -1653,19 +1626,12 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
     const requestedForexStopLossPips = req.body?.forexStopLossPips;
     const requestedForexTakeProfitPips = req.body?.forexTakeProfitPips;
     const requestedForexPairs = req.body?.autoLiveForexPairs;
-    const requestedIndianUnderlyings = req.body?.autoLiveIndianUnderlyings;
     const updates: any = { ...req.body };
 
     if (requestedForex !== undefined) {
       const value = Number(requestedForex);
       if (!Number.isFinite(value) || value <= 0) return res.status(400).json({ error: 'maxTradeValueForexUsd must be a positive number.' });
       updates.maxTradeValueForexUsd = value;
-    }
-
-    if (requestedIndian !== undefined) {
-      const value = Number(requestedIndian);
-      if (!Number.isFinite(value) || value <= 0) return res.status(400).json({ error: 'maxTradeValueIndianInr must be a positive number.' });
-      updates.maxTradeValueIndianInr = value;
     }
 
     if (requestedAutoLiveMinSignalScore !== undefined) {
@@ -1717,7 +1683,6 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
     }
 
     const validForexPairs = new Set(FOREX_PAIRS.map(pair => pair.symbol.toUpperCase()));
-    const validIndianUnderlyings = new Set(INDIAN_UNDERLYINGS.map(item => item.symbol.toUpperCase()));
     const isValidForexSymbol = (symbol: string) => /^[A-Z]{3}\/[A-Z]{3}$/.test(symbol);
 
     if (requestedForexPairs !== undefined) {
@@ -1729,17 +1694,6 @@ app.post('/api/config', operatorAuthRequired, async (req: Request, res: Response
         return res.status(400).json({ error: 'Forex instruments must use the BASE/QUOTE format, for example EUR/USD.' });
       }
       updates.autoLiveForexPairs = normalized;
-    }
-
-    if (requestedIndianUnderlyings !== undefined) {
-      if (!Array.isArray(requestedIndianUnderlyings)) {
-        return res.status(400).json({ error: 'autoLiveIndianUnderlyings must be an array.' });
-      }
-      const normalized = [...new Set(requestedIndianUnderlyings.map((value: unknown) => String(value).toUpperCase().trim()))];
-      if (normalized.some(symbol => !validIndianUnderlyings.has(symbol))) {
-        return res.status(400).json({ error: 'One or more selected NSE/BSE underlyings are not supported.' });
-      }
-      updates.autoLiveIndianUnderlyings = normalized;
     }
 
     const updated = prepareSystemConfigUpdate(updates);
@@ -1813,47 +1767,14 @@ app.post('/api/research-ai/server/test-prediction', operatorAuthRequired, async 
 });
 
 // 3. Markets Abstraction
-app.get('/api/markets', (req: Request, res: Response) => {
-  res.json([
-    {
-      id: 'FOREX',
-      name: 'Forex (Currencies & Metals)',
-      currency: 'USD',
-      instrumentsCount: FOREX_PAIRS.length,
-      status: 'ACTIVE',
-      sessions: getForexSessionState()
-    },
-    {
-      id: 'INDIA_EQUITY',
-      name: 'Indian Equity Benchmark Indices',
-      currency: 'INR',
-      instrumentsCount: INDIAN_UNDERLYINGS.length,
-      status: 'ACTIVE',
-      session: getIndianSessionState()
-    },
-    {
-      id: 'INDIA_OPTIONS',
-      name: 'Indian Equity Index Derivatives & Options',
-      currency: 'INR',
-      underlyings: INDIAN_UNDERLYINGS.map(u => u.symbol),
-      status: 'ACTIVE',
-      session: getIndianSessionState()
-    }
-  ]);
+app.get('/api/markets', (_req: Request, res: Response) => {
+  res.json([{
+    id: 'FOREX',
+    name: 'Foreign Exchange',
+    instrumentsCount: FOREX_PAIRS.length,
+    session: getForexSessionState()
+  }]);
 });
-
-// 4. Forex Endpoints (Phase 2A Full Analysis Engine)
-const FOREX_PAIRS_CACHE_TTL_MS = 60_000;
-let forexPairsCache: { payload: any[]; expiresAt: number } | null = null;
-let forexPairsInFlight: Promise<any[]> | null = null;
-
-const INDIA_UNDERLYINGS_CACHE_TTL_MS = 60_000;
-let indiaUnderlyingsCache: { payload: any[]; expiresAt: number } | null = null;
-let indiaUnderlyingsInFlight: Promise<any[]> | null = null;
-
-const CANDLE_CACHE_TTL_MS = 30_000;
-const candleCache = new Map<string, { payload: any[]; expiresAt: number }>();
-const candleInFlight = new Map<string, Promise<any[]>>();
 
 app.get('/api/forex/pairs', async (_req: Request, res: Response) => {
   try {
@@ -2142,206 +2063,6 @@ app.delete('/api/notes/:id', operatorAuthRequired, async (req: Request, res: Res
   }
 });
 
-// 5. Indian Equity Endpoints
-app.get('/api/india/underlyings', async (_req: Request, res: Response) => {
-  try {
-    const now = Date.now();
-    if (indiaUnderlyingsCache && now < indiaUnderlyingsCache.expiresAt) {
-      return res.json(indiaUnderlyingsCache.payload);
-    }
-    if (indiaUnderlyingsInFlight) {
-      return res.json(await indiaUnderlyingsInFlight);
-    }
-
-    indiaUnderlyingsInFlight = (async () => {
-      const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE') as any;
-      if (typeof adapter.fetchIndianUnderlyingsFrom5Paisa !== 'function') {
-        throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa underlying market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
-      }
-      const payload = await adapter.fetchIndianUnderlyingsFrom5Paisa();
-      indiaUnderlyingsCache = {
-        payload: Array.isArray(payload) ? payload : [],
-        expiresAt: Date.now() + INDIA_UNDERLYINGS_CACHE_TTL_MS
-      };
-      return indiaUnderlyingsCache.payload;
-    })().finally(() => {
-      indiaUnderlyingsInFlight = null;
-    });
-
-    return res.json(await indiaUnderlyingsInFlight);
-  } catch (err: any) {
-    res.status(503).json({
-      error: err?.code || 'LIVE_MARKET_DATA_UNAVAILABLE',
-      message: err?.message || 'Authoritative 5paisa underlying data is unavailable.'
-    });
-  }
-});
-
-app.get('/api/india/sessions', (req: Request, res: Response) => {
-  const session = getIndianSessionState();
-  res.json(session);
-});
-
-app.get('/api/india/candles/:symbol', async (req: Request, res: Response) => {
-  const symbol = req.params.symbol.toUpperCase();
-  try {
-    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE');
-    if (!adapter.getHistoricalCandles) throw new Error('Authoritative 5paisa historical market-data capability is unavailable.');
-    const candles = await adapter.getHistoricalCandles(symbol, '15m', 60);
-    res.json(candles);
-  } catch (err) {
-    res.json([]);
-  }
-});
-
-app.get('/api/india/analysis/:symbol', async (req: Request, res: Response) => {
-  const symbol = req.params.symbol.toUpperCase();
-  try {
-    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE') as any;
-    if (typeof adapter.fetchIndianUnderlyingsFrom5Paisa !== 'function') {
-      throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa underlying market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
-    }
-    const underlyings = await adapter.fetchIndianUnderlyingsFrom5Paisa();
-    const found = underlyings.find((u: any) => u.symbol === symbol);
-    if (!found) {
-      return res.status(404).json({ error: `Underlying ${symbol} not found in authoritative 5paisa market data.` });
-    }
-    res.json(found);
-  } catch (err: any) {
-    res.status(503).json({
-      error: err?.code || 'LIVE_MARKET_DATA_UNAVAILABLE',
-      message: err?.message || 'Authoritative 5paisa analysis data is unavailable.'
-    });
-  }
-});
-
-// Universal candles endpoint supporting both Forex (EUR/USD, EUR%2FUSD) and Indian underlyings (NIFTY, etc.)
-app.get(['/api/candles/:symbol', '/api/candles/:part1/:part2'], async (req: Request, res: Response) => {
-  try {
-    let symbol = req.params.symbol;
-    if (!symbol && req.params.part1 && req.params.part2) {
-      symbol = `${req.params.part1}/${req.params.part2}`;
-    }
-    if (!symbol) {
-      return res.status(400).json({ error: 'Symbol parameter is required' });
-    }
-
-    symbol = decodeURIComponent(symbol).toUpperCase().trim();
-    const isForex = symbol.includes('/') || FOREX_PAIRS.some(p => p.symbol.toUpperCase() === symbol);
-    const tf = isForex
-      ? ((req.query.tf as ForexTimeframe) || '15M')
-      : String(req.query.tf || '15m');
-    const limit = req.query.limit
-      ? Math.min(Math.max(parseInt(req.query.limit as string, 10), 10), 500)
-      : 80;
-
-    const cacheKey = `${isForex ? 'FX' : 'IN'}|${symbol}|${tf}|${limit}`;
-    const cached = candleCache.get(cacheKey);
-    if (cached && Date.now() < cached.expiresAt) {
-      return res.json(cached.payload);
-    }
-
-    const inFlight = candleInFlight.get(cacheKey);
-    if (inFlight) {
-      return res.json(await inFlight);
-    }
-
-    const promise = (async () => {
-      if (isForex) {
-        const candles = await getLiveAnchoredCandles(symbol, tf as ForexTimeframe, limit);
-        return candles;
-      }
-
-      const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE');
-      if (!adapter.getHistoricalCandles) {
-        throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa historical market-data capability is unavailable.', 'FIVE_PAISA', 'LIVE');
-      }
-      return await adapter.getHistoricalCandles(symbol, tf, limit);
-    })();
-
-    candleInFlight.set(cacheKey, promise);
-    try {
-      const candles = await promise;
-      candleCache.set(cacheKey, {
-        payload: Array.isArray(candles) ? candles : [],
-        expiresAt: Date.now() + CANDLE_CACHE_TTL_MS
-      });
-      return res.json(Array.isArray(candles) ? candles : []);
-    } finally {
-      candleInFlight.delete(cacheKey);
-    }
-  } catch (err: any) {
-    const isAuth = err?.code === 'AUTHENTICATION_FAILED' || err?.code === 'ACCOUNT_NOT_FOUND' || err?.code === 'TOKEN_EXPIRED';
-    const status = isAuth ? 401 : 503;
-    return res.status(status).json({
-      error: err?.code || 'MARKET_DATA_UNAVAILABLE',
-      message: err?.message || 'Historical candle data is unavailable from the live broker.'
-    });
-  }
-});
-
-// 6. Options Endpoints
-app.get('/api/options/chain/:symbol', async (req: Request, res: Response) => {
-  const symbol = req.params.symbol.toUpperCase();
-  const expiry = req.query.expiry as string | undefined;
-  const depth = req.query.depth ? parseInt(req.query.depth as string, 10) : 7;
-  try {
-    const adapter = brokerRegistry.getAdapter('FIVE_PAISA', 'LIVE') as any;
-    if (typeof adapter.fetchOptionChainFrom5Paisa !== 'function') {
-      throw new BrokerError('UNAVAILABLE', 'Authoritative 5paisa option-chain capability is unavailable.', 'FIVE_PAISA', 'LIVE');
-    }
-    const chain = await adapter.fetchOptionChainFrom5Paisa(symbol, expiry, depth);
-    if (!chain) {
-      return res.status(503).json({
-        underlying: symbol,
-        expiry: expiry || '',
-        rows: [],
-        isBlank: true,
-        error: 'Authoritative 5paisa option-chain data is unavailable.'
-      });
-    }
-    res.json(chain);
-  } catch (err: any) {
-    res.status(503).json({
-      underlying: symbol,
-      expiry: expiry || '',
-      rows: [],
-      isBlank: true,
-      error: err?.message || 'Authoritative 5paisa option-chain data is unavailable.'
-    });
-  }
-});
-
-app.get('/api/options/scanner/:symbol', async (req: Request, res: Response) => {
-  const symbol = req.params.symbol ? req.params.symbol.toUpperCase() : 'NIFTY';
-  const expiry = typeof req.query.expiry === 'string' ? req.query.expiry : undefined;
-  const rawDepth = Number(req.query.depth);
-  const depth = Number.isInteger(rawDepth) ? Math.min(Math.max(rawDepth, 1), 20) : getSystemConfig().strikeDepth;
-  try {
-    const result = await scannerService.getOptionsScanner(symbol, expiry, depth);
-    res.json(result);
-  } catch (err: any) {
-    res.status(503).json({
-      underlying: symbol,
-      spot: 0,
-      bias: 'Range-bound',
-      pcr: 0,
-      opportunities: [],
-      isBlank: true,
-      error: err?.message || 'Option scanner data unavailable.'
-    });
-  }
-});
-
-app.post('/api/options/payoff', (req: Request, res: Response) => {
-  try {
-    const payoff = calculateStrategyPayoff(req.body);
-    res.json(payoff);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // 7. Unified Signals
 app.get(['/api/signals', '/api/signals/all'], async (req: Request, res: Response) => {
   try {
@@ -2351,27 +2072,6 @@ app.get(['/api/signals', '/api/signals/all'], async (req: Request, res: Response
     res.status(503).json({
       error: err?.code || 'LIVE_SIGNAL_DATA_UNAVAILABLE',
       message: err?.message || 'Live signal data is unavailable from the configured brokers.'
-    });
-  }
-});
-
-// 7b. Indian Market News & Prediction — hard-gated to the authoritative Indian session state.
-app.get('/api/india/news', async (req: Request, res: Response) => {
-  try {
-    const session = getIndianSessionState();
-    if (!session.isOpen) {
-      const snapshot = await fetchIndianMarketNews({ forceRefresh: false });
-      return res.json(snapshot);
-    }
-
-    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
-    const marketData = await scannerService.getIndianMarketScanner();
-    const snapshot = await fetchIndianMarketNews({ forceRefresh, marketData });
-    res.status(snapshot.status === 'UNAVAILABLE' ? 503 : 200).json(snapshot);
-  } catch (err: any) {
-    res.status(503).json({
-      error: 'INDIAN_MARKET_NEWS_UNAVAILABLE',
-      message: err?.message || 'Indian market news is unavailable.'
     });
   }
 });
@@ -3115,11 +2815,10 @@ async function captureLiveBrokerReconciliation(): Promise<void> {
   if (!databaseReady) return;
   try {
     const results = await Promise.allSettled([
-      reconciliationService.captureBrokerSnapshot('CTRADER'),
-      reconciliationService.captureBrokerSnapshot('FIVE_PAISA')
+      reconciliationService.captureBrokerSnapshot('CTRADER')
     ]);
     results.forEach((result, index) => {
-      const broker = index === 0 ? 'CTRADER' : 'FIVE_PAISA';
+      const broker = 'CTRADER';
       if (result.status === 'rejected') {
         console.warn(`Goldcrest reconciliation failed for ${broker}: `, result.reason?.message || result.reason);
       } else if (result.value?.status === 'UNCONFIGURED') {
