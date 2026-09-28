@@ -1,4 +1,4 @@
-export type MarketType = 'FOREX' | 'INDIA_EQUITY' | 'INDIA_OPTIONS';
+export type MarketType = 'FOREX';
 
 export type DataSourceStatus = 'LIVE' | 'DELAYED' | 'STALE' | 'UNKNOWN';
 
@@ -14,12 +14,6 @@ export type SignalCategory =
   | 'WATCH_SELL'
   | 'SELL'
   | 'STRONG_SELL'
-  | 'LONG_CALL'
-  | 'LONG_PUT'
-  | 'BULL_CALL_SPREAD'
-  | 'BEAR_PUT_SPREAD'
-  | 'BULL_PUT_SPREAD'
-  | 'BEAR_CALL_SPREAD'
   | 'WAIT'
   | 'NO_TRADE';
 
@@ -36,7 +30,6 @@ export type SignalStatus =
   | 'CANCELLED'
   | 'INVALIDATED';
 
-export type OptionType = 'CALL' | 'PUT';
 
 export interface Candle {
   timestamp: number;
@@ -102,89 +95,6 @@ export interface MarketStructure {
   liquidityZone?: { min: number; max: number; note: string };
 }
 
-export interface GreeksData {
-  delta: number;
-  gamma: number;
-  theta: number;
-  vega: number;
-  rho: number;
-  iv: number;
-  modelDerived: boolean;
-}
-
-export interface OptionContract {
-  symbol: string;
-  underlying: string;
-  expiry: string;
-  strike: number;
-  optionType: OptionType;
-  lotSize: number;
-  tickSize: number;
-  contractMultiplier: number;
-  ltp: number;
-  change: number;
-  changePercent: number;
-  oi: number;
-  changeOI: number;
-  volume: number;
-  bid: number;
-  ask: number;
-  spread: number;
-  iv: number;
-  greeks: GreeksData;
-  /** Authoritative 5paisa scrip code for live option execution. */
-  brokerInstrumentId?: string;
-  /** Broker exchange/segment metadata for exact derivative routing. */
-  exchange?: string;
-  exchangeType?: string;
-  isATM?: boolean;
-  isITM?: boolean;
-}
-
-export interface OptionChainStrikeRow {
-  strike: number;
-  isATM: boolean;
-  distanceFromAtm: number; // e.g. -2, -1, 0, 1, 2
-  call: OptionContract;
-  put: OptionContract;
-}
-
-export interface OptionChainSummary {
-  underlying: string;
-  spotPrice: number;
-  atmStrike: number;
-  expiry: string;
-  availableExpiries: string[];
-  totalCallOI: number;
-  totalPutOI: number;
-  pcr: number;
-  callResistanceStrike: number;
-  putSupportStrike: number;
-  highOIStrikeCall: number;
-  highOIStrikePut: number;
-  rows: OptionChainStrikeRow[];
-  isBlank?: boolean;
-  error?: string;
-  timestamp: number;
-}
-
-export interface StrategyPayoffPoint {
-  underlyingPrice: number;
-  pnl: number;
-}
-
-export interface StrategyPayoff {
-  strategyName: string;
-  underlying: string;
-  maxProfit: number;
-  maxLoss: number;
-  breakeven: number[];
-  riskRewardRatio: number;
-  netDebitOrCredit: number; // Positive = Debit, Negative = Credit
-  capitalRequired: number;
-  payoffPoints: StrategyPayoffPoint[];
-}
-
 export interface SignalScoreBreakdown {
   trend: number; // 0-15
   multiTimeframe: number; // 0-15
@@ -203,7 +113,6 @@ export interface TradingSignal {
   timestamp: number;
   market: MarketType;
   instrument: string;
-  underlying?: string;
   direction: SignalDirection;
   category: SignalCategory;
   strategy: string;
@@ -221,7 +130,6 @@ export interface TradingSignal {
   reasons: string[];
   noTradeReasons?: string[];
   modelVersion: string;
-  expiry?: string;
 }
 
 export interface EconomicEvent {
