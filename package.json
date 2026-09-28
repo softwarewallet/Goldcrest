@@ -45,6 +45,7 @@
     "test:phase9_6": "tsx test/test_phase9_6_active_auto_live_monitor_certification.ts",
     "test:phase9_7_1": "tsx test/test_phase9_7_1_ctrader_functional_validation_certification.ts",
     "test:phase10_outcome_data": "tsx test/test_phase10_real_outcome_data_layer.ts",
+    "migrate:phase10": "tsx scripts/migrate_phase10_real_outcome_data.ts",
     "test:forex_only": "tsx test/test_forex_only_architecture_audit.ts && tsx test/test_pair_prediction_accuracy.ts && npm run test:phase10_outcome_data"
   },
   "dependencies": {
