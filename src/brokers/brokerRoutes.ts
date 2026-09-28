@@ -412,7 +412,7 @@ brokerRouter.post('/environment', (_req: Request, res: Response) => {
     success: true,
     previousEnvironment: currentEnv,
     activeEnvironment: 'LIVE',
-    routingMode: 'AUTOMATIC_BY_MARKET'
+    routingMode: 'FOREX_TO_CTRADER'
   });
 });
 
@@ -577,7 +577,7 @@ brokerRouter.get('/account', async (req: Request, res: Response) => {
   try {
     if (requestedBroker) {
       if (!LIVE_BROKERS.includes(requestedBroker)) {
-        return res.status(400).json({ error: 'Allowed live brokers: CTRADER, FIVE_PAISA' });
+        return res.status(400).json({ error: 'Allowed live broker: CTRADER.' });
       }
 
       // Reuse the same account snapshot as the header/status endpoint. This
@@ -1251,8 +1251,8 @@ brokerRouter.post('/controls', (req: Request, res: Response) => {
 });
 
 brokerRouter.post('/reconciliation/snapshot', async (req: Request, res: Response) => {
-  const broker = req.body?.broker as ('CTRADER' | 'FIVE_PAISA') | undefined;
-  const brokers: ('CTRADER')[] = broker ? [broker] : ['CTRADER'];
+  const broker = req.body?.broker as BrokerType | undefined;
+  const brokers: BrokerType[] = broker ? [broker] : ['CTRADER'];
   if (brokers.some(b => !LIVE_BROKERS.includes(b))) {
     return res.status(400).json({ error: 'Allowed live brokers: CTRADER, FIVE_PAISA' });
   }
