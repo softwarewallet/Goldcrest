@@ -762,11 +762,10 @@ function initSchema(db: Database) {
 }
 
 function seedInitialData(db: Database) {
-  // Markets
+  // Forex market only.
   db.run(`INSERT OR IGNORE INTO markets (id, code, name, status, currency) VALUES 
-    ('mkt_fx', 'FOREX', 'Global Foreign Exchange', 'ACTIVE', 'USD'),
-    ('mkt_in_eq', 'INDIA_EQUITY', 'Indian Equity Benchmark Indices', 'ACTIVE', 'INR'),
-    ('mkt_in_opt', 'INDIA_OPTIONS', 'Indian Equity Index Options', 'ACTIVE', 'INR');
+    ('mkt_fx', 'FOREX', 'Global Foreign Exchange', 'ACTIVE', 'USD');
+    DELETE FROM markets WHERE code <> 'FOREX';
   `);
 
   // System settings
@@ -776,14 +775,17 @@ function seedInitialData(db: Database) {
     ('DATA_STATUS', 'UNAVAILABLE', ${now}),
     ('MODEL_STATUS', 'BASELINE_UNCALIBRATED', ${now}),
     ('DEFAULT_RISK_PCT', '1.0', ${now}),
-    ('STRIKE_DEPTH', '7', ${now}),
-    ('MAX_TRADE_VALUE_FOREX_USD', '100000', ${now}),
-    ('MAX_TRADE_VALUE_INDIAN_INR', '1000000', ${now});
+    ('MAX_TRADE_VALUE_FOREX_USD', '100000', ${now});
   `);
 
-  // Enforce LIVE_ONLY persistence.
+  // Enforce Forex-only LIVE persistence and remove obsolete market settings.
   db.run(`UPDATE system_settings SET value = 'LIVE_ONLY', updated_at = ${now} WHERE key = 'TRADING_MODE';
     UPDATE system_settings SET value = 'UNAVAILABLE', updated_at = ${now} WHERE key = 'DATA_STATUS';
+    DELETE FROM system_settings WHERE key IN ('STRIKE_DEPTH', 'MAX_TRADE_VALUE_INDIAN_INR', 'AUTO_LIVE_INDIAN_UNDERLYINGS');
+    DELETE FROM economic_events WHERE currency = 'INR';
+    DELETE FROM broker_accounts WHERE broker <> 'CTRADER';
+    DELETE FROM broker_reconciliation_snapshots WHERE broker <> 'CTRADER';
+    DELETE FROM account_balance_snapshots WHERE broker <> 'CTRADER';
     UPDATE risk_configs SET trading_mode = 'LIVE_ONLY';
   `);
 
@@ -796,7 +798,6 @@ function seedInitialData(db: Database) {
   db.run(`INSERT OR IGNORE INTO economic_events (id, title, currency, impact, timestamp, blocks_entry) VALUES 
     ('ev_1', 'FOMC Rate Decision & Press Conference', 'USD', 'HIGH', ${now + 7200000}, 0),
     ('ev_2', 'ECB Monetary Policy Statement', 'EUR', 'HIGH', ${now + 14400000}, 0),
-    ('ev_3', 'RBI Monetary Policy Committee Outcome', 'INR', 'HIGH', ${now + 28800000}, 0),
     ('ev_4', 'US Core CPI Inflation (YoY)', 'USD', 'HIGH', ${now + 50000000}, 0);
   `);
 }
@@ -842,7 +843,7 @@ export async function executeTransaction<T>(work: (db: Database) => T): Promise<
 export async function getDatabaseStats() {
   const db = await getDatabase();
   const tables = [
-    'markets', 'currency_pairs', 'underlyings', 'contracts', 'candles',
+    'markets', 'currency_pairs', 'candles',
     'market_history_sync', 'market_period_stats',
     'signals', 'trades', 'positions', 'orders', 'economic_events',
     'risk_configs', 'system_settings', 'broker_accounts',
