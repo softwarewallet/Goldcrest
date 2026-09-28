@@ -189,8 +189,8 @@ export class LiveTradingGate {
     //
     // Goldcrest is Forex-only and cTrader is the sole execution broker.
     // The configured maxTradeValueForexUsd is the authoritative cTrader
-    // protocol-volume ceiling; no Indian-market or alternate-broker sizing
-    // branch is permitted here.
+    // protocol-volume ceiling; no alternate-broker sizing branch is permitted
+    // here.
     const config = getSystemConfig();
     const maxTradeValue = Number(config.maxTradeValueForexUsd);
     let maximumTradeValueCheckPassed =
