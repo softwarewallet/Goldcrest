@@ -383,7 +383,8 @@ class AutoExecutionEngine {
       adapter,
       order,
       signalInput.signalTimestamp,
-      gateParams.currentQuote
+      gateParams.currentQuote,
+      gateResult.authoritativeSnapshot
     );
     if (!readiness.ready) {
       logBrokerAction({
