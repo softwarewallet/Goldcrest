@@ -914,7 +914,7 @@ export async function getDatabaseStats() {
     'risk_configs', 'system_settings', 'broker_accounts',
     'broker_reconciliation_snapshots', 'account_balance_snapshots', 'execution_intents', 'execution_fill_observations', 'execution_fill_events',
     'trade_traces', 'trade_trace_nodes', 'trade_notes', 'ml_storage_records',
-    'live_trade_research'
+    'live_trade_research', 'live_trade_research_labels', 'live_trade_research_predictions'
   ];
 
   const stats: Record<string, number> = {};
