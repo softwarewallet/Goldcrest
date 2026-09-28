@@ -56,7 +56,7 @@ export class LiveTradingGate {
     }
 
     // Check 4: Trading permission confirmed
-    const tradingPermissionConfirmed = permissions.includes('TRADING') || permissions.includes('EQUITY') || permissions.includes('DERIVATIVES') || permissions.includes('NSE_FNO');
+    const tradingPermissionConfirmed = permissions.includes('TRADING') || permissions.includes('EQUITY') || permissions.includes('DERIVATIVES');
     if (!tradingPermissionConfirmed) {
       failedReasons.push('Condition 4 Failed: Account lacks confirmed broker trading permissions.');
     }
@@ -87,7 +87,7 @@ export class LiveTradingGate {
       );
     }
 
-    // Check 8: Signal still valid (Max age: 5 min for Forex, 2 min for options)
+    // Check 8: Signal still valid (Max age: 5 min for Forex)
     const maxAge = params.order.market === 'FOREX' ? 300000 : 120000;
     const signalStillValid = params.signalAgeMs >= 0 && params.signalAgeMs <= maxAge;
     if (!signalStillValid) {
@@ -194,7 +194,7 @@ export class LiveTradingGate {
     // volume by setting this value.
     const config = getSystemConfig();
     const isForex = params.order.market === 'FOREX';
-    const maxTradeValue = isForex ? config.maxTradeValueForexUsd : config.maxTradeValueIndianInr;
+    const maxTradeValue = config.maxTradeValueForexUsd;
     let maximumTradeValueCheckPassed = Number.isFinite(maxTradeValue) && maxTradeValue > 0;
     let tradeValue = NaN;
     let tradeValueUsd = NaN;
@@ -263,11 +263,7 @@ export class LiveTradingGate {
         failedReasons.push(
           `Condition 16 Failed: Trade value ${tradeValueUsd.toFixed(2)} USD exceeds configured maximum of ${maxTradeValue.toFixed(2)} USD for cTrader.`
         );
-      } else if (maximumTradeValueCheckPassed && !isForex && tradeValue > maxTradeValue + tradeValueTolerance) {
-        maximumTradeValueCheckPassed = false;
-        failedReasons.push(
-          `Condition 16 Failed: Trade value ${tradeValue.toFixed(2)} INR exceeds configured maximum of ${maxTradeValue.toFixed(2)} INR for 5paisa.`
-        );
+      }
       } else if (maximumTradeValueCheckPassed && isForex && !(tradeValueUsd > 0)) {
         maximumTradeValueCheckPassed = false;
         failedReasons.push('Condition 16 Failed: USD-converted Forex trade value could not be safely calculated.');
