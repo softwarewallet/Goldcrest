@@ -727,7 +727,6 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                     {closedMarketPrompt.marketGate?.forex?.sessions?.join(' / ') || 'Session unavailable'}
                   </div>
                 </div>
-                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2">
