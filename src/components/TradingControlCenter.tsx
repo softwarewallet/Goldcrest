@@ -108,7 +108,7 @@ interface PositionItem {
   currentPrice: number;
   unrealizedPnl: number;
   realizedPnl: number;
-  currency: 'USD' | 'INR';
+  currency: string;
   openedAt: number;
   brokerSyncStatus: 'SYNCED' | 'PENDING' | 'DESYNC';
   reconciliationStatus: 'MATCH' | 'MINOR_DELAY' | 'MATERIAL_MISMATCH';
@@ -720,14 +720,6 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                     {closedMarketPrompt.marketGate?.forex?.sessions?.join(' / ') || 'Session unavailable'}
                   </div>
                 </div>
-                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <div className="text-slate-500 text-[10px]">FOREX / CTRADER</div>
-                  <div className={closedMarketPrompt.marketGate?.india?.isOpen ? 'text-emerald-400 font-bold mt-1' : 'text-amber-300 font-bold mt-1'}>
-                    {closedMarketPrompt.marketGate?.india?.isOpen ? 'OPEN' : 'CLOSED'}
-                  </div>
-                  <div className="text-slate-500 text-[10px] mt-1">
-                    {closedMarketPrompt.marketGate?.india?.phase || 'Session unavailable'}
-                  </div>
                 </div>
               </div>
 
@@ -911,7 +903,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         </div>
       </div>
 
-      {/* SECTION 1: ACCOUNT OVERVIEW & IDENTITY (Native Currencies USD / INR) */}
+      {/* SECTION 1: ACCOUNT OVERVIEW & IDENTITY */}
       {(activeSection === 'ALL_OVERVIEW' || activeSection === 'ACCOUNT_OVERVIEW') && (
         <div id="section_accounts_overview" className="space-y-3">
           <div className="flex items-center justify-between">
@@ -998,7 +990,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <p className="text-[10px] text-slate-500 mt-1">Authoritative LIVE API snapshots at 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00 and 21:00. No calculated or fabricated balance values are stored.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <select value={balanceSnapshotBrokerFilter} onChange={e => setBalanceSnapshotBrokerFilter(e.target.value)} className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1.5"><option value="ALL">All Brokers</option><option value="CTRADER">cTrader</option><option value="FIVE_PAISA">5paisa</option></select>
+              <select value={balanceSnapshotBrokerFilter} onChange={e => setBalanceSnapshotBrokerFilter(e.target.value)} className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1.5"><option value="ALL">All Brokers</option><option value="CTRADER">cTrader</option></select>
               <input type="date" value={balanceSnapshotDateFilter} onChange={e => setBalanceSnapshotDateFilter(e.target.value)} className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1.5" />
               {(balanceSnapshotDateFilter || balanceSnapshotBrokerFilter !== 'ALL') && <button type="button" onClick={() => { setBalanceSnapshotDateFilter(''); setBalanceSnapshotBrokerFilter('ALL'); }} className="px-2.5 py-1.5 rounded border border-slate-700 bg-slate-950 text-slate-300 hover:text-white">Clear</button>}
             </div>
@@ -1394,7 +1386,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               >
                 <option value="ALL">All Brokers</option>
                 <option value="CTRADER">cTrader (USD)</option>
-                <option value="FIVE_PAISA">5paisa (INR)</option>
+                
               </select>
 
               <select
@@ -2115,7 +2107,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 const timestamp = Number(row.capturedAt);
                 const date = Number.isFinite(timestamp) ? new Date(timestamp) : null;
                 const currency = String(row.currency || '');
-                const prefix = currency === 'INR' ? 'INR ' : 'USD ';
+                const prefix = currency + ' ';
                 const money = (value: any) => { const numeric = Number(value); return Number.isFinite(numeric) ? prefix + numeric.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'; };
                 return <tr key={row.id || 'balance-snapshot-' + index} className="hover:bg-slate-800/40">
                   <td className="py-2.5 px-3 text-slate-300">{date ? date.toLocaleDateString() : '—'}</td>
@@ -2674,7 +2666,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             </div>
 
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-              <div className="text-slate-400 text-[10px]">ACCOUNT EXPOSURE (INR)</div>
+              <div className="text-slate-400 text-[10px]">ACCOUNT EXPOSURE</div>
               <div className="text-base font-bold text-white mt-1">₹24,600.00</div>
               <div className="text-[10px] text-slate-500 mt-0.5">4.92% Gross Margin Util</div>
             </div>
@@ -2862,7 +2854,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 <option value="AUTHENTICATION">AUTHENTICATION</option>
                 <option value="ACCOUNT">ACCOUNT</option>
                 <option value="MARKET_DATA">MARKET_DATA</option>
-                <option value="OPTIONS_DATA">OPTIONS_DATA</option>
+                
                 <option value="SIGNAL">SIGNAL</option>
                 <option value="MODEL">MODEL</option>
                 <option value="RISK">RISK</option>
