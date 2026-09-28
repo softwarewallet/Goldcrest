@@ -2,7 +2,7 @@
 
 export type TradingEnvironment = 'LIVE';
 
-export type BrokerType = 'CTRADER' | 'FIVE_PAISA';
+export type BrokerType = 'CTRADER';
 
 export type BrokerStatus =
   | 'CONNECTED'
