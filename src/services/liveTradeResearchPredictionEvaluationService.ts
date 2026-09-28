@@ -230,8 +230,6 @@ export async function evaluatePendingResearchPredictions(params: {
     }
   }
 
-  }
-
   return {
     evaluated,
     pending,
