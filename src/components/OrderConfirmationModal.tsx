@@ -37,9 +37,9 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
   const isBuy = order.side === 'BUY';
 
   // Estimate maximum loss
-  const currency = broker === 'FIVE_PAISA' ? 'INR' : 'USD';
-  const estimatedMaxLoss = sl ? (riskDistance * order.quantity * (broker === 'FIVE_PAISA' ? 1 : 10)).toFixed(2) : 'UNDEFINED';
-  const estimatedCharges = broker === 'FIVE_PAISA' ? '₹20.00 Flat Brokerage' : '$2.00 Commission / lot';
+  const currency = 'USD';
+  const estimatedMaxLoss = sl ? (riskDistance * order.quantity * 10).toFixed(2) : 'UNDEFINED';
+  const estimatedCharges = '$2.00 Commission / lot';
 
   return (
     <div id="order_confirmation_modal_overlay" className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
