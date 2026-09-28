@@ -158,10 +158,7 @@ async function captureBrokerBalance(broker: BrokerType, capturedAt: number): Pro
 export async function captureAccountBalanceSnapshots(capturedAt = Date.now()): Promise<AccountBalanceSnapshot[]> {
   await ensureTable();
   const timestamp = Number(capturedAt);
-  return Promise.all([
-    captureBrokerBalance('CTRADER', timestamp),
-    captureBrokerBalance('FIVE_PAISA', timestamp)
-  ]);
+  return Promise.all([captureBrokerBalance('CTRADER', timestamp)]);
 }
 
 export async function getAccountBalanceSnapshots(options: {
@@ -225,7 +222,7 @@ async function captureStartupSnapshotsIfNeeded(): Promise<void> {
   const recentBrokers = new Set(
     recentRows.map(row => String(row.broker || '').toUpperCase())
   );
-  const missingBrokers = (['CTRADER', 'FIVE_PAISA'] as BrokerType[])
+  const missingBrokers = (['CTRADER'] as BrokerType[])
     .filter(broker => !recentBrokers.has(broker));
 
   if (missingBrokers.length === 0) return;
