@@ -87,6 +87,29 @@ export async function materializeLiveTradeResearchTrainingDataset(params: {
   });
   const updatedAt = Date.now();
 
+  await executeRun(`CREATE TABLE IF NOT EXISTS live_trade_research_labels (
+    signal_id TEXT NOT NULL,
+    label_version TEXT NOT NULL,
+    horizon TEXT NOT NULL,
+    label_source TEXT NOT NULL,
+    actual_direction TEXT,
+    forward_return_pct REAL,
+    profitable INTEGER,
+    realized_pnl REAL,
+    outcome_label TEXT,
+    entry_price REAL,
+    exit_price REAL,
+    stop_loss REAL,
+    take_profit REAL,
+    stop_hit INTEGER,
+    target_hit INTEGER,
+    mfe_pnl REAL,
+    mae_pnl REAL,
+    holding_duration_ms INTEGER,
+    exit_timestamp INTEGER,
+    labeled_at INTEGER NOT NULL,
+    PRIMARY KEY(signal_id, label_version, horizon)
+  )`);
   await executeRun(`CREATE TABLE IF NOT EXISTS live_trade_research_training (
     signal_id TEXT PRIMARY KEY,
     symbol TEXT NOT NULL,
@@ -148,6 +171,37 @@ export async function materializeLiveTradeResearchTrainingDataset(params: {
         row.label1dDirection, row.label3dDirection, row.label7dDirection, updatedAt
       ]
     );
+  }
+
+  // Persist the forward-market labels separately from the realized broker outcome.
+  // This prevents the training/evaluation layer from confusing a 1D directional
+  // label with the actual profitability of a closed trade.
+  for (const row of rows) {
+    const realizedPnl = row.realizedPnl;
+    const explicitOutcome = String(row.outcome || '').trim().toUpperCase();
+    const outcomeLabel = explicitOutcome || (realizedPnl === null ? null : realizedPnl > 0 ? 'WIN' : realizedPnl < 0 ? 'LOSS' : 'BREAKEVEN');
+    const profitable = realizedPnl === null ? null : realizedPnl > 0 ? 1 : 0;
+    const horizons: Array<{ horizon: '1D' | '3D' | '7D'; direction: string | null; forward: number | null }> = [
+      { horizon: '1D', direction: row.label1dDirection, forward: row.label1dReturnPct },
+      { horizon: '3D', direction: row.label3dDirection, forward: row.label3dReturnPct },
+      { horizon: '7D', direction: row.label7dDirection, forward: row.label7dReturnPct }
+    ];
+    for (const label of horizons) {
+      await executeRun(
+        `INSERT OR REPLACE INTO live_trade_research_labels (
+          signal_id, label_version, horizon, label_source, actual_direction,
+          forward_return_pct, profitable, realized_pnl, outcome_label,
+          entry_price, exit_price, stop_loss, take_profit, stop_hit, target_hit,
+          mfe_pnl, mae_pnl, holding_duration_ms, exit_timestamp, labeled_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          row.signalId, 'PHASE10_V1', label.horizon, 'DAILY_FORWARD_PLUS_REALIZED_TRADE',
+          label.direction, label.forward, profitable, realizedPnl, outcomeLabel,
+          row.entryPrice, row.exitPrice, row.stopPrice, row.targetPrice,
+          null, null, row.mfePnl, row.maePnl, row.holdingDurationMs, row.exitTimestamp, updatedAt
+        ]
+      );
+    }
   }
 
   return {

@@ -130,8 +130,20 @@ async function ensurePredictionTable(): Promise<void> {
     actual_return_pct REAL,
     outcome_status TEXT,
     evaluated_at INTEGER,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    feature_snapshot_json TEXT,
+    prediction_context TEXT NOT NULL DEFAULT 'RESEARCH',
+    actual_profitable INTEGER,
+    realized_pnl REAL,
+    outcome_label TEXT,
+    label_source TEXT
   )`);
+  const columns = await executeQuery<{ name: string }>('PRAGMA table_info(live_trade_research_predictions)');
+  for (const [name, type] of [['actual_profitable', 'INTEGER'], ['realized_pnl', 'REAL'], ['outcome_label', 'TEXT'], ['label_source', 'TEXT']] as const) {
+    if (!columns.some(column => column.name === name)) {
+      try { await executeRun(`ALTER TABLE live_trade_research_predictions ADD COLUMN ${name} ${type}`); } catch {}
+    }
+  }
 }
 
 async function loadPredictionRows(params: {
@@ -196,11 +208,19 @@ export async function evaluatePendingResearchPredictions(params: {
     }
 
     const score = directionalScore(prediction, label.direction);
+    // Persist realized-trade outcome fields alongside the forward market label.
+    // realized_pnl/outcome are only sourced from the already-closed research row,
+    // never from future data relative to the prediction timestamp.
+    const realizedPnl = training?.realizedPnl ?? null;
+    const explicitOutcome = String(training?.outcome || '').trim().toUpperCase();
+    const outcomeLabel = explicitOutcome || (realizedPnl === null ? null : realizedPnl > 0 ? 'WIN' : realizedPnl < 0 ? 'LOSS' : 'BREAKEVEN');
+    const profitable = realizedPnl === null ? null : realizedPnl > 0 ? 1 : 0;
     await executeRun(
       `UPDATE live_trade_research_predictions
-          SET actual_direction = ?, actual_return_pct = ?, outcome_status = 'EVALUATED', evaluated_at = ?
+          SET actual_direction = ?, actual_return_pct = ?, actual_profitable = ?, realized_pnl = ?,
+              outcome_label = ?, label_source = 'CLOSED_TRADE_RESEARCH', outcome_status = 'EVALUATED', evaluated_at = ?
         WHERE prediction_id = ?`,
-      [label.direction, label.returnPct, Date.now(), prediction.prediction_id]
+      [label.direction, label.returnPct, profitable, realizedPnl, outcomeLabel, Date.now(), prediction.prediction_id]
     );
     evaluated++;
     if (score.evaluated) {
@@ -208,6 +228,8 @@ export async function evaluatePendingResearchPredictions(params: {
       if (score.correct) correct++;
       brierSum += score.brier || 0;
     }
+  }
+
   }
 
   return {

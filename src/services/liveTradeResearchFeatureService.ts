@@ -29,6 +29,13 @@ export interface ResearchFeatureRow {
   realizedPnl: number | null;
   outcome: string | null;
   holdingDurationMs: number | null;
+  entryPrice?: number | null;
+  stopPrice?: number | null;
+  targetPrice?: number | null;
+  exitPrice?: number | null;
+  mfePnl?: number | null;
+  maePnl?: number | null;
+  exitTimestamp?: number | null;
   // Optional live-only predictive features. They are absent from historical rows
   // unless explicitly materialized by a current-market feature builder.
   priceChange5mPct?: number | null;
@@ -109,7 +116,14 @@ function extract(row: any): ResearchFeatureRow {
     targetDistance: entry !== null && tp !== null ? Math.abs(tp - entry) : null,
     realizedPnl: finite(row.realized_pnl),
     outcome: row.outcome ? String(row.outcome) : null,
-    holdingDurationMs: finite(row.holding_duration_ms)
+    holdingDurationMs: finite(row.holding_duration_ms),
+    entryPrice: entry,
+    stopPrice: stop,
+    targetPrice: tp,
+    exitPrice: finite(row.exit_price),
+    mfePnl: finite(row.mfe_pnl),
+    maePnl: finite(row.mae_pnl),
+    exitTimestamp: finite(row.exit_timestamp)
   };
 }
 
