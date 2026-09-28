@@ -538,8 +538,7 @@ app.get('/api/operations/go-live-validation', operatorAuthRequired, async (_req:
       && account.equity > 0;
     const tradingPermission = permissions.includes('TRADING')
       || permissions.includes('EQUITY')
-      || permissions.includes('DERIVATIVES')
-      || permissions.includes('NSE_FNO');
+      || permissions.includes('DERIVATIVES');
 
     const observability = await getRuntimeObservabilitySnapshot({
       runtimeId: GOLDCREST_RUNTIME_ID,
@@ -797,7 +796,6 @@ app.get('/api/operations/ctrader-functional-validation', operatorAuthRequired, a
           ? connection.permissions.includes('TRADING')
             || connection.permissions.includes('EQUITY')
             || connection.permissions.includes('DERIVATIVES')
-            || connection.permissions.includes('NSE_FNO')
           : false
       }
     });
@@ -844,8 +842,7 @@ app.get('/api/operations/active-auto-live-monitor', operatorAuthRequired, async 
     const equityValid = typeof account?.equity === 'number' && Number.isFinite(account.equity) && account.equity > 0;
     const tradingPermission = permissions.includes('TRADING')
       || permissions.includes('EQUITY')
-      || permissions.includes('DERIVATIVES')
-      || permissions.includes('NSE_FNO');
+      || permissions.includes('DERIVATIVES');
 
     const snapshots = await getAccountBalanceSnapshots({
       broker: 'CTRADER',
@@ -1114,8 +1111,7 @@ app.post('/api/execution-gate/unlock', operatorAuthRequired, async (_req: Reques
     const equityValid = typeof account?.equity === 'number' && Number.isFinite(account.equity) && account.equity >= 0;
     const tradingPermission = permissions.includes('TRADING')
       || permissions.includes('EQUITY')
-      || permissions.includes('DERIVATIVES')
-      || permissions.includes('NSE_FNO');
+      || permissions.includes('DERIVATIVES');
 
     const localActivationAllowed = process.env.NODE_ENV !== 'production'
       ? ['127.0.0.1', 'localhost', '::1', '0.0.0.0'].includes(String(process.env.HOST || '127.0.0.1').trim().toLowerCase())
