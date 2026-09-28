@@ -196,11 +196,19 @@ export async function evaluatePendingResearchPredictions(params: {
     }
 
     const score = directionalScore(prediction, label.direction);
+    // Persist realized-trade outcome fields alongside the forward market label.
+    // realized_pnl/outcome are only sourced from the already-closed research row,
+    // never from future data relative to the prediction timestamp.
+    const realizedPnl = training?.realizedPnl ?? null;
+    const explicitOutcome = String(training?.outcome || '').trim().toUpperCase();
+    const outcomeLabel = explicitOutcome || (realizedPnl === null ? null : realizedPnl > 0 ? 'WIN' : realizedPnl < 0 ? 'LOSS' : 'BREAKEVEN');
+    const profitable = realizedPnl === null ? null : realizedPnl > 0 ? 1 : 0;
     await executeRun(
       `UPDATE live_trade_research_predictions
-          SET actual_direction = ?, actual_return_pct = ?, outcome_status = 'EVALUATED', evaluated_at = ?
+          SET actual_direction = ?, actual_return_pct = ?, actual_profitable = ?, realized_pnl = ?,
+              outcome_label = ?, label_source = 'CLOSED_TRADE_RESEARCH', outcome_status = 'EVALUATED', evaluated_at = ?
         WHERE prediction_id = ?`,
-      [label.direction, label.returnPct, Date.now(), prediction.prediction_id]
+      [label.direction, label.returnPct, profitable, realizedPnl, outcomeLabel, Date.now(), prediction.prediction_id]
     );
     evaluated++;
     if (score.evaluated) {
@@ -208,6 +216,8 @@ export async function evaluatePendingResearchPredictions(params: {
       if (score.correct) correct++;
       brierSum += score.brier || 0;
     }
+  }
+
   }
 
   return {
