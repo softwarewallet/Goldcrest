@@ -5,6 +5,7 @@ import { getForexSessionState } from '../../markets/common/session';
 import { getSystemConfig } from '../../services/configService';
 import { executeQuery } from '../../database/db';
 import { reconciliationService } from '../../services/reconciliationService';
+import type { LiveGateAuthoritativeSnapshot } from './LiveTradingGate';
 
 const LIVE_QUOTE_MAX_AGE_MS = 30_000;
 
@@ -45,7 +46,8 @@ class AutoTradeReadinessService {
     adapter: BrokerAdapter,
     order: OrderRequest,
     signalTimestamp: number,
-    currentQuote?: NormalizedQuote
+    currentQuote?: NormalizedQuote,
+    authoritativeSnapshot?: LiveGateAuthoritativeSnapshot
   ): Promise<AutoTradeReadinessReport> {
     const config = getSystemConfig();
     const failedReasons: string[] = [];
@@ -83,31 +85,46 @@ class AutoTradeReadinessService {
     const productionStrategyApproved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true';
     checks.strategyCalibrated = productionStrategyApproved && String(order.strategyId || '').trim() === approvedStrategyId;
 
-    // These broker reads are independent. Resolve them concurrently so
-    // readiness evaluation does not serialize connection/account/instrument/
-    // quote/position latency after the signal has already been generated.
-    const [statusResult, accountResult, instrumentResult, quoteResult, positionsResult] = await Promise.allSettled([
-      adapter.getTradingStatus(),
-      adapter.getAccount(),
-      adapter.getInstrument(order.symbol),
-      quote ? Promise.resolve(quote) : adapter.getQuote(order.symbol),
-      adapter.getPositions()
-    ]);
+    // LiveTradingGate already performed the authoritative broker reads immediately
+    // before this readiness layer. Reuse that snapshot instead of issuing a second
+    // account/instrument/quote/positions round-trip. This keeps readiness fail-closed
+    // while removing duplicate broker latency from the critical dispatch path.
+    let brokerStatus: 'CONNECTED' | 'DISCONNECTED' | string = 'DISCONNECTED';
+    let brokerAccount: Awaited<ReturnType<BrokerAdapter['getAccount']>> | null = null;
+    let brokerInstrument: Awaited<ReturnType<BrokerAdapter['getInstrument']>> | null = null;
+    let brokerQuote: NormalizedQuote | undefined = quote;
+    let brokerPositions: Awaited<ReturnType<BrokerAdapter['getPositions']>> = [];
 
-    checks.brokerConnected = statusResult.status === 'fulfilled'
-      && statusResult.value === 'CONNECTED';
+    if (authoritativeSnapshot) {
+      brokerStatus = authoritativeSnapshot.status;
+      brokerAccount = authoritativeSnapshot.account;
+      brokerInstrument = authoritativeSnapshot.instrument;
+      brokerPositions = Array.isArray(authoritativeSnapshot.positions)
+        ? authoritativeSnapshot.positions
+        : [];
+    } else {
+      const [statusResult, accountResult, instrumentResult, quoteResult, positionsResult] = await Promise.allSettled([
+        adapter.getTradingStatus(),
+        adapter.getAccount(),
+        adapter.getInstrument(order.symbol),
+        quote ? Promise.resolve(quote) : adapter.getQuote(order.symbol),
+        adapter.getPositions()
+      ]);
+      brokerStatus = statusResult.status === 'fulfilled' ? statusResult.value : 'DISCONNECTED';
+      brokerAccount = accountResult.status === 'fulfilled' ? accountResult.value : null;
+      brokerInstrument = instrumentResult.status === 'fulfilled' ? instrumentResult.value : null;
+      brokerQuote = quoteResult.status === 'fulfilled' ? quoteResult.value : undefined;
+      brokerPositions = positionsResult.status === 'fulfilled' && Array.isArray(positionsResult.value)
+        ? positionsResult.value
+        : [];
+    }
 
-    account = accountResult.status === 'fulfilled' ? accountResult.value : null;
-    checks.accountValidated = Boolean(account?.accountId && Number(account.balance) > 0);
-    const permissions = account?.permissions || [];
-    checks.tradingPermission = permissions.includes('TRADING') ||
-      permissions.includes('EQUITY') ||
-      permissions.includes('DERIVATIVES');
-
-    const instrument = instrumentResult.status === 'fulfilled' ? instrumentResult.value : null;
+    checks.brokerConnected = brokerStatus === 'CONNECTED';
+    account = brokerAccount;
+    const instrument = brokerInstrument;
     checks.instrumentValidated = Boolean(instrument);
 
-    quote = quoteResult.status === 'fulfilled' ? quoteResult.value : undefined;
+    quote = brokerQuote;
     checks.quoteFresh = Boolean(
       quote &&
       quote.status === 'FRESH' &&
@@ -127,9 +144,7 @@ class AutoTradeReadinessService {
     checks.marketOpen = order.market === 'FOREX'
       && !getForexSessionState().activeSessions.includes('CLOSED (WEEKEND)');
 
-    positions = positionsResult.status === 'fulfilled' && Array.isArray(positionsResult.value)
-      ? positionsResult.value
-      : [];
+    positions = brokerPositions;
 
     const maxOpenPositions = Number(config.maxOpenPositions);
     checks.positionLimit = Number.isFinite(maxOpenPositions) &&
