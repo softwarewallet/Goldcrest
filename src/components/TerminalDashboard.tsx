@@ -133,7 +133,7 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
         <Kpi label="Account Balance" value={money(Number(forexAccount?.balance ?? balance), forexAccount?.currency || currency)} sub={`Free margin: ${money(freeMargin, forexAccount?.currency || currency)}`} />
         <Kpi label="Open Positions" value={String(positions.length)} sub="cTrader live positions" />
         <Kpi label="Exposure" value={exposure == null ? '—' : `${exposure.toFixed(1)}%`} sub="Current account exposure" />
-        <Kpi label="Session" value={forexSessions?.isOpen ? 'OPEN' : 'CLOSED'} sub="Forex market session" />
+        <Kpi label="Session" value={forexSessions?.activeSessions?.length ? 'OPEN' : 'CLOSED'} sub="Forex market session" />
       </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-3">
@@ -170,7 +170,7 @@ export const TerminalDashboard: React.FC<TerminalDashboardProps> = ({
       </section>
 
       <div className="flex items-center justify-between text-[10px] text-slate-600 font-mono px-1">
-        <span>cTrader • LIVE Forex market data • {forexSessions?.isOpen ? 'OPEN' : 'CLOSED'}</span>
+        <span>cTrader • LIVE Forex market data • {forexSessions?.activeSessions?.length ? 'OPEN' : 'CLOSED'}</span>
         <span>{signals.length} signals</span>
       </div>
     </div>
