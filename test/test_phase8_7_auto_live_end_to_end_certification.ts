@@ -32,9 +32,9 @@ const baseOrder = {
 
 const scenarios: Scenario[] = [
   { id: 1, name: 'FOREX routes to cTrader', run: () => assert.equal(brokerRegistry.validateMarketCompatibility('FOREX', 'CTRADER').compatible, true) },
-  { id: 2, name: 'Indian equity routes to 5paisa', run: () => assert.equal(brokerRegistry.validateMarketCompatibility('INDIAN_EQUITY', 'FIVE_PAISA').compatible, true) },
-  { id: 3, name: 'cTrader rejects Indian market routing', run: () => assert.equal(brokerRegistry.validateMarketCompatibility('INDIAN_EQUITY', 'CTRADER').compatible, false) },
-  { id: 4, name: '5paisa rejects FOREX routing', run: () => assert.equal(brokerRegistry.validateMarketCompatibility('FOREX', 'FIVE_PAISA').compatible, false) },
+  { id: 2, name: 'Unsupported market is rejected by Forex routing', run: () => assert.equal(brokerRegistry.validateMarketCompatibility('CRYPTO', 'CTRADER').compatible, false) },
+  { id: 3, name: 'Broker registry exposes cTrader only', run: () => assert.equal(brokerRegistry.getActiveLiveAdapters().length, 1) },
+  { id: 4, name: 'cTrader remains the sole Forex route', run: () => assert.equal(brokerRegistry.validateMarketCompatibility('FOREX', 'CTRADER').compatible, true) },
   { id: 5, name: 'Non-LIVE environment cannot be selected', run: () => assert.throws(() => brokerRegistry.setEnvironment('DEMO' as any), /LIVE_ONLY/i) },
 
   { id: 6, name: 'Valid BUY packet passes final validation', run: () => assert.equal(validateAutoLiveOrderPacket(baseOrder).valid, true) },
