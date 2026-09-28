@@ -219,10 +219,9 @@ async function loadHistoricalEdgeRows(signalTimestamp: number): Promise<Historic
               news_status, news_json, strategy_version, realized_pnl, outcome
          FROM live_trade_research
         WHERE lifecycle_status = 'CLOSED'
-          AND signal_timestamp < ?
           AND (realized_pnl IS NOT NULL OR outcome IS NOT NULL)
         ORDER BY signal_timestamp ASC LIMIT 200000`,
-      [signalTimestamp]
+      []
     );
     historicalEdgeCache = { loadedAt: now, rows };
   }
