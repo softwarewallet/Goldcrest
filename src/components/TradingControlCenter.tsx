@@ -2088,7 +2088,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <p className="text-[10px] text-slate-500 mt-1">Authoritative LIVE API snapshots at 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00 and 21:00. No calculated or fabricated balance values are stored.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <select value={balanceSnapshotBrokerFilter} onChange={e => setBalanceSnapshotBrokerFilter(e.target.value)} className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1.5"><option value="ALL">All Brokers</option><option value="CTRADER">cTrader</option><option value="FIVE_PAISA">5paisa</option></select>
+              <select value={balanceSnapshotBrokerFilter} onChange={e => setBalanceSnapshotBrokerFilter(e.target.value)} className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1.5"><option value="ALL">All Brokers</option><option value="CTRADER">cTrader</option></select>
               <input type="date" value={balanceSnapshotDateFilter} onChange={e => setBalanceSnapshotDateFilter(e.target.value)} className="bg-slate-950 border border-slate-800 text-slate-200 rounded px-2.5 py-1.5" />
               {(balanceSnapshotDateFilter || balanceSnapshotBrokerFilter !== 'ALL') && <button type="button" onClick={() => { setBalanceSnapshotDateFilter(''); setBalanceSnapshotBrokerFilter('ALL'); }} className="px-2.5 py-1.5 rounded border border-slate-700 bg-slate-950 text-slate-300 hover:text-white">Clear</button>}
             </div>
@@ -2484,7 +2484,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               >
                 <option value="ALL">All Brokers</option>
                 <option value="CTRADER">cTrader (USD)</option>
-                <option value="FIVE_PAISA">5paisa (INR)</option>
+                
               </select>
 
               <select
