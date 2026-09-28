@@ -28,7 +28,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenDiagnostics,
   maskedAccount = '****',
   autoTradingStatus,
-  isEmergencyHalted
+  isEmergencyHalted,
+  onToggleKillSwitch
 }) => {
   const activeArea =
     activeTab === 'forex_terminal' ? 'FOREX' :

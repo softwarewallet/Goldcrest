@@ -163,6 +163,9 @@ const GOLDCREST_RUNTIME_ID = `goldcrest-${Date.now()}-${Math.random().toString(3
 let databaseReady = false;
 let reconciliationTimer: ReturnType<typeof setInterval> | null = null;
 let executionLifecycleTimer: ReturnType<typeof setInterval> | null = null;
+const FOREX_PAIRS_CACHE_TTL_MS = 5000;
+let forexPairsCache: { payload: any[]; expiresAt: number } | null = null;
+let forexPairsInFlight: Promise<any[]> | null = null;
 
 function productionPreflight(enforce = false): { ok: boolean; checks: Record<string, string> } {
   const checks: Record<string, string> = {};

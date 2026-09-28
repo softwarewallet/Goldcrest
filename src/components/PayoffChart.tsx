@@ -1,5 +1,10 @@
 import React, { useMemo } from 'react';
-import { StrategyPayoff } from '../markets/common/types';
+interface StrategyPayoff {
+  strategyName: string;
+  payoffPoints: Array<{ underlyingPrice: number; pnl: number }>;
+  maxLoss?: number;
+  maxProfit?: number;
+}
 
 interface PayoffChartProps {
   payoff: StrategyPayoff;

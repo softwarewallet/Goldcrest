@@ -254,6 +254,107 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
     return () => { mounted = false; };
   }, []);
 
+  const refreshAutoTradingStatus = useCallback(async () => {
+    const response = await fetch('/api/auto-trading/status', { cache: 'no-store' }).catch(() => null);
+    if (response?.ok) {
+      const status = await response.json();
+      setAutoTradingStatus(status);
+      onAutoTradingStatusChange?.(status);
+      return status;
+    }
+    return null;
+  }, [onAutoTradingStatusChange]);
+
+  const abandonClosedMarketAutoLive = useCallback(async () => {
+    await fetch('/api/auto-trading/abandon-closed-start', { method: 'POST', cache: 'no-store' }).catch(() => null);
+    setClosedMarketPrompt(null);
+    await refreshAutoTradingStatus();
+  }, [refreshAutoTradingStatus]);
+
+  const confirmClosedMarketAutoLive = useCallback(async () => {
+    setClosedMarketPrompt(null);
+    const response = await fetch('/api/auto-trading/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmWhenClosed: true }),
+      cache: 'no-store'
+    }).catch(() => null);
+    const status = response ? await response.json().catch(() => ({})) : {};
+    if (!response?.ok) setGateFeedback(status?.message || status?.error || 'Unable to start Auto Live.');
+    setAutoTradingStatus(status);
+    onAutoTradingStatusChange?.(status);
+  }, [onAutoTradingStatusChange]);
+
+  const toggleAutoTrading = useCallback(async () => {
+    setAutoTradingBusy(true);
+    try {
+      const runningStates = new Set(['RUNNING', 'ACTIVE', 'PREPARING', 'ARMED']);
+      const shouldStop = runningStates.has(String(autoTradingStatus?.state || '').toUpperCase());
+      const response = await fetch(shouldStop ? '/api/auto-trading/stop' : '/api/auto-trading/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmWhenClosed: false }),
+        cache: 'no-store'
+      }).catch(() => null);
+      const status = response ? await response.json().catch(() => ({})) : {};
+      if (response?.status === 409 && status?.requiresClosedMarketConfirmation) {
+        setClosedMarketPrompt(status);
+      } else if (!response?.ok) {
+        setGateFeedback(status?.message || status?.error || 'Auto Live request failed.');
+      }
+      setAutoTradingStatus(status);
+      onAutoTradingStatusChange?.(status);
+    } finally {
+      setAutoTradingBusy(false);
+    }
+  }, [autoTradingStatus?.state, onAutoTradingStatusChange]);
+
+  const lockExecutionGate = useCallback(async () => {
+    setGateBusy(true);
+    try {
+      const response = await fetch('/api/execution-gate/lock', { method: 'POST', cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      setGateFeedback(data?.message || (response.ok ? 'Execution gate locked.' : 'Execution gate lock failed.'));
+      await refreshAutoTradingStatus();
+    } finally {
+      setGateBusy(false);
+    }
+  }, [refreshAutoTradingStatus]);
+
+  const unlockExecutionGate = useCallback(async () => {
+    setGateBusy(true);
+    try {
+      const response = await fetch('/api/execution-gate/unlock', { method: 'POST', cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      setGateFeedback(data?.message || (response.ok ? 'Execution gate unlocked.' : 'Execution gate unlock failed.'));
+      await refreshAutoTradingStatus();
+    } finally {
+      setGateBusy(false);
+    }
+  }, [refreshAutoTradingStatus]);
+
+  const runActiveAutoLiveMonitor = useCallback(async () => {
+    setActiveAutoLiveMonitorBusy(true);
+    try {
+      const response = await fetch('/api/operations/active-auto-live-monitor', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      setActiveAutoLiveMonitor(data);
+    } finally {
+      setActiveAutoLiveMonitorBusy(false);
+    }
+  }, []);
+
+  const runGoLiveValidation = useCallback(async () => {
+    setGoLiveValidationBusy(true);
+    try {
+      const response = await fetch('/api/operations/go-live-validation', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      setGoLiveValidation(data);
+    } finally {
+      setGoLiveValidationBusy(false);
+    }
+  }, []);
+
   // Fetch live operational data from authoritative broker and runtime APIs.
   const fetchAllOperationalData = useCallback(async () => {
     setIsRefreshing(true);
