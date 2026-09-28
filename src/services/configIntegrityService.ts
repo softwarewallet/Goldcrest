@@ -38,9 +38,7 @@ export function evaluateSystemConfigIntegrity(config: SystemConfig): ConfigInteg
   check('maxSpreadBps', nonNegativeFinite(config.maxSpreadBps));
   check('signalCooldownMs', positiveFinite(config.signalCooldownMs));
   check('eventProximityThresholdMinutes', nonNegativeFinite(config.eventProximityThresholdMinutes));
-  check('strikeDepth', positiveInteger(config.strikeDepth));
   check('maxTradeValueForexUsd', positiveFinite(config.maxTradeValueForexUsd));
-  check('maxTradeValueIndianInr', positiveFinite(config.maxTradeValueIndianInr));
   check('autoLiveMinSignalScore', nonNegativeFinite(config.autoLiveMinSignalScore) && config.autoLiveMinSignalScore <= 100);
   check('autoLiveMaxTradesPerPair', positiveInteger(config.autoLiveMaxTradesPerPair));
   check('forexStopLossPips', positiveFinite(config.forexStopLossPips));
