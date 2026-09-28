@@ -18,7 +18,6 @@ Copy .env.example to .env and set:
 - GOLDCREST_DOMAIN=trade.goldcrestfinman.com
 - GOLDCREST_OPERATOR_API_KEY=<high-entropy-secret>
 - cTrader LIVE credentials
-- 5paisa LIVE credentials
 
 Optional:
 - GEMINI_API_KEY
@@ -51,7 +50,7 @@ Broker connectivity is allowed for account, market-data, positions and order obs
 1. Install Docker Engine and Compose on the production Linux host.
 2. Clone the repository.
 3. Create the production .env from .env.example.
-4. Enter the actual cTrader LIVE and 5paisa LIVE credentials directly into the server-side .env. Do not commit them to Git.
+4. Enter the actual cTrader credentials directly into the server-side .env. Do not commit them to Git.
 5. Generate a strong GOLDCREST_OPERATOR_API_KEY and keep it server-side.
 6. Start with:
    `docker compose up -d --build`
@@ -81,7 +80,7 @@ Verify:
 - /api/health/ready returns HTTP 200.
 - HTTPS is valid for trade.goldcrestfinman.com.
 - Operator login succeeds.
-- cTrader and 5paisa balance cards show authoritative LIVE account data when credentials/session are valid.
+- The cTrader account card shows authoritative account data when credentials/session are valid.
 - Broker status identifies unavailable/authentication failures explicitly when a broker is not ready.
 - SQLite data remains present after container restart.
 - No PAPER/DEMO workflow is exposed as an active trading mode.
@@ -107,7 +106,6 @@ At minimum retain:
 - [ ] TLS enabled by Caddy.
 - [ ] GOLDCREST_OPERATOR_API_KEY configured.
 - [ ] cTrader LIVE credentials verified.
-- [ ] 5paisa LIVE credentials/session verified.
 - [ ] /api/health/ready returns ready.
 - [ ] Both balance cards display authoritative broker data.
 - [ ] SQLite volume is durable and backed up.
