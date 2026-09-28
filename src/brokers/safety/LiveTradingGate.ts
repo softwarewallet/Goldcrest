@@ -88,7 +88,7 @@ export class LiveTradingGate {
     }
 
     // Check 8: Signal still valid (Max age: 5 min for Forex)
-    const maxAge = params.order.market === 'FOREX' ? 300000 : 120000;
+    const maxAge = 300000;
     const signalStillValid = params.signalAgeMs >= 0 && params.signalAgeMs <= maxAge;
     if (!signalStillValid) {
       failedReasons.push(`Condition 8 Failed: Signal age (${Math.round(params.signalAgeMs / 1000)}s) exceeds max threshold (${maxAge / 1000}s).`);
@@ -185,91 +185,34 @@ export class LiveTradingGate {
       failedReasons.push('Condition 14 Failed: Malformed order parameters.');
     }
 
-    // Check 16: Per-broker maximum trade value.
+    // Check 16: Per-order cTrader Forex volume ceiling.
     //
-    // cTrader LIVE Forex has an explicit execution contract: the configured
-    // maxTradeValueForexUsd is passed directly as the cTrader protocol
-    // volume. It is NOT a USD notional that should be recalculated from
-    // price/quote-currency conversion. The operator controls the broker
-    // volume by setting this value.
+    // Goldcrest is Forex-only and cTrader is the sole execution broker.
+    // The configured maxTradeValueForexUsd is the authoritative cTrader
+    // protocol-volume ceiling; no Indian-market or alternate-broker sizing
+    // branch is permitted here.
     const config = getSystemConfig();
-    const isForex = params.order.market === 'FOREX';
-    const maxTradeValue = config.maxTradeValueForexUsd;
-    let maximumTradeValueCheckPassed = Number.isFinite(maxTradeValue) && maxTradeValue > 0;
-    let tradeValue = NaN;
-    let tradeValueUsd = NaN;
+    const maxTradeValue = Number(config.maxTradeValueForexUsd);
+    let maximumTradeValueCheckPassed =
+      params.order.market === 'FOREX'
+      && Number.isFinite(maxTradeValue)
+      && maxTradeValue > 0
+      && Number.isSafeInteger(maxTradeValue);
 
-    if (maximumTradeValueCheckPassed && isForex && adapter.environment === 'LIVE') {
-      // For cTrader LIVE Forex, maxTradeValueForexUsd is the broker protocol
-      // volume itself. Do not multiply order quantity by price or perform
-      // quote-currency conversion here. The configured value is also the
-      // authoritative per-order ceiling, so any execution path that supplies
-      // a larger quantity is rejected before broker submission.
-      if (!Number.isSafeInteger(maxTradeValue)) {
-        maximumTradeValueCheckPassed = false;
-        failedReasons.push(
-          'Condition 16 Failed: Configured maximum Forex trade value must be a positive integer because cTrader volume is an integer protocol field.'
-        );
-      } else if (!Number.isSafeInteger(params.order.quantity) || params.order.quantity <= 0) {
-        maximumTradeValueCheckPassed = false;
-        failedReasons.push(
-          'Condition 16 Failed: Live cTrader Forex order quantity must be a positive integer.'
-        );
-      } else if (params.order.quantity > maxTradeValue) {
-        maximumTradeValueCheckPassed = false;
-        failedReasons.push(
-          `Condition 16 Failed: Forex order quantity ${params.order.quantity} exceeds configured maximum direct quantity ${maxTradeValue} for cTrader.`
-        );
-      }
-    } else {
-      const referencePrice = params.order.price && params.order.price > 0
-        ? params.order.price
-        : (params.order.side === 'BUY' ? params.currentQuote.ask : params.currentQuote.bid);
-      tradeValue = referencePrice > 0 && params.order.quantity > 0
-        ? params.order.quantity * referencePrice
-        : NaN;
-
-      if (maximumTradeValueCheckPassed && isForex) {
-        const instrumentForValue = instrument;
-        const quoteCurrency = instrumentForValue?.quoteCurrency || params.order.symbol.replace(/[^A-Z]/g, '').slice(-3);
-        let quoteToUsdRate = 1;
-
-        if (quoteCurrency !== 'USD') {
-          try {
-            if (typeof adapter.getAccountCurrencyConversionRate !== 'function') {
-              throw new Error(`USD conversion for ${quoteCurrency} is unavailable.`);
-            }
-            quoteToUsdRate = await adapter.getAccountCurrencyConversionRate(quoteCurrency, 'USD');
-            if (!(quoteToUsdRate > 0) || !Number.isFinite(quoteToUsdRate)) {
-              throw new Error(`Invalid ${quoteCurrency}/USD conversion rate.`);
-            }
-          } catch (error: any) {
-            maximumTradeValueCheckPassed = false;
-            failedReasons.push(
-              `Condition 16 Failed: Forex pair ${params.order.symbol} has quote currency ${quoteCurrency}; authoritative USD conversion is unavailable (${error?.message || 'conversion failed'}), so the limit cannot be safely verified.`
-            );
-          }
-        }
-
-        tradeValueUsd = tradeValue * quoteToUsdRate;
-      }
-
-      // Monetary values can contain binary floating-point noise (e.g.
-      // 200.00000000000003). Treat values within a tiny absolute tolerance of
-      // the configured limit as equal; genuine overages still fail closed.
-      const tradeValueTolerance = 1e-8;
-      if (maximumTradeValueCheckPassed && isForex && tradeValueUsd > maxTradeValue + tradeValueTolerance) {
-        maximumTradeValueCheckPassed = false;
-        failedReasons.push(
-          `Condition 16 Failed: Trade value ${tradeValueUsd.toFixed(2)} USD exceeds configured maximum of ${maxTradeValue.toFixed(2)} USD for cTrader.`
-        );
-      }
-      } else if (maximumTradeValueCheckPassed && isForex && !(tradeValueUsd > 0)) {
-        maximumTradeValueCheckPassed = false;
-        failedReasons.push('Condition 16 Failed: USD-converted Forex trade value could not be safely calculated.');
-      } else if (!maximumTradeValueCheckPassed && failedReasons.length === 0) {
-        failedReasons.push('Condition 16 Failed: Trade value could not be safely calculated or the configured maximum is invalid.');
-      }
+    if (!maximumTradeValueCheckPassed) {
+      failedReasons.push(
+        'Condition 16 Failed: Configured maximum Forex trade value must be a positive integer and the order market must be FOREX.'
+      );
+    } else if (!Number.isSafeInteger(params.order.quantity) || params.order.quantity <= 0) {
+      maximumTradeValueCheckPassed = false;
+      failedReasons.push(
+        'Condition 16 Failed: cTrader Forex order quantity must be a positive integer.'
+      );
+    } else if (params.order.quantity > maxTradeValue) {
+      maximumTradeValueCheckPassed = false;
+      failedReasons.push(
+        `Condition 16 Failed: Forex order quantity ${params.order.quantity} exceeds configured maximum direct quantity ${maxTradeValue} for cTrader.`
+      );
     }
 
     // Check 15: Explicit live-trading permission enabled in server env
