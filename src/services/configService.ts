@@ -21,15 +21,12 @@ export interface SystemConfig {
   maxSpreadBps: number;
   signalCooldownMs: number;
   eventProximityThresholdMinutes: number;
-  strikeDepth: number;
   maxTradeValueForexUsd: number;
-  maxTradeValueIndianInr: number;
   autoLiveMinSignalScore: number;
   autoLiveMaxTradesPerPair: number;
   forexStopLossPips: number;
   forexTakeProfitPips: number;
   autoLiveForexPairs: string[];
-  autoLiveIndianUnderlyings: string[];
   financialDisclaimer: string;
 }
 
@@ -59,15 +56,12 @@ const PERSISTED_KEYS: readonly (keyof SystemConfig)[] = [
   'maxSpreadBps',
   'signalCooldownMs',
   'eventProximityThresholdMinutes',
-  'strikeDepth',
   'maxTradeValueForexUsd',
-  'maxTradeValueIndianInr',
   'autoLiveMinSignalScore',
   'autoLiveMaxTradesPerPair',
   'forexStopLossPips',
   'forexTakeProfitPips',
   'autoLiveForexPairs',
-  'autoLiveIndianUnderlyings',
   'financialDisclaimer'
 ];
 
@@ -86,9 +80,7 @@ let activeConfig: SystemConfig = {
   maxSpreadBps: 30,
   signalCooldownMs: 60000,
   eventProximityThresholdMinutes: 20,
-  strikeDepth: 7,
   maxTradeValueForexUsd: 100000,
-  maxTradeValueIndianInr: 1000000,
   autoLiveMinSignalScore: 75,
   autoLiveMaxTradesPerPair: 4,
   forexStopLossPips: 20,
@@ -97,7 +89,6 @@ let activeConfig: SystemConfig = {
   // Auto Live evaluates the complete supported Forex universe rather than
   // silently falling back to the old five-pair subset.
   autoLiveForexPairs: FOREX_PAIRS.map(pair => pair.symbol),
-  autoLiveIndianUnderlyings: ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'],
   financialDisclaimer:
     'Trading in Forex and derivatives involves substantial risk of loss. Model outputs, signals, probabilities and technical analysis are estimates for informational and analytical purposes only and are not financial advice, guarantees, or assurances of future performance.'
 };
