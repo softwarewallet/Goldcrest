@@ -197,8 +197,8 @@ export async function materializeLiveTradeResearchTrainingDataset(params: {
         [
           row.signalId, 'PHASE10_V1', label.horizon, 'DAILY_FORWARD_PLUS_REALIZED_TRADE',
           label.direction, label.forward, profitable, realizedPnl, outcomeLabel,
-          null, null, row.stopDistance, row.targetDistance, null, null,
-          null, null, row.holdingDurationMs, null, updatedAt
+          row.entryPrice, row.exitPrice, row.stopPrice, row.targetPrice,
+          null, null, row.mfePnl, row.maePnl, row.holdingDurationMs, row.exitTimestamp, updatedAt
         ]
       );
     }
