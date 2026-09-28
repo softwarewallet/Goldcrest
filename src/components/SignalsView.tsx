@@ -23,7 +23,7 @@ interface SignalsViewProps {
 
 export const SignalsView: React.FC<SignalsViewProps> = ({ signals, onSelectSignal }) => {
   const [activeCategory, setActiveCategory] = useState<
-    'ALL' | 'FOREX' | 'INDIAN_EQUITY' | 'INDIAN_OPTIONS' | 'QUALIFIED' | 'WATCHLIST' | 'NO_TRADE' | 'HISTORY'
+    'ALL' | 'FOREX' | 'QUALIFIED' | 'WATCHLIST' | 'NO_TRADE' | 'HISTORY'
   >('ALL');
   const [directionFilter, setDirectionFilter] = useState<string>('ALL');
   const [search, setSearch] = useState<string>('');
@@ -37,8 +37,6 @@ export const SignalsView: React.FC<SignalsViewProps> = ({ signals, onSelectSigna
 
       // Category filter
       if (activeCategory === 'FOREX' && s.market !== 'FOREX') return false;
-      if (activeCategory === 'INDIAN_EQUITY' && s.market !== 'INDIA_EQUITY') return false;
-      if (activeCategory === 'INDIAN_OPTIONS' && s.market !== 'INDIA_OPTIONS') return false;
       if (activeCategory === 'QUALIFIED' && (s.direction === 'WAIT' || s.direction === 'NO_TRADE' || (s.mlProbability && s.mlProbability < 0.60))) return false;
       if (activeCategory === 'WATCHLIST' && s.direction !== 'WAIT') return false;
       if (activeCategory === 'NO_TRADE' && s.direction !== 'NO_TRADE') return false;
@@ -58,8 +56,6 @@ export const SignalsView: React.FC<SignalsViewProps> = ({ signals, onSelectSigna
           {[
             { id: 'ALL', label: 'ALL SIGNALS', icon: Layers, count: signals.length },
             { id: 'FOREX', label: 'FOREX', icon: Sparkles, count: signals.filter(s => s.market === 'FOREX').length },
-            { id: 'INDIAN_EQUITY', label: 'INDIAN EQUITIES', icon: Sparkles, count: signals.filter(s => s.market === 'INDIA_EQUITY').length },
-            { id: 'INDIAN_OPTIONS', label: 'OPTIONS', icon: Sparkles, count: signals.filter(s => s.market === 'INDIA_OPTIONS').length },
             { id: 'QUALIFIED', label: 'QUALIFIED (≥60% ML)', icon: ShieldCheck, count: signals.filter(s => s.direction !== 'WAIT' && s.direction !== 'NO_TRADE' && s.mlProbability >= 0.60).length },
             { id: 'WATCHLIST', label: 'WATCH (WAIT)', icon: Clock, count: signals.filter(s => s.direction === 'WAIT').length },
             { id: 'NO_TRADE', label: 'NO TRADE / CONFLICT', icon: XCircle, count: signals.filter(s => s.direction === 'NO_TRADE').length },
