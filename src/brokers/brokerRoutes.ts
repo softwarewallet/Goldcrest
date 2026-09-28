@@ -1254,7 +1254,7 @@ brokerRouter.post('/reconciliation/snapshot', async (req: Request, res: Response
   const broker = req.body?.broker as BrokerType | undefined;
   const brokers: BrokerType[] = broker ? [broker] : ['CTRADER'];
   if (brokers.some(b => !LIVE_BROKERS.includes(b))) {
-    return res.status(400).json({ error: 'Allowed live brokers: CTRADER, FIVE_PAISA' });
+    return res.status(400).json({ error: 'Allowed live broker: CTRADER' });
   }
   try {
     const snapshots = await Promise.all(brokers.map(b => reconciliationService.captureBrokerSnapshot(b)));
