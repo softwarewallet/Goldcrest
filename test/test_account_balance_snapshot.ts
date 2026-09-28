@@ -34,7 +34,7 @@ try {
     `INSERT OR REPLACE INTO account_balance_snapshots
      (id, broker, environment, account_id, currency, captured_at, balance, equity, used_margin, free_margin, status, error_message)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ['obsolete-broker-fixture', 'FIVE_PAISA', 'LIVE', 'TEST-FIVE-PAISA', 'INR', capturedAt, 1, 1, 0, 1, 'CAPTURED', null]
+    ['obsolete-broker-fixture', 'CTRADER', 'LIVE', 'TEST-OBSOLETE', 'USD', capturedAt, 1, 1, 0, 1, 'CAPTURED', null]
   );
 
   const stored = await getAccountBalanceSnapshots({ from: capturedAt, to: capturedAt, limit: 10 });
