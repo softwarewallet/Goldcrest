@@ -5,6 +5,13 @@ import { tradeValidator } from './TradeValidator';
 import { getSystemConfig } from '../../services/configService';
 import { liveRuntimeLog } from '../../services/liveRuntimeLog';
 
+export interface LiveGateAuthoritativeSnapshot {
+  status: 'CONNECTED' | 'DISCONNECTED' | string;
+  account: Awaited<ReturnType<BrokerAdapter['getAccount']>> | null;
+  instrument: Awaited<ReturnType<BrokerAdapter['getInstrument']>> | null;
+  positions: Awaited<ReturnType<BrokerAdapter['getPositions']>>;
+}
+
 export interface LiveGateEvaluationParams {
   order: OrderRequest;
   signalAgeMs: number;
@@ -229,6 +236,12 @@ export class LiveTradingGate {
 
     return {
       passed,
+      authoritativeSnapshot: {
+        status,
+        account,
+        instrument,
+        positions: authoritativePositions
+      },
       checks: {
         liveEnvironmentSelected,
         liveBrokerConnected,
