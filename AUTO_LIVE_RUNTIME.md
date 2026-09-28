@@ -1,6 +1,6 @@
 # Goldcrest Auto-Live Runtime
 
-Goldcrest currently supports autonomous live execution for the deterministic Forex strategy `fx_structure_v2a` through cTrader LIVE. Indian/5paisa automation remains separate until an authoritative live Indian strategy engine is wired; the existing 5paisa live adapter is available for guarded autonomous routing.
+Goldcrest supports autonomous live execution for the deterministic Forex strategy `fx_structure_v2a` through cTrader. The cTrader Open API selector may be LIVE or DEMO for transport/functional validation; production autonomous execution requires the LIVE API mode.
 
 ## Local / private runtime
 
@@ -44,8 +44,6 @@ The maximum Forex notional must be compatible with the broker's minimum order si
 Before Auto Live is armed, Goldcrest checks the current session state for both supported markets:
 
     cTrader / Forex
-    5paisa / Indian markets
-
 If at least one supported market is open, the normal Auto Live loop can start.
 
 If both markets are closed, the Start control returns the exact confirmation prompt:
