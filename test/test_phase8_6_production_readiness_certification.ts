@@ -76,7 +76,7 @@ const scenarios: Scenario[] = [
   // --------------------------------------------------------------------------
   { id: 11, category: 'ORDER_PACKET_SAFETY', name: 'Valid BUY packet passes', run: () => assert.equal(validateAutoLiveOrderPacket(baseBuy).valid, true) },
   { id: 12, category: 'ORDER_PACKET_SAFETY', name: 'Valid SELL packet passes', run: () => assert.equal(validateAutoLiveOrderPacket(baseSell).valid, true) },
-  { id: 13, category: 'ORDER_PACKET_SAFETY', name: 'Non-FOREX market is rejected', run: () => assert.equal(validateAutoLiveOrderPacket({ ...baseBuy, market: 'INDIA' }).valid, false) },
+  { id: 13, category: 'ORDER_PACKET_SAFETY', name: 'Unsupported non-FOREX market is rejected', run: () => assert.equal(validateAutoLiveOrderPacket({ ...baseBuy, market: 'CRYPTO' }).valid, false) },
   { id: 14, category: 'ORDER_PACKET_SAFETY', name: 'Malformed FX symbol is rejected', run: () => assert.equal(validateAutoLiveOrderPacket({ ...baseBuy, symbol: 'EURUSD' }).valid, false) },
   { id: 15, category: 'ORDER_PACKET_SAFETY', name: 'Non-market order type is rejected', run: () => assert.equal(validateAutoLiveOrderPacket({ ...baseBuy, orderType: 'LIMIT' }).valid, false) },
   { id: 16, category: 'ORDER_PACKET_SAFETY', name: 'Zero quantity is rejected', run: () => assert.equal(validateAutoLiveOrderPacket({ ...baseBuy, quantity: 0 }).valid, false) },
