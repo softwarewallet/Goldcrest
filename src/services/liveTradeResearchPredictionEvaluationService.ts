@@ -130,8 +130,20 @@ async function ensurePredictionTable(): Promise<void> {
     actual_return_pct REAL,
     outcome_status TEXT,
     evaluated_at INTEGER,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    feature_snapshot_json TEXT,
+    prediction_context TEXT NOT NULL DEFAULT 'RESEARCH',
+    actual_profitable INTEGER,
+    realized_pnl REAL,
+    outcome_label TEXT,
+    label_source TEXT
   )`);
+  const columns = await executeQuery<{ name: string }>('PRAGMA table_info(live_trade_research_predictions)');
+  for (const [name, type] of [['actual_profitable', 'INTEGER'], ['realized_pnl', 'REAL'], ['outcome_label', 'TEXT'], ['label_source', 'TEXT']] as const) {
+    if (!columns.some(column => column.name === name)) {
+      try { await executeRun(`ALTER TABLE live_trade_research_predictions ADD COLUMN ${name} ${type}`); } catch {}
+    }
+  }
 }
 
 async function loadPredictionRows(params: {
