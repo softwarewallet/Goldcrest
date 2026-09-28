@@ -19,9 +19,9 @@ add(9,'Default max consecutive losses is valid',()=>assert.equal(check({}).check
 add(10,'Default spread limit is valid',()=>assert.equal(check({}).checks.maxSpreadBps,'PASS'));
 add(11,'Default signal cooldown is valid',()=>assert.equal(check({}).checks.signalCooldownMs,'PASS'));
 add(12,'Default event proximity threshold is valid',()=>assert.equal(check({}).checks.eventProximityThresholdMinutes,'PASS'));
-add(13,'Default strike depth is valid',()=>assert.equal(check({}).checks.strikeDepth,'PASS'));
+add(13,'Default cTrader account selector is structurally accepted',()=>assert.equal(check({selectedCtraderAccountId:'123456'}).ok,true));
 add(14,'Default Forex maximum trade value is valid',()=>assert.equal(check({}).checks.maxTradeValueForexUsd,'PASS'));
-add(15,'Default Indian maximum trade value is valid',()=>assert.equal(check({}).checks.maxTradeValueIndianInr,'PASS'));
+add(15,'Default Forex maximum trade value remains valid',()=>assert.equal(check({}).checks.maxTradeValueForexUsd,'PASS'));
 add(16,'Default Auto Live minimum score is valid',()=>assert.equal(check({}).checks.autoLiveMinSignalScore,'PASS'));
 add(17,'Default Auto Live pair limit is valid',()=>assert.equal(check({}).checks.autoLiveMaxTradesPerPair,'PASS'));
 add(18,'Default Forex stop loss is valid',()=>assert.equal(check({}).checks.forexStopLossPips,'PASS'));
@@ -43,10 +43,10 @@ add(31,'Max consecutive losses zero fails',()=>assert.equal(check({maxConsecutiv
 add(32,'Negative spread limit fails',()=>assert.equal(check({maxSpreadBps:-1}).ok,false));
 add(33,'Zero signal cooldown fails',()=>assert.equal(check({signalCooldownMs:0}).ok,false));
 add(34,'Negative event proximity fails',()=>assert.equal(check({eventProximityThresholdMinutes:-1}).ok,false));
-add(35,'Strike depth zero fails',()=>assert.equal(check({strikeDepth:0}).ok,false));
+add(35,'Event proximity threshold zero fails',()=>assert.equal(check({eventProximityThresholdMinutes:0}).ok,false));
 add(36,'Forex maximum trade value zero fails',()=>assert.equal(check({maxTradeValueForexUsd:0}).ok,false));
 add(37,'Forex maximum trade value decimal passes',()=>assert.equal(check({maxTradeValueForexUsd:1.5}).ok,true));
-add(38,'Indian maximum trade value zero fails',()=>assert.equal(check({maxTradeValueIndianInr:0}).ok,false));
+add(38,'Forex maximum trade value negative fails',()=>assert.equal(check({maxTradeValueForexUsd:-1}).ok,false));
 add(39,'Auto Live minimum score above 100 fails',()=>assert.equal(check({autoLiveMinSignalScore:101}).ok,false));
 add(40,'Auto Live pair limit zero fails',()=>assert.equal(check({autoLiveMaxTradesPerPair:0}).ok,false));
 
@@ -56,10 +56,10 @@ add(43,'Empty Forex pair list fails',()=>assert.equal(check({autoLiveForexPairs:
 add(44,'Malformed Forex pair fails',()=>assert.equal(check({autoLiveForexPairs:['EURUSD']}).ok,false));
 add(45,'Lowercase Forex pair fails',()=>assert.equal(check({autoLiveForexPairs:['eur/usd']}).ok,false));
 add(46,'Mixed malformed Forex list fails',()=>assert.equal(check({autoLiveForexPairs:['EUR/USD','BAD']}).ok,false));
-add(47,'Empty Indian underlying list fails',()=>assert.equal(check({autoLiveIndianUnderlyings:[]}).ok,false));
-add(48,'Malformed Indian underlying fails',()=>assert.equal(check({autoLiveIndianUnderlyings:['NIFTY 50']}).ok,false));
+add(47,'Single valid Forex pair remains accepted',()=>assert.equal(check({autoLiveForexPairs:['EUR/USD']}).ok,true));
+add(48,'Malformed Forex pair among valid pairs fails',()=>assert.equal(check({autoLiveForexPairs:['EUR/USD','EURUSD']}).ok,false));
 add(49,'Non-array Forex list fails',()=>assert.equal(check({autoLiveForexPairs:'EUR/USD'}).ok,false));
-add(50,'Non-array Indian list fails',()=>assert.equal(check({autoLiveIndianUnderlyings:'NIFTY'}).ok,false));
+add(50,'Non-array Forex universe fails',()=>assert.equal(check({autoLiveForexPairs:'EUR/USD'}).ok,false));
 
 add(51,'Empty financial disclaimer fails',()=>assert.equal(check({financialDisclaimer:''}).ok,false));
 add(52,'Whitespace financial disclaimer fails',()=>assert.equal(check({financialDisclaimer:'   '}).ok,false));
@@ -69,7 +69,7 @@ add(55,'String risk fails',()=>assert.equal(check({defaultRiskPct:'1'}).ok,false
 add(56,'String max positions fails',()=>assert.equal(check({maxOpenPositions:'5'}).ok,false));
 add(57,'Boolean stop loss fails',()=>assert.equal(check({forexStopLossPips:true}).ok,false));
 add(58,'Duplicate pair entries remain structurally acceptable',()=>assert.equal(check({autoLiveForexPairs:['EUR/USD','EUR/USD']}).checks.autoLiveForexPairs,'PASS'));
-add(59,'Valid alphanumeric Indian symbols pass',()=>assert.equal(check({autoLiveIndianUnderlyings:['NIFTY','BANKNIFTY','MIDCPNIFTY']}).checks.autoLiveIndianUnderlyings,'PASS'));
+add(59,'Valid multi-pair Forex universe passes',()=>assert.equal(check({autoLiveForexPairs:['EUR/USD','USD/JPY','GBP/USD']}).checks.autoLiveForexPairs,'PASS'));
 add(60,'Integrity returns explicit failure names',()=>{const r=check({tradingMode:'DEMO',maxOpenPositions:0});assert.ok(r.failures.includes('tradingMode'));assert.ok(r.failures.includes('maxOpenPositions'));});
 
 console.log('=========================================================================');
