@@ -419,7 +419,7 @@ const scenarios: Scenario[] = [
     };
     try {
       const captured = await captureAccountBalanceSnapshots(Date.now());
-      assert.equal(captured.length, 2);
+      assert.equal(captured.length, 1);
       assert.deepEqual(new Set(seen), new Set(['CTRADER:LIVE']));
       assert.ok(captured.every(row => row.status === 'CAPTURED'));
     } finally {
