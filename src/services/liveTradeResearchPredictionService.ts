@@ -413,7 +413,7 @@ export async function createResearchPrediction(params: {
       model_agreement, reasoning, invalidation, actual_direction,
       actual_return_pct, outcome_status, evaluated_at, created_at, feature_snapshot_json, prediction_context,
       actual_profitable, realized_pnl, outcome_label, label_source
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
     [prediction.predictionId, prediction.modelVersion, prediction.predictionSource,
       prediction.symbol, prediction.signalId, prediction.predictedAt, prediction.horizon,
       prediction.predictedDirection, prediction.confidence, prediction.featureHash,
