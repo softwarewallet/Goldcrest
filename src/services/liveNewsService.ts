@@ -35,6 +35,13 @@ export interface LiveNewsSentimentSummary {
   neutralCount: number;
 }
 
+export interface LiveNewsEventDiagnostic {
+  title: string;
+  source: string;
+  publishedAt: string;
+  ageMs: number;
+}
+
 export interface LiveNewsSnapshot {
   source: LiveNewsSource;
   fetchedAt: string;
@@ -44,6 +51,8 @@ export interface LiveNewsSnapshot {
   elevatedCount: number;
   /** Number of currently-active high-impact events relevant to the configured FX universe. */
   activeHighImpactCount?: number;
+  /** Effective active high-impact blackout window used by the classifier. */
+  highImpactActiveWindowMinutes?: number;
   riskLevel: 'HIGH' | 'ELEVATED' | 'LOW' | 'UNAVAILABLE';
   articles: LiveNewsArticle[];
   queryPairs?: string[];
@@ -63,6 +72,7 @@ export interface LiveNewsSnapshot {
     highImpactCount: number;
     elevatedCount: number;
     riskLevel: 'HIGH' | 'ELEVATED' | 'LOW';
+    highImpactEvents?: LiveNewsEventDiagnostic[];
   }>;
   sentimentSummary?: LiveNewsSentimentSummary;
   latestArticleAt?: string | null;
@@ -337,6 +347,25 @@ function classifyArticle(
   return 'LOW';
 }
 
+function getActiveHighImpactEvents(
+  articles: LiveNewsArticle[],
+  currencies: Set<string>,
+  now: number
+): LiveNewsEventDiagnostic[] {
+  return articles
+    .filter(article => hasHighImpactEvent(article))
+    .filter(article => articleMentionsRelevantCurrency(article, currencies))
+    .filter(article => isArticleInsideHighImpactWindow(article, now))
+    .filter(article => Boolean(article.publishedAt))
+    .map(article => ({
+      title: article.title,
+      source: article.source,
+      publishedAt: article.publishedAt!,
+      ageMs: Math.max(0, now - Date.parse(article.publishedAt!))
+    }))
+    .sort((a, b) => a.ageMs - b.ageMs);
+}
+
 function scoreArticles(
   articles: LiveNewsArticle[],
   pairs: string[],
@@ -362,10 +391,12 @@ function scoreArticles(
       if (classification === 'HIGH') pairHigh += 1;
       else if (classification === 'ELEVATED') pairElevated += 1;
     }
+    const highImpactEvents = getActiveHighImpactEvents(articles, pairCurrencies, now);
     pairRisk[pair] = {
       highImpactCount: pairHigh,
       elevatedCount: pairElevated,
-      riskLevel: pairHigh > 0 ? 'HIGH' : pairElevated >= 4 ? 'ELEVATED' : 'LOW'
+      riskLevel: pairHigh > 0 ? 'HIGH' : pairElevated >= 4 ? 'ELEVATED' : 'LOW',
+      highImpactEvents
     };
   }
 
@@ -808,6 +839,7 @@ function unavailableSnapshot(
     highImpactCount: 0,
     elevatedCount: 0,
     activeHighImpactCount: 0,
+    highImpactActiveWindowMinutes: NEWS_HIGH_IMPACT_ACTIVE_WINDOW_MS / 60_000,
     riskLevel: 'UNAVAILABLE',
     articles: [],
     queryPairs,
@@ -940,6 +972,7 @@ async function fetchLiveForexNewsInternal(
       highImpactCount: 0,
       elevatedCount: 0,
       activeHighImpactCount: 0,
+      highImpactActiveWindowMinutes: NEWS_HIGH_IMPACT_ACTIVE_WINDOW_MS / 60_000,
       riskLevel: allUnavailable ? 'UNAVAILABLE' : 'LOW',
       articles: [],
       queryPairs,
@@ -991,6 +1024,7 @@ async function fetchLiveForexNewsInternal(
     highImpactCount: score.highImpactCount,
     elevatedCount: score.elevatedCount,
     activeHighImpactCount: score.activeHighImpactCount,
+    highImpactActiveWindowMinutes: NEWS_HIGH_IMPACT_ACTIVE_WINDOW_MS / 60_000,
     riskLevel: score.riskLevel,
     articles,
     queryPairs,

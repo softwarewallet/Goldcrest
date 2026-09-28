@@ -101,7 +101,11 @@ try {
   assert.equal(live.providerDiagnostics?.MASSIVE?.freshArticleCount, 1);
   assert.equal(live.providerDiagnostics?.CURRENTS?.freshArticleCount, 1);
   assert.equal(live.highImpactCount, 2);
+  assert.equal(live.highImpactActiveWindowMinutes, 30);
   assert.equal(live.pairRisk?.['EUR/USD']?.riskLevel, 'HIGH');
+  assert.equal(live.pairRisk?.['EUR/USD']?.highImpactEvents?.length, 1);
+  assert.match(live.pairRisk?.['EUR/USD']?.highImpactEvents?.[0]?.title || '', /ECB rate decision/i);
+  assert.equal(live.pairRisk?.['EUR/USD']?.highImpactEvents?.[0]?.source, 'Finnhub Test');
   assert.deepEqual(live.queryPairs, ['EUR/USD', 'GBP/USD']);
 
   assert.equal(requestedUrls.some(url => url.includes('newsapi.org')), false);

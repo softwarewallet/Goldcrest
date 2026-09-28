@@ -977,7 +977,9 @@ class AutoTradingService {
           pair,
           signalId: undefined,
           reason,
-          pairRisk: pairRisk || null
+          pairRisk: pairRisk || null,
+          blackoutWindowMinutes: cycleNews.highImpactActiveWindowMinutes,
+          activeHighImpactEvents: pairRisk?.highImpactEvents || []
         });
       }
 
