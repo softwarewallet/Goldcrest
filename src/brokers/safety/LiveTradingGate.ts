@@ -38,10 +38,18 @@ export class LiveTradingGate {
     // parallel so a slow cTrader account/instrument/connection request cannot
     // consume the quote-freshness budget one request at a time.
     const [statusResult, accountResult, instrumentResult, positionsResult] = await Promise.allSettled([
-      adapter.getTradingStatus(),
-      adapter.getAccount(),
-      adapter.getInstrument(params.order.symbol),
-      adapter.getPositions()
+      typeof adapter.getTradingStatus === 'function'
+        ? adapter.getTradingStatus()
+        : Promise.reject(new Error('Broker adapter does not implement getTradingStatus')),
+      typeof adapter.getAccount === 'function'
+        ? adapter.getAccount()
+        : Promise.reject(new Error('Broker adapter does not implement getAccount')),
+      typeof adapter.getInstrument === 'function'
+        ? adapter.getInstrument(params.order.symbol)
+        : Promise.reject(new Error('Broker adapter does not implement getInstrument')),
+      typeof adapter.getPositions === 'function'
+        ? adapter.getPositions()
+        : Promise.reject(new Error('Broker adapter does not implement getPositions'))
     ]);
 
     const status = statusResult.status === 'fulfilled' ? statusResult.value : 'DISCONNECTED';
