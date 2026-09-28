@@ -1,61 +1,90 @@
-# AI Trading Analyst — Operations Center Documentation
+# Goldcrest Forex Operations Center
 
 ## Overview
-The **Operations Center** is the operational mission control for the AI Trading Analyst application post-RC-1.0.0-FINAL certification. It provides real-time health telemetry, market data monitoring, risk gate verification, execution quality tracking, 3-way reconciliation, and centralized alert management.
+The Operations Center is the operational control surface for Goldcrest's Forex-only production terminal. It provides runtime health telemetry, cTrader connectivity monitoring, Forex market-data quality checks, risk-gate verification, execution-quality tracking, reconciliation, audit visibility, and operator alerts.
 
----
-
-## Safety Invariant
+## Safety and Execution Invariants
 ```typescript
 LIVE_AUTO_EXECUTION_ALLOWED === false
 ```
-- **Absolute Rule:** Hard-coded safety invariant preventing any auto-execution in live real-money environments.
-- **Allowed Environments:** PAPER, cTrader DEMO, 5paisa SANDBOX.
-- **Enforcement:** Enforced at module load time via `LiveTradingGate.verifySafetyInvariant()` in Express middleware, broker routing, and frontend controls.
 
----
+This is the startup/locked-state invariant. Goldcrest operates with `LIVE_ONLY` as its application trading environment. Autonomous live-money execution can be enabled only through the authenticated operator execution gate after the production activation preflight succeeds.
 
-## Subsystem Architecture
+### cTrader Open API modes
+The cTrader Open API transport selector supports:
+- `LIVE` — production cTrader endpoint.
+- `DEMO` — cTrader functional/testing endpoint.
 
-### 1. System Health Monitoring
-- **Application & API Status:** Live health probes on Express API routes (`/api/governance/status`, `/api/health`).
-- **Firebase Persistence Status:** Sync heartbeat monitoring with Firestore collections (`trade_traces`, `reconciliation_records`, `audit_events`).
-- **Model Inference & Telemetry:** Monitors real-time GBDT model predictions, inference latency, and feature matrix validity.
-- **Market Data Feed Freshness:** Tracks bid/ask quote latency, candle continuity, and stale feed flags across Forex and Indian markets.
+The API selector is independent of the application's `LIVE_ONLY` trading-environment contract. DEMO is an authoritative functional validation environment for account, permission, instrument, quote, history, positions, open-order, and common order-packet paths. Production autonomous execution still requires the cTrader API selector to be `LIVE`.
 
-### 2. Market Data Quality Center
-- **Monitored Indicators:** Missing candles, duplicate timestamps, stale feeds (>1000ms), invalid OHLC structures, zero volume, and timestamp inconsistencies.
-- **Continuity Scoring:** Automated 0-100% data continuity score for tracked instruments (EUR/USD, GBP/USD, USD/JPY, NIFTY, BANKNIFTY).
+No 5paisa, Indian-market, options, paper-trading, or other non-Forex broker route is active in the application.
 
-### 3. Risk Center & Safety Gates
-- **Global Risk Limits:** Max 1% account risk per trade cap, drawdown limits, position count limits, margin utilization thresholds.
-- **Emergency Kill Switch:** Operator-triggered emergency halt mechanism. When armed, all new order proposals are immediately rejected.
-- **Kill Switch Proof Automation:** Automated POST test endpoint (`/api/governance/kill-switch-test`) that verifies order rejections while armed and clean recovery when disarmed.
+## Subsystems
 
-### 4. Execution Center
-- **Environments:** PAPER (simulated fills), cTrader DEMO (Fix/REST sandbox), 5paisa SANDBOX (Open API sandbox).
-- **Quality Metrics:** Latency (ms), spread cost (pips/points), slippage impact, and fill success rate.
-- **Trace Tracking:** Every executed order generates a unique `tradeTraceId` linking it to market data, model predictions, and risk decisions.
+### 1. Runtime Health
+- Express readiness and liveness endpoints.
+- SQLite initialization and persistence health.
+- Runtime lifecycle state.
+- Durable audit-log availability.
+- cTrader LIVE/DEMO transport diagnostics.
+- Auto Live lifecycle and recovery state.
 
-### 5. 3-Way Reconciliation Engine
-- **Triple Ledger Comparison:** Compares state between:
-  1. Internal System Memory Ledger
-  2. External Broker Sandbox Account State
-  3. Cloud Firestore Ledger
-- **Status Classification:** `MATCHED`, `RECONCILIATION_MISMATCH`, `ORPHAN_INTERNAL`, `ORPHAN_BROKER`, `ORPHAN_CLOUD`, `CLOUDDIVERGENCE`.
+### 2. Forex Market Data Quality
+- Authoritative Forex bid/ask freshness.
+- Historical candle availability and continuity.
+- Supported Forex pair universe.
+- Session state and weekend closure detection.
+- 30-second maximum execution quote age.
 
-### 6. Alert Center with Deduplication
-- **Severities:** `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`.
-- **Deduplication:** Groups alerts by `dedupKey` and updates repeat count rather than spamming log streams.
-- **Operator Acknowledgement:** In-memory and Firebase persistence of operator acknowledgement timestamp and operator ID.
+### 3. Risk and Safety Gates
+- Stop-loss and take-profit requirements.
+- Daily loss protection.
+- Maximum open-position and per-pair limits.
+- Spread threshold.
+- Signal freshness and identity.
+- Kill switch.
+- Execution-intent idempotency and reconciliation.
+- Final autonomous order-packet validation.
 
----
+### 4. Execution
+Forex orders route to cTrader. Autonomous execution is serialized through the common safety/readiness pipeline and durable execution-intent lifecycle.
 
-## API References
-- `GET /api/governance/status`: Subsystem health telemetry
-- `GET /api/governance/demo-readiness`: 14-gate sandbox verification report
-- `POST /api/governance/demo-test`: Controlled sandbox execution test
-- `POST /api/governance/reconciliation/positions/run`: Triggers 3-way position reconciliation
-- `POST /api/governance/reconciliation/orders/run`: Triggers 3-way orderbook reconciliation
-- `POST /api/governance/kill-switch-test`: Automated kill switch test suite
-- `POST /api/governance/override`: Chief Risk Officer manual parameter adjustment with audit logging
+### 5. Reconciliation
+The broker is the authoritative source for live account, positions, orders, fills, and execution status. SQLite stores durable application records used for audit and reconciliation.
+
+### 6. Audit and Alerts
+Operational actions, execution stages, safety decisions, broker responses, and reconciliation events are written to the durable runtime/audit logs.
+
+## Operational API References
+- `GET /api/operations/readiness`
+- `GET /api/operations/brokers/verify`
+- `GET /api/operations/account-consistency`
+- `GET /api/operations/go-live-validation`
+- `GET /api/operations/active-auto-live-monitor`
+- `GET /api/operations/ctrader-functional-validation`
+- `GET /api/observability/runtime`
+- `GET /api/governance/status`
+- `GET /api/governance/reconciliation/positions`
+- `GET /api/governance/reconciliation/orders`
+- `GET /api/governance/audit-logs`
+
+## Production Workflow
+```text
+Startup
+  ↓
+Runtime / release readiness
+  ↓
+cTrader account verification
+  ↓
+Account-state consistency
+  ↓
+Production Go-Live Validation
+  ↓
+Operator execution-gate unlock
+  ↓
+Active Auto Live monitoring
+  ↓
+Auto Live execution through cTrader
+```
+
+For functional staging, select cTrader `DEMO` and run the cTrader functional validator before selecting `LIVE`.
