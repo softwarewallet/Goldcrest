@@ -240,11 +240,15 @@ export async function evaluatePendingCurrentPairPredictions(params: {
     const actualDirection = actualFromReturn(actualReturnPct);
     const score = directionalScore(prediction, actualDirection);
 
+    const profitable = actualReturnPct > 0 ? 1 : 0;
+    const outcomeLabel = actualReturnPct > 0 ? 'FORWARD_POSITIVE' : actualReturnPct < 0 ? 'FORWARD_NEGATIVE' : 'FORWARD_FLAT';
     await executeRun(
       `UPDATE live_trade_research_predictions
-          SET actual_direction = ?, actual_return_pct = ?, outcome_status = 'EVALUATED', evaluated_at = ?
+          SET actual_direction = ?, actual_return_pct = ?, actual_profitable = ?, realized_pnl = NULL,
+              outcome_label = ?, label_source = 'CURRENT_PAIR_DAILY_FORWARD',
+              outcome_status = 'EVALUATED', evaluated_at = ?
         WHERE prediction_id = ? AND prediction_context = 'CURRENT_PAIR'`,
-      [actualDirection, actualReturnPct, Date.now(), prediction.prediction_id]
+      [actualDirection, actualReturnPct, profitable, outcomeLabel, Date.now(), prediction.prediction_id]
     );
 
     evaluated++;
