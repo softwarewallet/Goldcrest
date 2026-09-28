@@ -29,13 +29,13 @@ export interface ResearchFeatureRow {
   realizedPnl: number | null;
   outcome: string | null;
   holdingDurationMs: number | null;
-  entryPrice: number | null;
-  stopPrice: number | null;
-  targetPrice: number | null;
-  exitPrice: number | null;
-  mfePnl: number | null;
-  maePnl: number | null;
-  exitTimestamp: number | null;
+  entryPrice?: number | null;
+  stopPrice?: number | null;
+  targetPrice?: number | null;
+  exitPrice?: number | null;
+  mfePnl?: number | null;
+  maePnl?: number | null;
+  exitTimestamp?: number | null;
   // Optional live-only predictive features. They are absent from historical rows
   // unless explicitly materialized by a current-market feature builder.
   priceChange5mPct?: number | null;
