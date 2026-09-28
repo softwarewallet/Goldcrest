@@ -295,28 +295,23 @@ class AutoExecutionEngine {
       });
     };
 
-    // Resolve broker instrument precision before any validation or dispatch.
-    // cTrader can use different decimal precision per symbol (for example,
-    // XAU/USD may allow 2 decimals while FX pairs commonly allow 3-5).
-    // Normalize every broker-facing price using the authoritative instrument
-    // metadata so an otherwise valid order cannot be rejected for extra digits.
-    const instrument = await adapter.getInstrument(order.symbol);
-    if (!instrument) {
-      return { executed: false, reason: 'Live broker instrument metadata unavailable for ' + order.symbol + '.', code: 'INVALID_SYMBOL' };
-    }
+    // Goldcrest uses a global three-decimal execution policy. Instrument
+    // availability is already an authoritative safety-gate check, so do not
+    // perform a duplicate cTrader instrument request before entering that gate.
+    // normalizePriceToInstrumentDigits retains its compatibility signature but
+    // intentionally applies the global three-decimal policy.
     if (order.price !== undefined && Number(order.price) > 0) {
-      order.price = normalizePriceToInstrumentDigits(Number(order.price), instrument.digits);
+      order.price = normalizePriceToInstrumentDigits(Number(order.price));
     }
     if (order.stopLoss !== undefined && Number(order.stopLoss) > 0) {
-      order.stopLoss = normalizePriceToInstrumentDigits(Number(order.stopLoss), instrument.digits);
+      order.stopLoss = normalizePriceToInstrumentDigits(Number(order.stopLoss));
     }
     if (order.takeProfit !== undefined && Number(order.takeProfit) > 0) {
-      order.takeProfit = normalizePriceToInstrumentDigits(Number(order.takeProfit), instrument.digits);
+      order.takeProfit = normalizePriceToInstrumentDigits(Number(order.takeProfit));
     }
     liveRuntimeLog('INFO', 'ORDER_PRICE_PRECISION_NORMALIZED', {
       broker,
       symbol: order.symbol,
-      instrumentDigits: instrument.digits,
       price: order.price,
       stopLoss: order.stopLoss,
       takeProfit: order.takeProfit
@@ -518,7 +513,12 @@ class AutoExecutionEngine {
       }
 
       // This is the last guarded application-level point before the live broker API call.
-      auditExecution('FINAL_ORDER_PACKET', { request: order });
+      // Record the authoritative quote age here so production TradeLog data can
+      // distinguish signal-analysis latency from final dispatch latency.
+      auditExecution('FINAL_ORDER_PACKET', {
+        request: order,
+        quoteAgeMs: Math.max(0, Date.now() - Number(gateParams.currentQuote.timestamp || 0))
+      });
       onReadyToSubmit?.();
 
       // Move the durable intent to IN_FLIGHT immediately before submission.

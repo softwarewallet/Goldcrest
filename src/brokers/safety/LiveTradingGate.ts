@@ -34,23 +34,25 @@ export class LiveTradingGate {
       failedReasons.push('Condition 1 Failed: Active environment is not LIVE.');
     }
 
-    // Check 2: Live broker connected
-    const status = await adapter.getTradingStatus();
+    // Checks 2-5 are independent authoritative broker reads. Run them in
+    // parallel so a slow cTrader account/instrument/connection request cannot
+    // consume the quote-freshness budget one request at a time.
+    const [statusResult, accountResult, instrumentResult, positionsResult] = await Promise.allSettled([
+      adapter.getTradingStatus(),
+      adapter.getAccount(),
+      adapter.getInstrument(params.order.symbol),
+      adapter.getPositions()
+    ]);
+
+    const status = statusResult.status === 'fulfilled' ? statusResult.value : 'DISCONNECTED';
     const liveBrokerConnected = status === 'CONNECTED';
     if (!liveBrokerConnected) {
       failedReasons.push(`Condition 2 Failed: Broker status is ${status}, must be CONNECTED.`);
     }
 
-    // Check 3: Account successfully validated
-    let accountValidated = false;
-    let permissions: string[] = [];
-    try {
-      const account = await adapter.getAccount();
-      accountValidated = Boolean(account && account.accountId && account.balance > 0);
-      permissions = account.permissions || [];
-    } catch {
-      accountValidated = false;
-    }
+    const account = accountResult.status === 'fulfilled' ? accountResult.value : null;
+    const accountValidated = Boolean(account && account.accountId && account.balance > 0);
+    const permissions: string[] = account?.permissions || [];
     if (!accountValidated) {
       failedReasons.push('Condition 3 Failed: Live account could not be validated or has non-positive balance.');
     }
@@ -62,7 +64,7 @@ export class LiveTradingGate {
     }
 
     // Check 5: Instrument validated
-    const instrument = await adapter.getInstrument(params.order.symbol);
+    const instrument = instrumentResult.status === 'fulfilled' ? instrumentResult.value : null;
     const instrumentValidated = instrument !== null;
     if (!instrumentValidated) {
       failedReasons.push(`Condition 5 Failed: Instrument ${params.order.symbol} is not valid on this broker.`);
@@ -125,14 +127,8 @@ export class LiveTradingGate {
     // Never use the caller's earlier position count for 13B because Auto Live
     // analyzes pairs concurrently and the account can change between analysis
     // and this final dispatch boundary.
-    let authoritativePositions: Awaited<ReturnType<BrokerAdapter['getPositions']>> = [];
-    let positionsVerified = false;
-    try {
-      authoritativePositions = await adapter.getPositions();
-      positionsVerified = Array.isArray(authoritativePositions);
-    } catch {
-      positionsVerified = false;
-    }
+    const authoritativePositions = positionsResult.status === 'fulfilled' ? positionsResult.value : [];
+    const positionsVerified = Array.isArray(authoritativePositions);
 
     // Check 13: Per-pair simultaneous-position limit.
     // Multiple positions on the same Forex pair are intentionally allowed up

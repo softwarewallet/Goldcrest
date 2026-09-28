@@ -1187,6 +1187,15 @@ return;
         return;
       }
 
+      // Start independent broker reads before the final quote fetch. The
+      // quote is intentionally obtained after these reads so its freshness
+      // window is consumed as little as possible.
+      const accountPromise = adapter.getAccount();
+      const instrumentPromise = adapter.getInstrument(pair);
+      const dailyRealizedPnLPromise = typeof adapter.getDailyRealizedPnL === 'function'
+        ? adapter.getDailyRealizedPnL()
+        : Promise.resolve(0);
+
       const quote = await adapter.getQuote(pair);
       if (quote.status !== 'FRESH' || Date.now() - quote.timestamp >= LIVE_QUOTE_MAX_AGE_MS) {
         const reason = 'Fresh broker quote unavailable at dispatch boundary.';
@@ -1204,8 +1213,9 @@ return;
       }
       const entryPrice = signalSide === 'BUY' ? quote.ask : quote.bid;
 
-      try {
-      await updateLiveTradeResearchQuote({
+      // Research telemetry is non-authoritative. Never block the live
+      // execution path on this database write after obtaining a fresh quote.
+      void updateLiveTradeResearchQuote({
         signalId: signal.id,
         quote: {
           bid: quote.bid,
@@ -1219,15 +1229,14 @@ return;
           selectedEntrySide: signalSide,
           selectedEntryPrice: entryPrice
         }
-      });
-      } catch (researchError: any) {
+      }).catch((researchError: any) => {
         liveRuntimeLog('WARN', 'LIVE_TRADE_RESEARCH_TELEMETRY_FAILED', {
           signalId: signal.id,
           pair,
           operation: 'QUOTE',
           error: researchError?.message || String(researchError)
         });
-      }
+      });
 
       // Auto Live submits a MARKET order using the authoritative broker quote
       // available at the dispatch boundary. The signal entry zone is an
@@ -1255,17 +1264,31 @@ return;
         entryMax: plan.entryMax
       });
 
-      const account = await adapter.getAccount();
-
-      // Direct-quantity sizing does not require the cTrader account currency
-      // to be USD. The configured Forex quantity is sent directly to the broker.
-      const instrument = await adapter.getInstrument(pair);
-      if (!instrument) {
-        const reason = 'Live broker instrument metadata unavailable.';
-        this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
-                tradeAuditLog('INSTRUMENT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
-return;
+      const [accountResult, instrumentResult, dailyPnLResult] = await Promise.allSettled([
+        accountPromise,
+        instrumentPromise,
+        dailyRealizedPnLPromise
+      ]);
+      if (accountResult.status === 'rejected') {
+        const reason = accountResult.reason?.message || String(accountResult.reason);
+        this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason: 'Live broker account unavailable: ' + reason });
+        tradeAuditLog('ACCOUNT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
+        return;
       }
+
+      const account = accountResult.value;
+      const instrument = instrumentResult.status === 'fulfilled' ? instrumentResult.value : null;
+      if (!instrument) {
+        const reason = instrumentResult.status === 'rejected'
+          ? instrumentResult.reason?.message || String(instrumentResult.reason)
+          : 'Live broker instrument metadata unavailable.';
+        this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
+        tradeAuditLog('INSTRUMENT_BLOCKED', { pair, signalId: signal.id, score: signal.score, reason });
+        return;
+      }
+      const dailyRealizedPnL = dailyPnLResult.status === 'fulfilled'
+        ? Number(dailyPnLResult.value)
+        : 0;
 
       // Score-based parallel-trade ladder:
       //   score >= 65 and <= 70 -> 1 trade
@@ -1389,7 +1412,7 @@ return;
 
       const quantity = sizing.quantity;
 
-      await updateLiveTradeResearchQuote({
+      void updateLiveTradeResearchQuote({
         signalId: signal.id,
         quote: {
           bid: quote.bid,
@@ -1411,6 +1434,13 @@ return;
           directQuantity: sizing.directQuantity,
           sizingAdjusted: sizing.adjusted
         }
+      }).catch((researchError: any) => {
+        liveRuntimeLog('WARN', 'LIVE_TRADE_RESEARCH_TELEMETRY_FAILED', {
+          signalId: signal.id,
+          pair,
+          operation: 'QUOTE_SIZING',
+          error: researchError?.message || String(researchError)
+        });
       });
 
       this.setExecutionStatus({
@@ -1435,9 +1465,6 @@ return;
         comment: 'Goldcrest autonomous FX strategy'
       };
 
-      const dailyRealizedPnL = typeof adapter.getDailyRealizedPnL === 'function'
-        ? await adapter.getDailyRealizedPnL()
-        : 0;
       const totalExposure = positions
         .filter(position => position.currency === 'USD' && position.market === 'FOREX')
         .reduce((sum, position) => sum + Math.abs(Number(position.quantity || 0)) * Number(position.currentPrice || 0), 0)

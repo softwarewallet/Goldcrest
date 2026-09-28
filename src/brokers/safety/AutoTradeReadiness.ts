@@ -83,46 +83,41 @@ class AutoTradeReadinessService {
     const productionStrategyApproved = process.env.GOLDCREST_PRODUCTION_STRATEGY_APPROVED === 'true';
     checks.strategyCalibrated = productionStrategyApproved && String(order.strategyId || '').trim() === approvedStrategyId;
 
-    try {
-      checks.brokerConnected = (await adapter.getTradingStatus()) === 'CONNECTED';
-    } catch {
-      checks.brokerConnected = false;
-    }
+    // These broker reads are independent. Resolve them concurrently so
+    // readiness evaluation does not serialize connection/account/instrument/
+    // quote/position latency after the signal has already been generated.
+    const [statusResult, accountResult, instrumentResult, quoteResult, positionsResult] = await Promise.allSettled([
+      adapter.getTradingStatus(),
+      adapter.getAccount(),
+      adapter.getInstrument(order.symbol),
+      quote ? Promise.resolve(quote) : adapter.getQuote(order.symbol),
+      adapter.getPositions()
+    ]);
 
-    try {
-      account = await adapter.getAccount();
-      checks.accountValidated = Boolean(account?.accountId && Number(account.balance) > 0);
-      const permissions = account?.permissions || [];
-      checks.tradingPermission = permissions.includes('TRADING') ||
-        permissions.includes('EQUITY') ||
-        permissions.includes('DERIVATIVES') ||
-        false;
-    } catch {
-      account = null;
-    }
+    checks.brokerConnected = statusResult.status === 'fulfilled'
+      && statusResult.value === 'CONNECTED';
 
-    try {
-      const instrument = await adapter.getInstrument(order.symbol);
-      checks.instrumentValidated = Boolean(instrument);
-    } catch {
-      checks.instrumentValidated = false;
-    }
+    account = accountResult.status === 'fulfilled' ? accountResult.value : null;
+    checks.accountValidated = Boolean(account?.accountId && Number(account.balance) > 0);
+    const permissions = account?.permissions || [];
+    checks.tradingPermission = permissions.includes('TRADING') ||
+      permissions.includes('EQUITY') ||
+      permissions.includes('DERIVATIVES');
 
-    try {
-      quote = quote || await adapter.getQuote(order.symbol);
-      checks.quoteFresh = Boolean(
-        quote &&
-        quote.status === 'FRESH' &&
-        Date.now() - Number(quote.timestamp) < LIVE_QUOTE_MAX_AGE_MS &&
-        Number(quote.bid) > 0 &&
-        Number(quote.ask) > 0
-      );
-      if (quote && quote.bid > 0 && quote.ask > 0) {
-        const mid = (quote.bid + quote.ask) / 2;
-        spreadBps = mid > 0 ? (quote.ask - quote.bid) / mid * 10000 : null;
-      }
-    } catch {
-      checks.quoteFresh = false;
+    const instrument = instrumentResult.status === 'fulfilled' ? instrumentResult.value : null;
+    checks.instrumentValidated = Boolean(instrument);
+
+    quote = quoteResult.status === 'fulfilled' ? quoteResult.value : undefined;
+    checks.quoteFresh = Boolean(
+      quote &&
+      quote.status === 'FRESH' &&
+      Date.now() - Number(quote.timestamp) < LIVE_QUOTE_MAX_AGE_MS &&
+      Number(quote.bid) > 0 &&
+      Number(quote.ask) > 0
+    );
+    if (quote && quote.bid > 0 && quote.ask > 0) {
+      const mid = (quote.bid + quote.ask) / 2;
+      spreadBps = mid > 0 ? (quote.ask - quote.bid) / mid * 10000 : null;
     }
 
     const signalAgeMs = Math.max(0, Date.now() - Number(signalTimestamp || 0));
@@ -132,11 +127,9 @@ class AutoTradeReadinessService {
     checks.marketOpen = order.market === 'FOREX'
       && !getForexSessionState().activeSessions.includes('CLOSED (WEEKEND)');
 
-    try {
-      positions = await adapter.getPositions();
-    } catch {
-      positions = [];
-    }
+    positions = positionsResult.status === 'fulfilled' && Array.isArray(positionsResult.value)
+      ? positionsResult.value
+      : [];
 
     const maxOpenPositions = Number(config.maxOpenPositions);
     checks.positionLimit = Number.isFinite(maxOpenPositions) &&
@@ -146,32 +139,33 @@ class AutoTradeReadinessService {
     const balance = Number(account?.balance || 0);
     const dailyLossLimit = Math.max(balance * (Number(config.maxDailyLossPct) / 100), 1);
 
-    try {
-      dailyLoss = typeof adapter.getDailyRealizedPnL === 'function'
-        ? Math.max(0, -Number(await adapter.getDailyRealizedPnL()))
-        : await reconciliationService.getDailyLoss('CTRADER', balance);
-      if (!Number.isFinite(dailyLoss)) dailyLoss = 0;
-    } catch {
-      dailyLoss = 0;
-    }
+    // These two risk-history reads are independent and can run concurrently.
+    const dailyLossPromise = typeof adapter.getDailyRealizedPnL === 'function'
+      ? adapter.getDailyRealizedPnL().then(value => Math.max(0, -Number(value)))
+      : reconciliationService.getDailyLoss('CTRADER', balance);
+
+    const consecutiveLossPromise = executeQuery<any>(
+      'SELECT pnl FROM trades WHERE exit_time IS NOT NULL AND pnl IS NOT NULL ORDER BY exit_time DESC LIMIT ?',
+      [Number(config.maxConsecutiveLosses) + 1]
+    );
+
+    const [dailyLossResult, consecutiveLossResult] = await Promise.allSettled([
+      dailyLossPromise,
+      consecutiveLossPromise
+    ]);
+
+    dailyLoss = dailyLossResult.status === 'fulfilled' && Number.isFinite(Number(dailyLossResult.value))
+      ? Number(dailyLossResult.value)
+      : 0;
     checks.dailyLossLimit = dailyLoss < dailyLossLimit;
 
     // Daily trade-count limiting is intentionally removed from the execution
-    // readiness layer. Goldcrest must be able to submit any number of trades
-    // permitted by the remaining safety gates so load/stress testing can exercise
-    // the complete execution path. Broker-side limits/rejections remain
-    // authoritative and are handled after order submission.
-    try {
-      const rows = await executeQuery<any>(
-        'SELECT pnl FROM trades WHERE exit_time IS NOT NULL AND pnl IS NOT NULL ORDER BY exit_time DESC LIMIT ?',
-        [Number(config.maxConsecutiveLosses) + 1]
-      );
-      for (const row of rows) {
+    // readiness layer. Broker-side limits/rejections remain authoritative.
+    if (consecutiveLossResult.status === 'fulfilled') {
+      for (const row of consecutiveLossResult.value) {
         if (Number(row.pnl) < 0) consecutiveLosses += 1;
         else break;
       }
-    } catch {
-      consecutiveLosses = 0;
     }
     const maxConsecutiveLosses = Number(config.maxConsecutiveLosses);
     checks.consecutiveLossLimit = Number.isFinite(maxConsecutiveLosses) &&
