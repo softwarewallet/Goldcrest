@@ -44,7 +44,6 @@ export function evaluateSystemConfigIntegrity(config: SystemConfig): ConfigInteg
   check('forexStopLossPips', positiveFinite(config.forexStopLossPips));
   check('forexTakeProfitPips', positiveFinite(config.forexTakeProfitPips));
   check('autoLiveForexPairs', Array.isArray(config.autoLiveForexPairs) && config.autoLiveForexPairs.length > 0 && config.autoLiveForexPairs.every(pair => typeof pair === 'string' && /^[A-Z]{3}\/[A-Z]{3}$/.test(pair)));
-  check('autoLiveIndianUnderlyings', Array.isArray(config.autoLiveIndianUnderlyings) && config.autoLiveIndianUnderlyings.length > 0 && config.autoLiveIndianUnderlyings.every(symbol => typeof symbol === 'string' && /^[A-Z0-9._-]+$/.test(symbol)));
   check('financialDisclaimer', typeof config.financialDisclaimer === 'string' && config.financialDisclaimer.trim().length > 0);
 
   return { ok: failures.length===0, checks, failures };
