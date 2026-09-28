@@ -514,6 +514,18 @@ class AutoExecutionEngine {
         };
       }
 
+      // Establish the durable IN_FLIGHT state before the broker call so a
+      // process crash or ambiguous network response cannot permit a duplicate.
+      // Do this before FINAL_ORDER_PACKET so the packet log marks the true
+      // final application boundary; after that log, broker submission starts
+      // immediately with no additional database write in between.
+      await markExecutionIntentInFlight(idempotencyKey, {
+        status: 'SUBMISSION_STARTED',
+        broker,
+        symbol: order.symbol,
+        signalId: order.signalId
+      });
+
       // This is the last guarded application-level point before the live broker API call.
       // Record the authoritative quote age here so production TradeLog data can
       // distinguish signal-analysis latency from final dispatch latency.
@@ -522,19 +534,6 @@ class AutoExecutionEngine {
         quoteAgeMs: Math.max(0, Date.now() - Number(gateParams.currentQuote.timestamp || 0))
       });
       onReadyToSubmit?.();
-
-      // Move the durable intent to IN_FLIGHT immediately before submission.
-      // If the broker call then fails without a definitive broker response,
-      // the outcome is intentionally ambiguous: the broker may have accepted
-      // the order even though the client did not receive the response. Keep
-      // the intent non-retryable and route it to reconciliation instead of
-      // marking it FAILED.
-      await markExecutionIntentInFlight(idempotencyKey, {
-        status: 'SUBMISSION_STARTED',
-        broker,
-        symbol: order.symbol,
-        signalId: order.signalId
-      });
 
       let brokerSubmissionStarted = true;
       let placedOrder: NormalizedOrder;
