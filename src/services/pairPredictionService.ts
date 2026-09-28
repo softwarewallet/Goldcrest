@@ -170,12 +170,13 @@ async function buildFeatureRow(item: any, newsSnapshot: LiveNewsSnapshot): Promi
     distanceToResistancePips: pipsBetween(analysis.currentPrice, resistance, pairConfig.pipSize)
   };
 }
-function buildFallbackFeatureRow(item: any, _error: unknown): ResearchFeatureRow {
+function buildFallbackFeatureRow(item: any, _error: unknown, newsSnapshot: LiveNewsSnapshot): ResearchFeatureRow {
   const signal = item.signal || {};
   const direction = String(signal.direction || 'NO_TRADE');
   const trendDirection =
     Number(signal.scoreBreakdown?.trend) > 0 ? 'BULLISH' :
     Number(signal.scoreBreakdown?.trend) < 0 ? 'BEARISH' : 'INSUFFICIENT_DATA';
+  const news = pairNewsContext(newsSnapshot, String(item.symbol));
   return {
     signalId: String(signal.id || item.symbol + '-' + Date.now()),
     symbol: String(item.symbol),
@@ -188,7 +189,7 @@ function buildFallbackFeatureRow(item: any, _error: unknown): ResearchFeatureRow
     trendAlignment: 'MIXED',
     trend7dReturnPct: null, trend30dReturnPct: null, trend90dReturnPct: null, trend365dReturnPct: null,
     trend7dVolatilityPct: null, trend30dVolatilityPct: null, trend90dVolatilityPct: null, trend365dVolatilityPct: null,
-    newsRiskLevel: 'UNKNOWN', newsHighImpactCount: 0, newsActiveHighImpactCount: 0, newsSentiment: null,
+    newsRiskLevel: news.riskLevel, newsHighImpactCount: news.highImpactCount, newsActiveHighImpactCount: news.activeHighImpactCount, newsSentiment: news.sentiment,
     quoteSpread: finite(item.spreadPips), riskReward: finite(signal.riskReward),
     stopDistance: null, targetDistance: null, realizedPnl: null, outcome: null, holdingDurationMs: null
   };
@@ -227,7 +228,7 @@ export async function generateCurrentPairPredictions(params: {
     try {
       row = await buildFeatureRow(item, newsSnapshot);
     } catch (error: any) {
-      row = buildFallbackFeatureRow(item, error);
+      row = buildFallbackFeatureRow(item, error, newsSnapshot);
     }
     let output: ResearchPredictionOutput;
     let persistedPredictionId = 'current-' + generatedAt + '-' + row.signalId + '-' + horizon;
