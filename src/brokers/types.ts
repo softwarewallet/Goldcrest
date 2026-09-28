@@ -323,15 +323,6 @@ export interface BrokerCredentialStatus {
   maskedClientId?: string;
   maskedClientSecret?: string;
   maskedAccessToken?: string;
-  maskedTotpSecret?: string;
-  maskedPin?: string;
-  maskedAppName?: string;
-  maskedAppSource?: string;
-  maskedUserId?: string;
-  maskedPassword?: string;
-  maskedUserKey?: string;
-  maskedEncryptionKey?: string;
-  maskedClientCode?: string;
   status: BrokerStatus;
   lastTestResult?: ConnectionTestResult;
 }
