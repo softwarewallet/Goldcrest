@@ -1,4 +1,4 @@
-import { ForexSessionState, IndianSessionState } from './types';
+import { ForexSessionState } from './types';
 
 /**
  * Calculates current active Forex trading sessions based on UTC time.
