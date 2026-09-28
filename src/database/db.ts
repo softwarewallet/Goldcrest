@@ -732,11 +732,52 @@ function initSchema(db: Database) {
 
     CREATE INDEX IF NOT EXISTS idx_live_trade_research_position
       ON live_trade_research(broker_position_id, lifecycle_status);
+
+    -- Phase 10: normalized, leakage-safe prediction outcome labels.
+    -- One signal may have multiple horizon labels; the composite key prevents
+    -- duplicate materialization while preserving the original live_trade_research row.
+    CREATE TABLE IF NOT EXISTS live_trade_research_labels (
+      signal_id TEXT NOT NULL,
+      label_version TEXT NOT NULL,
+      horizon TEXT NOT NULL,
+      label_source TEXT NOT NULL,
+      actual_direction TEXT,
+      forward_return_pct REAL,
+      profitable INTEGER,
+      realized_pnl REAL,
+      outcome_label TEXT,
+      entry_price REAL,
+      exit_price REAL,
+      stop_loss REAL,
+      take_profit REAL,
+      stop_hit INTEGER,
+      target_hit INTEGER,
+      mfe_pnl REAL,
+      mae_pnl REAL,
+      holding_duration_ms INTEGER,
+      exit_timestamp INTEGER,
+      labeled_at INTEGER NOT NULL,
+      PRIMARY KEY(signal_id, label_version, horizon)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_live_trade_research_labels_symbol_horizon
+      ON live_trade_research_labels(horizon, actual_direction, profitable);
+
+    CREATE INDEX IF NOT EXISTS idx_live_trade_research_labels_labeled_at
+      ON live_trade_research_labels(labeled_at DESC);
   `;
 
   db.run(schemaSQL);
 
   // Safe migrations for preexisting DB
+  // Phase 10 prediction outcome columns. These are additive migrations only.
+  // They preserve all existing prediction history and make realized trade outcomes
+  // distinguishable from forward market-direction labels.
+  try { db.run('ALTER TABLE live_trade_research_predictions ADD COLUMN actual_profitable INTEGER;'); } catch {}
+  try { db.run('ALTER TABLE live_trade_research_predictions ADD COLUMN realized_pnl REAL;'); } catch {}
+  try { db.run('ALTER TABLE live_trade_research_predictions ADD COLUMN outcome_label TEXT;'); } catch {}
+  try { db.run('ALTER TABLE live_trade_research_predictions ADD COLUMN label_source TEXT;'); } catch {}
+
   const safeAddColumns = [
     'ALTER TABLE signals ADD COLUMN pair TEXT;',
     'ALTER TABLE signals ADD COLUMN timeframe TEXT;',
