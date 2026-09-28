@@ -508,6 +508,30 @@ function initSchema(db: Database) {
       status TEXT NOT NULL
     );
 
+    -- Durable three-hour LIVE account balance history.
+    -- Kept in the canonical schema so database initialization can seed and
+    -- clean the table before the balance-history service is first invoked.
+    CREATE TABLE IF NOT EXISTS account_balance_snapshots (
+      id TEXT PRIMARY KEY,
+      broker TEXT NOT NULL,
+      environment TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      captured_at INTEGER NOT NULL,
+      balance REAL,
+      equity REAL,
+      used_margin REAL,
+      free_margin REAL,
+      status TEXT NOT NULL,
+      error_message TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_account_balance_snapshots_captured_at
+      ON account_balance_snapshots(captured_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_account_balance_snapshots_broker_time
+      ON account_balance_snapshots(broker, captured_at DESC);
+
     -- 30. Autonomous Execution Idempotency
     CREATE TABLE IF NOT EXISTS execution_intents (
       idempotency_key TEXT PRIMARY KEY,
@@ -847,7 +871,7 @@ export async function getDatabaseStats() {
     'market_history_sync', 'market_period_stats',
     'signals', 'trades', 'positions', 'orders', 'economic_events',
     'risk_configs', 'system_settings', 'broker_accounts',
-    'broker_reconciliation_snapshots', 'execution_intents', 'execution_fill_observations', 'execution_fill_events',
+    'broker_reconciliation_snapshots', 'account_balance_snapshots', 'execution_intents', 'execution_fill_observations', 'execution_fill_events',
     'trade_traces', 'trade_trace_nodes', 'trade_notes', 'ml_storage_records',
     'live_trade_research'
   ];
