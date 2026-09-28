@@ -21,7 +21,6 @@ import {
   X
 } from 'lucide-react';
 import { TradingEnvironment, BrokerType } from '../brokers/types';
-import { OptionsTradingPanel } from './OptionsTradingPanel';
 import { AUTO_LIVE_POSITION_REFRESH_INTERVAL_MS, isVisibleAutoLiveSignal } from '../services/autoLiveTradePolicy';
 
 interface TradingHubProps {
@@ -440,7 +439,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
       updatedAt: number;
     } | null;
   }
-  const [activeTab, setActiveTab] = useState<'cockpit' | 'positions' | 'signals' | 'options' | 'execution' | 'research' | 'controls'>('cockpit');
+  const [activeTab, setActiveTab] = useState<'cockpit' | 'positions' | 'signals' | 'execution' | 'research' | 'controls'>('cockpit');
   const [autoStatus, setAutoStatus] = useState<AutoTradingStatusSnapshot | null>(null);
   const [autoStatusError, setAutoStatusError] = useState<string | null>(null);
   const [executionDiagnostics, setExecutionDiagnostics] = useState<ExecutionReconciliationDiagnostic[]>([]);
@@ -874,21 +873,6 @@ export const TradingHub: React.FC<TradingHubProps> = ({
   // measured from the time that pass completed. This prevents an old signal timestamp
   // from consuming the execution freshness window before the scanner has finished.
 
-  // Handle market change configuration
-  const handleMarketChange = (newMarket: string) => {
-    setMarket(newMarket);
-    if (newMarket === 'FOREX') {
-      setSymbol('EUR/USD');
-      setQuantity(10000);
-    } else if (newMarket === 'INDIAN_EQUITY') {
-      setSymbol('RELIANCE');
-      setQuantity(50);
-    } else {
-      setSymbol('NIFTY');
-      setQuantity(1);
-    }
-  };
-
   // Submit direct manual trade order
   const handleExecuteTrade = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1129,7 +1113,6 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         ['cockpit', 'Auto Live'],
         ['positions', 'Positions'],
         ['signals', 'Signals'],
-        ['options', 'NIFTY Options'],
         ['execution', 'Execution Log'],
         ['research', 'Prediction Research'],
         ['controls', 'Controls']
@@ -1247,13 +1230,6 @@ export const TradingHub: React.FC<TradingHubProps> = ({
         </div>
       )}
 
-      {activeTab === 'options' && (
-        <OptionsTradingPanel
-          isEmergencyHalted={isEmergencyHalted}
-          onPositionsRefresh={() => { void fetchRealPositions(true); }}
-          onLog={addLog}
-        />
-      )}
 
       {activeTab === 'execution' && (
         <div className="grid lg:grid-cols-2 gap-4">
