@@ -20,7 +20,7 @@ assert.match(audit, /byNewsRisk/);
 assert.match(audit, /byStrategy/);
 assert.match(audit, /profitFactor/);
 assert.match(audit, /expectancy/);
-assert.match(collection, /model: 'HISTORICAL_EDGE'/);
-assert.match(server, //api/live-trade-research/pair-accuracy-audit/);
+assert.match(collection, /model: 'BASELINE'/);\nassert.match(collection, /model: 'HISTORICAL_EDGE'/);\nassert.doesNotMatch(collection, /models:/);\nassert.match(fs.readFileSync('src/services/pairPredictionService.ts', 'utf8'), /fetchLiveForexNews/);\nassert.match(fs.readFileSync('src/services/pairPredictionService.ts', 'utf8'), /newsActiveHighImpactCount/);
+assert.match(server, /api\/live-trade-research\/pair-accuracy-audit/);
 
 console.log('PHASE 10 PAIR PREDICTION ACCURACY AUDIT: PASSED');

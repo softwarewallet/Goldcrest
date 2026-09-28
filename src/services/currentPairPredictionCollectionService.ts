@@ -55,7 +55,7 @@ export async function runCurrentPairPredictionCollectionCycle(
     const pairs = getSystemConfig().autoLiveForexPairs || [];
 
     const [baselinePredictions, historicalEdgePredictions] = await Promise.all([
-      generate({ pairs, horizon: '1D', models: ['BASELINE', 'HISTORICAL_EDGE'] }),
+      generate({ pairs, horizon: '1D', model: 'BASELINE' }),
       generate({ pairs, horizon: '1D', model: 'HISTORICAL_EDGE' })
     ]);
 
@@ -112,7 +112,7 @@ export function startCurrentPairPredictionCollectionScheduler(): void {
   liveRuntimeLog('INFO', 'CURRENT_PAIR_PREDICTION_COLLECTION_STARTED', {
     pollIntervalMs: pollMs,
     horizon: '1D',
-    model: 'BASELINE'
+    model: 'BASELINE + HISTORICAL_EDGE'
   });
 }
 
