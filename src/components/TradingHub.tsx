@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { TradingEnvironment, BrokerType } from '../brokers/types';
 import { AUTO_LIVE_POSITION_REFRESH_INTERVAL_MS, isVisibleAutoLiveSignal } from '../services/autoLiveTradePolicy';
+import PairPredictionAccuracyAuditPanel from './PairPredictionAccuracyAuditPanel';
 
 interface TradingHubProps {
   environment: TradingEnvironment;
@@ -1299,6 +1300,7 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
       {activeTab === 'research' && (
         <div className="space-y-4">
+          <PairPredictionAccuracyAuditPanel />
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
