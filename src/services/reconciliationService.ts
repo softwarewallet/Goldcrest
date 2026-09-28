@@ -99,7 +99,7 @@ export class ReconciliationService {
     return record;
   }
 
-  public async captureBrokerSnapshot(broker: 'CTRADER' | 'FIVE_PAISA'): Promise<any> {
+  public async captureBrokerSnapshot(broker: 'CTRADER'): Promise<any> {
     const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
     if (!adapter) return null;
     try {
@@ -139,7 +139,7 @@ export class ReconciliationService {
     }));
   }
 
-  public async getDailyLoss(broker:'CTRADER'|'FIVE_PAISA', currentBalance:number):Promise<number> {
+  public async getDailyLoss(broker:'CTRADER', currentBalance:number):Promise<number> {
     const adapter = brokerRegistry.getAdapter(broker, 'LIVE');
     if (typeof adapter.getDailyRealizedPnL === 'function') {
       try {
