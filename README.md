@@ -45,7 +45,7 @@ Trading in Forex and derivatives involves substantial risk of loss. Model output
 
 ## Multi-Broker Routing
 
-Both LIVE broker adapters remain active simultaneously. Goldcrest routes automatically by market: **FOREX → cTrader** and **Indian equity/futures/options → 5paisa**. No broker selection is required for normal operation. The header displays separate LIVE balance cards for cTrader and 5paisa.
+Goldcrest is a **Forex-only** trading terminal. cTrader is the sole broker integration and the sole execution/data route. No Indian-market integration or  API is part of the active application.
 
 ## Persistence
 
