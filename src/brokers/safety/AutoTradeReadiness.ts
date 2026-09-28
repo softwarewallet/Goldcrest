@@ -126,7 +126,7 @@ class AutoTradeReadinessService {
     }
 
     const signalAgeMs = Math.max(0, Date.now() - Number(signalTimestamp || 0));
-    const signalMaxAgeMs = order.market === 'FOREX' ? 300000 : 120000;
+    const signalMaxAgeMs = 300000;
     checks.signalFresh = signalAgeMs <= signalMaxAgeMs;
 
     checks.marketOpen = order.market === 'FOREX'
