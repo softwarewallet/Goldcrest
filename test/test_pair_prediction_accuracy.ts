@@ -8,7 +8,7 @@ const server = fs.readFileSync('server.ts', 'utf8');
 
 assert.match(prediction, /HISTORICAL_EDGE_V1/);
 assert.match(prediction, /lifecycle_status = 'CLOSED'/);
-assert.match(prediction, /signal_timestamp < signalTimestamp/);
+assert.match(prediction, /Number\(row\.signal_timestamp\) < signalTimestamp/);
 assert.match(prediction, /minimum 20 directional outcomes/);
 assert.match(prediction, /realized_pnl IS NOT NULL OR outcome IS NOT NULL/);
 assert.match(audit, /getPairPredictionAccuracyAudit/);
