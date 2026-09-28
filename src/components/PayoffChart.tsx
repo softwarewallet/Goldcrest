@@ -4,6 +4,7 @@ interface StrategyPayoff {
   payoffPoints: Array<{ underlyingPrice: number; pnl: number }>;
   maxLoss?: number;
   maxProfit?: number;
+  breakeven: number[];
 }
 
 interface PayoffChartProps {
