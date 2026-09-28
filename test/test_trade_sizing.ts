@@ -171,8 +171,7 @@ assert.equal(usdJpySellTargets.takeProfit, 157.25);
 console.log('Trade sizing tests passed.');
 
 updateSystemConfig({
-  maxTradeValueForexUsd: 200,
-  maxTradeValueIndianInr: 1_000_000
+  maxTradeValueForexUsd: 200
 });
 
 const gateAdapter: any = {
