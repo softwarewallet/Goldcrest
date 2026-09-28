@@ -6,7 +6,7 @@ type HistoryPeriod = 'TODAY' | 'CURRENT_MONTH' | 'PREVIOUS_MONTH' | 'CUSTOM';
 
 interface OrderHistoryRow {
   id: string;
-  broker: 'CTRADER' | 'FIVE_PAISA';
+  broker: 'CTRADER';
   environment: 'LIVE';
   symbol: string;
   openingDirection: 'BUY' | 'SELL';
@@ -47,9 +47,7 @@ function todayBounds(): { from: string; to: string } {
 
 const formatPrice = (value: number | null, symbol: string) => {
   if (value === null || !Number.isFinite(value)) return '—';
-  const digits = symbol.includes('/') || !['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(prefix => symbol.toUpperCase().startsWith(prefix))
-    ? 5
-    : 2;
+  const digits = symbol.includes('/') ? 5 : 3;
   return value.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 };
 
