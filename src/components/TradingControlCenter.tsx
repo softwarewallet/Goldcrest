@@ -221,6 +221,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
   const [goLiveValidation, setGoLiveValidation] = useState<any | null>(null);
   const [activeAutoLiveMonitorBusy, setActiveAutoLiveMonitorBusy] = useState<boolean>(false);
   const [activeAutoLiveMonitor, setActiveAutoLiveMonitor] = useState<any | null>(null);
+  const [ctraderApiMode, setCtraderApiMode] = useState<'LIVE' | 'DEMO'>('DEMO');
   const [ctraderFunctionalValidationBusy, setCtraderFunctionalValidationBusy] = useState<boolean>(false);
   const [ctraderFunctionalValidation, setCtraderFunctionalValidation] = useState<any | null>(null);
 
@@ -269,7 +270,8 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         forexPairsRes,
         signalsRes,
         newsRes,
-        balanceHistoryRes
+        balanceHistoryRes,
+        configRes
       ] = await Promise.all([
         fetch('/api/brokers/status', { cache: 'no-store' }).catch(() => null),
         fetch('/api/brokers/positions', { cache: 'no-store' }).catch(() => null),
@@ -282,8 +284,14 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
         fetch('/api/forex/pairs', { cache: 'no-store' }).catch(() => null),
         fetch('/api/signals/all', { cache: 'no-store' }).catch(() => null),
         fetch('/api/forex/news', { cache: 'no-store' }).catch(() => null),
-        fetch('/api/reports/account-balance-history?limit=1000', { cache: 'no-store' }).catch(() => null)
+        fetch('/api/reports/account-balance-history?limit=1000', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/config', { cache: 'no-store' }).catch(() => null)
       ]);
+
+      if (configRes?.ok) {
+        const config = await configRes.json();
+        if (config?.cTraderApiMode === 'LIVE' || config?.cTraderApiMode === 'DEMO') setCtraderApiMode(config.cTraderApiMode);
+      }
 
       if (autoTradingRes?.ok) {
         const nextStatus = await autoTradingRes.json();
@@ -1975,9 +1983,9 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded border border-slate-800">
-                  <span className="text-slate-400">Live Execution Authorized:</span>
+                  <span className="text-slate-400">Execution Authorization:</span>
                   <strong className={autoTradingStatus?.autonomousPermission ? 'text-emerald-400' : 'text-amber-400'}>
-                    {autoTradingStatus?.autonomousPermission ? 'YES' : 'NO'}
+                    {autoTradingStatus?.autonomousPermission ? `YES (${ctraderApiMode})` : 'NO'}
                   </strong>
                 </div>
               </div>
