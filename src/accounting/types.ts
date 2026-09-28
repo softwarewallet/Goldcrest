@@ -4,27 +4,17 @@
 
 export type CurrencyCode = 'USD' | 'INR';
 
-export type MarketTypeWithCurrency =
-  | 'FOREX'
-  | 'INDIAN_EQUITY'
-  | 'INDIAN_FUTURES'
-  | 'INDIAN_OPTIONS'
-  | 'INDIAN_INDEX';
+export type MarketTypeWithCurrency = 'FOREX';
 
 export const MARKET_CURRENCY_MAPPING: Record<string, CurrencyCode> = {
-  FOREX: 'USD',
-  INDIAN_EQUITY: 'INR',
-  INDIAN_FUTURES: 'INR',
-  INDIAN_OPTIONS: 'INR',
-  INDIAN_INDEX: 'INR',
+  FOREX: 'USD'
 };
 
 export function getNativeCurrencyForMarket(market: string): CurrencyCode {
   if (market in MARKET_CURRENCY_MAPPING) {
     return MARKET_CURRENCY_MAPPING[market];
   }
-  if (market.startsWith('INDIAN')) return 'INR';
-  return 'USD';
+  return MARKET_CURRENCY_MAPPING[market] || 'USD';
 }
 
 /**
@@ -107,7 +97,7 @@ export interface AccountBalanceWithContext {
   currency: CurrencyCode;
   balance: number;
   executionMode: 'LIVE';
-  accountType: 'FOREX_MARGIN' | 'INDIAN_EQUITY_DERIVATIVES';
+  accountType: 'FOREX_MARGIN';
   isSimulatedCapital: boolean;
   notice: string;
 }
