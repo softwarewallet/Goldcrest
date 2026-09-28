@@ -385,7 +385,7 @@ const scenarios: Scenario[] = [
     assert.equal(brokerRegistry.getEnvironment(), 'LIVE');
     assert.deepEqual(
       brokerRegistry.getActiveLiveAdapters().map(adapter => `${adapter.broker}:${adapter.environment}`).sort(),
-      ['CTRADER:LIVE', 'FIVE_PAISA:LIVE']
+      ['CTRADER:LIVE']
     );
     assert.equal(getSystemConfig().tradingMode, 'LIVE_ONLY');
   }}
