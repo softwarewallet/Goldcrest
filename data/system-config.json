@@ -2,17 +2,15 @@
   "cTraderApiMode": "DEMO",
   "defaultRiskPct": 1,
   "maxDailyLossPct": 25,
-  "maxOpenPositions": 40,
+  "maxOpenPositions": 50,
   "maxTradesPerDay": 20,
   "maxConsecutiveLosses": 3,
   "maxSpreadBps": 30,
   "signalCooldownMs": 60000,
   "eventProximityThresholdMinutes": 20,
-  "strikeDepth": 7,
-  "maxTradeValueForexUsd": 2000000,
-  "maxTradeValueIndianInr": 1000,
+  "maxTradeValueForexUsd": 5000000,
   "autoLiveMinSignalScore": 69,
-  "autoLiveMaxTradesPerPair": 5,
+  "autoLiveMaxTradesPerPair": 10,
   "forexStopLossPips": 20,
   "forexTakeProfitPips": 10,
   "autoLiveForexPairs": [
@@ -29,13 +27,6 @@
     "EUR/GBP",
     "GBP/JPY",
     "EUR/AUD"
-  ],
-  "autoLiveIndianUnderlyings": [
-    "NIFTY",
-    "BANKNIFTY",
-    "FINNIFTY",
-    "MIDCPNIFTY",
-    "SENSEX"
   ],
   "financialDisclaimer": "Trading in Forex and derivatives involves substantial risk of loss. Model outputs, signals, probabilities and technical analysis are estimates for informational and analytical purposes only and are not financial advice, guarantees, or assurances of future performance."
 }
