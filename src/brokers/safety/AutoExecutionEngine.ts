@@ -513,7 +513,12 @@ class AutoExecutionEngine {
       }
 
       // This is the last guarded application-level point before the live broker API call.
-      auditExecution('FINAL_ORDER_PACKET', { request: order });
+      // Record the authoritative quote age here so production TradeLog data can
+      // distinguish signal-analysis latency from final dispatch latency.
+      auditExecution('FINAL_ORDER_PACKET', {
+        request: order,
+        quoteAgeMs: Math.max(0, Date.now() - Number(gateParams.currentQuote.timestamp || 0))
+      });
       onReadyToSubmit?.();
 
       // Move the durable intent to IN_FLIGHT immediately before submission.
