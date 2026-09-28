@@ -135,8 +135,6 @@ export class BrokerRegistry {
     (this.adapters.get('CTRADER_LIVE') as CTraderLiveAdapter).updateCredentials(creds);
   }
 
-
-  }
 }
 
 export const brokerRegistry = new BrokerRegistry();
