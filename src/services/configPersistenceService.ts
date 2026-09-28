@@ -14,15 +14,12 @@ type PersistedConfigKey =
   | 'maxSpreadBps'
   | 'signalCooldownMs'
   | 'eventProximityThresholdMinutes'
-  | 'strikeDepth'
   | 'maxTradeValueForexUsd'
-  | 'maxTradeValueIndianInr'
   | 'autoLiveMinSignalScore'
   | 'autoLiveMaxTradesPerPair'
   | 'forexStopLossPips'
   | 'forexTakeProfitPips'
   | 'autoLiveForexPairs'
-  | 'autoLiveIndianUnderlyings'
   | 'financialDisclaimer';
 
 const SYSTEM_SETTING_MAP: ReadonlyArray<[string, PersistedConfigKey]> = [
@@ -38,15 +35,12 @@ const SYSTEM_SETTING_MAP: ReadonlyArray<[string, PersistedConfigKey]> = [
   ['MAX_SPREAD_BPS', 'maxSpreadBps'],
   ['SIGNAL_COOLDOWN_MS', 'signalCooldownMs'],
   ['EVENT_PROXIMITY_THRESHOLD_MINUTES', 'eventProximityThresholdMinutes'],
-  ['STRIKE_DEPTH', 'strikeDepth'],
   ['MAX_TRADE_VALUE_FOREX_USD', 'maxTradeValueForexUsd'],
-  ['MAX_TRADE_VALUE_INDIAN_INR', 'maxTradeValueIndianInr'],
   ['AUTO_LIVE_MIN_SIGNAL_SCORE', 'autoLiveMinSignalScore'],
   ['AUTO_LIVE_MAX_TRADES_PER_PAIR', 'autoLiveMaxTradesPerPair'],
   ['FOREX_STOP_LOSS_PIPS', 'forexStopLossPips'],
   ['FOREX_TAKE_PROFIT_PIPS', 'forexTakeProfitPips'],
   ['AUTO_LIVE_FOREX_PAIRS', 'autoLiveForexPairs'],
-  ['AUTO_LIVE_INDIAN_UNDERLYINGS', 'autoLiveIndianUnderlyings'],
   ['FINANCIAL_DISCLAIMER', 'financialDisclaimer']
 ];
 
@@ -59,9 +53,7 @@ const NUMERIC_KEYS = new Set<PersistedConfigKey>([
   'maxSpreadBps',
   'signalCooldownMs',
   'eventProximityThresholdMinutes',
-  'strikeDepth',
   'maxTradeValueForexUsd',
-  'maxTradeValueIndianInr',
   'autoLiveMinSignalScore',
   'autoLiveMaxTradesPerPair',
   'forexStopLossPips',
@@ -69,8 +61,7 @@ const NUMERIC_KEYS = new Set<PersistedConfigKey>([
 ]);
 
 const ARRAY_KEYS = new Set<PersistedConfigKey>([
-  'autoLiveForexPairs',
-  'autoLiveIndianUnderlyings'
+  'autoLiveForexPairs'
 ]);
 
 function serializeConfigValue(key: PersistedConfigKey, value: SystemConfig[PersistedConfigKey]): string {
