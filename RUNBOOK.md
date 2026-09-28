@@ -9,7 +9,7 @@
 - **Containment:** Restart the single production container.
 - **Action:** Preserve the durable /app/data volume.
 - **Verification:** /api/health returns 200 and /api/health/ready returns ready.
-- **Reconciliation:** On startup Goldcrest attempts LIVE cTrader and 5paisa reconciliation snapshots.
+- **Reconciliation:** On startup Goldcrest captures the cTrader LIVE reconciliation snapshot.
 - **Recovery:** Verify broker status and account balances before normal operator use.
 - **Audit:** Record release, restart time, and container logs.
 
@@ -75,7 +75,7 @@ For a consistent backup, stop the application briefly or use a SQLite-consistent
 After every deployment:
 1. Open the HTTPS application URL.
 2. Complete operator login.
-3. Confirm header shows cTrader and 5paisa.
+3. Confirm the header shows cTrader and the Forex production terminal.
 4. Confirm both balance cards display authoritative LIVE account data when broker sessions are valid.
 5. Open broker status and confirm each broker's actual connection state.
 6. Confirm LIVE_ONLY mode.
