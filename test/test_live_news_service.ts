@@ -106,8 +106,8 @@ try {
   assert.equal(live.pairRisk?.['EUR/USD']?.highImpactEvents?.length, 2);
   assert.match(live.pairRisk?.['EUR/USD']?.highImpactEvents?.[0]?.title || '', /ECB rate decision/i);
   assert.equal(live.pairRisk?.['EUR/USD']?.highImpactEvents?.[0]?.source, 'Finnhub Test');
-  assert.match(live.pairRisk?.['EUR/USD']?.highImpactEvents?.[1]?.title || '', /tariff announcement/i);
-  assert.equal(live.pairRisk?.['EUR/USD']?.highImpactEvents?.[1]?.source, 'Massive Test');
+  assert.match(live.pairRisk?.['EUR/USD']?.highImpactEvents?.[1]?.title || '', /Bank of England interest rate decision/i);
+  assert.equal(live.pairRisk?.['EUR/USD']?.highImpactEvents?.[1]?.source, 'Currents Test');
   assert.deepEqual(live.queryPairs, ['EUR/USD', 'GBP/USD']);
 
   assert.equal(requestedUrls.some(url => url.includes('newsapi.org')), false);
