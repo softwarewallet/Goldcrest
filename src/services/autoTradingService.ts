@@ -278,12 +278,23 @@ class AutoTradingService {
     return Math.max(1, Math.floor(Number(getSystemConfig().maxOpenPositions)));
   }
 
-  private async getAuthoritativePositionCapacity(): Promise<{ current: number; max: number; available: number }> {
+  private async getAuthoritativePositionCapacity(): Promise<{
+    current: number;
+    max: number;
+    available: number;
+    positions: Awaited<ReturnType<BrokerAdapter['getPositions']>>;
+  }> {
     const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
     const positions = await adapter.getPositions();
-    const current = Array.isArray(positions) ? positions.length : 0;
+    const normalizedPositions = Array.isArray(positions) ? positions : [];
+    const current = normalizedPositions.length;
     const max = this.getConfiguredMaxOpenPositions();
-    return { current, max, available: Math.max(0, max - current) };
+    return {
+      current,
+      max,
+      available: Math.max(0, max - current),
+      positions: normalizedPositions
+    };
   }
 
   private pauseForPositionLimit(current: number, max: number, reason: string): void {
@@ -1159,10 +1170,12 @@ return;
 
       const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
 
-      // Re-check the authoritative account position count inside the serialized
-      // execution lock. Another pair may have filled the final available slot
-      // earlier in this same cycle.
-      const positionsBeforeExecution = await adapter.getPositions();
+      // The authoritative position snapshot was fetched inside this serialized
+      // execution lock immediately above. Reuse that exact snapshot instead of
+      // issuing a second cTrader positions round-trip before quote preparation.
+      // This preserves the final account-capacity check while removing one
+      // broker request from every eligible Auto Live execution path.
+      const positionsBeforeExecution = systemPositionCapacity.positions;
       const maxOpenPositions = Math.max(
         1,
         Math.min(100, Math.floor(Number(config.maxOpenPositions)))
