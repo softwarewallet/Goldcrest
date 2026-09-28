@@ -37,10 +37,11 @@ export class LiveTradingGate {
     // Checks 2-5 are independent authoritative broker reads. Run them in
     // parallel so a slow cTrader account/instrument/connection request cannot
     // consume the quote-freshness budget one request at a time.
-    const [statusResult, accountResult, instrumentResult] = await Promise.allSettled([
+    const [statusResult, accountResult, instrumentResult, positionsResult] = await Promise.allSettled([
       adapter.getTradingStatus(),
       adapter.getAccount(),
-      adapter.getInstrument(params.order.symbol)
+      adapter.getInstrument(params.order.symbol),
+      adapter.getPositions()
     ]);
 
     const status = statusResult.status === 'fulfilled' ? statusResult.value : 'DISCONNECTED';
@@ -126,14 +127,8 @@ export class LiveTradingGate {
     // Never use the caller's earlier position count for 13B because Auto Live
     // analyzes pairs concurrently and the account can change between analysis
     // and this final dispatch boundary.
-    let authoritativePositions: Awaited<ReturnType<BrokerAdapter['getPositions']>> = [];
-    let positionsVerified = false;
-    try {
-      authoritativePositions = await adapter.getPositions();
-      positionsVerified = Array.isArray(authoritativePositions);
-    } catch {
-      positionsVerified = false;
-    }
+    const authoritativePositions = positionsResult.status === 'fulfilled' ? positionsResult.value : [];
+    const positionsVerified = Array.isArray(authoritativePositions);
 
     // Check 13: Per-pair simultaneous-position limit.
     // Multiple positions on the same Forex pair are intentionally allowed up
