@@ -61,13 +61,6 @@ export interface ForexSessionState {
   activeSessions: string[];
 }
 
-export interface IndianSessionState {
-  currentPhase: 'PRE_MARKET' | 'MARKET_OPEN' | 'REGULAR' | 'NEAR_CLOSE' | 'EXPIRY_SESSION' | 'CLOSED';
-  isOpen: boolean;
-  istTime: string;
-  minutesToClose: number;
-  isExpiryDay: boolean;
-}
 
 export interface TechnicalFeatures {
   ema9: number;
