@@ -412,8 +412,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             });
           }
         }
-        }
-        setMarketQuotes(liveQuotes);
+         setMarketQuotes(liveQuotes);
       }
 
       if (signalsRes?.ok) {
@@ -926,7 +925,7 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
             {accounts.map((acc, accIdx) => {
               const isForex = acc.currency === 'USD';
               const symbolPrefix = '              const formattedBalance = `${symbolPrefix}${formatNumber(acc.balance, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-              const formattedEquity = `${symbolPrefix}${formatNumber(acc.equity, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              const symbolPrefix = '$';
               const formattedMargin = `${symbolPrefix}${formatNumber(acc.availableMargin, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
               const formattedUnrealized = `${acc.unrealizedPnl >= 0 ? '+' : ''}${symbolPrefix}${formatNumber(acc.unrealizedPnl, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -1574,11 +1573,6 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               <div className="text-[10px] text-slate-500 mt-0.5">1.08% Gross Margin Util</div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-              <div className="text-slate-400 text-[10px]">
-              <div className="text-base font-bold text-white mt-1">₹24,600.00</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">4.92% Gross Margin Util</div>
-            </div>
 
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
               <div className="text-slate-400 text-[10px]">CURRENT DRAWDOWN</div>
