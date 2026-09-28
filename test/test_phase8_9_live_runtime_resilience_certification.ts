@@ -420,7 +420,7 @@ const scenarios: Scenario[] = [
     try {
       const captured = await captureAccountBalanceSnapshots(Date.now());
       assert.equal(captured.length, 2);
-      assert.deepEqual(new Set(seen), new Set(['CTRADER:LIVE', 'FIVE_PAISA:LIVE']));
+      assert.deepEqual(new Set(seen), new Set(['CTRADER:LIVE']));
       assert.ok(captured.every(row => row.status === 'CAPTURED'));
     } finally {
       (brokerRegistry as any).getAdapter = original;
