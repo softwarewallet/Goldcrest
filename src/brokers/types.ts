@@ -284,6 +284,12 @@ export interface AuditLogEntry {
 
 export interface LiveTradingGateResult {
   passed: boolean;
+  authoritativeSnapshot: {
+    status: BrokerStatus;
+    account: BrokerAccountInfo | null;
+    instrument: BrokerInstrument | null;
+    positions: NormalizedPosition[];
+  };
   checks: {
     liveEnvironmentSelected: boolean;
     liveBrokerConnected: boolean;
