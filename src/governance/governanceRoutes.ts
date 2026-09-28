@@ -42,7 +42,7 @@ governanceRouter.get('/status', async (_req: Request, res: Response) => {
 
   return res.json({
     environment: 'LIVE',
-    routingMode: 'AUTOMATIC_BY_MARKET',
+    routingMode: 'FOREX_ONLY',
     brokerRouting: {
       FOREX: 'CTRADER'
     },
