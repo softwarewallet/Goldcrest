@@ -135,7 +135,7 @@ governanceRouter.get('/live-health', async (_req: Request, res: Response) => {
     } catch (error: any) {
       return {
         id: `${broker.toLowerCase()}_live_api`,
-        name: broker === 'CTRADER' ? 'cTrader LIVE API' : '5paisa LIVE API',
+        name: 'cTrader LIVE API',
         status: 'ERROR',
         lastSuccessTimestamp: 0,
         latencyMs: 0,
