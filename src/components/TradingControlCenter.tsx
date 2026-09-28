@@ -924,8 +924,9 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {accounts.map((acc, accIdx) => {
               const isForex = acc.currency === 'USD';
-              const symbolPrefix = '              const formattedBalance = `${symbolPrefix}${formatNumber(acc.balance, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
               const symbolPrefix = '$';
+              const formattedBalance = `${symbolPrefix}${formatNumber(acc.balance, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              const formattedEquity = `${symbolPrefix}${formatNumber(acc.equity, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
               const formattedMargin = `${symbolPrefix}${formatNumber(acc.availableMargin, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
               const formattedUnrealized = `${acc.unrealizedPnl >= 0 ? '+' : ''}${symbolPrefix}${formatNumber(acc.unrealizedPnl, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -2016,6 +2017,4 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
       )}
     </div>
   );
-};;
-;
-              
+};
