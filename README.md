@@ -45,7 +45,7 @@ Trading in Forex and derivatives involves substantial risk of loss. Model output
 
 ## Multi-Broker Routing
 
-Goldcrest is a **Forex-only** trading terminal. cTrader is the sole broker integration and the sole execution/data route. No Indian-market integration or  API is part of the active application.
+Goldcrest is a **Forex-only** trading terminal. cTrader is the sole broker integration and the sole execution/data route. No Indian-market, options, or 5paisa integration is part of the active application.
 
 ## Persistence
 
