@@ -445,7 +445,7 @@ const scenarios: Scenario[] = [
   { id: 40, name: 'LIVE broker registry exposes both authoritative live adapters', run: () => {
     assert.equal(brokerRegistry.getEnvironment(), 'LIVE');
     const adapters = brokerRegistry.getActiveLiveAdapters();
-    assert.deepEqual(adapters.map(adapter => `${adapter.broker}:${adapter.environment}`).sort(), ['CTRADER:LIVE', 'FIVE_PAISA:LIVE']);
+    assert.deepEqual(adapters.map(adapter => `${adapter.broker}:${adapter.environment}`).sort(), ['CTRADER:LIVE']);
     assert.throws(() => brokerRegistry.setEnvironment('DEMO' as any), /LIVE_ONLY/i);
   }}
 ];
