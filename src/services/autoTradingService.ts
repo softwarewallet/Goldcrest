@@ -1061,10 +1061,11 @@ class AutoTradingService {
         strategyId: signal.strategyVersion
       });
 
-      // Persist the complete model state at decision time. This is research
-      // telemetry only and does not participate in the execution decision.
-      try {
-      await recordLiveTradeResearchSignal({
+      // Persisting the complete model state is research telemetry only.
+      // Do not block the live execution path on this database write: the
+      // authoritative quote is fetched later at the dispatch boundary and
+      // must retain as much of the 30-second freshness budget as possible.
+      void recordLiveTradeResearchSignal({
         signalId: signal.id,
         symbol: pair,
         timestamp: signal.timestamp,
@@ -1097,15 +1098,14 @@ class AutoTradingService {
           lifecycleCapture: 'SIGNAL_TIME',
           marketTrend: marketTrendContext
         }
-      });
-      } catch (researchError: any) {
+      }).catch((researchError: any) => {
         liveRuntimeLog('WARN', 'LIVE_TRADE_RESEARCH_TELEMETRY_FAILED', {
           signalId: signal.id,
           pair,
           operation: 'SIGNAL',
           error: researchError?.message || String(researchError)
         });
-      }
+      });
 
       // The signal engine has multiple directional categories (BUY, STRONG_BUY,
       // WATCH_BUY and their SELL equivalents). The scanner already normalizes
