@@ -98,7 +98,7 @@ add(61, 'Phase 9.4 certification contains exactly 61 scenarios', () => assert.eq
 
 for (const item of scenarios) {
   item.run();
-  console.log('[PASS ' + String(item.id).padStart(2, '0') + '/60] ' + item.name);
+  console.log('[PASS ' + String(item.id).padStart(2, '0') + '/61] ' + item.name);
 }
 
 console.log('PHASE 9.4 AUTO LIVE ACTIVATION CERTIFICATION: 61/61 PASSED');

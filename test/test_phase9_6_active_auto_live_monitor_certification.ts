@@ -105,7 +105,7 @@ add(39,'Production API mode false blocks monitor',()=>assert.equal(evaluateActiv
 add(40,'Locked execution gate blocks active monitor',()=>assert.equal(evaluateActiveAutoLiveMonitor({...valid,executionGateUnlocked:false}).status,'BLOCKED'));
 add(41,'No unresolved intents is mandatory',()=>assert.equal(evaluateActiveAutoLiveMonitor({...valid,noUnresolvedExecutionIntents:false}).status,'BLOCKED'));
 add(42,'Account consistency is mandatory',()=>assert.equal(evaluateActiveAutoLiveMonitor({...valid,cTraderAccountStateConsistent:false}).status,'BLOCKED'));
-add(43,'Phase 9.6 certification contains exactly 42 scenarios',()=>assert.equal(scenarios.length,43));
+add(43,'Phase 9.6 certification contains exactly 43 scenarios',()=>assert.equal(scenarios.length,43));
 
 for(const item of scenarios){item.run();console.log('[PASS '+String(item.id).padStart(2,'0')+'/43] '+item.name);}
 console.log('PHASE 9.6 ACTIVE AUTO LIVE MONITOR CERTIFICATION: 43/43 PASSED');
