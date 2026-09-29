@@ -470,28 +470,69 @@ const scenarios: Scenario[] = [
       service.runtimeRecoveryAttempt = 0;
       autoTradingService.stop('Phase 8.9 runtime recovery deadlock cleanup');
     }
+  }},
+
+  { id: 42, name: 'Auto Live runtime recovery uses adaptive 1m, 2m, then 5m backoff', run: () => {
+    const service = autoTradingService as any;
+    service.state = 'PAUSED_RUNTIME';
+    service.runtimeRecoveryAttempt = 0;
+    service.runtimeRecoveryTimer = null;
+
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalClearTimeout = globalThis.clearTimeout;
+    const delays: number[] = [];
+    (globalThis as any).setTimeout = (_fn: Function, delay: number) => {
+      delays.push(delay);
+      return { unref: () => {} } as any;
+    };
+    (globalThis as any).clearTimeout = () => {};
+    try {
+      service.scheduleRuntimeRecoveryAttempt();
+      assert.deepEqual(delays, [60_000]);
+
+      service.runtimeRecoveryTimer = null;
+      service.runtimeRecoveryAttempt = 1;
+      service.scheduleRuntimeRecoveryAttempt();
+      assert.deepEqual(delays, [60_000, 120_000]);
+
+      service.runtimeRecoveryTimer = null;
+      service.runtimeRecoveryAttempt = 2;
+      service.scheduleRuntimeRecoveryAttempt();
+      assert.deepEqual(delays, [60_000, 120_000, 300_000]);
+
+      service.runtimeRecoveryTimer = null;
+      service.runtimeRecoveryAttempt = 7;
+      service.scheduleRuntimeRecoveryAttempt();
+      assert.deepEqual(delays, [60_000, 120_000, 300_000, 300_000]);
+    } finally {
+      (globalThis as any).setTimeout = originalSetTimeout;
+      (globalThis as any).clearTimeout = originalClearTimeout;
+      service.runtimeRecoveryTimer = null;
+      service.runtimeRecoveryAttempt = 0;
+      service.state = 'STOPPED';
+    }
   }}
 ];
 
 async function run(): Promise<void> {
   console.log('===========================================================================');
   console.log('PHASE 8.9 — LIVE RUNTIME & OPERATIONAL RESILIENCE CERTIFICATION');
-  console.log('41 deterministic, broker-side-effect-free runtime resilience scenarios');
+  console.log('42 deterministic, broker-side-effect-free runtime resilience scenarios');
   console.log('===========================================================================');
 
-  assert.equal(scenarios.length, 41);
+  assert.equal(scenarios.length, 42);
   let passed = 0;
   for (const item of scenarios) {
     await item.run();
     passed += 1;
-    console.log(`[PASS ${String(item.id).padStart(2, '0')}/41] ${item.name}`);
+    console.log(`[PASS ${String(item.id).padStart(2, '0')}/42] ${item.name}`);
   }
 
-  assert.equal(passed, 41);
+  assert.equal(passed, 42);
   assert.equal(autoTradingService.getStatus().state, 'STOPPED');
   assert.equal(getSystemConfig().cTraderApiMode, 'DEMO');
   console.log('===========================================================================');
-  console.log('PHASE 8.9 CERTIFICATION: 41/41 PASSED');
+  console.log('PHASE 8.9 CERTIFICATION: 42/42 PASSED');
   console.log('Live broker order submission: NOT INVOKED');
   console.log('Execution-intent durable recovery: VERIFIED');
   console.log('Reconciliation failure/timeout behavior: VERIFIED');
