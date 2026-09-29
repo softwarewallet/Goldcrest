@@ -707,6 +707,8 @@ export interface CTraderOrderSubmission {
   status: 'ACCEPTED' | 'FILLED' | 'REJECTED';
   executionPrice?: number;
   executedVolume?: number;
+  stopLoss?: number;
+  takeProfit?: number;
   raw: any;
 }
 
@@ -721,6 +723,9 @@ export async function submitLiveCTraderOrder(
   stopLoss: number | undefined,
   takeProfit: number | undefined,
   clientOrderId: string,
+  stopLossPips?: number,
+  takeProfitPips?: number,
+  pipSize?: number,
   clientId: string,
   clientSecret: string,
   accessToken: string,
@@ -770,8 +775,25 @@ export async function submitLiveCTraderOrder(
 
       if (orderType === 'LIMIT' && price !== undefined) payload.limitPrice = price;
       if (orderType === 'STOP' && price !== undefined) payload.stopPrice = price;
-      if (stopLoss !== undefined && stopLoss > 0) payload.stopLoss = stopLoss;
-      if (takeProfit !== undefined && takeProfit > 0) payload.takeProfit = takeProfit;
+
+      // cTrader MARKET orders must use relative protection distances rather
+      // than absolute SL/TP prices. Relative protection is evaluated from the
+      // actual fill price, so 10 pips remains 10 pips even when execution
+      // slips from the quote. cTrader encodes relative price distance in
+      // 1/100000 of a price unit.
+      const hasRelativeProtection = Number.isFinite(Number(stopLossPips))
+        && Number(stopLossPips) > 0
+        && Number.isFinite(Number(takeProfitPips))
+        && Number(takeProfitPips) > 0
+        && Number.isFinite(Number(pipSize))
+        && Number(pipSize) > 0;
+      if (hasRelativeProtection) {
+        payload.relativeStopLoss = Math.round(Number(stopLossPips) * Number(pipSize) * 100000);
+        payload.relativeTakeProfit = Math.round(Number(takeProfitPips) * Number(pipSize) * 100000);
+      } else {
+        if (stopLoss !== undefined && stopLoss > 0) payload.stopLoss = stopLoss;
+        if (takeProfit !== undefined && takeProfit > 0) payload.takeProfit = takeProfit;
+      }
 
       return new Promise<CTraderOrderSubmission>((resolve, reject) => {
         let accepted: CTraderOrderSubmission | null = null;
@@ -891,6 +913,8 @@ export async function submitLiveCTraderOrder(
                   : 'ACCEPTED',
               executionPrice: Number.isFinite(executionPrice) && executionPrice > 0 ? executionPrice : undefined,
               executedVolume: executedVolumeRaw > 0 ? executedVolumeRaw / 100 : undefined,
+              stopLoss: Number.isFinite(Number(order.stopLoss)) && Number(order.stopLoss) > 0 ? Number(order.stopLoss) : undefined,
+              takeProfit: Number.isFinite(Number(order.takeProfit)) && Number(order.takeProfit) > 0 ? Number(order.takeProfit) : undefined,
               raw: msg
             };
 
@@ -925,6 +949,9 @@ export async function submitLiveCTraderOrder(
             price,
             stopLoss,
             takeProfit,
+            stopLossPips,
+            takeProfitPips,
+            pipSize,
             trailingStopLoss: true,
             clientOrderId: requestClientId,
             packet: {
