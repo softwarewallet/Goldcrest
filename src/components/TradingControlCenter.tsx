@@ -1208,12 +1208,13 @@ export const TradingControlCenter: React.FC<TradingControlCenterProps> = ({
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
               {[
                 ['FINNHUB', 'Finnhub'],
                 ['MASSIVE', 'Massive'],
                 ['CURRENTS', 'Currents'],
-                ['GOOGLE_NEWS_RSS', 'Google News RSS']
+                ['GOOGLE_NEWS_RSS', 'Google News RSS'],
+                ['GDELT', 'GDELT']
               ].map(([key, label]) => {
                 const d = newsSnapshot?.providerDiagnostics?.[key];
                 const status = d?.status || newsSnapshot?.providerStatus?.[key] || 'NO_RESULTS';
