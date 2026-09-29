@@ -2058,6 +2058,12 @@ app.get(['/api/signals', '/api/signals/all'], async (req: Request, res: Response
     // data, news, fresh quote and all execution safety gates before an order.
     const autoStatus = autoTradingService.getStatus();
     if (autoStatus.state === 'RUNNING') {
+      // While Auto Live is active, the Signals tab must display the signals
+      // produced by the same authoritative Auto Live cycle instead of starting
+      // a second market scan.
+      const autoSignals = autoTradingService.getLatestAutoLiveSignals();
+      if (autoSignals.length > 0) return res.json(autoSignals);
+
       const cached = scannerService.getCachedSignals(300_000);
       if (cached) return res.json(cached);
     }
