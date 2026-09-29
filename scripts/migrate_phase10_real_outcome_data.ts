@@ -2,6 +2,21 @@ import { executeQuery, executeRun } from '../src/database/db';
 import { materializeLiveTradeResearchTrainingDataset } from '../src/services/liveTradeResearchTrainingService';
 
 async function migrate(): Promise<void> {
+  // Additive migration for preexisting live_trade_research databases.
+  // These columns are part of the current schema but older database files may predate them.
+  for (const [name, type] of [
+    ['mfe_pnl', 'REAL'], ['mae_pnl', 'REAL'], ['holding_duration_ms', 'INTEGER'],
+    ['execution_status', 'TEXT'], ['execution_code', 'TEXT'], ['execution_reason', 'TEXT'],
+    ['broker_order_id', 'TEXT'], ['executed_entry_price', 'REAL'], ['executed_quantity', 'REAL'],
+    ['commission', 'REAL'], ['broker_status', 'TEXT'], ['execution_timestamp', 'INTEGER'],
+    ['realized_pnl', 'REAL'], ['exit_price', 'REAL'], ['exit_timestamp', 'INTEGER'], ['outcome', 'TEXT']
+  ] as const) {
+    const columns = await executeQuery<{ name: string }>('PRAGMA table_info(live_trade_research)');
+    if (!columns.some(column => column.name === name)) {
+      await executeRun(`ALTER TABLE live_trade_research ADD COLUMN ${name} ${type}`);
+    }
+  }
+
   await executeRun(`CREATE TABLE IF NOT EXISTS live_trade_research_labels (
     signal_id TEXT NOT NULL,
     label_version TEXT NOT NULL,

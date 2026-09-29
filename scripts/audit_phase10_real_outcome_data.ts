@@ -87,10 +87,7 @@ async function audit(): Promise<void> {
       GROUP BY outcome
       ORDER BY count DESC`
   );
-  const entryExitRows = await executeQuery<EntryExitAuditRow>(
-    `SELECT
-       SUM(CASE WHEN entry_price IS NOT NULL THEN 1 ELSE 0 END) AS entry_populated,
-       SUM(CASE WHEN exit_price IS NOT NULL THEN 1 ELSE 0 END) AS exit_populated
+  undefined
        FROM live_trade_research`
   );
   const eligibleRows = await executeQuery<CountRow>(
