@@ -156,8 +156,8 @@ assert.equal(normalizePriceToInstrumentDigits(210.70722, 3), 210.707);
 const gbpUsdBuyTargets = calculateForexPipTargets('BUY', 1.32273, 0.0001, 10, 10);
 assert.equal(gbpUsdBuyTargets.stopLoss, 1.32173);
 assert.equal(gbpUsdBuyTargets.takeProfit, 1.32373);
-assert.equal((1.32273 - gbpUsdBuyTargets.stopLoss) / 0.0001, 10);
-assert.equal((gbpUsdBuyTargets.takeProfit - 1.32273) / 0.0001, 10);
+assert.ok(Math.abs(((1.32273 - gbpUsdBuyTargets.stopLoss) / 0.0001) - 10) < 1e-9);
+assert.ok(Math.abs(((gbpUsdBuyTargets.takeProfit - 1.32273) / 0.0001) - 10) < 1e-9);
 
 const gbpUsdSellTargets = calculateForexPipTargets('SELL', 1.32273, 0.0001, 10, 10);
 assert.equal(gbpUsdSellTargets.stopLoss, 1.32373);
