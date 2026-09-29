@@ -1222,7 +1222,7 @@ export async function fetchCTraderPositionUnrealizedPnL(
   accessToken: string,
   isLive: boolean
 ): Promise<CTraderPositionUnrealizedPnL[]> {
-  return withAuthenticatedAccount(
+  return withAutoLiveAuthenticatedAccount(
     ctidTraderAccountId,
     clientId,
     clientSecret,
@@ -1260,7 +1260,7 @@ export async function fetchCTraderReconcileState(
   accessToken: string,
   isLive: boolean
 ): Promise<{ positions: any[]; orders: any[] }> {
-  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+  return withAutoLiveAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
     const payload = await sendAndAwait(ws, MSG_RECONCILE_REQ, { ctidTraderAccountId }, MSG_RECONCILE_RES, 15000);
     return {
       positions: Array.isArray(payload.position) ? payload.position : [],
