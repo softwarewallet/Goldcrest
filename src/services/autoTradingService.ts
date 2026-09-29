@@ -243,6 +243,7 @@ class AutoTradingService {
   private positionCapacityTimer: NodeJS.Timeout | null = null;
   private runtimeRecoveryTimer: NodeJS.Timeout | null = null;
   private runtimeFaultReason: string | null = null;
+  private runtimeRecoveryAttempt = 0;
   private readonly POSITION_CAPACITY_POLL_MS = AUTO_LIVE_POSITION_CAPACITY_POLL_MS;
   private readonly RUNTIME_RECOVERY_POLL_MS = AUTO_LIVE_RUNTIME_RECOVERY_POLL_MS;
   // Market analysis can run concurrently across the configured universe, but
@@ -397,6 +398,7 @@ class AutoTradingService {
   private pauseForRuntimeFault(reason: string): void {
     if (this.state === 'STOPPED' || this.state === 'BLOCKED') return;
     this.runtimeFaultReason = reason;
+    this.runtimeRecoveryAttempt = 0;
     this.state = 'PAUSED_RUNTIME';
     this.lastCycleResult = `Auto Live paused: live broker/runtime health is unavailable. ${reason}`;
     this.clearPositionCapacityPause();
@@ -408,16 +410,29 @@ class AutoTradingService {
       reason,
       recoveryPollIntervalMs: this.RUNTIME_RECOVERY_POLL_MS
     });
+    // Do not wait for the first polling interval after a transport failure.
+    // Start one recovery attempt immediately, then continue polling every 10s.
+    // This keeps Auto Live fail-closed while ensuring a transient cTrader/TLS
+    // outage does not leave the service stranded in PAUSED_RUNTIME.
+    void this.checkRuntimeRecoveryAndResume(false);
     if (!this.runtimeRecoveryTimer) {
       this.runtimeRecoveryTimer = setInterval(() => {
         void this.checkRuntimeRecoveryAndResume();
       }, this.RUNTIME_RECOVERY_POLL_MS);
-      this.runtimeRecoveryTimer.unref?.();
+      // Keep the recovery timer referenced while Auto Live is armed. A recovery
+      // timer must not disappear merely because it is the only active Auto Live
+      // timer after a broker transport failure.
     }
   }
 
   private async checkRuntimeRecoveryAndResume(runCycleAfterRecovery = true): Promise<void> {
     if (this.state !== 'PAUSED_RUNTIME' || this.cycleInFlight) return;
+    const attempt = ++this.runtimeRecoveryAttempt;
+    liveRuntimeLog('INFO', 'AUTO_TRADING_RUNTIME_RECOVERY_ATTEMPT', {
+      attempt,
+      reason: this.runtimeFaultReason,
+      pollIntervalMs: this.RUNTIME_RECOVERY_POLL_MS
+    });
     try {
       const capacity = await this.getAuthoritativePositionCapacity();
       if (capacity.available <= 0) {
@@ -436,6 +451,8 @@ class AutoTradingService {
       }
 
       const previousReason = this.runtimeFaultReason;
+      const recoveryAttempt = this.runtimeRecoveryAttempt;
+      this.runtimeRecoveryAttempt = 0;
       this.runtimeFaultReason = null;
       this.state = 'RUNNING';
       if (this.runtimeRecoveryTimer) {
@@ -445,6 +462,7 @@ class AutoTradingService {
       this.lastCycleResult = 'Auto Live resumed: live broker/runtime health has recovered and execution capacity is available.';
       liveRuntimeLog('INFO', 'AUTO_TRADING_RUNTIME_FAULT_RECOVERED', {
         previousReason,
+        recoveryAttempt,
         currentOpenPositions: capacity.current,
         maxOpenPositions: capacity.max,
         availableSlots: capacity.available
@@ -457,8 +475,13 @@ class AutoTradingService {
       });
       if (runCycleAfterRecovery) void this.runCycle();
     } catch (error: any) {
+      // Stay PAUSED_RUNTIME and keep the recovery loop alive. Every failed
+      // attempt is observable, and the next scheduled attempt will create a
+      // fresh cTrader transport rather than permanently stopping Auto Live.
       liveRuntimeLog('WARN', 'AUTO_TRADING_RUNTIME_RECOVERY_CHECK_FAILED', {
-        error: error?.message || String(error)
+        attempt,
+        error: error?.message || String(error),
+        nextAttemptInMs: this.RUNTIME_RECOVERY_POLL_MS
       });
     }
   }
@@ -649,6 +672,7 @@ class AutoTradingService {
     }
     this.clearPositionCapacityPause();
     this.runtimeFaultReason = null;
+    this.runtimeRecoveryAttempt = 0;
     if (this.runtimeRecoveryTimer) {
       clearInterval(this.runtimeRecoveryTimer);
       this.runtimeRecoveryTimer = null;
