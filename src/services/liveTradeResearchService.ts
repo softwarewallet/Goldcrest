@@ -166,6 +166,7 @@ export async function recordLiveTradeResearchSignal(signal: LiveTradeResearchSig
       'SIGNAL_EVALUATED',
       Date.now()
     ]
+  );
   await recordSignalEvidence({
     signalId: signal.signalId,
     symbol: signal.symbol,
@@ -236,6 +237,7 @@ export async function updateLiveTradeResearchQuote(params: {
       params.signalId
     ]
   );
+  await finalizeLivePriceEvidence(params.signalId);
 }
 
 export async function updateLiveTradeResearchExecution(execution: LiveTradeResearchExecution): Promise<void> {
