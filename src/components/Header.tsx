@@ -1,15 +1,12 @@
 import React from 'react';
-import { AlertOctagon, BarChart2, Database, Globe, RefreshCw, ShieldAlert } from 'lucide-react';
+import { AlertOctagon, BarChart2, Database, Globe, ShieldAlert } from 'lucide-react';
 import { ForexSessionState } from '../markets/common/types';
 import { BrokerType, TradingEnvironment } from '../brokers/types';
-import { BalanceDisplay } from './BalanceDisplay';
 
 interface HeaderProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   forexSessions: ForexSessionState;
-  onRefresh: () => void;
-  isRefreshing: boolean;
   onOpenDiagnostics: () => void;
   environment: TradingEnvironment;
   onRequestEnvironmentChange: (env: TradingEnvironment) => void;
@@ -23,8 +20,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   forexSessions,
-  onRefresh,
-  isRefreshing,
   onOpenDiagnostics,
   maskedAccount = '****',
   autoTradingStatus,
@@ -80,7 +75,6 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="text-[10px] text-emerald-400 font-bold font-mono mt-1">FOREX PRODUCTION TERMINAL</div>
           </div>
         </div>
-        <div className="shrink-0"><BalanceDisplay environment="LIVE" /></div>
         <div className="flex flex-col gap-1.5 min-w-[260px] shrink-0">
           <div className={`h-7 flex items-center gap-1.5 px-2.5 rounded border text-[10px] font-mono ${fxOpen ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
             <Globe className="w-3 h-3" />
