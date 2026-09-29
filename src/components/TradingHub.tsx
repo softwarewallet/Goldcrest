@@ -872,6 +872,65 @@ export const TradingHub: React.FC<TradingHubProps> = ({
     [plannedTrades]
   );
 
+  // Auto Live decisions are broker/runtime execution decisions, not signal
+  // generation results. Surface the latest pair-level gate decision here so a
+  // valid directional signal is not presented as executable when Auto Live has
+  // already blocked it (for example, because of a news blackout).
+  const getAutoLiveDecision = useCallback((signal: RealSignal): {
+    label: string;
+    detail: string;
+    tone: 'eligible' | 'blocked' | 'filtered' | 'pending';
+  } => {
+    const minimumScore = Number(autoStatus?.minSignalScore);
+    if (Number.isFinite(minimumScore) && signal.score < minimumScore) {
+      return {
+        label: 'SCORE FILTERED',
+        detail: `Score ${signal.score} < minimum ${minimumScore}`,
+        tone: 'filtered'
+      };
+    }
+
+    const actions = autoStatus?.lastActions || [];
+    const action = [...actions].reverse().find(item =>
+      (item.signalId && item.signalId === signal.id) ||
+      String(item.pair || '').toUpperCase() === String(signal.instrument || '').toUpperCase()
+    );
+
+    if (action) {
+      const result = String(action.result || '').toUpperCase();
+      if (result === 'BLOCKED' || result === 'PAUSED' || result === 'FILTERED' || result === 'NO_TRADE') {
+        return {
+          label: result === 'BLOCKED' && /news|blackout/i.test(action.reason || '')
+            ? 'NEWS BLOCKED'
+            : result,
+          detail: action.reason || 'Auto Live blocked this signal.',
+          tone: result === 'FILTERED' ? 'filtered' : 'blocked'
+        };
+      }
+      if (result === 'EXECUTED') {
+        return {
+          label: 'EXECUTED',
+          detail: action.orderId ? `Order ${action.orderId}` : 'Order submitted by Auto Live.',
+          tone: 'eligible'
+        };
+      }
+    }
+
+    if (!Number.isFinite(minimumScore) || signal.score >= minimumScore) {
+      return {
+        label: 'ELIGIBLE',
+        detail: 'Score passed; awaiting the latest Auto Live execution decision.',
+        tone: 'eligible'
+      };
+    }
+
+    return {
+      label: 'PENDING',
+      detail: 'Waiting for the latest Auto Live decision.',
+      tone: 'pending'
+    };
+  }, [autoStatus]);
+
   // All rows belong to the same completed scanner pass, so their displayed age is
   // measured from the time that pass completed. This prevents an old signal timestamp
   // from consuming the execution freshness window before the scanner has finished.
@@ -1226,10 +1285,43 @@ export const TradingHub: React.FC<TradingHubProps> = ({
 
       {activeTab === 'signals' && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-          <div className="flex flex-wrap justify-between gap-2"><div><div className="text-sm font-bold text-white font-mono">Actionable Signals</div><div className="text-[10px] text-slate-500">Scanned: <span className="text-cyan-300">{signalScanStats.total}</span> · Actionable: <span className="text-emerald-300">{signalScanStats.actionable}</span> · NO_TRADE: <span className="text-slate-400">{signalScanStats.noTrade}</span> · Errors: <span className="text-rose-300">{signalScanStats.errors}</span> · Auto Live minimum score: <span className="text-cyan-300">{autoStatus?.minSignalScore ?? '—'}</span></div></div><div className="flex gap-2 items-center"><span className="text-[11px] font-mono text-slate-400">Scan Age: <b className="text-cyan-300">{signalsScanCompletedAt ? formatAge(signalsScanCompletedAt) : 'N/A'}</b></span><button type="button" onClick={() => fetchRealSignals(false)} disabled={isLoadingSignals} className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">Refresh</button></div></div>
+          <div className="flex flex-wrap justify-between gap-2"><div><div className="text-sm font-bold text-white font-mono">Scanned Signals</div><div className="text-[10px] text-slate-500">Scanned: <span className="text-cyan-300">{signalScanStats.total}</span> · Directional: <span className="text-emerald-300">{signalScanStats.actionable}</span> · NO_TRADE: <span className="text-slate-400">{signalScanStats.noTrade}</span> · Errors: <span className="text-rose-300">{signalScanStats.errors}</span> · Auto Live minimum score: <span className="text-cyan-300">{autoStatus?.minSignalScore ?? '—'}</span></div><div className="text-[10px] text-slate-600 mt-1">A directional signal can still be blocked by Auto Live safety gates such as high-impact-news blackout, position limits, broker health, or risk controls.</div></div><div className="flex gap-2 items-center"><span className="text-[11px] font-mono text-slate-400">Scan Age: <b className="text-cyan-300">{signalsScanCompletedAt ? formatAge(signalsScanCompletedAt) : 'N/A'}</b></span><button type="button" onClick={() => fetchRealSignals(false)} disabled={isLoadingSignals} className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-950 text-slate-300 text-[11px] font-mono">Refresh</button></div></div>
           {triggerNotification && <div className={"p-3 rounded-lg border text-xs font-mono " + (triggerNotification.type === 'error' ? "border-rose-800 bg-rose-950/40 text-rose-300" : "border-emerald-800 bg-emerald-950/40 text-emerald-300")}>{triggerNotification.message}</div>}
-          <div className="overflow-x-auto"><table className="w-full text-xs font-mono"><thead><tr className="text-slate-500 border-b border-slate-800"><th className="py-2 text-left">Market</th><th>Symbol</th><th>Side</th><th>Strategy</th><th className="text-right">SL</th><th className="text-right">TP</th><th>Score</th><th>ML</th><th>Age</th><th>Action</th></tr></thead>
-          <tbody>{visiblePlannedTrades.map(signal => <tr key={signal.id} className="border-b border-slate-800/60"><td className="py-2 text-slate-500">{signal.market}</td><td className="text-white font-bold">{signal.instrument}</td><td className={signal.direction === 'BUY' ? "text-emerald-400" : "text-rose-400"}>{signal.direction}</td><td className="max-w-xs truncate" title={signal.reasons?.join(', ') || signal.strategy}>{signal.strategy}</td><td className="text-right text-rose-300">{signal.stopLoss?.toLocaleString() || 'N/A'}</td><td className="text-right text-emerald-300">{signal.target1?.toLocaleString() || 'N/A'}</td><td className="text-center">{signal.score}</td><td className="text-center text-emerald-400">{(signal.mlProbability * 100).toFixed(0)}%</td><td className="text-center text-cyan-300">{formatAge(signalsScanCompletedAt)}</td><td className="text-center"><button type="button" onClick={() => triggerSignalExecution(signal)} disabled={triggeringSignalId === signal.id} className="text-[10px] px-2.5 py-1 rounded bg-emerald-700 text-white disabled:opacity-50">{triggeringSignalId === signal.id ? 'Triggering...' : 'Trigger Now'}</button></td></tr>)}</tbody></table></div>
+          <div className="overflow-x-auto"><table className="w-full text-xs font-mono"><thead><tr className="text-slate-500 border-b border-slate-800"><th className="py-2 text-left">Market</th><th>Symbol</th><th>Side</th><th>Strategy</th><th className="text-right">SL</th><th className="text-right">TP</th><th>Score</th><th>ML</th><th>Age</th><th>Auto Live Gate</th><th>Action</th></tr></thead>
+          <tbody>{visiblePlannedTrades.map(signal => {
+            const autoLiveDecision = getAutoLiveDecision(signal);
+            const gateClass = autoLiveDecision.tone === 'eligible'
+              ? 'text-emerald-300 border-emerald-800 bg-emerald-950/30'
+              : autoLiveDecision.tone === 'filtered'
+                ? 'text-amber-300 border-amber-800 bg-amber-950/30'
+                : autoLiveDecision.tone === 'blocked'
+                  ? 'text-rose-300 border-rose-800 bg-rose-950/30'
+                  : 'text-slate-300 border-slate-700 bg-slate-950';
+            return (
+              <tr key={signal.id} className="border-b border-slate-800/60">
+                <td className="py-2 text-slate-500">{signal.market}</td>
+                <td className="text-white font-bold">{signal.instrument}</td>
+                <td className={signal.direction === 'BUY' ? "text-emerald-400" : "text-rose-400"}>{signal.direction}</td>
+                <td className="max-w-xs truncate" title={signal.reasons?.join(', ') || signal.strategy}>{signal.strategy}</td>
+                <td className="text-right text-rose-300">{signal.stopLoss?.toLocaleString() || 'N/A'}</td>
+                <td className="text-right text-emerald-300">{signal.target1?.toLocaleString() || 'N/A'}</td>
+                <td className="text-center">{signal.score}</td>
+                <td className="text-center text-emerald-400">{(signal.mlProbability * 100).toFixed(0)}%</td>
+                <td className="text-center text-cyan-300">{formatAge(signalsScanCompletedAt)}</td>
+                <td className="text-center">
+                  <div className={`inline-flex max-w-[260px] flex-col items-center rounded border px-2 py-1 ${gateClass}`} title={autoLiveDecision.detail}>
+                    <span className="text-[10px] font-bold">{autoLiveDecision.label}</span>
+                    <span className="max-w-[240px] truncate text-[9px] opacity-80">{autoLiveDecision.detail}</span>
+                  </div>
+                </td>
+                <td className="text-center">
+                  <button type="button" onClick={() => triggerSignalExecution(signal)} disabled={triggeringSignalId === signal.id} className="text-[10px] px-2.5 py-1 rounded bg-emerald-700 text-white disabled:opacity-50">
+                    {triggeringSignalId === signal.id ? 'Triggering...' : 'Trigger Now'}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}</tbody></table></div>
         </div>
       )}
 
