@@ -97,7 +97,11 @@ function researchPredictionPayload(row: ResearchFeatureRow, horizon: ResearchPre
       signalId: row.signalId,
       symbol: row.symbol,
       signalTimestamp: row.signalTimestamp,
-      direction: row.direction,
+      // Do not expose the current execution signal direction to the forward
+      // prediction model. That is the label-adjacent decision we are trying
+      // to forecast, and allowing the model to consume it causes signal echo
+      // and can create apparent direction "prediction" without independent
+      // forward evidence.
       score: row.score,
       marketRegime: row.marketRegime,
       session: row.session,
@@ -288,7 +292,6 @@ export class SignalDirectionBaselineModel implements PredictionModel {
   readonly predictionSource = 'LIVE_PAIR_FEATURES';
 
   predict(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon): ResearchPredictionOutput {
-    const sourceDirection = normalizeDirection(row.direction);
     const score = Number.isFinite(row.score) ? row.score : 0;
     const evidence: number[] = [];
 
@@ -348,13 +351,14 @@ export class SignalDirectionBaselineModel implements PredictionModel {
     const rsiEvidence = row.rsi == null ? 0 : clamp((row.rsi - 50) / 20, -1, 1);
     const macdEvidence = row.macdHistogram == null ? 0 : Math.tanh(row.macdHistogram * 1000);
 
-    const scoreBias = sourceDirection === 'UP' ? 0.05 : sourceDirection === 'DOWN' ? -0.05 : 0;
+    // Score is deliberately non-directional here. The forecast must be
+    // determined by independent market evidence rather than by the current
+    // BUY/SELL signal that is being evaluated.
     const composite = Math.max(-1, Math.min(1,
       priceComposite * 0.35 +
       structuralComposite * 0.45 +
       rsiEvidence * 0.08 +
       macdEvidence * 0.07 +
-      scoreBias +
       (score - 50) / 400
     ));
     // Require materially directional evidence before changing state. This keeps
@@ -366,7 +370,7 @@ export class SignalDirectionBaselineModel implements PredictionModel {
       direction,
       confidence,
       modelAgreement: evidence.length ? 1 - Math.min(1, Math.abs(structuralComposite - composite)) : 0.5,
-      reasoning: 'Deterministic live-pair baseline using available momentum, multi-timeframe, trend, structure, breakout, RSI/MACD and source-score evidence. Evidence=' + evidence.length + ', composite=' + composite.toFixed(3) + '.',
+      reasoning: 'Deterministic forward-direction baseline using independent momentum, multi-timeframe, trend, structure, breakout, RSI/MACD and non-directional score evidence. The current BUY/SELL signal is excluded from the directional forecast. Evidence=' + evidence.length + ', composite=' + composite.toFixed(3) + '.',
       invalidation: 'Prediction is research-only; invalidate when the current feature set materially changes. Do not use as an execution instruction.'
     };
   }
