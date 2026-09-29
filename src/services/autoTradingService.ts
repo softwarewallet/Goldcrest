@@ -1202,7 +1202,6 @@ class AutoTradingService {
       if (
         this.pendingStartAfterCycle
         && this.state === 'RUNNING'
-        && generation === this.cycleGeneration
       ) {
         this.pendingStartAfterCycle = false;
         this.lastCycleResult = 'Previous Auto Live cycle finished; starting the requested fresh cycle.';
