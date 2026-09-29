@@ -11,7 +11,7 @@ async function main(): Promise<void> {
   await executeRun(`CREATE TABLE IF NOT EXISTS live_trade_research_evidence_summaries (
     signal_id TEXT PRIMARY KEY, classification TEXT NOT NULL, reasons_json TEXT NOT NULL,
     max_favorable_move REAL, max_adverse_move REAL, captured_points INTEGER NOT NULL, classified_at INTEGER NOT NULL
-  `);
+  )`);
   const evidence = await executeQuery<{ count: number }>('SELECT COUNT(*) AS count FROM live_trade_research_price_evidence');
   const summaries = await executeQuery<{ count: number }>('SELECT COUNT(*) AS count FROM live_trade_research_evidence_summaries');
   console.log(JSON.stringify({
