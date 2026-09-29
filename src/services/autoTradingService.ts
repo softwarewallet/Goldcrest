@@ -246,6 +246,14 @@ class AutoTradingService {
   private runtimeRecoveryAttempt = 0;
   private readonly POSITION_CAPACITY_POLL_MS = AUTO_LIVE_POSITION_CAPACITY_POLL_MS;
   private readonly RUNTIME_RECOVERY_POLL_MS = AUTO_LIVE_RUNTIME_RECOVERY_POLL_MS;
+  // Self-healing broker recovery backoff. We retry gently so a broker/network
+  // outage does not create a request storm, while Auto Live remains armed.
+  // Attempt 1: 1 minute, attempt 2: 2 minutes, attempt 3+: every 5 minutes.
+  private readonly RUNTIME_RECOVERY_BACKOFF_MS = Object.freeze([
+    60_000,
+    120_000,
+    300_000
+  ]);
   // Market analysis can run concurrently across the configured universe, but
   // broker-side execution is serialized so two pairs cannot race the same
   // account-position/exposure snapshot and bypass the global safety limits.
@@ -410,22 +418,34 @@ class AutoTradingService {
       reason,
       recoveryPollIntervalMs: this.RUNTIME_RECOVERY_POLL_MS
     });
-    // Arm the recovery loop before the immediate attempt so a very fast
-    // successful recovery cannot race with timer creation and leave a stale
-    // polling timer behind.
-    if (!this.runtimeRecoveryTimer) {
-      this.runtimeRecoveryTimer = setInterval(() => {
-        void this.checkRuntimeRecoveryAndResume();
-      }, this.RUNTIME_RECOVERY_POLL_MS);
-      // Keep the recovery timer referenced while Auto Live is armed. A recovery
-      // timer must not disappear merely because it is the only active Auto Live
-      // timer after a broker transport failure.
-    }
-    // Do not wait for the first polling interval after a transport failure.
-    // Start one recovery attempt immediately, then continue polling every 10s.
-    // This keeps Auto Live fail-closed while ensuring a transient cTrader/TLS
-    // outage does not leave the service stranded in PAUSED_RUNTIME.
-    void this.checkRuntimeRecoveryAndResume(true);
+    // Schedule a bounded-backoff recovery attempt. Auto Live remains armed
+    // during the outage; only trade execution is paused. The retry cadence is
+    // 1 minute, then 2 minutes, then every 5 minutes until broker health
+    // returns.
+    this.scheduleRuntimeRecoveryAttempt();
+  }
+
+  private scheduleRuntimeRecoveryAttempt(): void {
+    if (this.state !== 'PAUSED_RUNTIME' || this.runtimeRecoveryTimer) return;
+
+    const index = Math.min(
+      this.runtimeRecoveryAttempt,
+      this.RUNTIME_RECOVERY_BACKOFF_MS.length - 1
+    );
+    const delayMs = this.RUNTIME_RECOVERY_BACKOFF_MS[index];
+
+    liveRuntimeLog('INFO', 'AUTO_TRADING_RUNTIME_RECOVERY_SCHEDULED', {
+      attempt: this.runtimeRecoveryAttempt + 1,
+      delayMs,
+      delayMinutes: delayMs / 60_000,
+      reason: this.runtimeFaultReason,
+      backoff: '1m -> 2m -> 5m -> 5m...'
+    });
+
+    this.runtimeRecoveryTimer = setTimeout(() => {
+      this.runtimeRecoveryTimer = null;
+      void this.checkRuntimeRecoveryAndResume(true);
+    }, delayMs);
   }
 
   private async checkRuntimeRecoveryAndResume(runCycleAfterRecovery = true): Promise<void> {
@@ -447,7 +467,7 @@ class AutoTradingService {
         this.runtimeFaultReason = null;
         this.state = 'PAUSED_LIMIT';
         if (this.runtimeRecoveryTimer) {
-          clearInterval(this.runtimeRecoveryTimer);
+          clearTimeout(this.runtimeRecoveryTimer);
           this.runtimeRecoveryTimer = null;
         }
         this.pauseForPositionLimit(
@@ -464,7 +484,7 @@ class AutoTradingService {
       this.runtimeFaultReason = null;
       this.state = 'RUNNING';
       if (this.runtimeRecoveryTimer) {
-        clearInterval(this.runtimeRecoveryTimer);
+        clearTimeout(this.runtimeRecoveryTimer);
         this.runtimeRecoveryTimer = null;
       }
       this.lastCycleResult = 'Auto Live resumed: live broker/runtime health has recovered and execution capacity is available.';
@@ -483,17 +503,18 @@ class AutoTradingService {
       });
       if (runCycleAfterRecovery) void this.runCycle();
     } catch (error: any) {
-      // Stay PAUSED_RUNTIME and keep the recovery loop alive. Every failed
-      // attempt is observable, and the next scheduled attempt will create a
-      // fresh cTrader transport rather than permanently stopping Auto Live.
-      // This check intentionally runs independently of the normal cycle lock:
-      // recovery must be able to clear a fault even when the failed cycle has
-      // not finished unwinding yet.
+      // Stay PAUSED_RUNTIME and keep the recovery loop alive. Each failed
+      // attempt advances the bounded backoff: 1m -> 2m -> 5m, then 5m
+      // repeatedly. This avoids hammering cTrader while guaranteeing that the
+      // operator does not need to restart Auto Live after a transient outage.
       liveRuntimeLog('WARN', 'AUTO_TRADING_RUNTIME_RECOVERY_CHECK_FAILED', {
         attempt,
         error: error?.message || String(error),
-        nextAttemptInMs: this.RUNTIME_RECOVERY_POLL_MS
+        nextAttemptInMs: this.RUNTIME_RECOVERY_BACKOFF_MS[
+          Math.min(attempt, this.RUNTIME_RECOVERY_BACKOFF_MS.length - 1)
+        ]
       });
+      this.scheduleRuntimeRecoveryAttempt();
     }
   }
 
@@ -685,7 +706,7 @@ class AutoTradingService {
     this.runtimeFaultReason = null;
     this.runtimeRecoveryAttempt = 0;
     if (this.runtimeRecoveryTimer) {
-      clearInterval(this.runtimeRecoveryTimer);
+      clearTimeout(this.runtimeRecoveryTimer);
       this.runtimeRecoveryTimer = null;
     }
     this.state = 'STOPPED';
@@ -767,7 +788,8 @@ class AutoTradingService {
     const marketGate = getAutoLiveMarketGate();
 
     if (this.state === 'PAUSED_RUNTIME') {
-      await this.checkRuntimeRecoveryAndResume();
+      // Runtime recovery owns its own adaptive backoff timer. Do not let the
+      // normal Auto Live cycle timer bypass the 1m -> 2m -> 5m cadence.
       return;
     }
 
