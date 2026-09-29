@@ -75,6 +75,9 @@ export function recordTradeRequest(params: {
   takeProfit?: number;
   trailingStopLoss: true;
   clientOrderId: string;
+  stopLossPips?: number;
+  takeProfitPips?: number;
+  pipSize?: number;
   packet: Record<string, unknown>;
 }): void {
   append({
