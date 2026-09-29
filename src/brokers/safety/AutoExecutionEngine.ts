@@ -303,12 +303,9 @@ class AutoExecutionEngine {
     if (order.price !== undefined && Number(order.price) > 0) {
       order.price = normalizePriceToInstrumentDigits(Number(order.price));
     }
-    if (order.stopLoss !== undefined && Number(order.stopLoss) > 0) {
-      order.stopLoss = normalizePriceToInstrumentDigits(Number(order.stopLoss));
-    }
-    if (order.takeProfit !== undefined && Number(order.takeProfit) > 0) {
-      order.takeProfit = normalizePriceToInstrumentDigits(Number(order.takeProfit));
-    }
+    // Do not apply Goldcrest's three-decimal execution-price normalization to
+    // Forex SL/TP. Protection levels retain instrument pip precision and are
+    // encoded as relative protections by the cTrader adapter.
     liveRuntimeLog('INFO', 'ORDER_PRICE_PRECISION_NORMALIZED', {
       broker,
       symbol: order.symbol,
