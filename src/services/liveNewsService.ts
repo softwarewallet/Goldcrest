@@ -1134,7 +1134,9 @@ async function fetchLiveForexNewsInternal(
       ? 'MASSIVE'
       : freshCurrents.length > 0
         ? 'CURRENTS'
-        : 'GOOGLE_NEWS_RSS';
+        : freshGoogleNewsRss.length > 0
+          ? 'GOOGLE_NEWS_RSS'
+          : 'GDELT';
 
   const snapshot: LiveNewsSnapshot = {
     source,
