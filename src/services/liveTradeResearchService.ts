@@ -1,5 +1,6 @@
 import { executeQuery, executeRun } from '../database/db';
 import { LiveNewsSnapshot } from './liveNewsService';
+import { recordSignalEvidence, finalizeLivePriceEvidence } from './livePriceEvidenceService';
 
 export interface LiveTradeResearchSignal {
   signalId: string;
@@ -166,6 +167,18 @@ export async function recordLiveTradeResearchSignal(signal: LiveTradeResearchSig
       Date.now()
     ]
   );
+  void recordSignalEvidence({
+    signalId: signal.signalId,
+    symbol: signal.symbol,
+    signalTimestamp: signal.timestamp,
+    quote: signal.quote ? {
+      bid: signal.quote.bid,
+      ask: signal.quote.ask,
+      spread: signal.quote.spread,
+      timestamp: signal.quote.timestamp,
+      source: 'CTRADER_LIVE'
+    } : null
+  });
 }
 
 export async function updateLiveTradeResearchQuote(params: {
@@ -266,6 +279,9 @@ export async function updateLiveTradeResearchExecution(execution: LiveTradeResea
       execution.signalId
     ]
   );
+  if (lifecycleStatus === 'OPEN') {
+    void finalizeLivePriceEvidence(execution.signalId).catch(() => undefined);
+  }
 }
 
 export async function getLiveTradeResearch(signalId?: string): Promise<any[]> {
@@ -359,4 +375,5 @@ export async function closeLiveTradeResearchOutcome(params: {
       params.signalId
     ]
   );
+  await finalizeLivePriceEvidence(params.signalId);
 }
