@@ -121,6 +121,38 @@ export async function getMissingEvidenceCheckpoints(signalId: string, signalTime
   return getDueEvidenceCheckpoints(signalTimestamp, executionTimestamp, now).filter(item => !done.has(item.checkpoint));
 }
 
+export async function captureDueLivePriceEvidence(
+  quoteFetcher: (symbol: string) => Promise<{ bid: number; ask: number; spread: number; timestamp: number; source?: string } | null>,
+  now = Date.now()
+): Promise<{ signals: number; points: number }> {
+  await ensureLivePriceEvidenceSchema();
+  const rows = await executeQuery<any>(`SELECT signal_id, symbol, signal_timestamp, execution_timestamp
+    FROM live_trade_research
+    WHERE lifecycle_status IN ('OPEN','CLOSED') AND execution_timestamp IS NOT NULL
+      AND execution_timestamp >= ?`, [now - 15 * 60_000]);
+  const symbols = [...new Set(rows.map(row => String(row.symbol).toUpperCase()))];
+  const quotes = new Map<string, any>();
+  for (const symbol of symbols) {
+    try { quotes.set(symbol, await quoteFetcher(symbol)); } catch { quotes.set(symbol, null); }
+  }
+  let points = 0;
+  for (const trade of rows) {
+    const missing = await getMissingEvidenceCheckpoints(
+      String(trade.signal_id), Number(trade.signal_timestamp),
+      trade.execution_timestamp == null ? null : Number(trade.execution_timestamp), now
+    );
+    for (const checkpoint of missing) {
+      await recordPriceEvidence({
+        signalId: String(trade.signal_id), symbol: String(trade.symbol),
+        checkpoint: checkpoint.checkpoint, phase: checkpoint.phase,
+        targetTimestamp: checkpoint.targetTimestamp, quote: quotes.get(String(trade.symbol).toUpperCase()) || null
+      });
+      points++;
+    }
+  }
+  return { signals: rows.length, points };
+}
+
 export async function finalizeLivePriceEvidence(signalId: string): Promise<void> {
   await ensureLivePriceEvidenceSchema();
   const rows = await executeQuery<any>(`SELECT r.signal_id, r.direction, r.signal_timestamp, r.execution_timestamp,
