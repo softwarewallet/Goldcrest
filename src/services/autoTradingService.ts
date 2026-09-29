@@ -149,29 +149,6 @@ class LiveForexSignalProvider implements ForexDataProvider {
     return quote;
   }
 
-  setQuote(
-    pair: string,
-    quote: Pick<NormalizedQuote, 'bid' | 'ask' | 'spread' | 'timestamp' | 'source' | 'status'>
-  ): void {
-    const mid = (Number(quote.bid) + Number(quote.ask)) / 2;
-    const pipSize = Math.max(Math.abs(Number(quote.ask) - Number(quote.bid)) / Math.max(Number(quote.spread), 1), 0.00001);
-    this.quotes.set(pair, {
-      pair,
-      timestamp: Number(quote.timestamp),
-      bid: Number(quote.bid),
-      ask: Number(quote.ask),
-      spreadPips: Number(quote.spread),
-      digits: pipSize < 0.001 ? 5 : 3,
-      pipSize,
-      changePips24h: 0,
-      changePercent24h: 0,
-      high24h: mid,
-      low24h: mid,
-      provider: quote.source || 'CTRADER_LIVE',
-      dataStatus: quote.status === 'FRESH' ? 'LIVE' : 'STALE'
-    });
-  }
-
   getCandles(pair: string, timeframe: ForexTimeframe = '15M', limit = 80): ForexCandle[] {
     const rows = this.candles.get(`${pair}:${timeframe}`) || [];
     return rows.slice(Math.max(0, rows.length - limit));
@@ -293,6 +270,13 @@ class AutoTradingService {
     updatedAt: Date.now()
   };
   private lastExecution: AutoTradingExecutionStatus | null = null;
+  private readonly liveQuoteEvidenceCache = new Map<string, {
+    bid: number;
+    ask: number;
+    spread: number;
+    timestamp: number;
+    source: string;
+  }>();
   // Invalidates in-flight cycles after STOP or a fresh START. The current
   // broker request is allowed to finish cleanly, but no additional pair work
   // is started for an obsolete generation.
@@ -314,19 +298,9 @@ class AutoTradingService {
         // Auto Live scan/execution path. Evidence is telemetry and therefore
         // must remain non-authoritative when no cached quote is available.
         const result = await captureDueLivePriceEvidence(async symbol => {
-          try {
-            const quote = this.provider.getQuote(symbol);
-            if (Date.now() - Number(quote.timestamp) > LIVE_QUOTE_MAX_AGE_MS) return null;
-            return {
-              bid: Number(quote.bid),
-              ask: Number(quote.ask),
-              spread: Number(quote.spread),
-              timestamp: Number(quote.timestamp),
-              source: quote.source || 'CTRADER_LIVE_CACHE'
-            };
-          } catch {
-            return null;
-          }
+          const quote = this.liveQuoteEvidenceCache.get(String(symbol).toUpperCase());
+          if (!quote || Date.now() - Number(quote.timestamp) > LIVE_QUOTE_MAX_AGE_MS) return null;
+          return { ...quote };
         });
         if (result.points > 0) {
           liveRuntimeLog('INFO', 'LIVE_PRICE_EVIDENCE_CAPTURED', result);
@@ -1440,13 +1414,12 @@ return;
         : Promise.resolve(0);
 
       const quote = await adapter.getQuote(pair);
-      this.provider.setQuote(pair, {
+      this.liveQuoteEvidenceCache.set(pair.toUpperCase(), {
         bid: Number(quote.bid),
         ask: Number(quote.ask),
         spread: Number(quote.spread),
         timestamp: Number(quote.timestamp),
-        source: quote.source || 'CTRADER_LIVE',
-        status: quote.status
+        source: quote.source || 'CTRADER_LIVE'
       });
       if (quote.status !== 'FRESH' || Date.now() - quote.timestamp >= LIVE_QUOTE_MAX_AGE_MS) {
         const reason = 'Fresh broker quote unavailable at dispatch boundary.';
