@@ -91,6 +91,14 @@ class LiveForexSignalProvider implements ForexDataProvider {
 
   private candles = new Map<string, ForexCandle[]>();
   private quotes = new Map<string, ForexQuote>();
+  private candleRefreshedAt = new Map<string, number>();
+  private readonly candleRefreshTtlMs: Record<ForexTimeframe, number> = {
+    '5M': 20_000,
+    '15M': 60_000,
+    '1H': 300_000,
+    '4H': 900_000,
+    'Daily': 1_800_000
+  };
 
   async refreshPair(pair: string): Promise<void> {
     const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
@@ -98,9 +106,15 @@ class LiveForexSignalProvider implements ForexDataProvider {
       throw new Error('Authoritative cTrader historical market-data capability is unavailable.');
     }
 
+    const now = Date.now();
     const timeframes: ForexTimeframe[] = ['5M', '15M', '1H', '4H', 'Daily'];
+    const dueTimeframes = timeframes.filter(timeframe => {
+      const key = `${pair}:${timeframe}`;
+      const refreshedAt = this.candleRefreshedAt.get(key) || 0;
+      return !this.candles.has(key) || now - refreshedAt >= this.candleRefreshTtlMs[timeframe];
+    });
     const rows = await Promise.all(
-      timeframes.map(async timeframe => ({
+      dueTimeframes.map(async timeframe => ({
         timeframe,
         data: await adapter.getHistoricalCandles(pair, timeframe, 80)
       }))
@@ -110,8 +124,16 @@ class LiveForexSignalProvider implements ForexDataProvider {
       if (!Array.isArray(row.data) || row.data.length < 35) {
         throw new Error(`Insufficient live ${row.timeframe} candle history for ${pair}.`);
       }
-      this.candles.set(`${pair}:${row.timeframe}`, row.data as ForexCandle[]);
+      const key = `${pair}:${row.timeframe}`;
+      this.candles.set(key, row.data as ForexCandle[]);
+      this.candleRefreshedAt.set(key, now);
     }
+
+    liveRuntimeLog('INFO', 'LIVE_CANDLE_CACHE_REFRESH', {
+      pair,
+      refreshedTimeframes: dueTimeframes,
+      reusedTimeframes: timeframes.filter(timeframe => !dueTimeframes.includes(timeframe))
+    });
 
     // Pre-open trend preparation only needs historical candles. A live quote
     // is fetched again at the execution boundary, so opening another broker
@@ -1059,6 +1081,7 @@ class AutoTradingService {
   }
 
   private async evaluatePair(pair: string): Promise<void> {
+    const evaluationStartedAt = Date.now();
     try {
       this.setExecutionStatus({
         stage: 'SCANNING_MARKET',
@@ -1068,15 +1091,29 @@ class AutoTradingService {
         message: 'Scanning live market data for ' + pair + '.'
       });
       await this.provider.refreshPair(pair);
-      liveRuntimeLog('INFO', 'LIVE_DATA_REFRESHED', { pair });
+      const scanDurationMs = Date.now() - evaluationStartedAt;
+      liveRuntimeLog('INFO', 'LIVE_DATA_REFRESHED', { pair, scanDurationMs });
+      this.setExecutionStatus({
+        stage: 'ANALYZING_SIGNAL',
+        pair,
+        side: null,
+        signalId: null,
+        message: 'Analyzing ' + pair + ' signal after ' + Math.round(scanDurationMs / 1000) + 's market scan.'
+      });
+      const signalStartedAt = Date.now();
       const signal = await this.signalEngine.generateSignal(pair);
+      const signalAnalysisDurationMs = Date.now() - signalStartedAt;
+      liveRuntimeLog('INFO', 'SIGNAL_ANALYSIS_TIMING', { pair, signalId: signal.id, signalAnalysisDurationMs });
       let marketTrendContext: Awaited<ReturnType<typeof getMarketTrendContext>> | null = null;
       try {
+        const trendContextStartedAt = Date.now();
         marketTrendContext = await getMarketTrendContext(pair);
+        const trendContextDurationMs = Date.now() - trendContextStartedAt;
         liveRuntimeLog('INFO', 'MARKET_TREND_CONTEXT_CAPTURED', {
           pair,
           signalId: signal.id,
           direction: marketTrendContext.direction,
+          durationMs: trendContextDurationMs,
           returns: {
             days7: marketTrendContext.horizon.days7.returnPct,
             days30: marketTrendContext.horizon.days30.returnPct,
@@ -1103,7 +1140,7 @@ class AutoTradingService {
         pair,
         side: signalSide,
         signalId: signal.id,
-        message: 'Analyzing ' + pair + ' signal and execution conditions.'
+        message: 'Analyzing ' + pair + ' signal and execution conditions (' + Math.round((Date.now() - signalStartedAt) / 1000) + 's).'
       });
       liveRuntimeLog('INFO', 'SIGNAL_EVALUATED', {
         pair,
@@ -1633,10 +1670,13 @@ return;
           signalId: signal.id
         });
       } else {
-        this.finishExecution('REJECTED', pair + ' ' + order.side + ' was blocked or rejected before confirmed execution.', {
+        const rejectionDetail = [result.code, result.reason].filter(Boolean).join(': ');
+        const rejectionMessage = pair + ' ' + order.side + ' was blocked/rejected before confirmed execution. ' + (rejectionDetail || 'No rejection reason was returned.');
+        this.finishExecution('REJECTED', rejectionMessage, {
           pair,
           side: order.side,
-          signalId: signal.id
+          signalId: signal.id,
+          message: rejectionMessage
         });
       }
 
