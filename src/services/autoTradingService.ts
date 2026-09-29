@@ -15,6 +15,7 @@ import { BrokerAdapter, ConnectionTestResult, NormalizedQuote, OrderRequest } fr
 import { liveRuntimeLog, tradeAuditLog } from './liveRuntimeLog';
 import { calculateForexPipTargets, normalizePriceToThreeDigits, sizeForexOrderToMaxTradeValue } from '../brokers/safety/TradeSizing';
 import { recordLiveTradeResearchSignal, updateLiveTradeResearchQuote, updateLiveTradeResearchExecution } from './liveTradeResearchService';
+import { captureDueLivePriceEvidence } from './livePriceEvidenceService';
 import { AUTO_LIVE_POSITION_CAPACITY_POLL_MS, AUTO_LIVE_RUNTIME_RECOVERY_POLL_MS, getAutoLiveParallelTradePolicy, hasPairPositionCapacity } from './autoLiveTradePolicy';
 
 const LIVE_QUOTE_MAX_AGE_MS = 30_000;
@@ -200,6 +201,7 @@ class AutoTradingService {
   private provider = new LiveForexSignalProvider();
   private signalEngine = new ForexSignalEngine(undefined, this.provider);
   private timer: NodeJS.Timeout | null = null;
+  private livePriceEvidenceTimer: NodeJS.Timeout | null = null;
   private state: AutoTradingState = 'STOPPED';
   private lastCycleAt: number | null = null;
   private lastCycleResult: string | null = null;
@@ -239,6 +241,43 @@ class AutoTradingService {
   // to re-arm them. A fresh process still requires the configured execution
   // flags, preserving the production safety boundary.
   private hasCompletedExplicitStart = false;
+
+  private startLivePriceEvidenceCapture(): void {
+    if (this.livePriceEvidenceTimer) return;
+    const capture = async () => {
+      if (!['RUNNING', 'PAUSED_LIMIT', 'PAUSED_RUNTIME'].includes(this.state)) return;
+      try {
+        const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+        const result = await captureDueLivePriceEvidence(async symbol => {
+          const quote = await adapter.getQuote(symbol);
+          return {
+            bid: Number(quote.bid),
+            ask: Number(quote.ask),
+            spread: Number(quote.spread),
+            timestamp: Number(quote.timestamp),
+            source: quote.source || 'CTRADER_LIVE'
+          };
+        });
+        if (result.points > 0) {
+          liveRuntimeLog('INFO', 'LIVE_PRICE_EVIDENCE_CAPTURED', result);
+        }
+      } catch (error: any) {
+        liveRuntimeLog('WARN', 'LIVE_PRICE_EVIDENCE_CAPTURE_FAILED', {
+          error: error?.message || String(error)
+        });
+      }
+    };
+    this.livePriceEvidenceTimer = setInterval(() => { void capture(); }, 5_000);
+    this.livePriceEvidenceTimer.unref?.();
+    void capture();
+  }
+
+  private stopLivePriceEvidenceCapture(): void {
+    if (this.livePriceEvidenceTimer) {
+      clearInterval(this.livePriceEvidenceTimer);
+      this.livePriceEvidenceTimer = null;
+    }
+  }
 
   private isRequested(): boolean {
     // Development mode is not itself an execution request. Autonomous live
@@ -566,6 +605,7 @@ class AutoTradingService {
     this.timer = setInterval(() => {
       void this.runScheduledCycle();
     }, AUTO_INTERVAL_MS);
+    this.startLivePriceEvidenceCapture();
     this.timer.unref?.();
 
     return this.getStatus();
@@ -580,6 +620,7 @@ class AutoTradingService {
   }
 
   stop(reason = 'Operator stopped auto trading.'): AutoTradingStatus {
+    this.stopLivePriceEvidenceCapture();
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
