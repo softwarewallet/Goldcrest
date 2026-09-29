@@ -143,30 +143,37 @@ const xauReverseSizing = await sizeForexOrderToMaxTradeValue(
 assert.equal(xauReverseSizing.quantity, 1);
 assert.equal(xauReverseSizing.directQuantity, 1);
 
-// Goldcrest-wide price precision policy: every symbol is normalized to three
-// decimal places, regardless of broker-reported symbol precision.
+// Goldcrest still normalizes the executable order price to three decimals.
 assert.equal(normalizePriceToInstrumentDigits(157.71077, 3), 157.711);
 assert.equal(normalizePriceToInstrumentDigits(157.7104, 3), 157.71);
 assert.equal(normalizePriceToInstrumentDigits(1.123456, 5), 1.123);
 assert.equal(normalizePriceToInstrumentDigits(1.1239, 5), 1.124);
 assert.equal(normalizePriceToInstrumentDigits(210.70722, 3), 210.707);
 
-// Configurable Forex pip-margin regression tests.
-const gbpUsdBuyTargets = calculateForexPipTargets('BUY', 1.234, 0.0001, 20, 40);
-assert.equal(gbpUsdBuyTargets.stopLoss, 1.232);
-assert.equal(gbpUsdBuyTargets.takeProfit, 1.238);
+// Configurable Forex pip-margin regression tests. SL/TP must retain the
+// symbol's pip precision; they must not be rounded to Goldcrest's three-digit
+// executable-entry policy.
+const gbpUsdBuyTargets = calculateForexPipTargets('BUY', 1.32273, 0.0001, 10, 10);
+assert.equal(gbpUsdBuyTargets.stopLoss, 1.32173);
+assert.equal(gbpUsdBuyTargets.takeProfit, 1.32373);
+assert.equal((1.32273 - gbpUsdBuyTargets.stopLoss) / 0.0001, 10);
+assert.equal((gbpUsdBuyTargets.takeProfit - 1.32273) / 0.0001, 10);
 
-const gbpUsdSellTargets = calculateForexPipTargets('SELL', 1.234, 0.0001, 20, 40);
-assert.equal(gbpUsdSellTargets.stopLoss, 1.236);
-assert.equal(gbpUsdSellTargets.takeProfit, 1.23);
+const gbpUsdSellTargets = calculateForexPipTargets('SELL', 1.32273, 0.0001, 10, 10);
+assert.equal(gbpUsdSellTargets.stopLoss, 1.32373);
+assert.equal(gbpUsdSellTargets.takeProfit, 1.32173);
 
-const usdJpyBuyTargets = calculateForexPipTargets('BUY', 157.650, 0.01, 20, 40);
-assert.equal(usdJpyBuyTargets.stopLoss, 157.45);
-assert.equal(usdJpyBuyTargets.takeProfit, 158.05);
+const usdJpyBuyTargets = calculateForexPipTargets('BUY', 157.650, 0.01, 10, 10);
+assert.equal(usdJpyBuyTargets.stopLoss, 157.55);
+assert.equal(usdJpyBuyTargets.takeProfit, 157.75);
 
-const usdJpySellTargets = calculateForexPipTargets('SELL', 157.650, 0.01, 20, 40);
-assert.equal(usdJpySellTargets.stopLoss, 157.85);
-assert.equal(usdJpySellTargets.takeProfit, 157.25);
+const usdJpySellTargets = calculateForexPipTargets('SELL', 157.650, 0.01, 10, 10);
+assert.equal(usdJpySellTargets.stopLoss, 157.75);
+assert.equal(usdJpySellTargets.takeProfit, 157.55);
+
+const xauBuyTargets = calculateForexPipTargets('BUY', 2650.12, 0.1, 10, 10);
+assert.equal(xauBuyTargets.stopLoss, 2649.12);
+assert.equal(xauBuyTargets.takeProfit, 2651.12);
 
 console.log('Trade sizing tests passed.');
 
