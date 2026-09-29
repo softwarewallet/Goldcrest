@@ -87,9 +87,6 @@ async function audit(): Promise<void> {
       GROUP BY outcome
       ORDER BY count DESC`
   );
-  undefined
-       FROM live_trade_research`
-  );
   const eligibleRows = await executeQuery<CountRow>(
     "SELECT COUNT(*) AS count FROM live_trade_research WHERE lifecycle_status='CLOSED' AND signal_timestamp >= 0 AND signal_timestamp <= ?",
     [Date.now()]
