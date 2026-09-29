@@ -1,6 +1,9 @@
 import { executeQuery } from '../src/database/db';
 
 type CountRow = { count: number | string | null };
+type TimestampAuditRow = { valid: number | string | null; invalid: number | string | null; future: number | string | null };
+type PnlAuditRow = { populated: number | string | null; null: number | string | null };
+type EntryExitAuditRow = { entry_populated: number | string | null; exit_populated: number | string | null };
 type StatusRow = { lifecycle_status: string | null; count: number | string };
 type OutcomeRow = { outcome: string | null; count: number | string };
 type Audit = {
@@ -64,7 +67,7 @@ async function audit(): Promise<void> {
   const statusRows = await executeQuery<StatusRow>(
     'SELECT lifecycle_status, COUNT(*) AS count FROM live_trade_research GROUP BY lifecycle_status ORDER BY count DESC'
   );
-  const timestampRows = await executeQuery<CountRow>(
+  const timestampRows = await executeQuery<TimestampAuditRow>(
     `SELECT
        SUM(CASE WHEN typeof(signal_timestamp)='integer' AND signal_timestamp > 0 THEN 1 ELSE 0 END) AS valid,
        SUM(CASE WHEN signal_timestamp > ? THEN 1 ELSE 0 END) AS future,
@@ -72,7 +75,7 @@ async function audit(): Promise<void> {
      FROM live_trade_research`,
     [Date.now()]
   );
-  const pnlRows = await executeQuery<CountRow>(
+  const pnlRows = await executeQuery<PnlAuditRow>(
     `SELECT
        SUM(CASE WHEN realized_pnl IS NOT NULL THEN 1 ELSE 0 END) AS populated,
        SUM(CASE WHEN realized_pnl IS NULL THEN 1 ELSE 0 END) AS null
@@ -84,7 +87,7 @@ async function audit(): Promise<void> {
       GROUP BY outcome
       ORDER BY count DESC`
   );
-  const entryExitRows = await executeQuery<CountRow>(
+  const entryExitRows = await executeQuery<EntryExitAuditRow>(
     `SELECT
        SUM(CASE WHEN entry_price IS NOT NULL THEN 1 ELSE 0 END) AS entry_populated,
        SUM(CASE WHEN exit_price IS NOT NULL THEN 1 ELSE 0 END) AS exit_populated
