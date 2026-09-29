@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { classifyEvidence, getDueEvidenceCheckpoints } from '../src/services/livePriceEvidenceService';
 
-const due = getDueEvidenceCheckpoints(1_000, 20_000, 1_000 + 15 * 60_000 + 1);
+const due = getDueEvidenceCheckpoints(1_000, 20_000, 20_000 + 15 * 60_000 + 1);
 assert.ok(due.some(item => item.checkpoint === 'SIGNAL_PLUS_5S'));
 assert.ok(due.some(item => item.checkpoint === 'EXECUTION_PLUS_15M'));
 
