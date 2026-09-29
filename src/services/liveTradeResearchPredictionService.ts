@@ -235,7 +235,7 @@ export class HistoricalEdgePredictionModel implements PredictionModel {
   async predict(row: ResearchFeatureRow): Promise<ResearchPredictionOutput> {
     const history = await loadHistoricalEdgeRows(row.signalTimestamp);
     const candidate = normalizeDirection(row.direction);
-    const base = new SignalDirectionBaselineModel().predict(row);
+    const base = new SignalDirectionBaselineModel().predict(row, '1D');
     if (!history.length || candidate === 'FLAT') {
       return { ...base, reasoning: base.reasoning + ' Historical edge model had insufficient directional trade history and fell back to the deterministic baseline.' };
     }
