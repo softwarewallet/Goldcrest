@@ -429,7 +429,12 @@ class AutoTradingService {
   }
 
   private async checkRuntimeRecoveryAndResume(runCycleAfterRecovery = true): Promise<void> {
-    if (this.state !== 'PAUSED_RUNTIME' || this.cycleInFlight) return;
+    // Runtime recovery is deliberately independent of the normal cycle lock.
+    // A broker transport failure can put Auto Live into PAUSED_RUNTIME from
+    // inside a cycle while cycleInFlight is still true. Blocking recovery on
+    // that same flag would deadlock the service in PAUSED_RUNTIME until an
+    // operator manually restarts Auto Live.
+    if (this.state !== 'PAUSED_RUNTIME') return;
     const attempt = ++this.runtimeRecoveryAttempt;
     liveRuntimeLog('INFO', 'AUTO_TRADING_RUNTIME_RECOVERY_ATTEMPT', {
       attempt,
@@ -481,6 +486,9 @@ class AutoTradingService {
       // Stay PAUSED_RUNTIME and keep the recovery loop alive. Every failed
       // attempt is observable, and the next scheduled attempt will create a
       // fresh cTrader transport rather than permanently stopping Auto Live.
+      // This check intentionally runs independently of the normal cycle lock:
+      // recovery must be able to clear a fault even when the failed cycle has
+      // not finished unwinding yet.
       liveRuntimeLog('WARN', 'AUTO_TRADING_RUNTIME_RECOVERY_CHECK_FAILED', {
         attempt,
         error: error?.message || String(error),
