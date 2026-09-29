@@ -552,6 +552,178 @@ function sendAndAwait(
   });
 }
 
+const CTRADER_HEARTBEAT_PAYLOAD_TYPE = 51;
+const CTRADER_CONNECTION_TIMEOUT_MS = 12000;
+const CTRADER_HEARTBEAT_INTERVAL_MS = 10000;
+
+/**
+ * One persistent JSON WebSocket is maintained per cTrader environment/host.
+ *
+ * Auto Live performs many independent market-data reads. Opening a new
+ * WebSocket for every quote, candle, position, instrument, and risk check
+ * creates connection churn and can exhaust the cTrader connection path.
+ * cTrader recommends no more than one persistent connection per environment,
+ * heartbeat traffic, and queued request/response handling.
+ */
+class CTraderConnectionSession {
+  private ws: WebSocket | null = null;
+  private connecting: Promise<WebSocket> | null = null;
+  private queue: Promise<unknown> = Promise.resolve();
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private authenticatedClientKey: string | null = null;
+  private authenticatedAccountId: number | null = null;
+
+  constructor(private readonly host: string) {}
+
+  private resetSocket(socket?: WebSocket): void {
+    if (socket && this.ws !== socket) return;
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.ws = null;
+    this.connecting = null;
+    this.authenticatedClientKey = null;
+    this.authenticatedAccountId = null;
+  }
+
+  private async connect(clientId: string, clientSecret: string): Promise<WebSocket> {
+    const clientKey = `${clientId}\0${clientSecret}`;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.authenticatedClientKey === clientKey) {
+      return this.ws;
+    }
+    if (this.connecting) return this.connecting;
+
+    if (this.ws) {
+      try { this.ws.close(); } catch {}
+      this.resetSocket(this.ws);
+    }
+
+    const ws = new WebSocket(this.host);
+    this.connecting = new Promise<WebSocket>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { ws.close(); } catch {}
+        this.resetSocket(ws);
+        reject(new Error(`cTrader market-data connection timeout on ${this.host}`));
+      }, CTRADER_CONNECTION_TIMEOUT_MS);
+
+      ws.on('open', async () => {
+        if (settled) return;
+        try {
+          await sendAndAwait(ws, MSG_APP_AUTH_REQ, { clientId, clientSecret }, MSG_APP_AUTH_RES, 10000);
+          if (settled) return;
+          clearTimeout(timer);
+          settled = true;
+          this.ws = ws;
+          this.authenticatedClientKey = clientKey;
+          this.authenticatedAccountId = null;
+          this.heartbeatTimer = setInterval(() => {
+            if (this.ws === ws && ws.readyState === WebSocket.OPEN) {
+              try {
+                ws.send(JSON.stringify({ payloadType: CTRADER_HEARTBEAT_PAYLOAD_TYPE }));
+              } catch {
+                try { ws.close(); } catch {}
+              }
+            }
+          }, CTRADER_HEARTBEAT_INTERVAL_MS);
+          resolve(ws);
+        } catch (error) {
+          clearTimeout(timer);
+          settled = true;
+          try { ws.close(); } catch {}
+          this.resetSocket(ws);
+          reject(error);
+        }
+      });
+
+      ws.on('error', (error: any) => {
+        if (!settled) {
+          clearTimeout(timer);
+          settled = true;
+          this.resetSocket(ws);
+          reject(error || new Error(`cTrader market-data WebSocket error on ${this.host}`));
+          return;
+        }
+        if (this.ws === ws) {
+          this.resetSocket(ws);
+        }
+      });
+
+      ws.on('close', () => {
+        if (!settled) {
+          clearTimeout(timer);
+          settled = true;
+          this.resetSocket(ws);
+          reject(new Error(`cTrader market-data WebSocket closed before authentication on ${this.host}`));
+          return;
+        }
+        if (this.ws === ws) {
+          this.resetSocket(ws);
+        }
+      });
+    }).finally(() => {
+      this.connecting = null;
+    });
+
+    return this.connecting;
+  }
+
+  private async authorizeAccount(
+    ws: WebSocket,
+    accountId: number,
+    accessToken: string
+  ): Promise<void> {
+    if (this.authenticatedAccountId === accountId) return;
+    await sendAndAwait(
+      ws,
+      MSG_ACC_AUTH_REQ,
+      { ctidTraderAccountId: accountId, accessToken },
+      MSG_ACC_AUTH_RES,
+      10000
+    );
+    this.authenticatedAccountId = accountId;
+  }
+
+  async run<T>(
+    accountId: number,
+    clientId: string,
+    clientSecret: string,
+    accessToken: string,
+    fn: (ws: WebSocket) => Promise<T>
+  ): Promise<T> {
+    const task = this.queue.then(async () => {
+      const ws = await this.connect(clientId, clientSecret);
+      await this.authorizeAccount(ws, accountId, accessToken);
+      try {
+        return await fn(ws);
+      } catch (error) {
+        if (this.ws === ws && String((error as any)?.message || '').toLowerCase().includes('connection')) {
+          this.resetSocket(ws);
+          try { ws.close(); } catch {}
+        }
+        throw error;
+      }
+    });
+
+    this.queue = task.then(() => undefined, () => undefined);
+    return task;
+  }
+}
+
+const cTraderConnectionSessions = new Map<string, CTraderConnectionSession>();
+
+function getCTraderConnectionSession(host: string): CTraderConnectionSession {
+  let session = cTraderConnectionSessions.get(host);
+  if (!session) {
+    session = new CTraderConnectionSession(host);
+    cTraderConnectionSessions.set(host, session);
+  }
+  return session;
+}
+
 async function withAuthenticatedAccount<T>(
   accountId: number,
   clientId: string,
@@ -560,41 +732,27 @@ async function withAuthenticatedAccount<T>(
   isLive: boolean,
   fn: (ws: WebSocket) => Promise<T>
 ): Promise<T> {
-  // Route account-scoped reads through the same cTrader environment that
-  // authenticated the selected account. The previous implementation always
-  // used the LIVE transport when no explicit host override was configured,
-  // which caused CANT_ROUTE_REQUEST for non-live cTrader test accounts.
+  // Route account-scoped reads through the selected cTrader environment.
+  // The session is persistent and serializes account-scoped requests so Auto
+  // Live does not create a new WebSocket for every market-data operation.
   const hosts = getCTraderRequestHosts(isLive);
-
   let lastError: any = null;
 
   for (const host of hosts) {
-    const ws = new WebSocket(host);
-    const connected = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`cTrader market-data connection timeout on ${host}`)), 12000);
-      ws.on('open', () => {
-        clearTimeout(timer);
-        resolve();
-      });
-      ws.on('error', (err: any) => {
-        clearTimeout(timer);
-        reject(err || new Error(`cTrader market-data WebSocket error on ${host}`));
-      });
-    });
-
     try {
-      await connected;
-      await sendAndAwait(ws, MSG_APP_AUTH_REQ, { clientId, clientSecret }, MSG_APP_AUTH_RES);
-      await sendAndAwait(ws, MSG_ACC_AUTH_REQ, { ctidTraderAccountId: accountId, accessToken }, MSG_ACC_AUTH_RES);
-      return await fn(ws);
+      return await getCTraderConnectionSession(host).run(
+        accountId,
+        clientId,
+        clientSecret,
+        accessToken,
+        fn
+      );
     } catch (err: any) {
       lastError = err;
       const msg = String(err?.message || '');
       if (msg.includes('CANT_ROUTE_REQUEST') || msg.includes('Cannot route request')) {
         continue;
       }
-    } finally {
-      try { ws.close(); } catch {}
     }
   }
 
