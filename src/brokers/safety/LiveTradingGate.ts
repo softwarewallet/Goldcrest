@@ -229,7 +229,6 @@ export class LiveTradingGate {
     // The configured maxTradeValueForexUsd is the authoritative cTrader
     // protocol-volume ceiling; no alternate-broker sizing branch is permitted
     // here.
-    const config = getSystemConfig();
     const maxTradeValue = Number(config.maxTradeValueForexUsd);
     let maximumTradeValueCheckPassed =
       params.order.market === 'FOREX'
