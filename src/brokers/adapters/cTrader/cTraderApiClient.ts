@@ -723,13 +723,13 @@ export async function submitLiveCTraderOrder(
   stopLoss: number | undefined,
   takeProfit: number | undefined,
   clientOrderId: string,
-  stopLossPips?: number,
-  takeProfitPips?: number,
-  pipSize?: number,
   clientId: string,
   clientSecret: string,
   accessToken: string,
-  isLive: boolean
+  isLive: boolean,
+  stopLossPips?: number,
+  takeProfitPips?: number,
+  pipSize?: number
 ): Promise<CTraderOrderSubmission> {
   if (!Number.isFinite(quantity) || quantity <= 0) {
     throw new Error('cTrader order volume must be positive.');
