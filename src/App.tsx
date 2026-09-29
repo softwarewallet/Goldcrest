@@ -180,8 +180,6 @@ export default function App() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           forexSessions={forexSessions}
-          onRefresh={() => refreshTerminalData(true)}
-          isRefreshing={isRefreshing}
           onOpenDiagnostics={() => setShowDiagnostics(true)}
           environment={environment}
           onRequestEnvironmentChange={() => undefined}
