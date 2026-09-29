@@ -287,7 +287,7 @@ export class SignalDirectionBaselineModel implements PredictionModel {
   readonly modelVersion = 'PAIR_FEATURE_BASELINE_V2';
   readonly predictionSource = 'LIVE_PAIR_FEATURES';
 
-  predict(row: ResearchFeatureRow): ResearchPredictionOutput {
+  predict(row: ResearchFeatureRow, horizon: ResearchPredictionHorizon): ResearchPredictionOutput {
     const sourceDirection = normalizeDirection(row.direction);
     const score = Number.isFinite(row.score) ? row.score : 0;
     const evidence: number[] = [];
@@ -311,16 +311,61 @@ export class SignalDirectionBaselineModel implements PredictionModel {
     if (row.rsi != null) push((row.rsi - 50) / 20);
     if (row.macdHistogram != null) push(Math.tanh(row.macdHistogram * 1000));
 
-    const meanEvidence = evidence.length ? evidence.reduce((a, b) => a + b, 0) / evidence.length : 0;
-    const scoreBias = sourceDirection === 'UP' ? 0.15 : sourceDirection === 'DOWN' ? -0.15 : 0;
-    const composite = Math.max(-1, Math.min(1, meanEvidence * 0.75 + scoreBias + (score - 50) / 200));
-    const direction = composite > 0.12 ? 'UP' : composite < -0.12 ? 'DOWN' : 'FLAT';
+    // The prediction horizon must control which price horizons dominate the
+    // forecast. The previous implementation gave 5M/15M evidence the same weight
+    // as 4H/Daily evidence, so a small intraday reversal could flip a 1D prediction.
+    const horizonWeights: Record<ResearchPredictionHorizon, number[]> = {
+      '1D': [0.03, 0.07, 0.15, 0.30, 0.45],
+      '3D': [0.01, 0.04, 0.10, 0.30, 0.55],
+      '7D': [0.00, 0.02, 0.08, 0.25, 0.65]
+    };
+    const priceEvidence = [
+      row.priceChange5mPct == null ? null : Math.tanh(row.priceChange5mPct * 20),
+      row.priceChange15mPct == null ? null : Math.tanh(row.priceChange15mPct * 10),
+      row.priceChange1hPct == null ? null : Math.tanh(row.priceChange1hPct * 6),
+      row.priceChange4hPct == null ? null : Math.tanh(row.priceChange4hPct * 3),
+      row.priceChangeDailyPct == null ? null : Math.tanh(row.priceChangeDailyPct * 2)
+    ];
+    const weights = horizonWeights[horizon];
+    let weightedPrice = 0;
+    let weightTotal = 0;
+    for (let i = 0; i < priceEvidence.length; i++) {
+      if (priceEvidence[i] !== null) {
+        weightedPrice += priceEvidence[i]! * weights[i];
+        weightTotal += weights[i];
+      }
+    }
+    const priceComposite = weightTotal > 0 ? weightedPrice / weightTotal : 0;
+
+    // Structural evidence is slower-moving than raw short-term momentum.
+    const structuralEvidence = [
+      row.structureTrend === 'bullish' ? 1 : row.structureTrend === 'bearish' ? -1 : 0,
+      row.trendDirection === 'BULLISH' ? 1 : row.trendDirection === 'BEARISH' ? -1 : 0,
+      row.breakoutStatus === 'bullish_breakout' ? 1 : row.breakoutStatus === 'bearish_breakdown' ? -1 : 0,
+      row.mtfAlignmentScore == null ? 0 : clamp((row.mtfAlignmentScore - 10) / 10, -1, 1)
+    ];
+    const structuralComposite = structuralEvidence.reduce((a, b) => a + b, 0) / structuralEvidence.length;
+    const rsiEvidence = row.rsi == null ? 0 : clamp((row.rsi - 50) / 20, -1, 1);
+    const macdEvidence = row.macdHistogram == null ? 0 : Math.tanh(row.macdHistogram * 1000);
+
+    const scoreBias = sourceDirection === 'UP' ? 0.05 : sourceDirection === 'DOWN' ? -0.05 : 0;
+    const composite = Math.max(-1, Math.min(1,
+      priceComposite * 0.35 +
+      structuralComposite * 0.45 +
+      rsiEvidence * 0.08 +
+      macdEvidence * 0.07 +
+      scoreBias +
+      (score - 50) / 400
+    ));
+    // Require materially directional evidence before changing state. This keeps
+    // a 1D/3D/7D forecast from oscillating on small intraday noise.
+    const direction = composite > 0.18 ? 'UP' : composite < -0.18 ? 'DOWN' : 'FLAT';
     const confidence = clamp(0.5 + Math.abs(composite) * 0.45, 0.5, 0.95);
 
     return {
       direction,
       confidence,
-      modelAgreement: evidence.length ? 1 - Math.min(1, Math.abs(meanEvidence - composite)) : 0.5,
+      modelAgreement: evidence.length ? 1 - Math.min(1, Math.abs(structuralComposite - composite)) : 0.5,
       reasoning: 'Deterministic live-pair baseline using available momentum, multi-timeframe, trend, structure, breakout, RSI/MACD and source-score evidence. Evidence=' + evidence.length + ', composite=' + composite.toFixed(3) + '.',
       invalidation: 'Prediction is research-only; invalidate when the current feature set materially changes. Do not use as an execution instruction.'
     };
