@@ -87,9 +87,6 @@ export const Header: React.FC<HeaderProps> = ({
           <button id="btn_emergency_stop" onClick={onToggleKillSwitch} title={isEmergencyHalted ? 'Resume trading' : 'Emergency stop'} className={`w-9 h-9 rounded border flex items-center justify-center transition ${isEmergencyHalted ? 'bg-rose-600 border-rose-400 text-white animate-pulse' : 'bg-rose-950/40 border-rose-800 text-rose-300 hover:bg-rose-900/60'}`}>
             <AlertOctagon className="w-4 h-4" />
           </button>
-          <button id="btn_terminal_refresh" onClick={onRefresh} disabled={isRefreshing} title="Refresh Forex quotes and signals" className="w-9 h-9 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 flex items-center justify-center">
-            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-emerald-400' : 'text-slate-300'}`} />
-          </button>
           <button id="btn_open_diagnostics" onClick={onOpenDiagnostics} title="SQLite database and Forex diagnostics" className="w-9 h-9 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 flex items-center justify-center">
             <Database className="w-4 h-4 text-cyan-400" />
           </button>
