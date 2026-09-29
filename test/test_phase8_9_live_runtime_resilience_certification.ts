@@ -447,28 +447,51 @@ const scenarios: Scenario[] = [
     const adapters = brokerRegistry.getActiveLiveAdapters();
     assert.deepEqual(adapters.map(adapter => `${adapter.broker}:${adapter.environment}`).sort(), ['CTRADER:LIVE']);
     assert.throws(() => brokerRegistry.setEnvironment('DEMO' as any), /LIVE_ONLY/i);
+  }},
+
+  { id: 41, name: 'PAUSED_RUNTIME recovery is not deadlocked by an in-flight failed cycle', run: async () => {
+    const service = autoTradingService as any;
+    const original = brokerRegistry.getAdapter;
+    (brokerRegistry as any).getAdapter = () => ({
+      getPositions: async () => []
+    });
+    try {
+      service.state = 'PAUSED_RUNTIME';
+      service.cycleInFlight = true;
+      service.runtimeFaultReason = 'Client network socket disconnected before secure TLS connection was established';
+      await service.checkRuntimeRecoveryAndResume(false);
+      assert.equal(service.state, 'RUNNING');
+      assert.equal(service.runtimeFaultReason, null);
+      assert.equal(service.cycleInFlight, true);
+    } finally {
+      (brokerRegistry as any).getAdapter = original;
+      service.cycleInFlight = false;
+      service.runtimeFaultReason = null;
+      service.runtimeRecoveryAttempt = 0;
+      autoTradingService.stop('Phase 8.9 runtime recovery deadlock cleanup');
+    }
   }}
 ];
 
 async function run(): Promise<void> {
   console.log('===========================================================================');
   console.log('PHASE 8.9 — LIVE RUNTIME & OPERATIONAL RESILIENCE CERTIFICATION');
-  console.log('40 deterministic, broker-side-effect-free runtime resilience scenarios');
+  console.log('41 deterministic, broker-side-effect-free runtime resilience scenarios');
   console.log('===========================================================================');
 
-  assert.equal(scenarios.length, 40);
+  assert.equal(scenarios.length, 41);
   let passed = 0;
   for (const item of scenarios) {
     await item.run();
     passed += 1;
-    console.log(`[PASS ${String(item.id).padStart(2, '0')}/40] ${item.name}`);
+    console.log(`[PASS ${String(item.id).padStart(2, '0')}/41] ${item.name}`);
   }
 
-  assert.equal(passed, 40);
+  assert.equal(passed, 41);
   assert.equal(autoTradingService.getStatus().state, 'STOPPED');
   assert.equal(getSystemConfig().cTraderApiMode, 'DEMO');
   console.log('===========================================================================');
-  console.log('PHASE 8.9 CERTIFICATION: 40/40 PASSED');
+  console.log('PHASE 8.9 CERTIFICATION: 41/41 PASSED');
   console.log('Live broker order submission: NOT INVOKED');
   console.log('Execution-intent durable recovery: VERIFIED');
   console.log('Reconciliation failure/timeout behavior: VERIFIED');
