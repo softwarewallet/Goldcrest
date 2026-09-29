@@ -190,7 +190,7 @@ try {
           title: 'EUR/USD reacts to fresh Federal Reserve interest rate outlook',
           url: 'https://gdelt.example/fx',
           domain: 'GDELT Test',
-          seendate: new Date(Date.now() - 2 * 60_000).toISOString().replace(/[-:]/g, '').replace(/\.000Z$/, 'Z'),
+          seendate: new Date(Date.now() - 2 * 60_000).toISOString(),
           language: 'English',
           sourcecountry: 'United States'
         }]
