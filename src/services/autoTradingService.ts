@@ -92,7 +92,7 @@ class LiveForexSignalProvider implements ForexDataProvider {
   private candles = new Map<string, ForexCandle[]>();
   private quotes = new Map<string, ForexQuote>();
   private candleRefreshedAt = new Map<string, number>();
-  private readonly candleRefreshTtlMs: Record<ForexTimeframe, number> = {
+  private readonly candleRefreshTtlMs: Partial<Record<ForexTimeframe, number>> = {
     '5M': 20_000,
     '15M': 60_000,
     '1H': 300_000,
@@ -111,7 +111,7 @@ class LiveForexSignalProvider implements ForexDataProvider {
     const dueTimeframes = timeframes.filter(timeframe => {
       const key = `${pair}:${timeframe}`;
       const refreshedAt = this.candleRefreshedAt.get(key) || 0;
-      return !this.candles.has(key) || now - refreshedAt >= this.candleRefreshTtlMs[timeframe];
+      return !this.candles.has(key) || now - refreshedAt >= (this.candleRefreshTtlMs[timeframe] ?? 0);
     });
     const rows = await Promise.all(
       dueTimeframes.map(async timeframe => ({
