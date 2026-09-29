@@ -61,6 +61,7 @@ export interface LiveNewsSnapshot {
     MASSIVE: LiveNewsProviderStatus;
     CURRENTS: LiveNewsProviderStatus;
     GOOGLE_NEWS_RSS: LiveNewsProviderStatus;
+    GDELT: LiveNewsProviderStatus;
   };
   providerDiagnostics?: {
     FINNHUB: LiveNewsProviderDiagnostic;
