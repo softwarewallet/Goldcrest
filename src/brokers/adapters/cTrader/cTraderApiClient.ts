@@ -411,7 +411,10 @@ function sendAndAwait(
 ): Promise<any> {
   return new Promise((resolve, reject) => {
     const clientMsgId = `gc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const timer = setTimeout(() => reject(new Error(`cTrader request timeout: ${expectedPayloadType}`)), timeoutMs);
+    const timer = setTimeout(() => {
+      ws.removeEventListener('message', handler);
+      reject(new Error(`cTrader request timeout: ${expectedPayloadType}`));
+    }, timeoutMs);
     const handler = (event: any) => {
       try {
         const raw = typeof event?.data === 'string' ? event.data : (event?.data || event).toString();
@@ -1211,7 +1214,11 @@ export async function fetchLiveCTraderQuote(
   return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
     const clientMsgId = `quote_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     return new Promise<CTraderMarketQuote>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`Timeout waiting for cTrader spot event for ${symbol}`)), 3000);
+      const timer = setTimeout(() => {
+        ws.off?.('message', onMsg);
+        ws.removeEventListener?.('message', onMsg);
+        reject(new Error(`Timeout waiting for cTrader spot event for ${symbol}`));
+      }, 3000);
       const onMsg = (data: any) => {
         try {
           const raw = typeof data === 'string' ? data : (data?.data ?? data).toString();
