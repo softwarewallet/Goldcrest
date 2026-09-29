@@ -2051,6 +2051,17 @@ app.delete('/api/notes/:id', operatorAuthRequired, async (req: Request, res: Res
 // 7. Unified Signals
 app.get(['/api/signals', '/api/signals/all'], async (req: Request, res: Response) => {
   try {
+    // Auto Live is the authoritative execution workload. When it is running,
+    // never launch another full multi-pair historical scan from the UI and
+    // compete for the same persistent cTrader connection. Return the recent
+    // scanner snapshot instead; Auto Live independently revalidates market
+    // data, news, fresh quote and all execution safety gates before an order.
+    const autoStatus = autoTradingService.getStatus();
+    if (autoStatus.state === 'RUNNING') {
+      const cached = scannerService.getCachedSignals(120_000);
+      if (cached) return res.json(cached);
+    }
+
     const signals = await scannerService.getAllSignals();
     res.json(signals);
   } catch (err: any) {
