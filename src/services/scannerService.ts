@@ -84,6 +84,13 @@ function mapForexSignal(signal: any): TradingSignal {
 export class ScannerService {
   private forexProvider = new LiveForexProvider();
   private forexSignalEngine = new ForexSignalEngine(undefined, this.forexProvider);
+  private cachedSignals: TradingSignal[] = [];
+  private cachedSignalsAt = 0;
+
+  getCachedSignals(maxAgeMs = 120_000): TradingSignal[] | null {
+    if (!this.cachedSignals.length || Date.now() - this.cachedSignalsAt > maxAgeMs) return null;
+    return this.cachedSignals.map(signal => ({ ...signal }));
+  }
 
   async getForexScanner(pairs?: string[]) {
     const configuredPairs = pairs?.length ? pairs : getSystemConfig().autoLiveForexPairs;
@@ -140,6 +147,9 @@ export class ScannerService {
 
   async getAllSignals(): Promise<TradingSignal[]> {
     const forex = await this.getForexScanner(getSystemConfig().autoLiveForexPairs);
-    return forex.map(item => item.signal).filter(Boolean) as TradingSignal[];
+    const signals = forex.map(item => item.signal).filter(Boolean) as TradingSignal[];
+    this.cachedSignals = signals;
+    this.cachedSignalsAt = Date.now();
+    return signals;
   }
 }
