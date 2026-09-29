@@ -1,5 +1,6 @@
 import { ForexDataProvider } from '../markets/forex/provider';
 import { ForexCandle, ForexMarketStatus, ForexQuote, ForexTimeframe } from '../markets/forex/types';
+import { TradingSignal } from '../markets/common/types';
 import { FOREX_PAIRS, getForexPairConfig } from '../markets/forex/instruments';
 import { ForexSignalEngine } from '../markets/forex/signalEngine';
 import { getForexSessionState } from '../markets/common/session';
@@ -231,6 +232,7 @@ class AutoTradingService {
   private lastCycleAt: number | null = null;
   private lastCycleResult: string | null = null;
   private lastActions: AutoTradingStatus['lastActions'] = [];
+  private latestAutoLiveSignals: TradingSignal[] = [];
   private lastPreOpenPreparedAt: number | null = null;
   private preOpenTrendPairsEvaluated = 0;
   private preOpenNews: LiveNewsSnapshot | null = null;
@@ -529,6 +531,10 @@ class AutoTradingService {
       });
       this.scheduleRuntimeRecoveryAttempt();
     }
+  }
+
+  getLatestAutoLiveSignals(): TradingSignal[] {
+    return this.latestAutoLiveSignals.map(signal => ({ ...signal }));
   }
 
   getStatus(): AutoTradingStatus {
@@ -1226,6 +1232,10 @@ class AutoTradingService {
       });
       const signalStartedAt = Date.now();
       const signal = await this.signalEngine.generateSignal(pair);
+      this.latestAutoLiveSignals = [
+        ...this.latestAutoLiveSignals.filter(existing => existing.instrument !== signal.pair),
+        signal as unknown as TradingSignal
+      ].slice(-50);
       const signalAnalysisDurationMs = Date.now() - signalStartedAt;
       liveRuntimeLog('INFO', 'SIGNAL_ANALYSIS_TIMING', { pair, signalId: signal.id, signalAnalysisDurationMs });
       let marketTrendContext: Awaited<ReturnType<typeof getMarketTrendContext>> | null = null;
