@@ -12,7 +12,7 @@ export interface LiveNewsArticle {
   topics?: string[];
 }
 
-export type LiveNewsSource = 'FINNHUB' | 'MASSIVE' | 'CURRENTS' | 'GOOGLE_NEWS_RSS' | 'NONE';
+export type LiveNewsSource = 'FINNHUB' | 'MASSIVE' | 'CURRENTS' | 'GOOGLE_NEWS_RSS' | 'GDELT' | 'NONE';
 export type LiveNewsProviderStatus = 'LIVE' | 'NO_RESULTS' | 'STALE' | 'RATE_LIMITED' | 'UNCONFIGURED' | 'ERROR';
 
 export interface LiveNewsProviderDiagnostic {
@@ -67,6 +67,7 @@ export interface LiveNewsSnapshot {
     MASSIVE: LiveNewsProviderDiagnostic;
     CURRENTS: LiveNewsProviderDiagnostic;
     GOOGLE_NEWS_RSS: LiveNewsProviderDiagnostic;
+    GDELT: LiveNewsProviderDiagnostic;
   };
   pairRisk?: Record<string, {
     highImpactCount: number;
@@ -155,6 +156,8 @@ const FINNHUB_ENDPOINT = process.env.FINNHUB_BASE_URL || 'https://finnhub.io/api
 const MASSIVE_ENDPOINT = process.env.MASSIVE_BASE_URL || 'https://api.massive.com/v2/reference/news';
 const CURRENTS_ENDPOINT = process.env.CURRENTS_BASE_URL || 'https://api.currentsapi.services/v2/search';
 const GOOGLE_NEWS_RSS_ENDPOINT = process.env.GOOGLE_NEWS_RSS_BASE_URL || 'https://news.google.com/rss/search';
+const GDELT_ENDPOINT = process.env.GDELT_BASE_URL || 'https://api.gdeltproject.org/api/v2/doc/doc';
+const GDELT_MAX_ARTICLES = Math.max(10, Math.min(75, Number(process.env.GDELT_MAX_ARTICLES || 50)));
 
 const REQUEST_TIMEOUT_MS = Math.max(
   5_000,
@@ -704,6 +707,70 @@ async function fetchFromCurrents(pairs: string[]): Promise<{
   }
 }
 
+function buildGdeltQuery(pairs: string[]): string {
+  const aliases = new Set<string>();
+  for (const pair of pairs) {
+    const [base, quote] = pair.split('/');
+    for (const currency of [base, quote]) {
+      for (const alias of (CURRENCY_NEWS_ALIASES[currency] || [currency.toLowerCase()]).slice(0, 2)) {
+        aliases.add(alias);
+      }
+    }
+  }
+  const currencyBlock = aliases.size
+    ? '(' + [...aliases].map(alias => '"' + alias + '"').join(' OR ') + ')'
+    : '(forex OR "foreign exchange" OR "exchange rate" OR "central bank")';
+  return currencyBlock + ' AND (forex OR "foreign exchange" OR "exchange rate" OR "central bank" OR inflation OR "interest rate")';
+}
+
+async function fetchFromGdelt(pairs: string[]): Promise<{
+  status: LiveNewsProviderStatus;
+  articles: LiveNewsArticle[];
+  error?: string;
+  latencyMs?: number;
+}> {
+  const startedAt = Date.now();
+  try {
+    const url = new URL(GDELT_ENDPOINT);
+    url.searchParams.set('query', buildGdeltQuery(pairs));
+    url.searchParams.set('mode', 'artlist');
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('timespan', '2h');
+    url.searchParams.set('maxrecords', String(GDELT_MAX_ARTICLES));
+    url.searchParams.set('sort', 'datedesc');
+
+    const payload = await fetchJson(url);
+    const rows = Array.isArray(payload?.articles) ? payload.articles : [];
+    const articles = rows
+      .map((row: any) => ({
+        title: decodeXmlEntities(String(row?.title || '')),
+        url: decodeXmlEntities(String(row?.url || row?.url_mobile || '')),
+        source: decodeXmlEntities(String(row?.domain || row?.sourcecountry || 'GDELT')),
+        publishedAt: normalizePublishedAt(row?.seendate || row?.date),
+        sourceCountry: decodeXmlEntities(String(row?.sourcecountry || '')),
+        language: decodeXmlEntities(String(row?.language || '')),
+        bannerImage: decodeXmlEntities(String(row?.socialimage || '')) || null
+      }))
+      .filter((article: LiveNewsArticle) => Boolean(article.title && article.url))
+      .filter((article: LiveNewsArticle) => isFxNewsRelevant(article, pairs));
+
+    return {
+      status: articles.length > 0 ? 'LIVE' : 'NO_RESULTS',
+      articles: deduplicateArticles(articles),
+      latencyMs: Date.now() - startedAt
+    };
+  } catch (error: any) {
+    return {
+      status: Number(error?.status) === 429 ? 'RATE_LIMITED' : 'ERROR',
+      articles: [],
+      error: error?.name === 'AbortError'
+        ? 'GDELT news request timed out.'
+        : error?.message || String(error),
+      latencyMs: Date.now() - startedAt
+    };
+  }
+}
+
 function buildGoogleNewsRssQueries(pairs: string[]): string[] {
   const queries: string[] = [];
   for (const pair of pairs) {
@@ -885,6 +952,23 @@ async function fetchLiveForexNewsInternal(
   const freshCurrents = filterFreshArticles(currentsRes.articles, now);
   const freshGoogleNewsRss = filterFreshArticles(googleNewsRssRes.articles, now);
 
+  // GDELT is a keyless independent fallback. Only call it when every
+  // currently configured provider returned zero fresh articles.
+  let gdeltRes: Awaited<ReturnType<typeof fetchFromGdelt>> = {
+    status: 'NO_RESULTS',
+    articles: [],
+    latencyMs: 0
+  };
+  if (
+    freshFinnhub.length === 0
+    && freshMassive.length === 0
+    && freshCurrents.length === 0
+    && freshGoogleNewsRss.length === 0
+  ) {
+    gdeltRes = await fetchFromGdelt(queryPairs);
+  }
+  const freshGdelt = filterFreshArticles(gdeltRes.articles, now);
+
   const providerStatus: LiveNewsSnapshot['providerStatus'] = {
     FINNHUB: providerEffectiveStatus(
       finnhubRes.status,
@@ -905,6 +989,11 @@ async function fetchLiveForexNewsInternal(
       googleNewsRssRes.status,
       googleNewsRssRes.articles.length,
       freshGoogleNewsRss.length
+    ),
+    GDELT: providerEffectiveStatus(
+      gdeltRes.status,
+      gdeltRes.articles.length,
+      freshGdelt.length
     )
   };
 
@@ -912,7 +1001,8 @@ async function fetchLiveForexNewsInternal(
     finnhubRes.error,
     massiveRes.error,
     currentsRes.error,
-    googleNewsRssRes.error
+    googleNewsRssRes.error,
+    gdeltRes.error
   ].filter(Boolean) as string[];
 
   const providerDiagnostics: LiveNewsSnapshot['providerDiagnostics'] = {
@@ -959,7 +1049,19 @@ async function fetchLiveForexNewsInternal(
       latestRawArticleAt: latestArticleAt(googleNewsRssRes.articles),
       latestFreshArticleAt: latestArticleAt(freshGoogleNewsRss),
       error: googleNewsRssRes.error
-    }  };
+    },
+    GDELT: {
+      status: providerStatus.GDELT,
+      rawArticleCount: gdeltRes.articles.length,
+      freshArticleCount: freshGdelt.length,
+      staleArticleCount: Math.max(0, gdeltRes.articles.length - freshGdelt.length),
+      configured: true,
+      latencyMs: gdeltRes.latencyMs,
+      latestRawArticleAt: latestArticleAt(gdeltRes.articles),
+      latestFreshArticleAt: latestArticleAt(freshGdelt),
+      error: gdeltRes.error
+    }
+  };
 
   // Finnhub provides live market headlines. Massive supplies financial news
   // with ticker-tagged metadata, while Currents provides keyword/date search
@@ -972,7 +1074,7 @@ async function fetchLiveForexNewsInternal(
   ]);
   const useGoogleNewsBackup = primaryFreshArticles.length < GOOGLE_NEWS_RSS_MIN_PRIMARY_ARTICLES;
   const fetchedArticles = useGoogleNewsBackup
-    ? [...primaryFreshArticles, ...freshGoogleNewsRss]
+    ? [...primaryFreshArticles, ...freshGoogleNewsRss, ...freshGdelt]
     : primaryFreshArticles;
   const articles = deduplicateArticles(fetchedArticles).slice(0, 100);
 
