@@ -1209,13 +1209,13 @@ export abstract class CTraderBrokerAdapter extends BaseBrokerAdapter {
       order.stopLoss,
       order.takeProfit,
       clientOrderId,
-      order.stopLossPips,
-      order.takeProfitPips,
-      order.pipSize,
       this.config.clientId!,
       this.config.clientSecret!,
       this.config.accessToken!,
-      raw.isLive
+      raw.isLive,
+      order.stopLossPips,
+      order.takeProfitPips,
+      order.pipSize
     );
 
     if (submitted.status === 'REJECTED') {
