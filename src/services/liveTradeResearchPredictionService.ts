@@ -435,6 +435,7 @@ export async function createCurrentResearchPrediction(params: {
   const model = params.model || new SignalDirectionBaselineModel();
   const dedupeWindowMs = Math.max(0, Math.floor(Number(params.dedupeWindowMs ?? 5 * 60_000)));
   await ensurePredictionTable();
+  const currentFeatureHash = featureHash(params.row);
 
   if (dedupeWindowMs > 0) {
     const cutoff = Date.now() - dedupeWindowMs;
@@ -444,7 +445,7 @@ export async function createCurrentResearchPrediction(params: {
         ORDER BY predicted_at DESC LIMIT 1`,
       [params.row.symbol, model.modelVersion, horizon, cutoff]
     );
-    if (existing[0]) {
+    if (existing[0] && String(existing[0].feature_hash || '') === currentFeatureHash) {
       const row = existing[0];
       return {
         predictionId: String(row.prediction_id),
