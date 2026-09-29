@@ -30,6 +30,7 @@ export class LiveForexProvider implements LiveForexDataProvider {
 
   private candles = new Map<string, ForexCandle[]>();
   private quotes = new Map<string, ForexQuote>();
+  private candleRefreshedAt = new Map<string, number>();
 
   async refreshPair(pair: string): Promise<void> {
     const config = getForexPairConfig(pair);
@@ -40,8 +41,27 @@ export class LiveForexProvider implements LiveForexDataProvider {
     }
 
     const timeframes: ForexTimeframe[] = ['5M', '15M', '1H', '4H', 'Daily'];
+    // Reuse higher-timeframe scanner data so the UI does not monopolize the
+    // shared persistent cTrader connection while Auto Live is executing.
+    const refreshTtlMs: Partial<Record<ForexTimeframe, number>> = {
+      '5M': 20_000,
+      '15M': 60_000,
+      '1H': 300_000,
+      '4H': 900_000,
+      'Daily': 1_800_000
+    };
+    const now = Date.now();
+    const dueTimeframes = timeframes.filter(timeframe => {
+      const key = config.symbol + ':' + timeframe;
+      const cached = this.candles.get(key);
+      const latest = cached?.[cached.length - 1]?.timestamp || 0;
+      const refreshedAt = this.candleRefreshedAt.get(key) || 0;
+      const ttl = refreshTtlMs[timeframe] ?? 0;
+      return !cached || cached.length < 35 || now - refreshedAt >= ttl || now - latest >= ttl;
+    });
+
     const rows = await Promise.all(
-      timeframes.map(async timeframe => ({
+      dueTimeframes.map(async timeframe => ({
         timeframe,
         data: await adapter.getHistoricalCandles!(config.symbol, timeframe, 80)
       }))
@@ -72,7 +92,7 @@ export class LiveForexProvider implements LiveForexDataProvider {
       }
     }
 
-    const quoteCandles = rows.find(row => row.timeframe === '15M')?.data || [];
+    const quoteCandles = this.candles.get(config.symbol + ':15M') || [];
     const latestHistoricalClose = Array.isArray(quoteCandles) && quoteCandles.length > 0
       ? Number(quoteCandles[quoteCandles.length - 1].close)
       : 0;
@@ -107,6 +127,14 @@ export class LiveForexProvider implements LiveForexDataProvider {
       }));
 
       this.candles.set(`${config.symbol}:${row.timeframe}`, candles);
+      this.candleRefreshedAt.set(`${config.symbol}:${row.timeframe}`, now);
+    }
+
+    for (const timeframe of timeframes) {
+      const key = config.symbol + ':' + timeframe;
+      if (!this.candles.has(key)) {
+        throw new Error(`Live candle cache is empty for ${config.symbol} ${timeframe}.`);
+      }
     }
 
     const first = quoteCandles[0];
