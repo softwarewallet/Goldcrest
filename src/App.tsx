@@ -8,7 +8,6 @@ import { TradingControlCenter } from './components/TradingControlCenter';
 import { HistoryPage } from './components/HistoryPage';
 import { DatabaseExplorerPage } from './components/DatabaseExplorerPage';
 import { SettingsHub } from './components/SettingsHub';
-import { ForexTerminalDashboard } from './components/ForexTerminalDashboard';
 import { GlobalAppShell } from './components/GlobalAppShell';
 import { SignalModal } from './components/SignalModal';
 import { DiagnosticsModal } from './components/DiagnosticsModal';
@@ -18,7 +17,7 @@ import { getForexSessionState } from './markets/common/session';
 import { BrokerType, TradingEnvironment, OrderRequest } from './brokers/types';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('forex_terminal');
+  const [activeTab, setActiveTab] = useState<string>('settings');
   const [forexPairs, setForexPairs] = useState<any[]>([]);
   const [forexSessions, setForexSessions] = useState<ForexSessionState>(() => getForexSessionState(new Date()));
   const [signals, setSignals] = useState<TradingSignal[]>([]);
@@ -26,7 +25,7 @@ export default function App() {
   const [selectedSignal, setSelectedSignal] = useState<TradingSignal | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [loadingInitial, setLoadingInitial] = useState(false);
   const terminalRefreshInFlightRef = useRef<Promise<void> | null>(null);
 
   const [environment] = useState<TradingEnvironment>('LIVE');
@@ -36,7 +35,6 @@ export default function App() {
   const [balance, setBalance] = useState(0);
   const [isEmergencyHalted, setIsEmergencyHalted] = useState(false);
   const [autoTradingStatus, setAutoTradingStatus] = useState<any | null>(null);
-  const [activeForexUniverse, setActiveForexUniverse] = useState<string[]>([]);
   const [pendingOrder, setPendingOrder] = useState<OrderRequest | null>(null);
 
   useEffect(() => {
@@ -85,7 +83,6 @@ export default function App() {
         ]);
 
         if (config && Array.isArray(config.autoLiveForexPairs)) {
-          setActiveForexUniverse(config.autoLiveForexPairs);
         }
 
         const selected = Array.isArray(config?.autoLiveForexPairs)
@@ -115,13 +112,6 @@ export default function App() {
     terminalRefreshInFlightRef.current = run;
     try { await run; } finally { terminalRefreshInFlightRef.current = null; }
   }, [safeFetchJson]);
-
-  useEffect(() => {
-    void refreshBrokerStatus();
-    void refreshTerminalData(true);
-    const timer = setInterval(() => void refreshTerminalData(false), 30000);
-    return () => clearInterval(timer);
-  }, [refreshBrokerStatus, refreshTerminalData]);
 
   const handleToggleKillSwitch = async () => {
     const action = isEmergencyHalted ? 'RESUME' : 'HALT';
@@ -212,28 +202,6 @@ export default function App() {
           </div>
         ) : (
           <>
-            {activeTab === 'forex_terminal' && (
-              <ForexTerminalDashboard
-                activeTab={activeTab}
-                setActiveTab={setActiveTab}
-                forexSessions={forexSessions}
-                selectedBroker={selectedBroker}
-                environment={environment}
-                maskedAccount={maskedAccount}
-                balance={balance}
-                currency={currency}
-                isEmergencyHalted={isEmergencyHalted}
-                isRefreshing={isRefreshing}
-                onRefresh={() => refreshTerminalData(true)}
-                onToggleKillSwitch={handleToggleKillSwitch}
-                candlesMap={candlesMap}
-                forexPairs={forexPairs}
-                signals={signals}
-                onSelectSignal={setSelectedSignal}
-                onRequestOrder={setPendingOrder}
-              />
-            )}
-
             {activeTab === 'market_watch' && (
               <MarketHub
                 forexPairs={forexPairs}
