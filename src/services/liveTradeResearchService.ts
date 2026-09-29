@@ -167,7 +167,7 @@ export async function recordLiveTradeResearchSignal(signal: LiveTradeResearchSig
       Date.now()
     ]
   );
-  await recordSignalEvidence({
+  void recordSignalEvidence({
     signalId: signal.signalId,
     symbol: signal.symbol,
     signalTimestamp: signal.timestamp,
@@ -237,7 +237,6 @@ export async function updateLiveTradeResearchQuote(params: {
       params.signalId
     ]
   );
-  await finalizeLivePriceEvidence(params.signalId);
 }
 
 export async function updateLiveTradeResearchExecution(execution: LiveTradeResearchExecution): Promise<void> {
@@ -280,6 +279,9 @@ export async function updateLiveTradeResearchExecution(execution: LiveTradeResea
       execution.signalId
     ]
   );
+  if (lifecycleStatus === 'OPEN') {
+    void finalizeLivePriceEvidence(execution.signalId).catch(() => undefined);
+  }
 }
 
 export async function getLiveTradeResearch(signalId?: string): Promise<any[]> {
