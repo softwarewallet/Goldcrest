@@ -414,7 +414,7 @@ class AutoTradingService {
     // Start one recovery attempt immediately, then continue polling every 10s.
     // This keeps Auto Live fail-closed while ensuring a transient cTrader/TLS
     // outage does not leave the service stranded in PAUSED_RUNTIME.
-    void this.checkRuntimeRecoveryAndResume(false);
+    void this.checkRuntimeRecoveryAndResume(true);
     if (!this.runtimeRecoveryTimer) {
       this.runtimeRecoveryTimer = setInterval(() => {
         void this.checkRuntimeRecoveryAndResume();
