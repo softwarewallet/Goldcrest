@@ -182,12 +182,13 @@ const CURRENTS_PAGE_SIZE = Math.max(
 );
 const GOOGLE_NEWS_RSS_MAX_QUERIES = Math.max(
   1,
-  Math.min(4, Number(process.env.GOOGLE_NEWS_RSS_MAX_QUERIES || 2))
+  Math.min(4, Number(process.env.GOOGLE_NEWS_RSS_MAX_QUERIES || 4))
 );
 const GOOGLE_NEWS_RSS_MIN_PRIMARY_ARTICLES = Math.max(
   0,
   Number(process.env.GOOGLE_NEWS_RSS_MIN_PRIMARY_ARTICLES || 3)
 );
+const GOOGLE_NEWS_RSS_FRESHNESS_QUERY = process.env.GOOGLE_NEWS_RSS_FRESHNESS_QUERY || 'when:2h';
 
 let newsCache: {
   key: string;
@@ -722,7 +723,10 @@ function buildGoogleNewsRssQueries(pairs: string[]): string[] {
   if (queries.length === 0) {
     queries.push('forex OR "foreign exchange" OR "central bank" OR FOMC OR ECB OR BOJ');
   }
-  return [...new Set(queries)].slice(0, GOOGLE_NEWS_RSS_MAX_QUERIES);
+  const freshness = GOOGLE_NEWS_RSS_FRESHNESS_QUERY.trim();
+  return [...new Set(
+    queries.map(query => freshness ? `${query} ${freshness}` : query)
+  )].slice(0, GOOGLE_NEWS_RSS_MAX_QUERIES);
 }
 
 function xmlTagValue(item: string, tag: string): string {
@@ -740,7 +744,11 @@ async function fetchFromGoogleNewsRss(pairs: string[]): Promise<{
   const results: LiveNewsArticle[] = [];
   const errors: string[] = [];
 
-  for (const query of buildGoogleNewsRssQueries(pairs)) {
+  const queries = buildGoogleNewsRssQueries(pairs);
+
+  // Fetch RSS queries concurrently so a slow query cannot serialize several
+  // timeout windows and delay Auto Live news readiness.
+  const responses = await Promise.all(queries.map(async query => {
     try {
       const url = new URL(GOOGLE_NEWS_RSS_ENDPOINT);
       url.searchParams.set('q', query);
@@ -750,6 +758,7 @@ async function fetchFromGoogleNewsRss(pairs: string[]): Promise<{
 
       const xml = await fetchText(url);
       const items = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
+      const articles: LiveNewsArticle[] = [];
       for (const item of items) {
         const title = xmlTagValue(item, 'title');
         const link = xmlTagValue(item, 'link');
@@ -757,13 +766,22 @@ async function fetchFromGoogleNewsRss(pairs: string[]): Promise<{
         const source = xmlTagValue(item, 'source') || 'Google News RSS';
         const summary = xmlTagValue(item, 'description');
         if (!title || !link || !publishedAt) continue;
-        results.push({ title, url: link, source, publishedAt, summary });
+        articles.push({ title, url: link, source, publishedAt, summary });
       }
+      return { articles, error: undefined as string | undefined };
     } catch (error: any) {
-      errors.push(error?.name === 'AbortError'
-        ? 'Google News RSS request timed out.'
-        : error?.message || String(error));
+      return {
+        articles: [] as LiveNewsArticle[],
+        error: error?.name === 'AbortError'
+          ? 'Google News RSS request timed out.'
+          : error?.message || String(error)
+      };
     }
+  }));
+
+  for (const result of responses) {
+    results.push(...result.articles);
+    if (result.error) errors.push(result.error);
   }
 
   const articles = deduplicateArticles(results);
