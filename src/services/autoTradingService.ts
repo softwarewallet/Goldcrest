@@ -149,8 +149,27 @@ class LiveForexSignalProvider implements ForexDataProvider {
     return quote;
   }
 
-  setQuote(pair: string, quote: ForexQuote): void {
-    this.quotes.set(pair, quote);
+  setQuote(
+    pair: string,
+    quote: Pick<NormalizedQuote, 'bid' | 'ask' | 'spread' | 'timestamp' | 'source' | 'status'>
+  ): void {
+    const mid = (Number(quote.bid) + Number(quote.ask)) / 2;
+    const pipSize = Math.max(Math.abs(Number(quote.ask) - Number(quote.bid)) / Math.max(Number(quote.spread), 1), 0.00001);
+    this.quotes.set(pair, {
+      pair,
+      timestamp: Number(quote.timestamp),
+      bid: Number(quote.bid),
+      ask: Number(quote.ask),
+      spreadPips: Number(quote.spread),
+      digits: pipSize < 0.001 ? 5 : 3,
+      pipSize,
+      changePips24h: 0,
+      changePercent24h: 0,
+      high24h: mid,
+      low24h: mid,
+      provider: quote.source || 'CTRADER_LIVE',
+      dataStatus: quote.status === 'FRESH' ? 'LIVE' : 'STALE'
+    });
   }
 
   getCandles(pair: string, timeframe: ForexTimeframe = '15M', limit = 80): ForexCandle[] {
