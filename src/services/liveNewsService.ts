@@ -1,3 +1,7 @@
+import { setDefaultResultOrder } from 'node:dns';
+
+setDefaultResultOrder('ipv4first');
+
 export interface LiveNewsArticle {
   title: string;
   url: string;
