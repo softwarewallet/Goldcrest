@@ -1,3 +1,4 @@
+import { SignalDirectionBaselineModel } from '../src/services/liveTradeResearchPredictionService';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -25,6 +26,70 @@ assert.match(collection, /model: 'HISTORICAL_EDGE'/);
 assert.doesNotMatch(collection, /models:/);
 assert.match(fs.readFileSync('src/services/pairPredictionService.ts', 'utf8'), /fetchLiveForexNews/);
 assert.match(fs.readFileSync('src/services/pairPredictionService.ts', 'utf8'), /newsActiveHighImpactCount/);
+
+// Regression: a forward prediction must not change merely because the current
+// execution signal label changes from BUY to SELL. The forecast is computed
+// from independent market evidence, not by echoing the current signal.
+const baseline = new SignalDirectionBaselineModel();
+const baseRow: any = {
+  signalId: 'prediction-regression',
+  symbol: 'EUR/USD',
+  signalTimestamp: 1_000_000,
+  direction: 'BUY',
+  score: 82,
+  marketRegime: 'TRENDING',
+  session: 'LONDON',
+  trendDirection: 'BULLISH',
+  trendAlignment: 'ALIGNED',
+  trend7dReturnPct: 1,
+  trend30dReturnPct: 2,
+  trend90dReturnPct: 3,
+  trend365dReturnPct: 4,
+  trend7dVolatilityPct: 1,
+  trend30dVolatilityPct: 1,
+  trend90dVolatilityPct: 1,
+  trend365dVolatilityPct: 1,
+  newsRiskLevel: 'LOW',
+  newsHighImpactCount: 0,
+  newsActiveHighImpactCount: 0,
+  newsSentiment: 0.1,
+  quoteSpread: 0.8,
+  riskReward: 2,
+  stopDistance: 0.001,
+  targetDistance: 0.002,
+  realizedPnl: null,
+  outcome: null,
+  holdingDurationMs: null,
+  priceChange5mPct: 0.01,
+  priceChange15mPct: 0.02,
+  priceChange1hPct: 0.04,
+  priceChange4hPct: 0.08,
+  priceChangeDailyPct: 0.2,
+  atrPct: 0.5,
+  rsi: 58,
+  macdHistogram: 0.001,
+  adx: 28,
+  trendStrength: 75,
+  mtfAlignmentScore: 18,
+  structureTrend: 'bullish',
+  structurePhase: 'trend_continuation',
+  structureType: 'trend',
+  breakoutStatus: 'bullish_breakout',
+  distanceToSupportPips: 20,
+  distanceToResistancePips: 40
+};
+const buyForecast = baseline.predict({ ...baseRow, direction: 'BUY' }, '1D');
+const sellForecast = baseline.predict({ ...baseRow, direction: 'SELL' }, '1D');
+assert.equal(buyForecast.direction, sellForecast.direction);
+assert.equal(buyForecast.confidence, sellForecast.confidence);
+assert.doesNotMatch(
+  fs.readFileSync('src/services/liveTradeResearchPredictionService.ts', 'utf8'),
+  /const scoreBias = sourceDirection/
+);
+assert.doesNotMatch(
+  fs.readFileSync('src/services/liveTradeResearchPredictionService.ts', 'utf8'),
+  /direction: row\.direction,/
+);
 assert.match(server, /api\/live-trade-research\/pair-accuracy-audit/);
 
 console.log('PHASE 10 PAIR PREDICTION ACCURACY AUDIT: PASSED');
