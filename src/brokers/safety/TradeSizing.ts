@@ -104,9 +104,15 @@ export function calculateForexPipTargets(
     throw new Error('INVALID_PIP_TARGETS: Calculated Stop Loss or Take Profit is not positive.');
   }
 
+  // SL/TP must preserve the broker's pip precision. The global three-decimal
+  // execution-price policy cannot be used here because it changes the actual
+  // pip distance for 5-digit FX symbols such as GBP/USD and USD/CHF.
+  const targetDigits = Math.max(0, Math.ceil(-Math.log10(pipSize)) + 1);
+  const roundTarget = (price: number): number => Number(price.toFixed(targetDigits));
+
   return {
-    stopLoss: normalizePriceToThreeDigits(stopLoss),
-    takeProfit: normalizePriceToThreeDigits(takeProfit),
+    stopLoss: roundTarget(stopLoss),
+    takeProfit: roundTarget(takeProfit),
     stopLossPips,
     takeProfitPips,
     pipSize

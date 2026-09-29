@@ -1428,10 +1428,10 @@ return;
       }
 
       // Operator-configured Forex pip margins are authoritative for every
-      // new Auto Live order. Calculate SL/TP from the exact three-decimal
-      // execution price that will be placed in the broker packet, rather than
-      // from the signal engine's analytical trade-plan levels.
-      const executionEntryPrice = normalizePriceToThreeDigits(entryPrice);
+      // new Auto Live order. Calculate SL/TP from the authoritative broker
+      // quote price without three-decimal normalization. Rounding a 5-digit
+      // pair before applying pips changes the actual protection distance.
+      const executionEntryPrice = entryPrice;
       let configuredTargets;
       try {
         configuredTargets = calculateForexPipTargets(
@@ -1553,6 +1553,9 @@ return;
         price: executionEntryPrice,
         stopLoss: configuredTargets.stopLoss,
         takeProfit: configuredTargets.takeProfit,
+        stopLossPips: configuredTargets.stopLossPips,
+        takeProfitPips: configuredTargets.takeProfitPips,
+        pipSize: configuredTargets.pipSize,
         strategyId: signal.strategyVersion,
         signalId: signal.id,
         comment: 'Goldcrest autonomous FX strategy'

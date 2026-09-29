@@ -159,6 +159,12 @@ export interface OrderRequest {
   price?: number;
   stopLoss?: number;
   takeProfit?: number;
+  /** Operator-configured protection distance in Forex pips. */
+  stopLossPips?: number;
+  /** Operator-configured protection distance in Forex pips. */
+  takeProfitPips?: number;
+  /** Broker instrument pip size used to encode relative cTrader protections. */
+  pipSize?: number;
   /** Hardcoded broker execution control: trailing stop loss is always enabled. */
   trailingStopLoss?: true;
   strategyId?: string;
