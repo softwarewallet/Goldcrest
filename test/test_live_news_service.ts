@@ -169,6 +169,53 @@ try {
     const url = String(input);
 
     if (url.includes('finnhub.io')) {
+      return response(JSON.stringify([]));
+    }
+
+    if (url.includes('api.massive.com')) {
+      return response(JSON.stringify({ status: 'OK', results: [] }));
+    }
+
+    if (url.includes('api.currentsapi.services')) {
+      return response(JSON.stringify({ status: 'ok', news: [] }));
+    }
+
+    if (url.includes('news.google.com')) {
+      return response('');
+    }
+
+    if (url.includes('api.gdeltproject.org')) {
+      return response(JSON.stringify({
+        articles: [{
+          title: 'EUR/USD reacts to fresh Federal Reserve interest rate outlook',
+          url: 'https://gdelt.example/fx',
+          domain: 'GDELT Test',
+          seendate: new Date(Date.now() - 2 * 60_000).toISOString().replace(/[-:]/g, '').replace(/\.000Z$/, 'Z'),
+          language: 'English',
+          sourcecountry: 'United States'
+        }]
+      }));
+    }
+
+    throw new Error('Unexpected news provider URL: ' + url);
+  };
+
+  const gdeltFallback = await fetchLiveForexNews({
+    pairs: ['EUR/USD'],
+    forceRefresh: true
+  });
+
+  assert.equal(gdeltFallback.status, 'LIVE');
+  assert.equal(gdeltFallback.source, 'GDELT');
+  assert.equal(gdeltFallback.providerStatus?.GDELT, 'LIVE');
+  assert.equal(gdeltFallback.providerDiagnostics?.GDELT?.freshArticleCount, 1);
+  assert.equal(gdeltFallback.articleCount, 1);
+
+  resetLiveForexNewsCacheForTest();
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+
+    if (url.includes('finnhub.io')) {
       return response(JSON.stringify([{
         headline: 'Old EUR/USD commentary',
         url: 'https://finnhub.example/old',
