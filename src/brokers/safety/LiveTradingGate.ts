@@ -123,11 +123,38 @@ export class LiveTradingGate {
       failedReasons.push('Condition 10 Failed: Order quantity exceeds allowable broker limits.');
     }
 
-    // Check 11: Daily loss limit not exceeded
-    const dailyLossLimitNotExceeded = Math.abs(params.dailyRealizedLoss) < params.dailyLossLimit;
+    // Check 11: Daily loss limit not exceeded.
+    //
+    // The configured percentage is authoritative here. Do not rely on a
+    // caller-calculated threshold because that can become stale if settings
+    // are changed while Auto Live is running. Recalculate the monetary
+    // threshold from the same live account balance and the current persisted
+    // maxDailyLossPct value.
+    const config = getSystemConfig();
+    const configuredDailyLossPct = Number(config.maxDailyLossPct);
+    const accountBalance = Number(account?.balance || 0);
+    const authoritativeDailyLossLimit = Number.isFinite(configuredDailyLossPct)
+      && configuredDailyLossPct >= 0
+      && accountBalance > 0
+      ? accountBalance * (configuredDailyLossPct / 100)
+      : params.dailyLossLimit;
+    const actualDailyLoss = Math.max(0, Math.abs(Number(params.dailyRealizedLoss) || 0));
+    const dailyLossLimitNotExceeded = Number.isFinite(authoritativeDailyLossLimit)
+      && authoritativeDailyLossLimit > 0
+      && actualDailyLoss < authoritativeDailyLossLimit;
     if (!dailyLossLimitNotExceeded) {
-      failedReasons.push('Condition 11 Failed: Daily loss limit breached.');
+      failedReasons.push(
+        `Condition 11 Failed: Daily loss limit breached. Actual daily loss: ${actualDailyLoss.toFixed(2)}; configured limit: ${configuredDailyLossPct.toFixed(2)}% (${authoritativeDailyLossLimit.toFixed(2)} of account balance ${accountBalance.toFixed(2)}).`
+      );
     }
+    liveRuntimeLog(dailyLossLimitNotExceeded ? 'INFO' : 'WARN', 'LIVE_DAILY_LOSS_LIMIT_EVALUATED', {
+      accountBalance,
+      actualDailyLoss,
+      configuredDailyLossPct,
+      authoritativeDailyLossLimit,
+      callerDailyLossLimit: params.dailyLossLimit,
+      mismatch: Math.abs(authoritativeDailyLossLimit - Number(params.dailyLossLimit || 0)) > 0.01
+    });
 
     // Check 12: Maximum account exposure threshold.
     //
