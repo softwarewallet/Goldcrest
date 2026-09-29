@@ -2,7 +2,7 @@ import { executeQuery } from '../src/database/db';
 
 type CountRow = { count: number | string | null };
 type TimestampAuditRow = { valid: number | string | null; invalid: number | string | null; future: number | string | null };
-type PnlAuditRow = { populated: number | string | null; null: number | string | null };
+type PnlAuditRow = { populated: number | string | null; null_count: number | string | null };
 type EntryExitAuditRow = { entry_populated: number | string | null; exit_populated: number | string | null };
 type StatusRow = { lifecycle_status: string | null; count: number | string };
 type OutcomeRow = { outcome: string | null; count: number | string };
@@ -78,7 +78,7 @@ async function audit(): Promise<void> {
   const pnlRows = await executeQuery<PnlAuditRow>(
     `SELECT
        SUM(CASE WHEN realized_pnl IS NOT NULL THEN 1 ELSE 0 END) AS populated,
-       SUM(CASE WHEN realized_pnl IS NULL THEN 1 ELSE 0 END) AS null
+       SUM(CASE WHEN realized_pnl IS NULL THEN 1 ELSE 0 END) AS null_count
      FROM live_trade_research`
   );
   const outcomeRows = await executeQuery<OutcomeRow>(
@@ -125,7 +125,7 @@ async function audit(): Promise<void> {
         },
         realizedPnl: {
           populated: Number(pnlRows[0]?.populated || 0),
-          null: Number(pnlRows[0]?.null || 0)
+          null: Number(pnlRows[0]?.null_count || 0)
         },
         outcomes: outcomeRows.map(row => ({ outcome: String(row.outcome || 'NULL'), count: Number(row.count) })),
         entryExit: {
