@@ -1079,7 +1079,7 @@ async function fetchLiveForexNewsInternal(
   const articles = deduplicateArticles(fetchedArticles).slice(0, 100);
 
   if (articles.length === 0) {
-    const configuredProviders = [finnhubRes, massiveRes, currentsRes, googleNewsRssRes]
+    const configuredProviders = [finnhubRes, massiveRes, currentsRes, googleNewsRssRes, gdeltRes]
       .filter(result => result.status !== 'UNCONFIGURED');
     const allUnavailable = configuredProviders.length > 0
       && configuredProviders.every(result => ['ERROR', 'RATE_LIMITED'].includes(result.status));
