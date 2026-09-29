@@ -47,7 +47,8 @@
     "test:phase10_outcome_data": "tsx test/test_phase10_real_outcome_data_layer.ts",
     "migrate:phase10": "tsx scripts/migrate_phase10_real_outcome_data.ts",
     "test:forex_only": "tsx test/test_forex_only_architecture_audit.ts && tsx test/test_pair_prediction_accuracy.ts && npm run test:phase10_outcome_data",
-    "audit:phase10": "tsx scripts/audit_phase10_real_outcome_data.ts"
+    "audit:phase10": "tsx scripts/audit_phase10_real_outcome_data.ts",
+    "audit:phase10_1": "tsx scripts/audit_phase10_1_realized_trade_forensics.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
