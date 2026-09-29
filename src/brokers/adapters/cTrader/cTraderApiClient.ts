@@ -451,7 +451,13 @@ const CTRADER_HEARTBEAT_INTERVAL_MS = 10000;
 class CTraderConnectionSession {
   private ws: WebSocket | null = null;
   private connecting: Promise<WebSocket> | null = null;
-  private queue: Promise<unknown> = Promise.resolve();
+  private readonly requestQueue: Array<{
+    priority: 0 | 1;
+    run: () => Promise<unknown>;
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
+  }> = [];
+  private queueRunning = false;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private authenticatedClientKey: string | null = null;
   private authenticatedAccountId: number | null = null;
@@ -575,12 +581,42 @@ class CTraderConnectionSession {
     clientSecret: string,
     fn: (ws: WebSocket) => Promise<T>
   ): Promise<T> {
-    const task = this.queue.then(async () => {
+    return this.enqueue(0, async () => {
       const ws = await this.connect(clientId, clientSecret);
       return fn(ws);
     });
-    this.queue = task.then(() => undefined, () => undefined);
-    return task;
+  }
+
+  private enqueue<T>(priority: 0 | 1, run: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.requestQueue.push({
+        priority,
+        run: async () => run(),
+        resolve: value => resolve(value as T),
+        reject
+      });
+      void this.drainQueue();
+    });
+  }
+
+  private async drainQueue(): Promise<void> {
+    if (this.queueRunning) return;
+    this.queueRunning = true;
+    try {
+      while (this.requestQueue.length > 0) {
+        const highPriorityIndex = this.requestQueue.findIndex(item => item.priority === 1);
+        const index = highPriorityIndex >= 0 ? highPriorityIndex : 0;
+        const item = this.requestQueue.splice(index, 1)[0];
+        try {
+          const value = await item.run();
+          item.resolve(value);
+        } catch (error) {
+          item.reject(error);
+        }
+      }
+    } finally {
+      this.queueRunning = false;
+    }
   }
 
   async run<T>(
@@ -590,7 +626,7 @@ class CTraderConnectionSession {
     accessToken: string,
     fn: (ws: WebSocket) => Promise<T>
   ): Promise<T> {
-    const task = this.queue.then(async () => {
+    return this.enqueue(0, async () => {
       const ws = await this.connect(clientId, clientSecret);
       await this.authorizeAccount(ws, accountId, accessToken);
       try {
@@ -603,9 +639,28 @@ class CTraderConnectionSession {
         throw error;
       }
     });
+  }
 
-    this.queue = task.then(() => undefined, () => undefined);
-    return task;
+  async runPriority<T>(
+    accountId: number,
+    clientId: string,
+    clientSecret: string,
+    accessToken: string,
+    fn: (ws: WebSocket) => Promise<T>
+  ): Promise<T> {
+    return this.enqueue(1, async () => {
+      const ws = await this.connect(clientId, clientSecret);
+      await this.authorizeAccount(ws, accountId, accessToken);
+      try {
+        return await fn(ws);
+      } catch (error) {
+        if (this.ws === ws && String((error as any)?.message || '').toLowerCase().includes('connection')) {
+          this.resetSocket(ws);
+          try { ws.close(); } catch {}
+        }
+        throw error;
+      }
+    });
   }
 }
 
@@ -626,7 +681,8 @@ async function withAuthenticatedAccount<T>(
   clientSecret: string,
   accessToken: string,
   isLive: boolean,
-  fn: (ws: WebSocket) => Promise<T>
+  fn: (ws: WebSocket) => Promise<T>,
+  priority: 'NORMAL' | 'AUTO_LIVE' = 'NORMAL'
 ): Promise<T> {
   // Route account-scoped reads through the selected cTrader environment.
   // The session is persistent and serializes account-scoped requests so Auto
@@ -636,7 +692,8 @@ async function withAuthenticatedAccount<T>(
 
   for (const host of hosts) {
     try {
-      return await getCTraderConnectionSession(host).run(
+      const session = getCTraderConnectionSession(host);
+      return await (priority === 'AUTO_LIVE' ? session.runPriority : session.run)(
         accountId,
         clientId,
         clientSecret,
@@ -655,6 +712,17 @@ async function withAuthenticatedAccount<T>(
   throw lastError || new Error('cTrader API: failed to authenticate account on available cTrader endpoints.');
 }
 
+async function withAutoLiveAuthenticatedAccount<T>(
+  accountId: number,
+  clientId: string,
+  clientSecret: string,
+  accessToken: string,
+  isLive: boolean,
+  fn: (ws: WebSocket) => Promise<T>
+): Promise<T> {
+  return withAuthenticatedAccount(accountId, clientId, clientSecret, accessToken, isLive, fn, 'AUTO_LIVE');
+}
+
 export interface CTraderExecutionActionResult {
   executionType: number;
   orderId?: number;
@@ -667,7 +735,7 @@ async function submitLiveCTraderExecutionAction(
   clientMsgId: string, clientId: string, clientSecret: string, accessToken: string, isLive: boolean,
   expectedOrderId?: number, expectedPositionId?: number
 ): Promise<CTraderExecutionActionResult> {
-  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+  return withAutoLiveAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
     return new Promise<CTraderExecutionActionResult>((resolve, reject) => {
       const timer = setTimeout(() => {
         ws.removeEventListener('message', handler);
@@ -1057,7 +1125,7 @@ export async function fetchCTraderSymbols(
   accessToken: string,
   isLive: boolean
 ): Promise<CTraderSymbolInfo[]> {
-  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+  return withAutoLiveAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
     const payload = await sendAndAwait(ws, MSG_SYMBOLS_LIST_REQ, {
       ctidTraderAccountId,
       includeArchivedSymbols: false
@@ -1211,7 +1279,7 @@ export async function fetchLiveCTraderQuote(
   isLive: boolean,
   digits: number
 ): Promise<CTraderMarketQuote> {
-  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+  return withAutoLiveAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
     const clientMsgId = `quote_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     return new Promise<CTraderMarketQuote>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -1276,7 +1344,7 @@ export async function fetchCTraderTrendbars(
   const toTimestamp = Date.now();
   const fromTimestamp = toTimestamp - safeCount * ({1: 60, 2: 120, 3: 180, 4: 240, 5: 300, 6: 600, 7: 900, 8: 1800, 9: 3600, 10: 14400, 11: 43200, 12: 86400, 13: 604800, 14: 2592000} as Record<number, number>)[period] * 1000;
 
-  return withAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
+  return withAutoLiveAuthenticatedAccount(ctidTraderAccountId, clientId, clientSecret, accessToken, isLive, async ws => {
     const payload = await sendAndAwait(ws, MSG_GET_TRENDBARS_REQ, {
       ctidTraderAccountId,
       symbolId,
