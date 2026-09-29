@@ -410,11 +410,9 @@ class AutoTradingService {
       reason,
       recoveryPollIntervalMs: this.RUNTIME_RECOVERY_POLL_MS
     });
-    // Do not wait for the first polling interval after a transport failure.
-    // Start one recovery attempt immediately, then continue polling every 10s.
-    // This keeps Auto Live fail-closed while ensuring a transient cTrader/TLS
-    // outage does not leave the service stranded in PAUSED_RUNTIME.
-    void this.checkRuntimeRecoveryAndResume(true);
+    // Arm the recovery loop before the immediate attempt so a very fast
+    // successful recovery cannot race with timer creation and leave a stale
+    // polling timer behind.
     if (!this.runtimeRecoveryTimer) {
       this.runtimeRecoveryTimer = setInterval(() => {
         void this.checkRuntimeRecoveryAndResume();
@@ -423,6 +421,11 @@ class AutoTradingService {
       // timer must not disappear merely because it is the only active Auto Live
       // timer after a broker transport failure.
     }
+    // Do not wait for the first polling interval after a transport failure.
+    // Start one recovery attempt immediately, then continue polling every 10s.
+    // This keeps Auto Live fail-closed while ensuring a transient cTrader/TLS
+    // outage does not leave the service stranded in PAUSED_RUNTIME.
+    void this.checkRuntimeRecoveryAndResume(true);
   }
 
   private async checkRuntimeRecoveryAndResume(runCycleAfterRecovery = true): Promise<void> {
