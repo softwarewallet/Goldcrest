@@ -27,6 +27,11 @@ const AUTO_INTERVAL_MS = Math.max(
 
 const DEFAULT_AUTO_FOREX_PAIRS = FOREX_PAIRS.map(pair => pair.symbol);
 
+// Keep cTrader historical-data socket pressure bounded. Each historical request
+// creates a short-lived WebSocket in the current JSON adapter, so Auto Live
+// must not fan out one socket per pair/timeframe simultaneously.
+const AUTO_LIVE_PAIR_SCAN_CONCURRENCY = 2;
+
 export async function validateAutoLiveCTraderConnection(
   adapter: Pick<BrokerAdapter, 'testConnection'>
 ): Promise<{ ok: boolean; message: string; result: ConnectionTestResult }> {
@@ -113,19 +118,17 @@ class LiveForexSignalProvider implements ForexDataProvider {
       const refreshedAt = this.candleRefreshedAt.get(key) || 0;
       return !this.candles.has(key) || now - refreshedAt >= (this.candleRefreshTtlMs[timeframe] ?? 0);
     });
-    const rows = await Promise.all(
-      dueTimeframes.map(async timeframe => ({
-        timeframe,
-        data: await adapter.getHistoricalCandles(pair, timeframe, 80)
-      }))
-    );
-
-    for (const row of rows) {
-      if (!Array.isArray(row.data) || row.data.length < 35) {
-        throw new Error(`Insufficient live ${row.timeframe} candle history for ${pair}.`);
+    // Fetch historical timeframes sequentially. The cTrader JSON adapter opens
+    // a short-lived WebSocket for each request; Promise.all here can create five
+    // simultaneous sockets for one pair and many more when multiple pairs scan.
+    // Sequential requests keep one pair at one active historical socket at a time.
+    for (const timeframe of dueTimeframes) {
+      const data = await adapter.getHistoricalCandles(pair, timeframe, 80);
+      if (!Array.isArray(data) || data.length < 35) {
+        throw new Error(`Insufficient live ${timeframe} candle history for ${pair}.`);
       }
-      const key = `${pair}:${row.timeframe}`;
-      this.candles.set(key, row.data as ForexCandle[]);
+      const key = `${pair}:${timeframe}`;
+      this.candles.set(key, data as ForexCandle[]);
       this.candleRefreshedAt.set(key, now);
     }
 
@@ -144,6 +147,10 @@ class LiveForexSignalProvider implements ForexDataProvider {
     const quote = this.quotes.get(pair);
     if (!quote) throw new Error(`Live quote cache is empty for ${pair}.`);
     return quote;
+  }
+
+  setQuote(pair: string, quote: ForexQuote): void {
+    this.quotes.set(pair, quote);
   }
 
   getCandles(pair: string, timeframe: ForexTimeframe = '15M', limit = 80): ForexCandle[] {
@@ -267,6 +274,11 @@ class AutoTradingService {
     updatedAt: Date.now()
   };
   private lastExecution: AutoTradingExecutionStatus | null = null;
+  // Invalidates in-flight cycles after STOP or a fresh START. The current
+  // broker request is allowed to finish cleanly, but no additional pair work
+  // is started for an obsolete generation.
+  private cycleGeneration = 0;
+  private pendingStartAfterCycle = false;
   // Once the operator has successfully started Auto Live in this process,
   // STOP may disarm the runtime flags and a later explicit START is allowed
   // to re-arm them. A fresh process still requires the configured execution
@@ -278,16 +290,24 @@ class AutoTradingService {
     const capture = async () => {
       if (!['RUNNING', 'PAUSED_LIMIT', 'PAUSED_RUNTIME'].includes(this.state)) return;
       try {
-        const adapter = brokerRegistry.getAdapter('CTRADER', 'LIVE');
+        // Research evidence must never create a parallel broker-connection
+        // storm. Reuse the latest quote already obtained by the authoritative
+        // Auto Live scan/execution path. Evidence is telemetry and therefore
+        // must remain non-authoritative when no cached quote is available.
         const result = await captureDueLivePriceEvidence(async symbol => {
-          const quote = await adapter.getQuote(symbol);
-          return {
-            bid: Number(quote.bid),
-            ask: Number(quote.ask),
-            spread: Number(quote.spread),
-            timestamp: Number(quote.timestamp),
-            source: quote.source || 'CTRADER_LIVE'
-          };
+          try {
+            const quote = this.provider.getQuote(symbol);
+            if (Date.now() - Number(quote.timestamp) > LIVE_QUOTE_MAX_AGE_MS) return null;
+            return {
+              bid: Number(quote.bid),
+              ask: Number(quote.ask),
+              spread: Number(quote.spread),
+              timestamp: Number(quote.timestamp),
+              source: quote.source || 'CTRADER_LIVE_CACHE'
+            };
+          } catch {
+            return null;
+          }
         });
         if (result.points > 0) {
           liveRuntimeLog('INFO', 'LIVE_PRICE_EVIDENCE_CAPTURED', result);
@@ -546,6 +566,32 @@ class AutoTradingService {
     };
   }
 
+  private invalidateCurrentCycle(reason: string): void {
+    this.cycleGeneration += 1;
+    liveRuntimeLog('INFO', 'AUTO_TRADING_CYCLE_INVALIDATED', {
+      generation: this.cycleGeneration,
+      reason,
+      cycleInFlight: this.cycleInFlight
+    });
+  }
+
+  private resumeAfterExplicitRestart(): void {
+    this.runtimeFaultReason = null;
+    this.runtimeRecoveryAttempt = 0;
+    if (this.runtimeRecoveryTimer) {
+      clearTimeout(this.runtimeRecoveryTimer);
+      this.runtimeRecoveryTimer = null;
+    }
+    this.clearPositionCapacityPause();
+    this.state = 'RUNNING';
+    this.pendingStartAfterCycle = this.cycleInFlight;
+    this.invalidateCurrentCycle('operator requested Auto Live restart');
+    this.lastCycleResult = this.cycleInFlight
+      ? 'Auto Live restart requested; waiting for the previous cycle to finish before starting a fresh cycle.'
+      : 'Auto Live restarted.';
+    if (!this.cycleInFlight) void this.runCycle(this.cycleGeneration);
+  }
+
   start(options: { confirmWhenClosed?: boolean } = {}): AutoTradingStatus {
     const marketGate = getAutoLiveMarketGate();
 
@@ -653,18 +699,28 @@ class AutoTradingService {
       return this.getStatus();
     }
 
+    if (this.timer && ['PAUSED_RUNTIME', 'PAUSED_LIMIT'].includes(this.state)) {
+      this.resumeAfterExplicitRestart();
+      return this.getStatus();
+    }
     if (this.timer) return this.getStatus();
 
     if (marketGate.anyMarketOpen) {
       this.hasCompletedExplicitStart = true;
       this.state = 'RUNNING';
-      this.lastCycleResult = 'Auto-trading loop started.';
+      this.pendingStartAfterCycle = this.cycleInFlight;
+      this.invalidateCurrentCycle('operator started Auto Live');
+      this.lastCycleResult = this.cycleInFlight
+        ? 'Auto Live started; waiting for the previous cycle to finish before beginning a fresh cycle.'
+        : 'Auto-trading loop started.';
       liveRuntimeLog('SYSTEM', 'AUTO_TRADING_STARTED', {
         intervalMs: AUTO_INTERVAL_MS,
         pairs: getConfiguredAutoForexPairs(),
-        marketGate
+        marketGate,
+        cycleInFlight: this.cycleInFlight,
+        pendingStartAfterCycle: this.pendingStartAfterCycle
       });
-      void this.runCycle();
+      if (!this.cycleInFlight) void this.runCycle(this.cycleGeneration);
     } else {
       this.hasCompletedExplicitStart = true;
 
@@ -698,6 +754,8 @@ class AutoTradingService {
 
   stop(reason = 'Operator stopped auto trading.'): AutoTradingStatus {
     this.stopLivePriceEvidenceCapture();
+    this.pendingStartAfterCycle = false;
+    this.invalidateCurrentCycle('operator stopped Auto Live');
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -962,8 +1020,8 @@ class AutoTradingService {
     }
   }
 
-  private async runCycle(): Promise<void> {
-    if (this.state !== 'RUNNING' || this.cycleInFlight) return;
+  private async runCycle(generation = this.cycleGeneration): Promise<void> {
+    if (this.state !== 'RUNNING' || this.cycleInFlight || generation !== this.cycleGeneration) return;
     this.cycleInFlight = true;
 
     this.lastCycleAt = Date.now();
@@ -1103,11 +1161,18 @@ class AutoTradingService {
         });
       }
 
-      // Scan/analyze every eligible configured pair in parallel. Each pair is
-      // independently isolated, while the execution portion of evaluatePair
-      // is serialized by withExecutionLock(). This removes the old sequential
-      // scan bottleneck without weakening account-level safety gates.
-      await Promise.all(pairsToEvaluate.map(pair => this.evaluatePair(pair)));
+      // Bound market-data concurrency. Each pair's historical refresh uses
+      // short-lived cTrader WebSockets, so unbounded Promise.all can exhaust
+      // connection capacity and cause TLS/socket failures. Two pairs at a time
+      // keeps the live environment within a controlled connection budget.
+      await mapWithConcurrency(
+        pairsToEvaluate,
+        AUTO_LIVE_PAIR_SCAN_CONCURRENCY,
+        async pair => {
+          if (generation !== this.cycleGeneration || this.state !== 'RUNNING') return;
+          await this.evaluatePair(pair, generation);
+        }
+      );
 
       const executed = this.lastActions.find(action => action.result === 'EXECUTED');
       if (!executed) {
@@ -1134,10 +1199,20 @@ class AutoTradingService {
       liveRuntimeLog('ERROR', 'AUTO_TRADING_CYCLE_ERROR', { error: this.lastCycleResult });
     } finally {
       this.cycleInFlight = false;
+      if (
+        this.pendingStartAfterCycle
+        && this.state === 'RUNNING'
+        && generation === this.cycleGeneration
+      ) {
+        this.pendingStartAfterCycle = false;
+        this.lastCycleResult = 'Previous Auto Live cycle finished; starting the requested fresh cycle.';
+        void this.runCycle(this.cycleGeneration);
+      }
     }
   }
 
-  private async evaluatePair(pair: string): Promise<void> {
+  private async evaluatePair(pair: string, generation = this.cycleGeneration): Promise<void> {
+    if (generation !== this.cycleGeneration || this.state !== 'RUNNING') return;
     const evaluationStartedAt = Date.now();
     try {
       this.setExecutionStatus({
@@ -1347,6 +1422,14 @@ return;
         : Promise.resolve(0);
 
       const quote = await adapter.getQuote(pair);
+      this.provider.setQuote(pair, {
+        bid: Number(quote.bid),
+        ask: Number(quote.ask),
+        spread: Number(quote.spread),
+        timestamp: Number(quote.timestamp),
+        source: quote.source || 'CTRADER_LIVE',
+        status: quote.status
+      });
       if (quote.status !== 'FRESH' || Date.now() - quote.timestamp >= LIVE_QUOTE_MAX_AGE_MS) {
         const reason = 'Fresh broker quote unavailable at dispatch boundary.';
         this.lastActions.push({ pair, result: 'BLOCKED', signalId: signal.id, reason });
