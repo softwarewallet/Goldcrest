@@ -128,8 +128,8 @@ export async function captureDueLivePriceEvidence(
   await ensureLivePriceEvidenceSchema();
   const rows = await executeQuery<any>(`SELECT signal_id, symbol, signal_timestamp, execution_timestamp
     FROM live_trade_research
-    WHERE lifecycle_status IN ('OPEN','CLOSED') AND execution_timestamp IS NOT NULL
-      AND execution_timestamp >= ?`, [now - 15 * 60_000]);
+    WHERE lifecycle_status IN ('SIGNAL_EVALUATED','OPEN','CLOSED')
+      AND signal_timestamp >= ?`, [now - 30 * 60_000]);
   const symbols = [...new Set(rows.map(row => String(row.symbol).toUpperCase()))];
   const quotes = new Map<string, any>();
   for (const symbol of symbols) {
