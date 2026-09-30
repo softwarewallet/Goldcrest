@@ -1,5 +1,5 @@
 import { setDefaultResultOrder } from 'node:dns';
-import { Agent } from 'undici';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 setDefaultResultOrder('ipv4first');
 
@@ -484,7 +484,7 @@ async function fetchText(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(url, {
+    const response = await undiciFetch(url, {
       signal: controller.signal,
       dispatcher: newsHttpAgent,
       headers: {
@@ -512,7 +512,7 @@ async function fetchJson(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(url, {
+    const response = await undiciFetch(url, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json',
