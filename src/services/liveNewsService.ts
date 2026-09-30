@@ -1,6 +1,21 @@
 import { setDefaultResultOrder } from 'node:dns';
+import { Agent } from 'undici';
 
 setDefaultResultOrder('ipv4first');
+
+// Node's built-in fetch uses Undici. Explicit family autoselection prevents a
+// broken/unroutable IPv6 path from consuming the full news timeout before the
+// working IPv4 path is attempted. This is especially important when several
+// independent news providers fail at the same time.
+const newsHttpAgent = new Agent({
+  autoSelectFamily: true,
+  autoSelectFamilyAttemptTimeout: 250,
+  connect: {
+    timeout: Math.min(5_000, Math.max(1_000, Number(process.env.GOLDCREST_NEWS_CONNECT_TIMEOUT_MS || 5_000)))
+  },
+  keepAliveTimeout: 10_000,
+  keepAliveMaxTimeout: 30_000
+});
 
 export interface LiveNewsArticle {
   title: string;
@@ -471,6 +486,7 @@ async function fetchText(
   try {
     const response = await fetch(url, {
       signal: controller.signal,
+      dispatcher: newsHttpAgent,
       headers: {
         Accept: 'application/rss+xml, application/xml, text/xml, text/plain',
         'User-Agent': 'Goldcrest/2.0 live-forex-news',
@@ -945,33 +961,23 @@ async function fetchLiveForexNewsInternal(
   const queryPairs = normalizePairs(options.pairs);
   const queryKey = queryPairs.join(',');
 
-  const [finnhubRes, massiveRes, currentsRes, googleNewsRssRes] = await Promise.all([
+  // Run the independent GDELT fallback in the same fetch window. The old
+  // sequential fallback added a second full timeout window whenever all
+  // primary providers were slow, which made the news engine appear hung.
+  // Its articles are still only selected when the primary providers do not
+  // provide enough fresh coverage.
+  const [finnhubRes, massiveRes, currentsRes, googleNewsRssRes, gdeltRes] = await Promise.all([
     fetchFromFinnhub(),
     fetchFromMassive(queryPairs),
     fetchFromCurrents(queryPairs),
-    fetchFromGoogleNewsRss(queryPairs)
+    fetchFromGoogleNewsRss(queryPairs),
+    fetchFromGdelt(queryPairs)
   ]);
 
   const freshFinnhub = filterFreshArticles(finnhubRes.articles, now);
   const freshMassive = filterFreshArticles(massiveRes.articles, now);
   const freshCurrents = filterFreshArticles(currentsRes.articles, now);
   const freshGoogleNewsRss = filterFreshArticles(googleNewsRssRes.articles, now);
-
-  // GDELT is a keyless independent fallback. Only call it when every
-  // currently configured provider returned zero fresh articles.
-  let gdeltRes: Awaited<ReturnType<typeof fetchFromGdelt>> = {
-    status: 'NO_RESULTS',
-    articles: [],
-    latencyMs: 0
-  };
-  if (
-    freshFinnhub.length === 0
-    && freshMassive.length === 0
-    && freshCurrents.length === 0
-    && freshGoogleNewsRss.length === 0
-  ) {
-    gdeltRes = await fetchFromGdelt(queryPairs);
-  }
   const freshGdelt = filterFreshArticles(gdeltRes.articles, now);
 
   const providerStatus: LiveNewsSnapshot['providerStatus'] = {
