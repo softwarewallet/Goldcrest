@@ -1,5 +1,5 @@
 import { setDefaultResultOrder } from 'node:dns';
-import { Agent, fetch as undiciFetch } from 'undici';
+import { Agent } from 'undici';
 
 setDefaultResultOrder('ipv4first');
 
@@ -16,6 +16,14 @@ const newsHttpAgent = new Agent({
   keepAliveTimeout: 10_000,
   keepAliveMaxTimeout: 30_000
 });
+
+// Node's global fetch supports Undici's dispatcher at runtime, but the DOM RequestInit
+// type does not declare it. Keep the global fetch so tests can mock it while typing the
+// Undici-specific option explicitly.
+const newsFetch = fetch as unknown as (
+  input: string | URL | Request,
+  init?: RequestInit & { dispatcher?: Agent }
+) => Promise<Response>;
 
 export interface LiveNewsArticle {
   title: string;
@@ -484,7 +492,7 @@ async function fetchText(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await undiciFetch(url, {
+    const response = await newsFetch(url, {
       signal: controller.signal,
       dispatcher: newsHttpAgent,
       headers: {
@@ -512,7 +520,7 @@ async function fetchJson(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await undiciFetch(url, {
+    const response = await newsFetch(url, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json',
