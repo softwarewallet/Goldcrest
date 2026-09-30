@@ -20,10 +20,13 @@ const newsHttpAgent = new Agent({
 // Node's global fetch supports Undici's dispatcher at runtime, but the DOM RequestInit
 // type does not declare it. Keep the global fetch so tests can mock it while typing the
 // Undici-specific option explicitly.
-const newsFetch = fetch as unknown as (
+const newsFetch = (
   input: string | URL | Request,
   init?: RequestInit & { dispatcher?: Agent }
-) => Promise<Response>;
+): Promise<Response> => (globalThis.fetch as unknown as (
+  input: string | URL | Request,
+  init?: RequestInit & { dispatcher?: Agent }
+) => Promise<Response>)(input, init);
 
 export interface LiveNewsArticle {
   title: string;
