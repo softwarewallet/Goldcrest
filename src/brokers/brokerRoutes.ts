@@ -329,6 +329,37 @@ export function invalidateBrokerStatusCache(): void {
   brokerStatusCache = null;
 }
 
+function buildImmediateBrokerStatusSnapshot(): any {
+  const environment = brokerRegistry.getEnvironment();
+  const controls = autoExecutionEngine.getControls();
+  const haltDetails = killSwitch.getHaltDetails();
+  const brokers = LIVE_BROKERS.map((broker) => {
+    const account = lastKnownBrokerAccounts.get(broker) || null;
+    return {
+      broker,
+      environment: 'LIVE',
+      connected: Boolean(account?.connectionStatus === 'CONNECTED'),
+      account,
+      error: account ? null : 'BROKER_STATUS_REFRESH_PENDING',
+      code: account ? undefined : 'REFRESH_PENDING',
+      stale: Boolean(account)
+    };
+  });
+
+  return {
+    environment,
+    routingMode: 'FOREX_TO_CTRADER',
+    selectedBroker: null,
+    brokerRouting: { FOREX: 'CTRADER' },
+    brokers,
+    credentials: brokerRegistry.getCredentialStatuses(),
+    controls,
+    emergencyStop: haltDetails,
+    timestamp: Date.now(),
+    refreshPending: true
+  };
+}
+
 async function getBrokerStatusSnapshot(forceRefresh?: boolean): Promise<any> {
   startBrokerStatusRefreshLoop();
 
@@ -341,11 +372,22 @@ async function getBrokerStatusSnapshot(forceRefresh?: boolean): Promise<any> {
     return brokerStatusCache.payload;
   }
 
-  if (brokerStatusInFlight) {
-    return brokerStatusInFlight;
+  // Do not make the first browser request wait on cTrader account discovery.
+  // The status route is a UI/status endpoint; broker connectivity is refreshed
+  // asynchronously by the single background loop. This keeps Settings and the
+  // rest of the application shell responsive even when cTrader is slow/unavailable.
+  if (!brokerStatusInFlight) {
+    brokerStatusInFlight = refreshBrokerStatusSnapshot()
+      .catch(err => {
+        console.warn('[BROKER_STATUS] refresh failed:', err?.message || err);
+        return brokerStatusCache?.payload || buildImmediateBrokerStatusSnapshot();
+      })
+      .finally(() => {
+        brokerStatusInFlight = null;
+      });
   }
 
-  return refreshBrokerStatusSnapshot();
+  return buildImmediateBrokerStatusSnapshot();
 }
 
 brokerRouter.get('/status', async (req: Request, res: Response) => {
