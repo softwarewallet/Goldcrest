@@ -2957,30 +2957,43 @@ async function startServer() {
       nodeEnv: runtime,
       auditFile: getLiveRuntimeLogStatus().file
     });
-    void captureLiveBrokerReconciliation();
-    void reconcileInFlightExecutionIntents();
-    startAccountBalanceSnapshotScheduler();
+    // Keep the HTTP/UI path free of broker and historical-data work during
+    // the first few seconds after listen(). These operations are durable
+    // background services and can safely start after the application shell is
+    // reachable. This is especially important when cTrader is slow/unavailable.
+    const startBackgroundServices = () => {
+      void captureLiveBrokerReconciliation();
+      void reconcileInFlightExecutionIntents();
+      startAccountBalanceSnapshotScheduler();
 
-    // Phase 1: durable Forex historical market-data collection. The initial
-    // synchronization backfills daily history (plus broker-native weekly and
-    // monthly bars) and then the scheduler performs lightweight incremental
-    // refreshes so today's high/low/close stays current without flooding
-    // cTrader historical endpoints.
-    void databaseInitPromise
-      .then(() => {
-        startLiveTradeResearchOutcomeTracker();
-        startCurrentPairPredictionCollectionScheduler();
-      })
-      .then(() => syncMarketHistory())
-      .then(() => {
-        startMarketHistoryScheduler();
-      })
-      .catch((error) => {
-        liveRuntimeLog('ERROR', 'MARKET_HISTORY_INITIAL_SYNC_FAILED', {
-          error: error?.message || String(error)
+      // Phase 1: durable Forex historical market-data collection. The initial
+      // synchronization backfills daily history (plus broker-native weekly and
+      // monthly bars) and then the scheduler performs lightweight incremental
+      // refreshes so today's high/low/close stays current without flooding
+      // cTrader historical endpoints.
+      void databaseInitPromise
+        .then(() => {
+          startLiveTradeResearchOutcomeTracker();
+          startCurrentPairPredictionCollectionScheduler();
+        })
+        .then(() => syncMarketHistory())
+        .then(() => {
+          startMarketHistoryScheduler();
+        })
+        .catch((error) => {
+          liveRuntimeLog('ERROR', 'MARKET_HISTORY_INITIAL_SYNC_FAILED', {
+            error: error?.message || String(error)
+          });
+          startMarketHistoryScheduler();
         });
-        startMarketHistoryScheduler();
-      });
+    };
+
+    const startupBackgroundDelayMs = Math.max(
+      1000,
+      Math.min(5000, Number(process.env.GOLDCREST_STARTUP_BACKGROUND_DELAY_MS || 2500))
+    );
+    const startupBackgroundTimer = setTimeout(startBackgroundServices, startupBackgroundDelayMs);
+    startupBackgroundTimer.unref?.();
 
     reconciliationTimer = setInterval(() => void captureLiveBrokerReconciliation(), 5 * 60_000);
     executionLifecycleTimer = setInterval(() => void reconcileInFlightExecutionIntents(), 15_000);
